@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 9";
+const APP_VERSION = "Кэйко 10";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -697,88 +697,13 @@ function bindFreezeUI() {
     }));
 }
 
-function shakeUI() {
-  const supported = typeof window.DeviceMotionEvent === "function";
-  return `
-    <div class="freeze">
-      <div class="fz-head">🎲 <b>Встряхивание</b> — потряси телефон, и лента сама выберет занятие</div>
-      ${!supported
-        ? `<div class="fz-empty">Это устройство не сообщает о движении</div>`
-        : shakeReady
-          ? `<div class="fz-empty">Включено — можно трясти</div>`
-          : `<button class="btn" id="shakeAsk" type="button">${cfg.shake ? "Подтвердить доступ к движению" : "Разрешить доступ к движению"}</button>`}
-    </div>`;
-}
-
-function bindShakeUI() {
-  const b = $("#shakeAsk");
-  if (!b) return;
-  b.addEventListener("click", async () => {
-    const ok = await enableShake(true);
-    toast(ok ? "Готово — потряси телефон" : "Доступ к движению не разрешён");
-    openSettingsSheet();
-  });
-}
-
-function goalUI() {
-  const g = goalProgress();
-  return `
-    <div class="freeze">
-      <div class="fz-head">🎯 <b>Цель на неделю</b> — сколько дней заниматься чем угодно из трёх</div>
-      <div class="goal-pick">
-        ${[2, 3, 4, 5, 6, 7].map(n =>
-          `<button class="gbtn ${g.goal === n ? "on" : ""}" data-goal="${n}" type="button">${n}</button>`).join("")}
-      </div>
-      <div class="fz-empty">Сейчас: <b>${g.days} из ${g.goal}</b> на этой неделе</div>
-    </div>`;
-}
-
-function bindGoalUI() {
-  document.querySelectorAll("[data-goal]").forEach(b =>
-    b.addEventListener("click", () => {
-      data.weekGoal = Number(b.dataset.goal);
-      saveData(); schedulePush();
-      openSettingsSheet();
-      render();
-      toast(`Цель: ${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")} в неделю`);
-    }));
-}
-
-function archiveUI() {
-  if (!hasMaterials()) return "";
-  const cur = currentMaterial();
-  const list = (data.archive || []).filter(a => !a.deleted)
-    .sort((a, b) => a.finishedAt < b.finishedAt ? 1 : -1);
-  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
-
-  return `
-    <div class="freeze">
-      <div class="fz-head">📦 <b>Материалы</b> — пройденное уходит в архив, дни занятий остаются</div>
-      <div class="fz-empty">Сейчас: <b>${esc(cur.title)}</b> · ${Math.round(cur.pct)}%</div>
-      <button class="btn" id="archBtn" type="button">Отправить в архив и начать новое</button>
-      ${list.length ? `<div class="fz-list">${list.map(a => `
-        <div class="fz-item">
-          <span>${a.icon} ${esc(a.title)} · ${a.pct}% · ${fmt.format(fromStr(a.finishedAt)).replace(" г.", "")}</span>
-        </div>`).join("")}</div>` : ""}
-    </div>`;
-}
-
-function bindArchiveUI() {
-  const b = $("#archBtn");
-  if (b) b.addEventListener("click", () => { closeSheet(); archiveCurrent(); });
-}
-
 function diagLine() {
   const bar = document.querySelector(".tabbar");
   const r = bar ? bar.getBoundingClientRect() : null;
   const safe = getComputedStyle(document.documentElement).getPropertyValue("--safe-b").trim() || "0px";
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone ? "standalone" : "браузер";
-  const motion = typeof window.DeviceMotionEvent !== "function" ? "нет датчика"
-    : !shakeReady ? (cfg.shake ? "разрешено, ждём касания" : "не разрешено")
-    : `подписка есть · событий ${motionSeen} · максимум ${Math.round(motionPeak)} из 26`;
   return `${standalone} · окно ${Math.round(innerWidth)}×${Math.round(innerHeight)} · экран ${screen.width}×${screen.height}` +
-    `<br>таббар ${r ? Math.round(r.height) : "?"}px, снизу ${r ? Math.round(innerHeight - r.bottom) : "?"}px · safe-area ${safe}` +
-    `<br>движение: ${motion}`;
+    `<br>таббар ${r ? Math.round(r.height) : "?"}px, снизу ${r ? Math.round(innerHeight - r.bottom) : "?"}px · safe-area ${safe}`;
 }
 
 function saveEntry() {
@@ -1490,7 +1415,6 @@ function renderHome() {
             : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
       <div class="nudge">${nudge}</div>
-      <div class="shake-hint" id="shakeHint"></div>
     </div>`;
 
   $("#ctaBtn").addEventListener("click", () => {
@@ -1501,7 +1425,24 @@ function renderHome() {
 
   paintBackdrop(railItems()[activeRailIndex(railItems())]);
   setupRail();
-  renderShakeHint();
+  bindRingTaps();
+}
+
+/* Спрятанный жест вместо кнопки: три касания по кольцу прогресса —
+   и лента сама прокручивает, чем заняться. Ничего лишнего на экране. */
+let ringTaps = 0, ringTimer = null;
+
+function bindRingTaps() {
+  const ring = $(".ring-wrap");
+  if (!ring || railItems().length < 2) return;
+  ring.addEventListener("click", () => {
+    clearTimeout(ringTimer);
+    ringTaps++;
+    if (ringTaps < 3) { ringTimer = setTimeout(() => { ringTaps = 0; }, 800); return; }
+    ringTaps = 0;
+    if (navigator.vibrate) navigator.vibrate(20);
+    rollDice();
+  });
 }
 
 /* Карусель: центрируем активную обложку и слушаем свайп */
@@ -1641,7 +1582,8 @@ function setupRail() {
     centerOn: (baseIdx, smooth) => centerOn(baseIdx + RAIL_MID * n, smooth),
     spinTo,
     indexOfTrack: (track) => items.findIndex(it => it.track === track),
-    indexOf: (track, pieceId) => items.findIndex(it => it.track === track && (!pieceId || it.pieceId === pieceId))
+    indexOf: (track, id) => items.findIndex(it =>
+      it.track === track && (!id || it.pieceId === id || it.bookId === id))
   };
 
   centerOn(activeRailIndex(items) + RAIL_MID * n, false);
@@ -3422,31 +3364,30 @@ function bindPianoSheet() {
 /* ══════════ Кубик: чем заняться сегодня ══════════ */
 
 // все материалы одним списком, с текущим состоянием
+// кого предлагать кубику: ровно то, что лежит в ленте — ни курса, которого нет,
+// ни единственной книги вместо всех
 function candidates() {
-  const save = data.active, savePiece = data.piano.activePiece;
+  const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
   const list = [];
 
-  for (const p of data.piano.pieces.filter(x => !x.archived)) {
-    data.active = "piano"; data.piano.activePiece = p.id;
-    const s = pianoStats();
-    list.push({ track: "piano", pieceId: p.id, icon: "🎹", name: p.name,
-      pct: s.pct, streak: s.streakAll, doneToday: !!entryFor(todayStr()) });
+  for (const it of railItems()) {
+    data.active = it.track;
+    if (it.pieceId) data.piano.activePiece = it.pieceId;
+    if (it.bookId) data.book.activeBook = it.bookId;
+    const s = curStats();
+    list.push({
+      track: it.track, pieceId: it.pieceId || null, bookId: it.bookId || null,
+      icon: it.track === "piano" ? "🎹" : it.track === "book" ? "📖" : "🎨",
+      name: it.track === "piano" ? piece().name : it.track === "book" ? book().title : course().name,
+      pct: s.pct, streak: s.streakAll || s.streak || 0,
+      doneToday: !!entryFor(todayStr())
+    });
   }
-  data.active = "book";
-  const b = bookStats();
-  list.push({ track: "book", icon: "📖", name: book().title,
-    pct: b.pct, streak: b.streak, doneToday: !!entryFor(todayStr()) });
 
-  data.active = "pastel";
-  const c = pastelStats();
-  list.push({ track: "pastel", icon: "🎨", name: course().name,
-    pct: c.pct, streak: c.streak, doneToday: !!entryFor(todayStr()) });
-
-  data.active = save; data.piano.activePiece = savePiece;
+  data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
   return list;
 }
 
-// взвешенный бросок: чаще выпадает то, что проседает и не тронуто сегодня
 function rollCandidate(exceptName) {
   const all = candidates();
   let pool = all.filter(c => !c.doneToday);
@@ -3467,78 +3408,6 @@ function rollCandidate(exceptName) {
 
 /* ── Встряхивание телефона = бросок кубика ── */
 
-let shakeReady = false;
-let motionSeen = 0, motionPeak = 0;   // видно в диагностике: приходят ли события и какой силы
-let lastShake = 0;
-
-const shakeNeedsAsk = () =>
-  typeof window.DeviceMotionEvent === "function" &&
-  typeof window.DeviceMotionEvent.requestPermission === "function";
-
-function handleShake(e) {
-  const a = e.accelerationIncludingGravity;
-  if (!a) return;
-  const power = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
-  motionSeen++;
-  if (power > motionPeak) motionPeak = power;
-  const now = Date.now();
-  if (power > 26 && now - lastShake > 2000) {
-    lastShake = now;
-    if ($("#sheet")?.classList.contains("show")) return;
-    if ($("#cheer")?.classList.contains("show")) return;
-    if (navigator.vibrate) navigator.vibrate(25);
-    rollDice();
-  }
-}
-
-// подписка на движение; ask=true — можно показать системный запрос (только из обработчика тапа)
-async function enableShake(ask) {
-  if (shakeReady) return true;
-  if (typeof window.DeviceMotionEvent !== "function") return false;
-  try {
-    if (shakeNeedsAsk()) {
-      if (!ask) return false;
-      const res = await window.DeviceMotionEvent.requestPermission();
-      if (res !== "granted") { cfg.shake = false; saveCfg(); return false; }
-    }
-    window.addEventListener("devicemotion", handleShake);
-    shakeReady = true;
-    cfg.shake = true; saveCfg();
-    renderShakeHint();
-    return true;
-  } catch { return false; }
-}
-
-/* iOS разрешает подписку на движение только из касания, поэтому при запуске
-   восстановить её молча нельзя. Если человек однажды разрешил, повторный запрос
-   проходит без диалога — делаем его на первом же касании экрана. */
-function armShake() {
-  if (shakeReady || !cfg.shake) return;
-  const events = ["touchend", "touchstart", "pointerup", "click"];
-  const go = async () => {
-    events.forEach(ev => document.removeEventListener(ev, go));
-    const ok = await enableShake(true);
-    renderShakeHint();
-    if (ok && settingsOpen) render();
-    if (ok) toast("🎲 Встряхивание снова работает");
-    else armShake();                     // не вышло — попробуем на следующем касании
-  };
-  events.forEach(ev => document.addEventListener(ev, go, { passive: true }));
-}
-
-// тихая строчка под кнопкой: включить встряхивание (пока не разрешено)
-function renderShakeHint() {
-  const box = $("#shakeHint");
-  if (!box) return;
-  if (shakeReady || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
-  box.innerHTML = `<button id="shakeOn" type="button">🎲 ${cfg.shake ? "Подтвердить выбор встряхиванием" : "Включить выбор встряхиванием"}</button>`;
-  $("#shakeOn").addEventListener("click", async () => {
-    const ok = await enableShake(true);
-    toast(ok ? "Готово — потряси телефон" : "Доступ к движению не разрешён");
-    renderShakeHint();
-  });
-}
-
 // кубик: просто прокручивает ленту и останавливается на выбранном материале
 function rollDice() {
   const { pick } = rollCandidate();
@@ -3547,7 +3416,7 @@ function rollDice() {
   if (tab !== "home") { tab = "home"; cfg.tab = tab; saveCfg(); render(); }
   if (!railApi) return;
 
-  const i = railApi.indexOf(pick.track, pick.pieceId || null);
+  const i = railApi.indexOf(pick.track, pick.pieceId || pick.bookId || null);
   if (i < 0) return;
   railApi.spinTo(i, () => toast(`Сегодня — ${pick.name}`));
 }
@@ -4186,7 +4055,6 @@ function renderSettingsSection(id) {
         <button class="btn" id="sAbout" type="button">Что такое кэйко</button>
         <button class="btn" id="sUpdate" type="button">Обновить приложение</button>
       </div>
-      ${shakeUI()}
       <div class="diag">${diagLine()}</div>`;
   }
 
@@ -4220,7 +4088,6 @@ function renderSettingsSection(id) {
   bindBackupUI();
   bindArchiveBackupUI();
   bindCatalogUI();
-  bindShakeUI();
   bindArchiveUI();
 }
 
@@ -4448,7 +4315,6 @@ function boot() {
   $("#gearBtn").addEventListener("click", openSettingsSheet);
   document.querySelector(".logo").addEventListener("click", openAboutSheet);
   // если доступ к движению уже разрешён — просто подписываемся
-  if (cfg.shake || !shakeNeedsAsk()) enableShake(false).then(ok => { if (!ok) armShake(); });
 
   $("#sheetBg").addEventListener("click", closeSheet);
   $("#cheerOk").addEventListener("click", () => {
