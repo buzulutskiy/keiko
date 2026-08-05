@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 12";
+const APP_VERSION = "Кэйко 13";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -111,7 +111,8 @@ function emptyData() {
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
-    archive: []    // пройденные материалы
+    archive: [],   // пройденные материалы
+    daily: { date: "", seen: [], off: false }   // мысль дня: когда показывали и что уже видели
   };
 }
 
@@ -154,6 +155,7 @@ function migrate(obj) {
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts;
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
+  if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
   const firstBook = base.book.books[0] ? base.book.books[0].id : "";
@@ -2743,13 +2745,28 @@ function renderNotes() {
    Раз в день показываем одну из записанных мыслей и не повторяемся,
    пока не покажем все. Состояние своё у каждого профиля. */
 
-const LS_DAILY = () => "keiko-daily" + suffix();
+const LS_DAILY = () => "keiko-daily" + suffix();   // старое место хранения, читаем один раз при переезде
 
+/* Отметка «сегодня уже показывали» лежит в данных профиля: она переживает
+   обновление приложения и очистку кэшей, а заодно уезжает в гист —
+   на втором устройстве мысль дня в тот же день не повторится. */
 function dailyState() {
-  try { return JSON.parse(localStorage.getItem(LS_DAILY()) || "{}") || {}; } catch { return {}; }
+  if (!data) return {};
+  if (!data.daily) {
+    let old = {};
+    try { old = JSON.parse(localStorage.getItem(LS_DAILY()) || "{}") || {}; } catch {}
+    data.daily = { date: old.date || "", seen: Array.isArray(old.seen) ? old.seen : [], off: !!old.off };
+    saveData();
+  }
+  return data.daily;
 }
+
 function saveDaily(st) {
-  try { localStorage.setItem(LS_DAILY(), JSON.stringify(st)); } catch {}
+  if (!data) return;
+  data.daily = st;
+  saveData();
+  schedulePush();                                  // пусть отметка уедет в гист вместе с данными
+  try { localStorage.removeItem(LS_DAILY()); } catch {}
 }
 
 function maybeDailyThought() {
@@ -4192,7 +4209,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive, daily: data.daily });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -4252,6 +4269,9 @@ async function syncNow(manual) {
       }
     }
     data.archive = mergeLists(data.archive, remote.archive);
+    if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
+      data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
+    }
     normalizeActive();
     saveData();
     // сравниваем профиль целиком: раньше смотрели только занятия, и новые мысли,
