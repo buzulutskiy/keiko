@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 15";
+const APP_VERSION = "Кэйко 16";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2573,18 +2573,37 @@ function shuffleRandomThought() {
    каждая строка — отдельный перевод, между ними попадаются номера страниц.
    Приводим это к нормальному абзацу. */
 
-// вторые половинки составных слов: «из-за» переносом не считаем
-const KEEP_HYPHEN = /^(то|либо|нибудь|ка|таки|же|за|под|над|при|из|по|прежнему|моему|твоему|нашему|своему|русски|английски)$/i;   // \b не работает с кириллицей: она не входит в «словесные» символы
+/* Скопированный из книги текст часто приходит уже без переводов строк, а дефис
+   переноса остаётся прямо внутри слова: «чело-веческое», «на самом де-ле».
+   Поэтому склеиваем по умолчанию, а настоящие дефисы бережём по спискам. */
+const KEEP_TAIL = /^(то|либо|нибудь|ка|таки|же|с)$/i;
+const KEEP_HEAD = new RegExp("^(из|по|во|кое|как|где|кто|что|чей|какой|когда|куда|откуда|зачем|почему|сколько|все|всё|пол|полу|экс|вице|мини|макси|супер|топ|интернет|бизнес|пресс|онлайн|офлайн|веб|фото|видео|аудио|кино|теле|радио|авиа|эко|арт|соц|гос|санкт|нью)$", "i");
+
+function joinHyphen(head, tail) {
+  if (/^\p{Lu}/u.test(tail)) return head + "-" + tail;    // Санкт-Петербург, Иваново-Вознесенск
+  if (KEEP_TAIL.test(tail) || KEEP_HEAD.test(head)) return head + "-" + tail;
+  return head + tail;
+}
+
+// склейка через перевод строки или пробел — безопасна даже для набранного руками текста
+function fixHyphenBreaks(raw) {
+  const join = (m, head, tail) => joinHyphen(head, tail);
+  return String(raw || "")
+    .replace(/\u00AD/g, "")
+    .replace(/(\p{L}+)-[ \t]*[\r\n\u2028]+[ \t]*(\p{L}[\p{L}]*)/gu, join)
+    .replace(/(\p{L}+)-[ \t]+(\p{L}[\p{L}]*)/gu, join);
+}
+
+// а это уже для вставленного из книги: дефис остался внутри слова
+function fixInlineHyphens(raw) {
+  return String(raw || "").replace(/(\p{Ll}{2,})-(\p{Ll}{2,})/gu, (m, head, tail) => joinHyphen(head, tail));
+}
 
 function cleanPastedText(raw) {
-  let t = String(raw || "").replace(/\r\n?/g, "\n").replace(/\u00AD/g, "");
+  let t = fixInlineHyphens(fixHyphenBreaks(raw)).replace(/\r\n?/g, "\n").replace(/\u2028|\u2029/g, "\n");
 
   // колонтитулы и номера страниц отдельной строкой
   t = t.split("\n").filter(line => !/^\s*\d{1,4}\s*$/.test(line)).join("\n");
-
-  // «ког-\nда» → «когда», но «из-\nза» остаётся «из-за»
-  t = t.replace(/(\p{L})-\n[ \t]*(\p{L}[\p{L}-]*)/gu,
-    (m, head, tail) => KEEP_HYPHEN.test(tail) ? head + "-" + tail : head + tail);
 
   // строки одного абзаца склеиваем пробелом; пустая строка — граница абзаца,
   // строка с тире — реплика, её перенос сохраняем
@@ -2600,10 +2619,9 @@ function cleanPastedText(raw) {
 
 function bindPasteCleanup(area) {
   if (!area) return;
-  area.addEventListener("paste", (e) => {
-    const raw = (e.clipboardData || window.clipboardData || {}).getData
-      ? (e.clipboardData || window.clipboardData).getData("text") : "";
-    if (!raw || !raw.includes("\n")) return;          // однострочное вставляем как есть
+
+  const insert = (e, raw) => {
+    if (!raw) return;
     const clean = cleanPastedText(raw);
     if (clean === raw) return;
     e.preventDefault();
@@ -2614,6 +2632,17 @@ function bindPasteCleanup(area) {
       area.setSelectionRange(at + clean.length, at + clean.length);
     }
     toast("Переносы поправлены");
+  };
+
+  area.addEventListener("paste", (e) => {
+    const dt = e.clipboardData || window.clipboardData;
+    insert(e, dt && dt.getData ? dt.getData("text") : "");
+  });
+
+  // не всякая вставка на iOS шлёт paste — beforeinput ловит и остальные способы
+  area.addEventListener("beforeinput", (e) => {
+    if (e.inputType !== "insertFromPaste" || !e.dataTransfer) return;
+    insert(e, e.dataTransfer.getData("text"));
   });
 }
 
@@ -2727,7 +2756,9 @@ function renderNotes() {
   });
 
   $("#thSave").addEventListener("click", () => {
-    const text = ($("#thText").value || "").trim();
+    // текст мог попасть в поле как угодно — склеиваем разорванные слова уже при записи,
+    // но переводы строк не трогаем: они могут быть поставлены нарочно
+    const text = fixHyphenBreaks($("#thText").value || "").trim();
     if (!text) { toast("Напиши пару слов"); return; }
     data.thoughts.push({
       id: uid(), key, track: cur.track,
@@ -2770,7 +2801,7 @@ function renderNotes() {
   document.querySelectorAll("[data-save]").forEach(b =>
     b.addEventListener("click", () => {
       const t = (data.thoughts || []).find(x => x.id === b.dataset.save);
-      const text = ($("#thEdit").value || "").trim();
+      const text = fixHyphenBreaks($("#thEdit").value || "").trim();
       if (!t) return;
       if (!text) { toast("Мысль не может быть пустой"); return; }
       t.text = text.slice(0, 2000);
