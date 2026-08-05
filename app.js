@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 5";
+const APP_VERSION = "Кэйко 6";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1186,17 +1186,52 @@ function activeRailIndex(items) {
 
 /* Картинка обложки: из каталога, если она там есть, иначе файл рядом с приложением.
    Каталожную держим в localStorage — иначе при каждом запуске её пришлось бы качать. */
-const coverCache = new Map();
+/* Обложки лежат в Cache Storage, а не в localStorage: там место меряется
+   сотнями мегабайт, и картинка хранится файлом, а не строкой в памяти. */
+const coverCache = new Map();          // id → blob-ссылка, готовая для <img>
+const COVER_CACHE = "keiko-covers-v1";
+const coverKey = (id) => "keiko-cover/" + encodeURIComponent(id);
+
+async function coversBox() { return await caches.open(COVER_CACHE); }
+
+async function coverSave(id, dataUri) {
+  const blob = await (await fetch(dataUri)).blob();
+  const box = await coversBox();
+  await box.put(coverKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
+  coverCache.set(id, URL.createObjectURL(blob));
+}
+
+async function coverLoadAll() {
+  if (!window.caches) return;
+  try {
+    const box = await coversBox();
+    const keys = await box.keys();
+    let n = 0;
+    for (const req of keys) {
+      const id = decodeURIComponent(req.url.split("/").pop());
+      if (coverCache.get(id)) continue;
+      const res = await box.match(req);
+      if (!res) continue;
+      coverCache.set(id, URL.createObjectURL(await res.blob()));
+      n++;
+    }
+    // разовый переезд со старого места хранения
+    Object.keys(CATALOG).forEach(id => {
+      let old = null;
+      try { old = localStorage.getItem(LS_COVER(id)); } catch {}
+      if (old) { coverSave(id, old).then(render).catch(() => {}); try { localStorage.removeItem(LS_COVER(id)); } catch {} }
+    });
+    if (n) render();
+  } catch {}
+}
+
 function coverSrc(id, fallback) {
   if (!id) return fallback || "";
   const c = catOf(id);
   if (!c || !c.cover) return fallback || "";
-  if (coverCache.has(id)) return coverCache.get(id) || fallback || "";
-  let saved = null;
-  try { saved = localStorage.getItem(LS_COVER(id)); } catch {}
-  if (saved) { coverCache.set(id, saved); return saved; }
-  coverCache.set(id, "");
-  pullCover(id);                       // подтянем и перерисуем, пока показываем запасной файл
+  const have = coverCache.get(id);
+  if (have) return have;
+  if (!coverCache.has(id)) { coverCache.set(id, ""); pullCover(id); }   // пока качаем — запасной файл
   return fallback || "";
 }
 
@@ -3764,8 +3799,7 @@ async function pullCover(id) {
     if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 25000)).text();
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
-    try { localStorage.setItem(LS_COVER(id), txt); } catch {}
-    coverCache.set(id, txt);
+    await coverSave(id, txt);
     render();
   } catch {} finally { coverPulling.delete(id); }
 }
@@ -3789,6 +3823,9 @@ async function catalogUpload(file) {
   if (!up.ok) throw new Error("каталог не записался (" + up.status + ")");
 
   applyCatalog(cat);
+  for (const [mid, uri] of Object.entries(covers)) {
+    if (typeof uri === "string" && uri.startsWith("data:")) await coverSave(mid, uri).catch(() => {});
+  }
   return Object.keys(cat.materials).length;
 }
 
@@ -3830,6 +3867,7 @@ function bindCatalogUI() {
   if (drop) drop.addEventListener("click", () => {
     if (!confirm("Забыть загруженный каталог?\n\nПриложение вернётся к зашитым текстам и обложкам. Гист останется на месте.")) return;
     Object.keys(CATALOG).forEach(id => { try { localStorage.removeItem(LS_COVER(id)); } catch {} });
+    if (window.caches) caches.delete(COVER_CACHE).catch(() => {});
     CATALOG = {}; achCache.clear(); coverCache.clear();
     try { localStorage.removeItem(LS_CAT); } catch {}
     cfg.catalogAt = 0; saveCfg(); render();
@@ -4404,6 +4442,7 @@ function boot() {
   });
 
   render();
+  coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
   setTimeout(maybeDailyThought, 900);
   checkForUpdate();
   if (cfg.token && cfg.gistId && navigator.onLine) { setSyncDot("ok"); syncNow(false); }
