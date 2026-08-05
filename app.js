@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 2";
+const APP_VERSION = "Кэйко 3";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3683,12 +3683,17 @@ function restoreBackup(file) {
    Отдельный гист, чтобы не тащить его при каждой синхронизации данных.
    Тексты — одним файлом, обложки — по файлу на материал, чтобы ни один не разросся. */
 
-const CAT_FILE = "catalog.json";
+const CAT_FILE = "keiko-catalog.json";   // имя своё: catalog.json бывает у других приложений
 const CAT_COVER_FILE = (id) => `cover-${id}.txt`;
 const CAT_EVERY = 24 * 3600e3;
 
 async function ensureCatalogGist(create) {
-  if (cfg.catalogId) return cfg.catalogId;
+  if (cfg.catalogId) {
+    // проверяем, что это по-прежнему наш гист, а не чужой с похожим файлом
+    const cur = await gh("/gists/" + cfg.catalogId);
+    if (cur.ok && ((await cur.json()).files || {})[CAT_FILE]) return cfg.catalogId;
+    cfg.catalogId = ""; saveCfg();
+  }
   const r = await gh("/gists?per_page=100");
   if (!r.ok) throw new Error("список гистов недоступен");
   const found = (await r.json()).find(g => g.files && g.files[CAT_FILE]);
