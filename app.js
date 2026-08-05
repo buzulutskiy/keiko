@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 4";
+const APP_VERSION = "Кэйко 5";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3500,10 +3500,15 @@ async function checkForUpdate() {
     const r = await withTimeout(fetch("version.json?ts=" + Date.now(), { cache: "no-store" }), 5000);
     if (!r.ok) return;
     const j = await r.json();
-    if (j.version && j.version !== APP_VERSION) {
+    // если ради этой версии уже обновлялись, а номер не сошёлся — значит дело не в кэше,
+    // и мозолить баннером бессмысленно
+    if (j.version && j.version !== APP_VERSION && j.version !== cfg.triedVersion) {
       newVersion = j.version;
       renderBanner();
       maybeAutoUpdate();
+    } else if (newVersion) {
+      newVersion = null;            // обновились или пробовали — баннер убираем
+      renderBanner();
     }
   } catch {}
 }
@@ -3513,6 +3518,7 @@ async function forceUpdate() {
   const btn = $("#sUpdate");
   if (btn) { btn.textContent = "Обновляю…"; btn.disabled = true; }
   toast("Обновляю приложение…");
+  if (newVersion) { cfg.triedVersion = newVersion; saveCfg(); }   // отметка на случай, если не поможет
 
   const cleanup = (async () => {
     try {
