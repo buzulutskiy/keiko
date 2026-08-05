@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 7";
+const APP_VERSION = "Кэйко 8";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -706,7 +706,9 @@ function shakeUI() {
         ? `<div class="fz-empty">Это устройство не сообщает о движении</div>`
         : shakeReady
           ? `<div class="fz-empty">Включено — можно трясти</div>`
-          : `<button class="btn" id="shakeAsk" type="button">Разрешить доступ к движению</button>`}
+          : cfg.shake
+            ? `<div class="fz-empty">Включено — доступ подтвердится при первом касании экрана</div>`
+            : `<button class="btn" id="shakeAsk" type="button">Разрешить доступ к движению</button>`}
     </div>`;
 }
 
@@ -3502,11 +3504,26 @@ async function enableShake(ask) {
   } catch { return false; }
 }
 
+/* iOS разрешает подписку на движение только из касания, поэтому при запуске
+   восстановить её молча нельзя. Если человек однажды разрешил, повторный запрос
+   проходит без диалога — делаем его на первом же касании экрана. */
+function armShake() {
+  if (shakeReady || !cfg.shake) return;
+  const go = async () => {
+    document.removeEventListener("touchstart", go);
+    document.removeEventListener("click", go);
+    await enableShake(true);
+    renderShakeHint();
+  };
+  document.addEventListener("touchstart", go, { passive: true });
+  document.addEventListener("click", go);
+}
+
 // тихая строчка под кнопкой: включить встряхивание (пока не разрешено)
 function renderShakeHint() {
   const box = $("#shakeHint");
   if (!box) return;
-  if (shakeReady || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
+  if (shakeReady || cfg.shake || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
   box.innerHTML = `<button id="shakeOn" type="button">🎲 Включить выбор встряхиванием</button>`;
   $("#shakeOn").addEventListener("click", async () => {
     const ok = await enableShake(true);
@@ -4424,7 +4441,7 @@ function boot() {
   $("#gearBtn").addEventListener("click", openSettingsSheet);
   document.querySelector(".logo").addEventListener("click", openAboutSheet);
   // если доступ к движению уже разрешён — просто подписываемся
-  if (cfg.shake || !shakeNeedsAsk()) enableShake(false);
+  if (cfg.shake || !shakeNeedsAsk()) enableShake(false).then(ok => { if (!ok) armShake(); });
 
   $("#sheetBg").addEventListener("click", closeSheet);
   $("#cheerOk").addEventListener("click", () => {
