@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 1";
+const APP_VERSION = "Кэйко 2";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3758,88 +3758,26 @@ async function pullCover(id) {
   } catch {} finally { coverPulling.delete(id); }
 }
 
-/* Разовый перенос: собираем то, что зашито в коде, и кладём в гист.
-   Условия наград превращаем в данные — разбираем исходник простых проверок. */
-function whenOf(fn) {
-  const body = String(fn).replace(/^[^=]*=>/, "");
-  const out = [];
-  for (const part of body.split("&&")) {
-    let m = part.match(/s\.(\w+)\s*(>=|<=|===|==|>|<)\s*([\d.]+)/);
-    if (m) { out.push([m[1], m[2] === "===" || m[2] === "==" ? "==" : m[2], Number(m[3])]); continue; }
-    m = part.match(/s\.(\w+)\.has\(\s*([\d.]+)\s*\)/);
-    if (m) { out.push([m[1], "has", Number(m[2])]); continue; }
-    m = part.match(/^\s*!?\s*s\.(\w+)\s*$/);
-    if (m) { out.push([m[1], "is", !/!\s*s\./.test(part)]); continue; }
-    return null;                        // условие сложнее — материал не переносим молча
-  }
-  return out.length ? out : null;
-}
+/* Наполнение каталога: файл, собранный из первой версии приложения.
+   Внутри { catalog: {...}, covers: { <id>: "data:image/jpeg;base64,…" } }. */
+async function catalogUpload(file) {
+  const txt = await file.text();
+  let pack;
+  try { pack = JSON.parse(txt); } catch { throw new Error("файл не читается"); }
+  const cat = pack.catalog || pack;
+  const covers = pack.covers || {};
+  if (!cat.materials) throw new Error("в файле нет материалов");
 
-function packMaterial(id) {
-  const ach = (BOOK_ACH[id] || (id === "pastel" ? ACH_PASTEL : null) ||
-    (data.piano.pieces.some(p => p.id === id) ? ACH_PIANO : ACH_BOOK));
-  const words = BOOK_WORDS[id] || (id === "pastel" ? WORDS_PASTEL : null) ||
-    (data.piano.pieces.some(p => p.id === id) ? WORDS_PIANO : WORDS_BOOK);
-
-  const list = [];
-  for (const a of ach) {
-    const when = whenOf(a.test);
-    if (!when) return { error: `не разобрал условие награды «${a.name}»` };
-    list.push({ id: a.id, icon: a.icon, name: a.name, hint: a.hint, secret: !!a.secret, when });
-  }
-  return { ach: list, words, facts: FACTS[id] || [] };
-}
-
-async function fileToDataUri(url) {
-  const r = await withTimeout(fetch(url), 20000);
-  if (!r.ok) throw new Error("обложка не читается: " + url);
-  const blob = await r.blob();
-  return await new Promise((ok, bad) => {
-    const fr = new FileReader();
-    fr.onload = () => ok(String(fr.result));
-    fr.onerror = () => bad(new Error("обложка не прочиталась"));
-    fr.readAsDataURL(blob);
-  });
-}
-
-async function catalogPush(ids) {
   const id = await ensureCatalogGist(true);
-
-  // забираем то, что уже лежит в каталоге, чтобы не потерять другие материалы
-  let pack = { v: 1, materials: {} };
-  const cur = await gh("/gists/" + id);
-  if (cur.ok) {
-    const f = (await cur.json()).files[CAT_FILE];
-    if (f) {
-      let txt = f.content;
-      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
-      try { pack = JSON.parse(txt); pack.materials = pack.materials || {}; } catch {}
-    }
+  const files = { [CAT_FILE]: { content: JSON.stringify({ ...cat, savedAt: now() }) } };
+  for (const [mid, uri] of Object.entries(covers)) {
+    if (typeof uri === "string" && uri.startsWith("data:")) files[CAT_COVER_FILE(mid)] = { content: uri };
   }
-
-  const files = {};
-  for (const mid of ids) {
-    const m = packMaterial(mid);
-    if (m.error) throw new Error(m.error);
-
-    // исходную картинку кладём отдельным файлом рядом
-    const src = (data.book.books.find(b => b.id === mid) || data.piano.pieces.find(p => p.id === mid) || {}).cover;
-    if (src && !src.startsWith("data:")) {
-      const uri = await fileToDataUri(src);
-      files[CAT_COVER_FILE(mid)] = { content: uri };
-      m.cover = true;
-    }
-    pack.materials[mid] = m;
-  }
-
-  pack.savedAt = now();
-  pack.profiles = PROFILES;            // имена профилей тоже часть каталога, а не кода
-  files[CAT_FILE] = { content: JSON.stringify(pack) };
   const up = await gh("/gists/" + id, { method: "PATCH", body: JSON.stringify({ files }) });
-  if (!up.ok) throw new Error("каталог не записался");
+  if (!up.ok) throw new Error("каталог не записался (" + up.status + ")");
 
-  applyCatalog(pack);
-  return Object.keys(pack.materials).length;
+  applyCatalog(cat);
+  return Object.keys(cat.materials).length;
 }
 
 function catalogUI() {
@@ -3858,11 +3796,10 @@ function catalogUI() {
         <button class="btn" id="catPull" type="button">Обновить из гиста</button>
         <button class="btn" id="catDrop" type="button">Забыть каталог</button>
       </div>
-      <div class="fz-head" style="margin-top:10px">Выгрузить материал в гист</div>
-      <div class="pick-row">
-        ${mats.map(m => `<button class="pick" data-catpush="${esc(keyOf(m))}" type="button">
-          <span class="pk-name">${m.icon} ${esc(m.title)}${CATALOG[keyOf(m)] ? " ✓" : ""}</span></button>`).join("")}
-      </div>
+      <div class="fz-head" style="margin-top:10px">Первое наполнение — файлом с компьютера</div>
+      <button class="btn" id="catUp" type="button">Залить каталог из файла</button>
+      <input type="file" id="catFile" accept="application/json,.json" style="display:none">
+      <div class="fz-empty">Файл кладётся в отдельный гист: тексты одним файлом, обложки — по одной на материал.</div>
     </div>`;
 }
 
@@ -3887,17 +3824,19 @@ function bindCatalogUI() {
     toast("Каталог забыт");
   });
 
-  document.querySelectorAll("[data-catpush]").forEach(b =>
-    b.addEventListener("click", async () => {
-      const id = b.dataset.catpush;
-      b.disabled = true;
-      toast("Выгружаю…");
+  const up = $("#catUp"), file = $("#catFile");
+  if (up && file) {
+    up.addEventListener("click", () => file.click());
+    file.addEventListener("change", async () => {
+      if (!file.files[0]) return;
+      toast("Заливаю…");
       try {
-        const n = await catalogPush([id]);
+        const n = await catalogUpload(file.files[0]);
         toast(`В каталоге материалов: ${n}`);
         render();
-      } catch (e) { toast(e.message || "Не получилось"); b.disabled = false; }
-    }));
+      } catch (e) { toast(e.message || "Не получилось"); }
+    });
+  }
 }
 
 /* ══════════ Автокопия ══════════
