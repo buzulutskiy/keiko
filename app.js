@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 13";
+const APP_VERSION = "Кэйко 14";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
