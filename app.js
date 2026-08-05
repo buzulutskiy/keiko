@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 6";
+const APP_VERSION = "Кэйко 7";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4310,8 +4310,10 @@ async function syncNow(manual) {
     data.archive = mergeLists(data.archive, remote.archive);
     normalizeActive();
     saveData();
-    const changed = JSON.stringify([data.piano, data.book, data.pastel])
-      !== JSON.stringify([remote.piano, remote.book, remote.pastel]);
+    // сравниваем профиль целиком: раньше смотрели только занятия, и новые мысли,
+    // книги на полке, паузы или цель могли навсегда остаться на одном устройстве
+    const norm = (o) => JSON.stringify(migrate(o));
+    const changed = norm(box.profiles[profileId]) !== norm(exportData());
     if (changed) {
       box.profiles[profileId] = exportData();     // чужой профиль в файле остаётся нетронутым
       box.v = 8; box.savedAt = now();
