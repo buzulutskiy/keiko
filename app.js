@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 11";
+const APP_VERSION = "Кэйко 12";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1476,11 +1476,10 @@ function renderHome() {
   bindRingTaps();
 }
 
-/* Спрятанный жест вместо кнопки: постучать по проценту в центре кольца —
-   и лента сама прокрутит, чем заняться. Ничего лишнего на экране.
-   Считаем касания, а не клики: защита от зума гасит быстрые повторные тапы,
-   и до обработчика click они просто не доходят. */
-let ringTaps = 0, ringTimer = null, ringFired = 0;
+/* Спрятанный жест вместо кнопки: касание процента в центре кольца — и лента
+   сама прокрутит, чем заняться. Ничего лишнего на экране.
+   Ловим касание, а не клик: защита от зума гасит быстрые повторные тапы. */
+let ringFired = 0;
 
 function bindRingTaps() {
   const ring = $(".ring-wrap");
@@ -1488,12 +1487,8 @@ function bindRingTaps() {
 
   const tap = () => {
     const t = Date.now();
-    if (t - ringFired < 3000) return;         // серия уже сработала, лишние касания не считаем
-    clearTimeout(ringTimer);
-    ringTaps++;
-    ringTimer = setTimeout(() => { ringTaps = 0; }, 800);
-    if (ringTaps < 2) return;                 // двух постукиваний хватает
-    ringTaps = 0; ringFired = t;
+    if (t - ringFired < 4000) return;         // пока лента едет, повторное касание не считаем
+    ringFired = t;
     if (navigator.vibrate) navigator.vibrate(20);
     rollDice();
   };
