@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 8";
+const APP_VERSION = "Кэйко 9";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -706,9 +706,7 @@ function shakeUI() {
         ? `<div class="fz-empty">Это устройство не сообщает о движении</div>`
         : shakeReady
           ? `<div class="fz-empty">Включено — можно трясти</div>`
-          : cfg.shake
-            ? `<div class="fz-empty">Включено — доступ подтвердится при первом касании экрана</div>`
-            : `<button class="btn" id="shakeAsk" type="button">Разрешить доступ к движению</button>`}
+          : `<button class="btn" id="shakeAsk" type="button">${cfg.shake ? "Подтвердить доступ к движению" : "Разрешить доступ к движению"}</button>`}
     </div>`;
 }
 
@@ -775,8 +773,12 @@ function diagLine() {
   const r = bar ? bar.getBoundingClientRect() : null;
   const safe = getComputedStyle(document.documentElement).getPropertyValue("--safe-b").trim() || "0px";
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone ? "standalone" : "браузер";
+  const motion = typeof window.DeviceMotionEvent !== "function" ? "нет датчика"
+    : !shakeReady ? (cfg.shake ? "разрешено, ждём касания" : "не разрешено")
+    : `подписка есть · событий ${motionSeen} · максимум ${Math.round(motionPeak)} из 26`;
   return `${standalone} · окно ${Math.round(innerWidth)}×${Math.round(innerHeight)} · экран ${screen.width}×${screen.height}` +
-    `<br>таббар ${r ? Math.round(r.height) : "?"}px, снизу ${r ? Math.round(innerHeight - r.bottom) : "?"}px · safe-area ${safe}`;
+    `<br>таббар ${r ? Math.round(r.height) : "?"}px, снизу ${r ? Math.round(innerHeight - r.bottom) : "?"}px · safe-area ${safe}` +
+    `<br>движение: ${motion}`;
 }
 
 function saveEntry() {
@@ -3466,6 +3468,7 @@ function rollCandidate(exceptName) {
 /* ── Встряхивание телефона = бросок кубика ── */
 
 let shakeReady = false;
+let motionSeen = 0, motionPeak = 0;   // видно в диагностике: приходят ли события и какой силы
 let lastShake = 0;
 
 const shakeNeedsAsk = () =>
@@ -3476,8 +3479,10 @@ function handleShake(e) {
   const a = e.accelerationIncludingGravity;
   if (!a) return;
   const power = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
+  motionSeen++;
+  if (power > motionPeak) motionPeak = power;
   const now = Date.now();
-  if (power > 32 && now - lastShake > 2500) {
+  if (power > 26 && now - lastShake > 2000) {
     lastShake = now;
     if ($("#sheet")?.classList.contains("show")) return;
     if ($("#cheer")?.classList.contains("show")) return;
@@ -3509,22 +3514,24 @@ async function enableShake(ask) {
    проходит без диалога — делаем его на первом же касании экрана. */
 function armShake() {
   if (shakeReady || !cfg.shake) return;
+  const events = ["touchend", "touchstart", "pointerup", "click"];
   const go = async () => {
-    document.removeEventListener("touchstart", go);
-    document.removeEventListener("click", go);
-    await enableShake(true);
+    events.forEach(ev => document.removeEventListener(ev, go));
+    const ok = await enableShake(true);
     renderShakeHint();
+    if (ok && settingsOpen) render();
+    if (ok) toast("🎲 Встряхивание снова работает");
+    else armShake();                     // не вышло — попробуем на следующем касании
   };
-  document.addEventListener("touchstart", go, { passive: true });
-  document.addEventListener("click", go);
+  events.forEach(ev => document.addEventListener(ev, go, { passive: true }));
 }
 
 // тихая строчка под кнопкой: включить встряхивание (пока не разрешено)
 function renderShakeHint() {
   const box = $("#shakeHint");
   if (!box) return;
-  if (shakeReady || cfg.shake || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
-  box.innerHTML = `<button id="shakeOn" type="button">🎲 Включить выбор встряхиванием</button>`;
+  if (shakeReady || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
+  box.innerHTML = `<button id="shakeOn" type="button">🎲 ${cfg.shake ? "Подтвердить выбор встряхиванием" : "Включить выбор встряхиванием"}</button>`;
   $("#shakeOn").addEventListener("click", async () => {
     const ok = await enableShake(true);
     toast(ok ? "Готово — потряси телефон" : "Доступ к движению не разрешён");
