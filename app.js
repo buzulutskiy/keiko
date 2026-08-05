@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 10";
+const APP_VERSION = "Кэйко 11";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -695,6 +695,54 @@ function bindFreezeUI() {
       openSettingsSheet();
       render();
     }));
+}
+
+function goalUI() {
+  const g = goalProgress();
+  return `
+    <div class="freeze">
+      <div class="fz-head">🎯 <b>Цель на неделю</b> — сколько дней заниматься чем угодно из трёх</div>
+      <div class="goal-pick">
+        ${[2, 3, 4, 5, 6, 7].map(n =>
+          `<button class="gbtn ${g.goal === n ? "on" : ""}" data-goal="${n}" type="button">${n}</button>`).join("")}
+      </div>
+      <div class="fz-empty">Сейчас: <b>${g.days} из ${g.goal}</b> на этой неделе</div>
+    </div>`;
+}
+
+function bindGoalUI() {
+  document.querySelectorAll("[data-goal]").forEach(b =>
+    b.addEventListener("click", () => {
+      data.weekGoal = Number(b.dataset.goal);
+      saveData(); schedulePush();
+      openSettingsSheet();
+      render();
+      toast(`Цель: ${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")} в неделю`);
+    }));
+}
+
+function archiveUI() {
+  if (!hasMaterials()) return "";
+  const cur = currentMaterial();
+  const list = (data.archive || []).filter(a => !a.deleted)
+    .sort((a, b) => a.finishedAt < b.finishedAt ? 1 : -1);
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">📦 <b>Материалы</b> — пройденное уходит в архив, дни занятий остаются</div>
+      <div class="fz-empty">Сейчас: <b>${esc(cur.title)}</b> · ${Math.round(cur.pct)}%</div>
+      <button class="btn" id="archBtn" type="button">Отправить в архив и начать новое</button>
+      ${list.length ? `<div class="fz-list">${list.map(a => `
+        <div class="fz-item">
+          <span>${a.icon} ${esc(a.title)} · ${a.pct}% · ${fmt.format(fromStr(a.finishedAt)).replace(" г.", "")}</span>
+        </div>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+function bindArchiveUI() {
+  const b = $("#archBtn");
+  if (b) b.addEventListener("click", () => { closeSheet(); archiveCurrent(); });
 }
 
 function diagLine() {
@@ -1428,21 +1476,31 @@ function renderHome() {
   bindRingTaps();
 }
 
-/* Спрятанный жест вместо кнопки: три касания по кольцу прогресса —
-   и лента сама прокручивает, чем заняться. Ничего лишнего на экране. */
-let ringTaps = 0, ringTimer = null;
+/* Спрятанный жест вместо кнопки: постучать по проценту в центре кольца —
+   и лента сама прокрутит, чем заняться. Ничего лишнего на экране.
+   Считаем касания, а не клики: защита от зума гасит быстрые повторные тапы,
+   и до обработчика click они просто не доходят. */
+let ringTaps = 0, ringTimer = null, ringFired = 0;
 
 function bindRingTaps() {
   const ring = $(".ring-wrap");
   if (!ring || railItems().length < 2) return;
-  ring.addEventListener("click", () => {
+
+  const tap = () => {
+    const t = Date.now();
+    if (t - ringFired < 3000) return;         // серия уже сработала, лишние касания не считаем
     clearTimeout(ringTimer);
     ringTaps++;
-    if (ringTaps < 3) { ringTimer = setTimeout(() => { ringTaps = 0; }, 800); return; }
-    ringTaps = 0;
+    ringTimer = setTimeout(() => { ringTaps = 0; }, 800);
+    if (ringTaps < 2) return;                 // двух постукиваний хватает
+    ringTaps = 0; ringFired = t;
     if (navigator.vibrate) navigator.vibrate(20);
     rollDice();
-  });
+  };
+
+  // pointerdown ловит и палец, и мышь; touchstart — страховка для старых Safari
+  if (window.PointerEvent) ring.addEventListener("pointerdown", tap);
+  else { ring.addEventListener("touchstart", tap, { passive: true }); ring.addEventListener("click", tap); }
 }
 
 /* Карусель: центрируем активную обложку и слушаем свайп */

@@ -618,7 +618,11 @@
     }
 
     /* по кольцу можно постучать — жест спрятан, поэтому вида кнопки у него нет */
-    .ring-wrap { display: grid; place-items: center; position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .ring-wrap {
+      display: grid; place-items: center; position: relative;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+      padding: 6px;                                  /* попасть пальцем проще, вида кнопки по-прежнему нет */
+    }
     .ring-wrap:active { transform: scale(0.98); transition: transform 0.12s; }
     .ring { transform: rotate(-90deg); width: clamp(88px, 13vh, 116px); height: auto; }
     .ring circle { fill: none; stroke-width: 7; stroke-linecap: round; }
