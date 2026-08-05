@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 14";
+const APP_VERSION = "Кэйко 15";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2569,6 +2569,54 @@ function shuffleRandomThought() {
   return true;
 }
 
+/* Текст из книги приходит с типографскими переносами: слово разорвано дефисом,
+   каждая строка — отдельный перевод, между ними попадаются номера страниц.
+   Приводим это к нормальному абзацу. */
+
+// вторые половинки составных слов: «из-за» переносом не считаем
+const KEEP_HYPHEN = /^(то|либо|нибудь|ка|таки|же|за|под|над|при|из|по|прежнему|моему|твоему|нашему|своему|русски|английски)$/i;   // \b не работает с кириллицей: она не входит в «словесные» символы
+
+function cleanPastedText(raw) {
+  let t = String(raw || "").replace(/\r\n?/g, "\n").replace(/\u00AD/g, "");
+
+  // колонтитулы и номера страниц отдельной строкой
+  t = t.split("\n").filter(line => !/^\s*\d{1,4}\s*$/.test(line)).join("\n");
+
+  // «ког-\nда» → «когда», но «из-\nза» остаётся «из-за»
+  t = t.replace(/(\p{L})-\n[ \t]*(\p{L}[\p{L}-]*)/gu,
+    (m, head, tail) => KEEP_HYPHEN.test(tail) ? head + "-" + tail : head + tail);
+
+  // строки одного абзаца склеиваем пробелом; пустая строка — граница абзаца,
+  // строка с тире — реплика, её перенос сохраняем
+  t = t.replace(/\n{2,}/g, "\u0000")
+       .replace(/\n[ \t]*(?![—–-])/g, " ")
+       .replace(/\u0000/g, "\n\n");
+
+  return t.replace(/[ \t]{2,}/g, " ")
+          .replace(/ ([,.;:!?»])/g, "$1")
+          .replace(/(«) /g, "$1")
+          .trim();
+}
+
+function bindPasteCleanup(area) {
+  if (!area) return;
+  area.addEventListener("paste", (e) => {
+    const raw = (e.clipboardData || window.clipboardData || {}).getData
+      ? (e.clipboardData || window.clipboardData).getData("text") : "";
+    if (!raw || !raw.includes("\n")) return;          // однострочное вставляем как есть
+    const clean = cleanPastedText(raw);
+    if (clean === raw) return;
+    e.preventDefault();
+    // insertText сохраняет отмену по Cmd+Z, поэтому пробуем сначала его
+    if (!document.execCommand || !document.execCommand("insertText", false, clean)) {
+      const at = area.selectionStart, to = area.selectionEnd;
+      area.value = area.value.slice(0, at) + clean + area.value.slice(to);
+      area.setSelectionRange(at + clean.length, at + clean.length);
+    }
+    toast("Переносы поправлены");
+  });
+}
+
 function renderNotes() {
   if (!hasMaterials()) { renderEmpty("Мыслей пока нет", "Они появятся вместе с первым материалом."); return; }
 
@@ -2658,6 +2706,9 @@ function renderNotes() {
     </div>` : `<div class="empty-note">Здесь будут мысли, которые приходят по ходу.<br>Первую можно записать прямо сейчас.</div>`}`;
 
   const area = $("#thText");
+  bindPasteCleanup(area);
+  bindPasteCleanup($("#thEdit"));
+
   if (editingThought) {
     const ed = $("#thEdit");
     if (ed) setTimeout(() => { ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); }, 60);
