@@ -1,0 +1,4463 @@
+"use strict";
+
+/* Главный экран — обложка, прогресс и одна кнопка;
+   детали разнесены по вкладкам «Прогресс», «Награды» и «Обзор». */
+
+/* Приложение приходит пустым: и материалы, и профили лежат в гисте.
+   Пока гист не подключён, показываем только экран подключения. */
+let PROFILES = [];
+const LS_PROFILE = "keiko-profile-id";
+let profileId = null;
+
+const profile = () => PROFILES.find(p => p.id === profileId) || PROFILES[0] || { id: profileId || "", name: profileId || "", hint: "" };
+const suffix = () => profileId ? "-" + profileId : "";
+
+const LS = {
+  get data() { return "keiko-data-v1" + suffix(); },
+  get cfg() { return "keiko-cfg-v1"; },            // токен и гист общие для всех профилей
+  get older() { return []; }
+};
+const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
+const APP_VERSION = "Кэйко 1";
+
+const DEFAULT_PIECES = [];
+// Курс пастели — данные из pastel-course-viewer
+const DEFAULT_COURSE = { id: "course", name: "", author: "", lessons: [] };
+
+const DEFAULT_BOOKS = [];
+
+// материалы профиля Дианы
+const DIANA_BOOKS = [];
+
+const FIRM_AT = 3;
+const DONE_TITLES = ["Молодец!", "Красавчик!", "Есть!", "Сделано!"];
+const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+
+/* ── Состояние ── */
+let data = null;
+let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false };
+let period = "week";   // week | month — что показываем на «Прогрессе»
+let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
+let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
+let editingThought = null; // мысль, которую сейчас правим
+let settingsOpen = false, settingsView = null;   // настройки — отдельный экран
+let notesFocus = false;    // ставить ли курсор в поле мысли при следующем рендере
+let notesFilter = "all";   // all | liked — что показываем в ленте мыслей
+let shuffleThought = null; // id мысли, вытянутой наугад: лента сворачивается до неё одной
+let achTop = "mats";        // верхний уровень «Достижений»: материалы или полка
+let achTab = "ach";          // вкладка внутри материала: достижения / знания
+let tab = "home";                 // home | progress | ach | overview
+let calYear, calMonth;
+let selectedDate = todayStr();
+let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
+let pickPage = 0;
+let pickLessons = [];             // выбранные уроки курса
+let sheetMode = null;             // log | settings
+let pushTimer = null, syncing = false;
+let syncError = "";               // текст последней ошибки синхронизации
+let newVersion = "";              // версия на сервере, если она свежее установленной
+
+// без подключённого гиста данные жили бы только на телефоне — ввод запрещаем
+const gistReady = () => !!(cfg.token && cfg.gistId);
+
+const $ = (s) => document.querySelector(s);
+
+/* ── Утилиты ── */
+const uid = () => crypto.randomUUID();
+const now = () => Date.now();
+function todayStr() { return dateStr(new Date()); }
+function dateStr(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function fromStr(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function daysBetween(a, b) { return Math.round((fromStr(b) - fromStr(a)) / 864e5); }
+
+function fmtDay(s) {
+  if (s === todayStr()) return "сегодня";
+  if (s === dateStr(new Date(Date.now() - 864e5))) return "вчера";
+  return new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" }).format(fromStr(s));
+}
+function esc(v) {
+  return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+function plural(n, one, few, many) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return one;
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+  return many;
+}
+const takty = n => `${n} ${plural(n, "такт", "такта", "тактов")}`;
+const stranic = n => `${n} ${plural(n, "страница", "страницы", "страниц")}`;
+const handIcon = h => h === "left" ? "𝄢" : "𝄞";
+const spanText = s => `${handIcon(s.hand)} ${s.from === s.to ? s.from + "-й" : s.from + "–" + s.to}`;
+const rnd = l => l[Math.floor(Math.random() * l.length)];
+
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove("show"), 2300);
+}
+
+/* ── Хранилище ── */
+// пустая заготовка: материалы приезжают из гиста, в приложении их нет
+function emptyData() {
+  return {
+    active: "book",
+    piano: { pieces: [], activePiece: "", entries: [] },
+    book: { books: [], activeBook: "", entries: [] },
+    pastel: { course: null, entries: [] },
+    shop: { theme: "dusk", purchases: [] },
+    thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
+    weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
+    freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
+    archive: []    // пройденные материалы
+  };
+}
+
+/* Приводим то, что приехало из гиста, к ожидаемой форме.
+   Старых схем здесь нет: это новое приложение, данные всегда свежего вида. */
+function migrate(obj) {
+  const base = emptyData();
+  if (!obj || typeof obj !== "object") return base;
+
+  if (obj.piano) {
+    base.piano.pieces = Array.isArray(obj.piano.pieces) ? obj.piano.pieces : [];
+    base.piano.entries = Array.isArray(obj.piano.entries) ? obj.piano.entries : [];
+    if (obj.piano.activePiece && base.piano.pieces.some(p => p.id === obj.piano.activePiece)) {
+      base.piano.activePiece = obj.piano.activePiece;
+    } else if (base.piano.pieces[0]) {
+      base.piano.activePiece = base.piano.pieces[0].id;
+    }
+  }
+
+  if (obj.book) {
+    base.book.books = Array.isArray(obj.book.books) ? obj.book.books : [];
+    base.book.entries = Array.isArray(obj.book.entries) ? obj.book.entries : [];
+    if (obj.book.activeBook && base.book.books.some(b => b.id === obj.book.activeBook)) {
+      base.book.activeBook = obj.book.activeBook;
+    } else if (base.book.books[0]) {
+      base.book.activeBook = base.book.books[0].id;
+    }
+  }
+
+  if (obj.pastel) {
+    base.pastel.entries = Array.isArray(obj.pastel.entries) ? obj.pastel.entries : [];
+    if (obj.pastel.course) base.pastel.course = obj.pastel.course;
+  }
+
+  if (obj.shop) {
+    if (Array.isArray(obj.shop.purchases)) base.shop.purchases = obj.shop.purchases;
+    if (typeof obj.shop.theme === "string") base.shop.theme = obj.shop.theme;
+  }
+  if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
+  if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts;
+  if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
+  if (Array.isArray(obj.archive)) base.archive = obj.archive;
+
+  // записи без привязки достаются первому материалу — иначе они потеряются
+  const firstBook = base.book.books[0] ? base.book.books[0].id : "";
+  base.book.entries = base.book.entries.map(e => ({ ...e, bookId: e.bookId || firstBook }));
+  const firstPiece = base.piano.pieces[0] ? base.piano.pieces[0].id : "";
+  base.piano.entries = base.piano.entries.map(e => ({ ...e, pieceId: e.pieceId || firstPiece }));
+  const courseId = (base.pastel.course && base.pastel.course.id) || "";
+  base.pastel.entries = base.pastel.entries.map(e => ({ ...e, courseId: e.courseId || courseId }));
+
+  if (["book", "piano", "pastel"].includes(obj.active)) base.active = obj.active;
+  return base;
+}
+
+function load() {
+  let raw = null;
+  for (const key of [LS.data, ...LS.older]) {
+    try {
+      const val = JSON.parse(localStorage.getItem(key) || "null");
+      if (val) { raw = val; break; }
+    } catch {}
+  }
+  data = migrate(raw);
+  try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
+}
+const saveData = () => localStorage.setItem(LS.data, JSON.stringify(data));
+const saveCfg = () => localStorage.setItem(LS.cfg, JSON.stringify(cfg));
+
+/* ── Выборки ── */
+const isBook = () => data.active === "book";
+const isPastel = () => data.active === "pastel";
+const isPiano = () => data.active === "piano";
+const trackOf = () => data[data.active];
+const EMPTY_PIECE = { id: "", name: "", author: "", bars: 0, tone: "violet" };
+const piece = () => data.piano.pieces.find(p => p.id === data.piano.activePiece) || data.piano.pieces[0] || EMPTY_PIECE;
+const course = () => data.pastel.course || { id: "", name: "", author: "", lessons: [] };
+const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
+const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
+const bookEntriesOf = (id) => data.book.entries.filter(e => !e.deleted && (e.bookId || "snow-1") === id);
+
+// сколько страниц прочитано за период — считаем прирост отдельно по каждой книге
+function pagesRead(from, to) {
+  let sum = 0;
+  for (const b of data.book.books) {
+    const list = bookEntriesOf(b.id);
+    let before = b.startPage || 0, after = 0;
+    for (const e of list) {
+      if (e.date < from) before = Math.max(before, e.page || 0);
+      else if (e.date <= to) after = Math.max(after, e.page || 0);
+    }
+    if (after) sum += Math.max(0, after - before);
+  }
+  return sum;
+}
+// записи текущего трека, а для пианино — ещё и текущей композиции
+const entries = () => isPiano()
+  ? data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === piece().id)
+  : isBook()
+    ? bookEntriesOf(book().id)
+    : data.pastel.entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
+const entryFor = d => entries().find(e => e.date === d);
+
+// день попадает в паузу (отпуск) — такие дни серию не рвут
+function isFrozen(ds) {
+  return (data.freezes || []).some(f => !f.deleted && ds >= f.from && ds <= f.to);
+}
+
+function activeFreeze() {
+  const t = todayStr();
+  return (data.freezes || []).find(f => !f.deleted && t >= f.from && t <= f.to) || null;
+}
+
+// дни, когда было занятие любым материалом — серия общая для всех хобби
+function activeDays() {
+  const out = new Set();
+  for (const e of [...data.piano.entries, ...data.book.entries, ...data.pastel.entries])
+    if (!e.deleted) out.add(e.date);
+  return out;
+}
+
+// серия по конкретному материалу: занимался именно им день за днём
+function streak() {
+  const days = new Set(entries().map(e => e.date));
+  return streakFrom(days);
+}
+
+// общая серия: важно заниматься каждый день, а чем — не важно
+function streakAll() {
+  return streakFrom(activeDays());
+}
+
+function streakFrom(days) {
+  let n = 0, skipped = 0, steps = 0;
+  const d = new Date();
+  if (!days.has(dateStr(d)) && !isFrozen(dateStr(d))) d.setDate(d.getDate() - 1);
+  while (steps++ < 4000) {
+    const ds = dateStr(d);
+    if (days.has(ds)) n++;
+    else if (isFrozen(ds)) skipped++;      // пауза: пропускаем день молча
+    else break;
+    if (n + skipped > 3650) break;
+    d.setDate(d.getDate() - 1);
+  }
+  return n;
+}
+function mondayOf(d) { const r = new Date(d); r.setDate(r.getDate() - ((r.getDay() + 6) % 7)); return r; }
+
+function passes() {
+  const bars = piece().bars;
+  const right = new Array(bars + 1).fill(0), left = new Array(bars + 1).fill(0);
+  for (const e of entries())
+    for (const s of e.spans || []) {
+      const arr = s.hand === "left" ? left : right;
+      for (let b = Math.max(1, s.from); b <= Math.min(bars, s.to); b++) arr[b]++;
+    }
+  return { right, left };
+}
+
+function pianoStats() {
+  const bars = piece().bars;
+  const p = passes();
+  const list = entries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  const cnt = (arr, min) => arr.slice(1).filter(v => v >= min).length;
+  const touchedR = cnt(p.right, 1), touchedL = cnt(p.left, 1);
+  const firmR = cnt(p.right, FIRM_AT), firmL = cnt(p.left, FIRM_AT);
+  const maxPass = Math.max(0, ...p.right.slice(1), ...p.left.slice(1));
+
+  let bothInOne = false, maxRun = 0, weekend = false, comeback = false, prev = null;
+  for (const e of list) {
+    if (new Set((e.spans || []).map(s => s.hand)).size >= 2) bothInOne = true;
+    for (const s of e.spans || []) maxRun = Math.max(maxRun, s.to - s.from + 1);
+    const dw = fromStr(e.date).getDay();
+    if (dw === 0 || dw === 6) weekend = true;
+    if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
+    prev = e.date;
+  }
+  return {
+    bars, passes: p, days: list.length, streak: streak(), streakAll: streakAll(),
+    touchedR, touchedL, firmR, firmL, maxPass,
+    pctR: bars ? touchedR / bars * 100 : 0,
+    pctL: bars ? touchedL / bars * 100 : 0,
+    pct: bars ? (touchedR + touchedL) / (bars * 2) * 100 : 0,
+    pctFirm: bars ? (firmR + firmL) / (bars * 2) * 100 : 0,
+    bothInOne, maxRun, weekend, comeback
+  };
+}
+
+function bookProgress() {
+  const b = book();
+  let page = b.startPage || 0;
+  for (const e of bookEntriesOf(b.id)) page = Math.max(page, e.page || 0);
+  return Math.min(page, b.pages);
+}
+function chapterAt(page) {
+  const list = book().chapters || [];
+  let cur = list[0] || { name: "", from: 0 };
+  for (const c of list) if (page >= c.from) cur = c;
+  return cur;
+}
+function bookStats() {
+  const b = book();
+  const list = bookEntriesOf(b.id).slice().sort((a, x) => a.date < x.date ? -1 : 1);
+  const page = bookProgress();
+  let maxJump = 0, weekend = false, comeback = false, notes = 0, reread = false;
+  let running = b.startPage || 0, prev = null;
+  for (const e of list) {
+    const jump = (e.page || 0) - running;
+    if (jump > maxJump) maxJump = jump;
+    if ((e.page || 0) < running) reread = true;
+    running = Math.max(running, e.page || 0);
+    if (e.note) notes++;
+    const dw = fromStr(e.date).getDay();
+    if (dw === 0 || dw === 6) weekend = true;
+    if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
+    prev = e.date;
+  }
+  return {
+    pages: b.pages, page, pct: b.pages ? page / b.pages * 100 : 0,
+    days: list.length, streak: streak(), streakAll: streakAll(),
+    maxJump, weekend, comeback, notes, reread, chapter: chapterAt(page)
+  };
+}
+
+/* ── Пастель ── */
+function doneLessons() {
+  const set = new Set();
+  for (const e of data.pastel.entries.filter(e => !e.deleted))
+    for (const i of e.lessons || []) set.add(i);
+  return set;
+}
+
+function pastelStats() {
+  const c = course();
+  const done = doneLessons();
+  const list = data.pastel.entries.filter(e => !e.deleted).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  const totalSec = c.lessons.reduce((a, l) => a + l.dur, 0);
+  const doneSec = c.lessons.reduce((a, l, i) => a + (done.has(i) ? l.dur : 0), 0);
+
+  let weekend = false, comeback = false, notes = 0, maxAtOnce = 0, prev = null;
+  for (const e of list) {
+    maxAtOnce = Math.max(maxAtOnce, (e.lessons || []).length);
+    if (e.note) notes++;
+    const dw = fromStr(e.date).getDay();
+    if (dw === 0 || dw === 6) weekend = true;
+    if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
+    prev = e.date;
+  }
+
+  const next = c.lessons.findIndex((_, i) => !done.has(i));
+  return {
+    lessons: c.lessons.length, done: done.size, doneSet: done,
+    pct: c.lessons.length ? done.size / c.lessons.length * 100 : 0,
+    totalSec, doneSec, minutes: Math.round(doneSec / 60),
+    days: list.length, streak: streak(), streakAll: streakAll(),
+    weekend, comeback, notes, maxAtOnce,
+    nextLesson: next < 0 ? null : next
+  };
+}
+
+const curStats = () => isBook() ? bookStats() : isPastel() ? pastelStats() : pianoStats();
+
+/* ── Достижения ── */
+const ACH_PIANO = [];
+
+const ACH_BOOK = [];
+
+const WORDS_PIANO = {};
+
+const WORDS_BOOK = {};
+
+const ACH_PASTEL = [];
+
+const WORDS_PASTEL = {};
+
+/* Контекстные названия и тексты для конкретных пьес:
+   у Баха — барочные, у «Мальчиков и море» — морские. */
+const PIECE_FLAVOR = {};
+
+const ACH_ODYSSEY = [];
+
+const WORDS_ODYSSEY = {};
+
+const ACH_TESSON = [];
+
+const WORDS_TESSON = {};
+
+const ACH_SCREWTAPE = [];
+
+
+const WORDS_SCREWTAPE = {};
+
+
+const ACH_UNIZH = [];
+
+const WORDS_UNIZH = {};
+
+const BOOK_ACH = { "snow-1": ACH_BOOK, odyssey: ACH_ODYSSEY, tesson: ACH_TESSON, screwtape: ACH_SCREWTAPE, unizhennye: ACH_UNIZH };
+const BOOK_WORDS = { "snow-1": WORDS_BOOK, odyssey: WORDS_ODYSSEY, tesson: WORDS_TESSON, screwtape: WORDS_SCREWTAPE, unizhennye: WORDS_UNIZH };
+
+/* ══════════ Каталог материалов ══════════
+   Награды, карточки знаний и обложки могут лежать не в коде, а в гисте.
+   Что есть в каталоге — берётся оттуда, остальное из зашитого. */
+
+const LS_CAT = "keiko-catalog-v2";
+const LS_COVER = (id) => "keiko-cover-" + id;
+let CATALOG = {};
+try {
+  const saved = JSON.parse(localStorage.getItem(LS_CAT) || "{}") || {};
+  CATALOG = saved.materials || {};
+  if (Array.isArray(saved.profiles)) PROFILES = saved.profiles;
+} catch {}
+
+const OPS = {
+  ">=": (a, b) => a >= b, ">": (a, b) => a > b,
+  "<=": (a, b) => a <= b, "<": (a, b) => a < b, "==": (a, b) => a === b
+};
+// условие награды в каталоге — данные, а не код: [["page", ">=", 45], ["days", ">=", 20]]
+const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
+  if (op === "is") return !!s[m] === (v !== false);
+  if (op === "has") return !!(s[m] && s[m].has && s[m].has(v));
+  return OPS[op] ? OPS[op](Number(s[m]) || 0, Number(v)) : false;
+});
+
+const curKey = () => isBook() ? book().id : isPastel() ? "pastel" : (piece() ? piece().id : "");
+const catOf = (id) => CATALOG[id] || null;
+
+const achCache = new Map();
+function achFromCatalog(id) {
+  const c = catOf(id);
+  if (!c || !Array.isArray(c.ach)) return null;
+  if (!achCache.has(id)) achCache.set(id, c.ach.map(a => ({ ...a, test: testFromWhen(a.when) })));
+  return achCache.get(id);
+}
+
+const achList = () => achFromCatalog(curKey()) ||
+  (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isPastel() ? ACH_PASTEL : ACH_PIANO);
+const achWords = () => (catOf(curKey()) || {}).words ||
+  (isBook() ? (BOOK_WORDS[book().id] || WORDS_BOOK) : isPastel() ? WORDS_PASTEL : WORDS_PIANO);
+const flavor = () => (!isBook() && !isPastel() && PIECE_FLAVOR[piece().id]) || {};
+const lastName = (author) => String(author || "").trim().split(/\s+/).pop();
+
+function achState() {
+  if (!hasMaterials()) return [];
+  const s = curStats();
+  const fl = flavor();
+  return achList().map(a => {
+    const item = { ...a, done: !!a.test(s) };
+    if (fl[a.id]) { item.name = fl[a.id][0]; item.word = fl[a.id][1]; }
+    // финальная награда носит имя автора текущей композиции
+    if (isPiano() && a.id === "bach") item.name = `${lastName(piece().author)} доволен`;
+    return item;
+  });
+}
+
+// текст награды с учётом контекста материала
+const wordOf = (a) => a.word || achWords()[a.id] || a.hint;
+
+/* ── Действия ── */
+function normSpan(hand, from, to) {
+  const bars = piece().bars;
+  let f = Math.max(1, Math.min(bars, from)), t = Math.max(1, Math.min(bars, to));
+  if (t < f) [f, t] = [t, f];
+  return { hand, from: f, to: t };
+}
+function currentSpans() {
+  if (pending.length) return pending.slice();
+  return pickHand === "both"
+    ? [normSpan("right", pickFrom, pickTo), normSpan("left", pickFrom, pickTo)]
+    : [normSpan(pickHand, pickFrom, pickTo)];
+}
+
+/* ══════════ Карточки знаний ══════════
+   Смысловые заметки о материале. Открываются по мере занятий:
+   на 1, 3, 6, 10 и 15-й день с этой пьесой, книгой или курсом. */
+
+const FACTS = {};
+
+// карточки текущего материала: сколько открыто по числу дней занятий
+/* Карточка открывается за занятие: одно занятие — одна карточка.
+   У курса занятий мало (уроки), поэтому там за раз открывается несколько.
+   Когда материал пройден до конца — открывается всё, что осталось. */
+function factsState() {
+  const key = isBook() ? book().id : isPastel() ? "pastel" : piece().id;
+  const list = (catOf(key) || {}).facts || FACTS[key] || [];
+  if (!list.length) return [];
+  // у курса шагом служат пройденные уроки: их мало, поэтому за раз открывается несколько карточек
+  const step = isPastel() ? doneLessons().size : new Set(entries().map(e => e.date)).size;
+  const span = isPastel() ? Math.max(1, course().lessons.length) : list.length;
+  const finished = curStats().pct >= 100;
+  const page = isBook() ? bookProgress() : 0;
+
+  const out = list.map((f, i) => {
+    // карточка с привязкой к странице открывается, когда до неё дочитал
+    if (f.page) return { ...f, id: key + ":" + i, need: f.page, unit: "page", open: page >= f.page };
+    const need = Math.max(1, Math.ceil((i + 1) * span / list.length));
+    return { ...f, id: key + ":" + i, need, unit: isPastel() ? "lesson" : "day", open: finished || step >= need };
+  });
+
+  return out;
+}
+
+function fmtRange(from, to) {
+  const f = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
+  return from === to ? f.format(fromStr(from)) : `${f.format(fromStr(from))} — ${f.format(fromStr(to))}`;
+}
+
+function goalProgress() {
+  const from = dateStr(mondayOf(new Date()));
+  const days = new Set(
+    [...data.piano.entries, ...data.book.entries, ...data.pastel.entries]
+      .filter(e => !e.deleted && e.date >= from).map(e => e.date)
+  ).size;
+  const goal = data.weekGoal || 4;
+  return { days, goal, left: Math.max(0, goal - days), done: days >= goal, pct: Math.min(100, days / goal * 100) };
+}
+
+function weeklyHistory(weeks = 12) {
+  const days = new Set(entries().map(e => e.date));
+  const out = [];
+  const monday = mondayOf(new Date());
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(monday); start.setDate(start.getDate() - i * 7);
+    let n = 0;
+    for (let d = 0; d < 7; d++) {
+      const cur = new Date(start); cur.setDate(cur.getDate() + d);
+      if (cur > new Date()) break;
+      if (days.has(dateStr(cur))) n++;
+    }
+    out.push({ start: dateStr(start), days: n });
+  }
+  return out;
+}
+
+function weekSummary(offset = 0) {
+  const monday = mondayOf(new Date());
+  monday.setDate(monday.getDate() - offset * 7);
+  const from = dateStr(monday);
+  const end = new Date(monday); end.setDate(end.getDate() + 6);
+  const to = dateStr(end);
+  const inWeek = (e) => !e.deleted && e.date >= from && e.date <= to;
+
+  const pianoEntries = data.piano.entries.filter(inWeek);
+  let bars = 0;
+  for (const e of pianoEntries) for (const sp of e.spans || []) bars += sp.to - sp.from + 1;
+
+  const bookEntries = data.book.entries.filter(inWeek);
+  const pages = pagesRead(from, to);
+
+  const pastelEntries = data.pastel.entries.filter(inWeek);
+  let lessons = 0;
+  for (const e of pastelEntries) lessons += (e.lessons || []).length;
+
+  const allDays = new Set([...pianoEntries, ...bookEntries, ...pastelEntries].map(e => e.date));
+  return { from, to, days: allDays.size, bars, pages, lessons };
+}
+
+function currentMaterial() {
+  if (!hasMaterials()) return { icon: "◌", title: "нет материалов", sub: "", pct: 0 };
+  if (isBook()) {
+    const b = book(), s = bookStats();
+    return { icon: "📖", title: b.title, sub: `${s.page} из ${s.pages} стр.`, pct: s.pct };
+  }
+  if (isPastel()) {
+    const c = course(), s = pastelStats();
+    return { icon: "🎨", title: c.name, sub: `${s.done} из ${s.lessons} уроков`, pct: s.pct };
+  }
+  const p = piece(), s = pianoStats();
+  return { icon: "🎹", title: p.name, sub: `${s.touchedR + s.touchedL} из ${s.bars * 2} тактов-рук`, pct: s.pct };
+}
+
+function archiveCurrent() {
+  const m = currentMaterial();
+  const days = new Set(entries().map(e => e.date)).size;
+
+  if (!confirm(`Отправить «${m.title}» в архив?\n\nПройдено: ${Math.round(m.pct)}%, ${days} ${plural(days, "день", "дня", "дней")} занятий.\nЗаписи и вклад в баланс останутся.`)) return;
+
+  const dates = entries().map(e => e.date).sort();
+  const look = isBook() ? book() : isPastel() ? { art: "smears", tone: "pastel" } : piece();
+  const rec = {
+    id: uid(), track: data.active, icon: m.icon, title: m.title,
+    sub: m.sub, pct: Math.round(m.pct), days,
+    art: look.art || "", tone: look.tone || "",
+    startedAt: dates[0] || todayStr(), finishedAt: todayStr(),
+    rating: 0, review: "",
+    createdAt: now(), updatedAt: now()
+  };
+  data.archive.push(rec);
+
+  if (isBook()) {
+    const cur = book();
+    cur.archived = true; cur.updatedAt = now();
+    const next = data.book.books.find(b => !b.archived);
+    if (next) { data.book.activeBook = next.id; saveData(); schedulePush(); render(); openShelfSheet(rec.id); return; }
+
+    const title = prompt("Какую книгу читаешь теперь?", "");
+    if (title === null || !title.trim()) { data.archive.pop(); cur.archived = false; return; }
+    const pagesStr = prompt("Сколько в ней страниц?", "300");
+    const pages = Math.round(Number((pagesStr || "").replace(",", ".")));
+    if (!pages || pages < 1) { data.archive.pop(); cur.archived = false; toast("Не понял число страниц"); return; }
+    const fresh = {
+      id: uid(), title: title.trim(), author: "", volume: "",
+      pages, startPage: 0, art: "snow", tone: "sea",
+      chapters: [{ name: "Начало", from: 1 }], updatedAt: now()
+    };
+    data.book.books.push(fresh);
+    data.book.activeBook = fresh.id;
+  } else if (isPastel()) {
+    const name = prompt("Какой курс проходишь теперь?", "");
+    if (name === null || !name.trim()) { data.archive.pop(); return; }
+    const cnt = Math.round(Number((prompt("Сколько в нём уроков?", "10") || "").replace(",", ".")));
+    if (!cnt || cnt < 1) { data.archive.pop(); toast("Не понял число уроков"); return; }
+    data.pastel.course = {
+      id: uid(), name: name.trim(), author: "",
+      lessons: Array.from({ length: cnt }, (_, i) => ({ title: `Урок ${i + 1}`, dur: 600 })),
+      updatedAt: now()
+    };
+  } else {
+    const p = piece();
+    p.archived = true; p.updatedAt = now();
+    const rest = data.piano.pieces.filter(x => !x.archived);
+    if (!rest.length) {
+      const name = prompt("Какую вещь разбираешь теперь?", "");
+      if (name === null || !name.trim()) { p.archived = false; data.archive.pop(); return; }
+      const bars = Math.round(Number((prompt("Сколько в ней тактов?", "40") || "").replace(",", ".")));
+      if (!bars || bars < 1) { p.archived = false; data.archive.pop(); toast("Не понял число тактов"); return; }
+      const np = { id: uid(), author: "", name: name.trim(), bars, art: "keys", tone: "violet", updatedAt: now() };
+      data.piano.pieces.push(np);
+      data.piano.activePiece = np.id;
+    } else {
+      data.piano.activePiece = rest[0].id;
+    }
+  }
+
+  saveData(); schedulePush(); syncPickers(); render();
+  openShelfSheet(rec.id);      // сразу предлагаем поставить оценку и написать отзыв
+}
+
+function freezeUI() {
+  const list = (data.freezes || []).filter(f => !f.deleted)
+    .sort((a, b) => a.from < b.from ? 1 : -1);
+  const today = todayStr();
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">🌴 <b>Пауза</b> — дни отпуска или болезни, которые не рвут серию</div>
+      <div class="fz-form">
+        <input class="note-input" id="fzFrom" type="date" value="${today}" max="2100-01-01">
+        <input class="note-input" id="fzTo" type="date" value="${today}" max="2100-01-01">
+        <button class="btn" id="fzAdd" type="button">Добавить</button>
+      </div>
+      ${list.length ? `<div class="fz-list">${list.map(f => `
+        <div class="fz-item ${today >= f.from && today <= f.to ? "now" : ""}">
+          <span>${fmtRange(f.from, f.to)}${today >= f.from && today <= f.to ? " · идёт сейчас" : ""}</span>
+          <button data-fz="${f.id}" type="button">✕</button>
+        </div>`).join("")}</div>` : `<div class="fz-empty">Пока пауз нет</div>`}
+    </div>`;
+}
+
+function bindFreezeUI() {
+  const add = $("#fzAdd");
+  if (!add) return;
+  add.addEventListener("click", () => {
+    const from = $("#fzFrom").value, to = $("#fzTo").value;
+    if (!from || !to) { toast("Укажи даты"); return; }
+    const a = from <= to ? from : to, b = from <= to ? to : from;
+    data.freezes.push({ id: uid(), from: a, to: b, createdAt: now(), updatedAt: now() });
+    saveData(); schedulePush();
+    toast("Пауза добавлена — серия не прервётся");
+    openSettingsSheet();
+    render();
+  });
+
+  document.querySelectorAll("[data-fz]").forEach(b =>
+    b.addEventListener("click", () => {
+      const f = data.freezes.find(x => x.id === b.dataset.fz);
+      if (!f) return;
+      if (!confirm("Убрать эту паузу?\n\nДни снова начнут рвать серию.")) return;
+      f.deleted = true; f.updatedAt = now();
+      saveData(); schedulePush();
+      openSettingsSheet();
+      render();
+    }));
+}
+
+function shakeUI() {
+  const supported = typeof window.DeviceMotionEvent === "function";
+  return `
+    <div class="freeze">
+      <div class="fz-head">🎲 <b>Встряхивание</b> — потряси телефон, и лента сама выберет занятие</div>
+      ${!supported
+        ? `<div class="fz-empty">Это устройство не сообщает о движении</div>`
+        : shakeReady
+          ? `<div class="fz-empty">Включено — можно трясти</div>`
+          : `<button class="btn" id="shakeAsk" type="button">Разрешить доступ к движению</button>`}
+    </div>`;
+}
+
+function bindShakeUI() {
+  const b = $("#shakeAsk");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    const ok = await enableShake(true);
+    toast(ok ? "Готово — потряси телефон" : "Доступ к движению не разрешён");
+    openSettingsSheet();
+  });
+}
+
+function goalUI() {
+  const g = goalProgress();
+  return `
+    <div class="freeze">
+      <div class="fz-head">🎯 <b>Цель на неделю</b> — сколько дней заниматься чем угодно из трёх</div>
+      <div class="goal-pick">
+        ${[2, 3, 4, 5, 6, 7].map(n =>
+          `<button class="gbtn ${g.goal === n ? "on" : ""}" data-goal="${n}" type="button">${n}</button>`).join("")}
+      </div>
+      <div class="fz-empty">Сейчас: <b>${g.days} из ${g.goal}</b> на этой неделе</div>
+    </div>`;
+}
+
+function bindGoalUI() {
+  document.querySelectorAll("[data-goal]").forEach(b =>
+    b.addEventListener("click", () => {
+      data.weekGoal = Number(b.dataset.goal);
+      saveData(); schedulePush();
+      openSettingsSheet();
+      render();
+      toast(`Цель: ${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")} в неделю`);
+    }));
+}
+
+function archiveUI() {
+  if (!hasMaterials()) return "";
+  const cur = currentMaterial();
+  const list = (data.archive || []).filter(a => !a.deleted)
+    .sort((a, b) => a.finishedAt < b.finishedAt ? 1 : -1);
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">📦 <b>Материалы</b> — пройденное уходит в архив, дни занятий остаются</div>
+      <div class="fz-empty">Сейчас: <b>${esc(cur.title)}</b> · ${Math.round(cur.pct)}%</div>
+      <button class="btn" id="archBtn" type="button">Отправить в архив и начать новое</button>
+      ${list.length ? `<div class="fz-list">${list.map(a => `
+        <div class="fz-item">
+          <span>${a.icon} ${esc(a.title)} · ${a.pct}% · ${fmt.format(fromStr(a.finishedAt)).replace(" г.", "")}</span>
+        </div>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+function bindArchiveUI() {
+  const b = $("#archBtn");
+  if (b) b.addEventListener("click", () => { closeSheet(); archiveCurrent(); });
+}
+
+function diagLine() {
+  const bar = document.querySelector(".tabbar");
+  const r = bar ? bar.getBoundingClientRect() : null;
+  const safe = getComputedStyle(document.documentElement).getPropertyValue("--safe-b").trim() || "0px";
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone ? "standalone" : "браузер";
+  return `${standalone} · окно ${Math.round(innerWidth)}×${Math.round(innerHeight)} · экран ${screen.width}×${screen.height}` +
+    `<br>таббар ${r ? Math.round(r.height) : "?"}px, снизу ${r ? Math.round(innerHeight - r.bottom) : "?"}px · safe-area ${safe}`;
+}
+
+function saveEntry() {
+  if (!gistReady()) { closeSheet(); openSettingsSheet(); return; }
+  const existing = entryFor(selectedDate);
+  const beforeDone = new Set(achState().filter(a => a.done).map(a => a.id));
+  const beforeFacts = new Set(factsState().filter(f => f.open).map(f => f.id));
+  const before = curStats();
+  const note = ($("#noteInput") && $("#noteInput").value.trim()) || "";
+
+  if (existing) {
+    if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
+    else if (isPastel()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
+    else existing.spans = (existing.spans || []).concat(currentSpans());
+    if (note) existing.note = existing.note ? existing.note + "; " + note : note;
+    existing.updatedAt = now();
+  } else {
+    trackOf().entries.push(Object.assign(
+      { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
+      isBook() ? { page: pickPage } : isPastel() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
+    ));
+  }
+
+  pending = [];
+  pickLessons = [];
+  saveData();
+  schedulePush();
+  closeSheet();
+
+  const after = curStats();
+  const fresh = achState().filter(a => a.done && !beforeDone.has(a.id));
+  const freshFacts = factsState().filter(f => f.open && !beforeFacts.has(f.id));
+  render();
+
+  overlayQueue = [];
+  if (fresh.length) overlayQueue.push({ type: "ach", a: fresh[fresh.length - 1], count: fresh.length });
+  if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
+
+  if (overlayQueue.length) { showNextOverlay(); return; }
+  showDone(before, after, !!existing);
+}
+
+let overlayQueue = [];
+
+function showNextOverlay() {
+  const item = overlayQueue.shift();
+  if (!item) return;
+  if (item.type === "ach") showCheer(item.a, item.count);
+  else showFacts(item.list);
+}
+
+// все новые карточки знаний — одним экраном, листаются прокруткой
+function showFacts(list) {
+  $("#cheerIc").textContent = "💡";
+  $("#cheerTitle").textContent = list.length > 1
+    ? `${list.length} ${plural(list.length, "новая карточка", "новые карточки", "новых карточек")}`
+    : list[0].t;
+  $("#cheerText").innerHTML = list.length > 1
+    ? `<span class="cheer-list">${list.map(f => `
+        <span class="cheer-item">
+          <b>${esc(f.t)}</b>
+          <i>${esc(f.x)}</i>
+          ${(f.more || []).length ? `<em>→ ${esc(f.more[0])}</em>` : ""}
+        </span>`).join("")}</span>`
+    : esc(list[0].x) + ((list[0].more || []).length ? `<span class="cheer-dig">Копнуть глубже: ${esc(list[0].more[0])}</span>` : "");
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Интересно!";
+  $("#cheer").classList.add("show", "fact");
+}
+
+function showCheer(a, count) {
+  $("#cheerIc").textContent = a.icon;
+  $("#cheerTitle").textContent = a.name;
+  $("#cheerText").textContent = wordOf(a) +
+    (count > 1 ? ` · и ещё ${count - 1} ${plural(count - 1, "достижение", "достижения", "достижений")} открыто!` : "");
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Красота!";
+  $("#cheer").classList.remove("fact");
+  $("#cheer").classList.add("show");
+}
+
+function showDone(before, after, wasExisting) {
+  if (selectedDate !== todayStr()) { toast(fmtDay(selectedDate) + " отмечено"); return; }
+  if (wasExisting) { toast("Запись дополнена"); return; }
+
+  $("#cheerIc").textContent = after.streakAll >= 2 ? "🔥" : "🎉";
+  $("#cheerTitle").textContent = rnd(DONE_TITLES);
+  let text;
+  if (isBook()) {
+    const g = after.page - before.page;
+    text = g > 0 ? `Дочитал до ${after.page}-й страницы (+${stranic(g)}), это ${Math.round(after.pct)}% книги. ` : "Перечитывал уже пройденное — тоже дело. ";
+  } else if (isPastel()) {
+    const g = after.done - before.done;
+    text = g > 0
+      ? `+${g} ${plural(g, "урок", "урока", "уроков")}, пройдено ${after.done} из ${after.lessons}. `
+      : "Возвращался к пройденному — тоже дело. ";
+  } else {
+    const g = (after.touchedR + after.touchedL) - (before.touchedR + before.touchedL);
+    text = g > 0 ? `+${takty(g)} к разбору, всего ${Math.round(after.pct)}%. ` : "Повторение — эти такты стали крепче. ";
+  }
+  text += after.streakAll >= 2
+    ? `Серия — ${after.streakAll} ${plural(after.streakAll, "день", "дня", "дней")} подряд. Возвращайся завтра, будет ${after.streakAll + 1} 🔥`
+    : "Возвращайся завтра — начнём серию!";
+  $("#cheerText").textContent = text;
+  $("#cheer").classList.add("show");
+}
+
+function deleteEntry(id) {
+  const e = trackOf().entries.find(x => x.id === id);
+  if (!e) return;
+  if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
+  e.deleted = true; e.updatedAt = now();
+  saveData(); schedulePush(); syncPickers(); render();
+  toast("Запись удалена");
+}
+
+function goToDate(ds) {
+  if (ds > todayStr()) { toast("Это ещё в будущем 🙂"); return; }
+  selectedDate = ds; pending = []; pickLessons = [];
+  const d = fromStr(ds);
+  calYear = d.getFullYear(); calMonth = d.getMonth();
+  render();
+}
+function shiftDay(delta) {
+  const d = fromStr(selectedDate); d.setDate(d.getDate() + delta);
+  goToDate(dateStr(d));
+}
+
+function switchTrack(which) {
+  if (data.active === which) return;
+  data.active = which;
+  pending = []; pickLessons = []; selectedDate = todayStr();
+  const t = new Date(); calYear = t.getFullYear(); calMonth = t.getMonth();
+  syncPickers(); saveData(); schedulePush(); render();
+}
+
+function syncPickers() {
+  if (!hasMaterials()) return;
+  if (isBook()) pickPage = bookProgress();
+  else if (isPiano() && piece()) {
+    const bars = piece().bars;
+    pickFrom = Math.min(pickFrom, bars); pickTo = Math.min(pickTo, bars);
+  }
+}
+
+/* ══════════ Рендер ══════════ */
+
+function renderBanner() {
+  const box = $("#banner");
+  if (!box) return;
+
+  if (!online && gistReady()) {
+    box.innerHTML = `
+      <div class="warn off">
+        <span>📴 <b>Нет сети.</b> Записи сохраняются на устройстве и уйдут в гист, как только связь появится.</span>
+      </div>`;
+    return;
+  }
+
+  if (newVersion) {
+    box.innerHTML = `
+      <div class="warn upd">
+        <span>⬆️ <b>Есть новая версия</b> ${esc(newVersion)} — сейчас установлена ${esc(APP_VERSION)}</span>
+        <button id="bnUpdate" type="button">Обновить</button>
+      </div>`;
+    $("#bnUpdate").addEventListener("click", forceUpdate);
+    return;
+  }
+
+  if (!gistReady()) {
+    box.innerHTML = `
+      <div class="warn">
+        <span>🔒 <b>Синхронизация не подключена.</b> Записи отключены, чтобы прогресс не остался только на этом устройстве.</span>
+        <button id="bnConnect" type="button">Подключить</button>
+      </div>`;
+    $("#bnConnect").addEventListener("click", openSettingsSheet);
+    return;
+  }
+
+  if (syncError) {
+    box.innerHTML = `
+      <div class="warn err">
+        <span>⚠️ <b>Данные сохранены локально</b>, но не ушли в гист: ${esc(syncError)}</span>
+        <button id="bnRetry" type="button">Повторить</button>
+      </div>`;
+    $("#bnRetry").addEventListener("click", () => syncNow(true));
+    return;
+  }
+
+  box.innerHTML = "";
+}
+
+// если что-то упало — показываем понятный экран вместо пустоты
+function crashScreen(e) {
+  const box = $("#view");
+  if (!box) return;
+
+  // первая попытка — молча снять service worker и перезагрузиться: чаще всего виноват он
+  let tried = "1";
+  try { tried = sessionStorage.getItem("keiko-selfheal") || ""; } catch {}
+  if (tried !== "1") {
+    try { sessionStorage.setItem("keiko-selfheal", "1"); } catch {}
+    (async () => {
+      try {
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch {}
+      location.replace(location.origin + location.pathname + "?v=" + Date.now());
+    })();
+    box.innerHTML = `<div class="empty-state"><div class="es-mark">稽古</div><h2>Восстанавливаю…</h2></div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="empty-state">
+      <div class="es-mark">稽古</div>
+      <h2>Что-то пошло не так</h2>
+      <p>Данные целы — сбой в самом приложении. Кнопка ниже переустановит его начисто.</p>
+      <button class="btn gold" id="crashUpd" type="button" style="max-width:280px">Переустановить</button>
+      <p class="crash-why">${esc(String((e && e.message) || e || ""))}</p>
+    </div>`;
+  const b = $("#crashUpd");
+  if (b) b.addEventListener("click", () => {
+    location.replace(location.origin + location.pathname + "?reset=1");
+  });
+}
+
+// снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
+const dataStamp = () => [
+  data.piano.entries, data.book.entries, data.pastel.entries,
+  data.thoughts || [], data.archive || [], data.freezes || []
+].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
+  + "|" + (data.shop.theme || "");
+// выбранный материал в снимок не входит: он меняется от свайпа и уже показан на экране —
+// перерисовывать из-за него главную значит сбивать листание
+
+let quietRender = false;   // перерисовка без анимаций — например, после фоновой синхронизации
+
+/* Пока человек листает ленту обложек, главную не трогаем: перерисовка пересобирает
+   ленту и возвращает её к активной обложке — со стороны это «свайп не сработал». */
+let railBusy = false;
+let railBusyTimer = null;
+let pendingRender = null;
+
+function markRailBusy() {
+  railBusy = true;
+  clearTimeout(railBusyTimer);
+  railBusyTimer = setTimeout(releaseRail, 1400);   // страховка, если события кончились молча
+}
+
+function releaseRail() {
+  clearTimeout(railBusyTimer);
+  if (!railBusy) return;
+  railBusy = false;
+  if (pendingRender) { const q = pendingRender === "quiet"; pendingRender = null; render(q); }
+}
+
+function render(quiet) {
+  if (railBusy && tab === "home" && !settingsOpen) {
+    if (pendingRender !== "loud") pendingRender = quiet ? "quiet" : "loud";
+    return;
+  }
+  quietRender = !!quiet;
+  try { renderInner(); } catch (e) { console.error(e); crashScreen(e); }
+  quietRender = false;
+}
+
+function renderInner() {
+  const box = $("#view");
+  const keepScroll = box ? box.scrollTop : 0;
+  clearTimeout(railBusyTimer); railBusy = false; pendingRender = null;   // лента пересобирается заново
+
+  renderSeg();
+  renderBanner();
+  renderTabbar();
+  // главная всегда влезает в экран, остальные вкладки скроллятся внутри себя
+  $("#view").className = (tab === "home" && !settingsOpen ? "fixed" : "scrolls") + (quietRender ? " quiet" : "");
+  if (settingsOpen) renderSettings();
+  else if (tab === "home") renderHome();
+  else if (tab === "progress") renderProgress();
+  else if (tab === "notes") renderNotes();
+  else renderAch();
+  syncNotesFabs();
+
+  if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
+}
+
+function renderSeg() {
+  const box = $("#seg");
+  if (box) { box.style.display = "none"; box.innerHTML = ""; }
+}
+
+// высота закреплённого таббара — чтобы контент не заезжал под него
+function syncTabHeight() {
+  const bar = document.querySelector(".tabbar");
+  if (!bar) return;
+  const h = Math.ceil(bar.getBoundingClientRect().height);
+  if (h) document.documentElement.style.setProperty("--tab-h", h + "px");
+}
+
+function renderTabbar() {
+  const openCount = achMaterials().reduce((n, m) => n + m.open, 0);
+  $("#tabbar").innerHTML = [
+    [ "home", ICON("home", "◉"), T("tabHome")],
+    ["progress", ICON("progress", "▤"), T("tabProgress")],
+    ["notes", ICON("notes", "✎"), T("tabNotes")],
+    ["ach", ICON("ach", "✦"), `${T("tabAch")} ${openCount}`]
+  ].map(([id, ic, nm]) =>
+    `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
+  syncTabHeight();
+  requestAnimationFrame(syncTabHeight);
+  document.querySelectorAll("#tabbar button").forEach(b =>
+    b.addEventListener("click", () => {
+      tab = b.dataset.tab;
+      settingsOpen = false; settingsView = null;
+      if (tab === "notes") { notesFocus = true; shuffleThought = null; notesFilter = "all"; }
+      cfg.tab = tab; saveCfg();
+      render();
+      $("#view").scrollTop = 0;
+    }));
+}
+
+const KEYS_ART = `
+  <div class="keys">
+    <span class="w"></span><span class="w"></span><span class="w"></span><span class="w"></span>
+    <span class="w"></span><span class="w"></span><span class="w"></span>
+    <span class="b" style="left:10.2%"></span><span class="b" style="left:24.5%"></span>
+    <span class="b" style="left:53%"></span><span class="b" style="left:67.3%"></span><span class="b" style="left:81.6%"></span>
+  </div>`;
+
+const WAVE_ART = `
+  <svg class="wave" viewBox="0 0 120 56" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <circle cx="92" cy="15" r="8" fill="rgba(255,201,77,.85)"/>
+    <path d="M2 36 Q 17 24 32 36 T 62 36 T 92 36 T 118 36" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M2 45 Q 17 33 32 45 T 62 45 T 92 45 T 118 45" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>`;
+
+const SEA_ART = `
+  <svg class="wave sea" viewBox="0 0 120 64" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <circle cx="98" cy="14" r="7" fill="rgba(255,201,77,.85)"/>
+    <path d="M52 10 L52 40" stroke="rgba(255,255,255,.78)" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M54 13 L74 28 L54 34 Z" fill="rgba(255,255,255,.7)"/>
+    <path d="M34 40 L78 40 L70 49 L42 49 Z" fill="rgba(255,255,255,.55)"/>
+    <path d="M4 54 Q 19 46 34 54 T 64 54 T 94 54 T 116 54" fill="none" stroke="rgba(255,255,255,.48)" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M4 61 Q 19 53 34 61 T 64 61 T 94 61 T 116 61" fill="none" stroke="rgba(255,255,255,.24)" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
+
+const PINE_ART = `
+  <svg class="wave pine" viewBox="0 0 120 64" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <circle cx="102" cy="13" r="7" fill="rgba(255,201,77,.8)"/>
+    <path d="M60 8 L69 28 L64 28 L74 48 L46 48 L56 28 L51 28 Z" fill="rgba(255,255,255,.62)"/>
+    <path d="M30 20 L37 35 L33 35 L41 49 L19 49 L27 35 L23 35 Z" fill="rgba(255,255,255,.34)"/>
+    <path d="M90 22 L97 36 L93 36 L100 49 L80 49 L87 36 L83 36 Z" fill="rgba(255,255,255,.3)"/>
+    <path d="M8 54 L112 54" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
+
+const QUILL_ART = `
+  <svg class="wave quill" viewBox="0 0 120 64" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <path d="M84 10 C 66 16, 52 30, 44 48 C 58 44, 72 34, 80 22 C 78 32, 70 42, 58 50 L 84 10 Z" fill="rgba(255,255,255,.66)"/>
+    <path d="M44 48 L 30 56" stroke="rgba(255,255,255,.6)" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M12 58 L 96 58" stroke="rgba(255,255,255,.26)" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="100" cy="16" r="6" fill="rgba(255,201,77,.8)"/>
+  </svg>`;
+
+const LAMP_ART = `
+  <svg class="wave lamp" viewBox="0 0 120 64" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <path d="M60 6 L60 14" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M40 34 L60 14 L80 34 Z" fill="rgba(255,255,255,.62)"/>
+    <circle cx="60" cy="40" r="5" fill="rgba(255,201,77,.9)"/>
+    <path d="M46 56 L74 56" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M28 60 Q 60 46 92 60" fill="none" stroke="rgba(255,201,77,.28)" stroke-width="2"/>
+  </svg>`;
+
+// одна обложка (книга, композиция или курс)
+// все материалы одной лентой: пьесы, книга, курс
+function railItems() {
+  const out = data.piano.pieces.filter(p => !p.archived)
+    .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
+  for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
+  if (course().lessons.length) out.push({ track: "pastel" });
+  return out;
+}
+const hasMaterials = () => railItems().length > 0;
+
+// активным может остаться трек, материалов которого у профиля нет — переставляем на первый доступный
+function normalizeActive() {
+  const items = railItems();
+  if (!items.length) return;
+  const ok = items.some(i => i.track === data.active
+    && (i.track !== "piano" || i.pieceId === data.piano.activePiece)
+    && (i.track !== "book" || i.bookId === data.book.activeBook));
+  if (ok) return;
+  const first = items[0];
+  data.active = first.track;
+  if (first.pieceId) data.piano.activePiece = first.pieceId;
+  if (first.bookId) data.book.activeBook = first.bookId;
+}
+
+function activeRailIndex(items) {
+  const i = items.findIndex(it => it.track === data.active &&
+    (it.track !== "piano" || it.pieceId === data.piano.activePiece) &&
+    (it.track !== "book" || it.bookId === data.book.activeBook));
+  return Math.max(0, i);
+}
+
+/* Картинка обложки: из каталога, если она там есть, иначе файл рядом с приложением.
+   Каталожную держим в localStorage — иначе при каждом запуске её пришлось бы качать. */
+const coverCache = new Map();
+function coverSrc(id, fallback) {
+  if (!id) return fallback || "";
+  const c = catOf(id);
+  if (!c || !c.cover) return fallback || "";
+  if (coverCache.has(id)) return coverCache.get(id) || fallback || "";
+  let saved = null;
+  try { saved = localStorage.getItem(LS_COVER(id)); } catch {}
+  if (saved) { coverCache.set(id, saved); return saved; }
+  coverCache.set(id, "");
+  pullCover(id);                       // подтянем и перерисуем, пока показываем запасной файл
+  return fallback || "";
+}
+
+// обложка любого материала — не зависит от активного трека
+function coverOf(item) {
+  if (item.track === "book") {
+    const b = item.book || book();
+    const src = coverSrc(b.id, b.cover);
+    if (src) return `
+      <div class="cover photo" style="aspect-ratio:${esc(b.ratio || "3 / 4.4")}">
+        <img src="${esc(src)}" alt="${esc(b.title)}" width="465" height="720" decoding="async" fetchpriority="high">
+      </div>`;
+    return `
+      <div class="cover book ${esc(b.tone || "sea")}">
+        <div><div class="cv-author">${esc(b.author || "")}</div></div>
+        ${b.art === "wave" ? SEA_ART : b.art === "pine" ? PINE_ART : b.art === "quill" ? QUILL_ART : b.art === "lamp" ? LAMP_ART : `<div class="cv-mark">🦔</div>`}
+        <div>
+          <div class="cv-title">${esc(b.title)}</div>
+          <div class="cv-sub">${esc(b.volume || "")}</div>
+        </div>
+      </div>`;
+  }
+  if (item.track === "pastel") {
+    const c = data.pastel.course;
+    return `
+      <div class="cover pastel">
+        <div><div class="cv-author">${esc(c.author || "")}</div></div>
+        <div class="smears"><i></i><i></i><i></i><i></i></div>
+        <div>
+          <div class="cv-title">${esc(c.name)}</div>
+          <div class="cv-sub">${c.lessons.length} уроков</div>
+        </div>
+      </div>`;
+  }
+  const p = item.piece;
+  const psrc = coverSrc(p.id, p.cover);
+  if (psrc) return `
+    <div class="cover photo" style="aspect-ratio:${esc(p.ratio || "3 / 4.4")}">
+      <img src="${esc(psrc)}" alt="${esc(p.name)}" width="509" height="720" decoding="async" fetchpriority="high">
+    </div>`;
+  return `
+    <div class="cover piano ${esc(p.tone || "violet")}">
+      <div><div class="cv-author">${esc(p.author || "")}</div></div>
+      ${p.art === "wave" ? WAVE_ART : KEYS_ART}
+      <div>
+        <div class="cv-title">${esc(p.name)}</div>
+        <div class="cv-sub">${p.bars} тактов</div>
+      </div>
+    </div>`;
+}
+
+/* ── Подложка под цвет обложки ── */
+// два пятна света на каждый тон: то же семейство цветов, что и у обложек
+const TONES = {
+  violet: ["139, 124, 246", "255, 157, 63"],
+  sea:    ["86, 160, 214", "120, 214, 196"],
+  snow:   ["132, 156, 204", "170, 190, 224"],
+  night:  ["108, 132, 186", "196, 168, 120"],
+  wine:   ["214, 96, 116", "255, 170, 90"],
+  forest: ["86, 190, 140", "72, 150, 186"],
+  pastel: ["230, 140, 180", "255, 201, 77"]
+};
+
+function toneOf(item) {
+  if (!item) return "violet";
+  if (item.track === "pastel") return "pastel";
+  if (item.track === "book") return (item.book || book()).tone || "sea";
+  return (item.piece || piece()).tone || "violet";
+}
+
+let bgLayer = 0;
+/* Цвет подложки берём из самой обложки: раскладываем картинку на 24×24,
+   считаем корзины по цвету и выбираем самую заметную — частую и живую. */
+const coverTones = new Map();
+
+// подчищаем тона, посчитанные прошлой версией алгоритма
+try { Object.keys(localStorage).forEach(k => { if (k.startsWith("keiko-tone-")) localStorage.removeItem(k); }); } catch {}
+
+function readCoverTones(url) {
+  if (coverTones.has(url)) return coverTones.get(url);
+  coverTones.set(url, null);                       // чтобы не считать дважды
+
+  try { const saved = JSON.parse(localStorage.getItem("keiko-tone2-" + url) || "null");
+    if (saved) { coverTones.set(url, saved); return saved; } } catch {}
+
+  const img = new Image();
+  img.decoding = "async";
+  img.onload = () => {
+    try {
+      const N = 24;
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = N;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, N, N);
+      const d = ctx.getImageData(0, 0, N, N).data;
+
+      const box = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+        const cur = box.get(key) || { n: 0, r: 0, g: 0, b: 0 };
+        cur.n++; cur.r += r; cur.g += g; cur.b += b;
+        box.set(key, cur);
+      }
+
+      // оцениваем каждую корзину: частота, насыщенность и «не слишком тёмная»
+      const score = (c) => {
+        const r = c.r / c.n, g = c.g / c.n, b = c.b / c.n;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const sat = mx ? (mx - mn) / mx : 0;
+        const lum = (mx + mn) / 510;
+        const fit = lum > 0.12 && lum < 0.92 ? 1 : 0.25;
+        return { s: c.n * (0.25 + sat * 1.6) * fit, r, g, b, sat, lum };
+      };
+      const ranked = [...box.values()].map(score).sort((a, b) => b.s - a.s);
+      if (!ranked.length) return;
+
+      // от обложки берём оттенок, а яркость и живость задаём сами:
+      // тёмно-фиолетовый корешок сам по себе на тёмном фоне не виден
+      const toHsl = (r, g, b) => {
+        r /= 255; g /= 255; b /= 255;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+        let h = 0;
+        if (d) h = 60 * (mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4);
+        const l = (mx + mn) / 2;
+        return { h, s: d ? d / (1 - Math.abs(2 * l - 1)) : 0, l };
+      };
+      const toRgb = (h, s, l) => {
+        const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+        const v = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
+                : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+        return v.map(n => Math.round((n + m) * 255)).join(", ");
+      };
+      const glow = (c, l) => {
+        const t = toHsl(c.r, c.g, c.b);
+        const s = t.s < 0.07 ? 0.06 : Math.min(0.72, Math.max(0.4, t.s));
+        return toRgb(t.h, s, l);
+      };
+
+      const main = ranked[0];
+      const hue = (c) => toHsl(c.r, c.g, c.b).h;
+      const dh = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+      // второй цвет — заметно другого оттенка, иначе просто светлее первого
+      const other = ranked.find(c => c.s > main.s * 0.12 && dh(hue(c), hue(main)) > 35);
+      const pair = [glow(main, 0.58), other ? glow(other, 0.62) : glow(main, 0.72)];
+
+      coverTones.set(url, pair);
+      try { localStorage.setItem("keiko-tone2-" + url, JSON.stringify(pair)); } catch {}
+      paintBackdrop(lastPainted);                  // перекрашиваем, когда цвет посчитан
+    } catch {}
+  };
+  img.src = url;
+  return null;
+}
+
+let lastPainted = null;
+
+function paintBackdrop(item) {
+  const layers = document.querySelectorAll(".bgfx i");
+  if (layers.length < 2 || !item) return;
+  lastPainted = item;
+
+  const src = item.track === "book" ? (item.book || book()) : item.track === "piano" ? (item.piece || piece()) : null;
+  const fromCover = src && src.cover ? readCoverTones(src.cover) : null;
+  const [c1, c2] = fromCover || TONES[toneOf(item)] || TONES.violet;
+  const css =
+    `radial-gradient(980px 560px at 78% -12%, rgba(${c1}, 0.32), transparent 62%),` +
+    `radial-gradient(760px 460px at -6% 4%, rgba(${c2}, 0.18), transparent 58%),` +
+    `radial-gradient(760px 420px at 52% 110%, rgba(${c1}, 0.16), transparent 60%)`;
+
+  if (layers[bgLayer].style.backgroundImage === css) return;   // тот же тон — не трогаем
+  const next = layers[bgLayer ^ 1];
+  next.style.backgroundImage = css;
+  next.classList.add("on");
+  layers[bgLayer].classList.remove("on");
+  bgLayer ^= 1;
+}
+
+const RAIL_COPIES = 5;   // копии ленты для бесшовного цикла
+const RAIL_MID = 2;      // рабочая копия — центральная
+
+// лента бесконечная: рендерим несколько копий и незаметно возвращаемся в середину
+function coverRailHTML() {
+  const items = railItems();
+  const n = items.length;
+  const idx = activeRailIndex(items);
+  let html = "";
+  for (let copy = 0; copy < RAIL_COPIES; copy++) {
+    items.forEach((it, i) => {
+      const on = copy === RAIL_MID && i === idx;
+      html += `<div class="slot ${on ? "on" : ""}" data-i="${i}" data-pos="${copy * n + i}">${coverOf(it)}</div>`;
+    });
+  }
+  return `<div class="rail" id="rail">${html}</div>`;
+}
+
+function ringHTML(pct) {
+  const r = 52, c = 2 * Math.PI * r;
+  const on = c * Math.min(1, pct / 100);
+  return `
+    <div class="ring-wrap">
+      <svg class="ring" width="128" height="128" viewBox="0 0 128 128">
+        <circle class="bg" cx="64" cy="64" r="${r}"></circle>
+        ${pct > 0 ? `<circle class="fg" cx="64" cy="64" r="${r}" stroke-dasharray="${on.toFixed(1)} ${c.toFixed(1)}"></circle>` : ""}
+      </svg>
+      <div class="ring-txt"><b>${Math.round(pct)}%</b></div>
+    </div>`;
+}
+
+/* Подпись под названием ломается по разделителю «·», а не посреди фразы:
+   «осталось 464 страницы» уходит на новую строку целиком */
+const subLine = (...parts) => parts.filter(Boolean)
+  .map((p, i, a) => `<span class="sub-part">${p}${i < a.length - 1 ? " ·" : ""}</span>`)
+  .join(" ");
+
+function heroSub(s) {
+  if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
+  if (isPastel()) return subLine(`${s.done} из ${s.lessons} уроков`, `${s.minutes} мин пройдено`);
+  return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
+}
+
+function renderHome() {
+  if (!hasMaterials()) { renderEmpty("Здесь появятся материалы", "Пока не добавлено ни одного: ни пьесы, ни книги, ни курса."); return; }
+  const s = curStats();
+  const g = goalProgress();
+  const st = s.streakAll;
+  const doneToday = !!entryFor(todayStr());
+  const ach = achState();
+  const open = ach.filter(a => a.done).length;
+
+  const sub = heroSub(s);
+
+  const freeze = activeFreeze();
+  const nudge = freeze
+    ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
+    : "";
+
+  $("#view").innerHTML = `
+    <div class="hero">
+      ${coverRailHTML()}
+      ${ringHTML(s.pct)}
+      <div class="hero-title">
+        <h2>${isBook() ? esc(book().title) : isPastel() ? esc(course().name) : esc(piece().name)}</h2>
+        <p>${sub}</p>
+        ${paceHTML()}
+      </div>
+      <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
+        ${!gistReady()
+          ? "🔒 Подключить синхронизацию"
+          : doneToday
+            ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
+            : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
+      </button>
+      <div class="nudge">${nudge}</div>
+      <div class="shake-hint" id="shakeHint"></div>
+    </div>`;
+
+  $("#ctaBtn").addEventListener("click", () => {
+    if (!gistReady()) { openSettingsSheet(); return; }
+    selectedDate = todayStr();
+    openLogSheet();
+  });
+
+  paintBackdrop(railItems()[activeRailIndex(railItems())]);
+  setupRail();
+  renderShakeHint();
+}
+
+/* Карусель: центрируем активную обложку и слушаем свайп */
+let railApi = null;   // доступ к прокрутке ленты извне (сегмент, кубик)
+
+function setupRail() {
+  const rail = $("#rail");
+  if (!rail) return;
+  const slots = [...rail.querySelectorAll(".slot")];
+  if (!slots.length) return;
+
+  const items = railItems();
+  const n = items.length;
+
+  const pad = Math.max(0, (rail.clientWidth - slots[0].offsetWidth) / 2);
+  rail.style.paddingLeft = pad + "px";
+  rail.style.paddingRight = pad + "px";
+
+  const centerOfSlot = (el) => {
+    const r = el.getBoundingClientRect(), rr = rail.getBoundingClientRect();
+    return r.left - rr.left + rail.scrollLeft + r.width / 2;
+  };
+  const targetFor = (pos) => centerOfSlot(slots[pos]) - rail.clientWidth / 2;
+
+  const nearestPos = () => {
+    const mid = rail.scrollLeft + rail.clientWidth / 2;
+    let best = 0, bestDist = Infinity;
+    slots.forEach((el, i) => {
+      const d = Math.abs(centerOfSlot(el) - mid);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  };
+
+  // переносимся в среднюю копию, только когда подошли к краю ленты:
+  // каждый лишний перенос сдвигает scrollLeft и сбивает доводку свайпа
+  const normalize = (pos) => {
+    if (pos >= n && pos < slots.length - n) return pos;
+    const target = RAIL_MID * n + ((pos % n) + n) % n;
+    if (target !== pos) {
+      const delta = targetFor(target) - targetFor(pos);
+      const snap = rail.style.scrollSnapType;
+      rail.style.scrollSnapType = "none";
+      rail.scrollLeft += delta;
+      rail.style.scrollSnapType = snap;
+    }
+    return target;
+  };
+
+  let spinning = false;
+  let touching = false;   // палец на ленте — доводку не начинаем
+
+  const settle = () => {
+    if (spinning || touching) return;
+    const pos = normalize(nearestPos());
+    slots.forEach((el, i) => el.classList.toggle("on", i === pos));
+    paintBackdrop(items[pos % n]);
+    setActiveMaterial(items[pos % n]);
+    releaseRail();
+  };
+
+  // ждём настоящей остановки: пока позиция меняется, ничего не трогаем
+  let idleTimer = null;
+  const settleWhenIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (spinning) return;
+      const before = rail.scrollLeft;
+      setTimeout(() => {
+        if (spinning) return;
+        if (touching || Math.abs(rail.scrollLeft - before) > 0.5) { settleWhenIdle(); return; }
+        settle();
+      }, 90);
+    }, 110);
+  };
+
+  // программная центровка сразу применяет материал — не ждём событий скролла
+  const centerOn = (pos, smooth) => {
+    if (!slots[pos]) return;
+    clearTimeout(idleTimer);
+    rail.scrollTo({ left: targetFor(pos), behavior: smooth ? "smooth" : "auto" });
+    slots.forEach((el, i) => el.classList.toggle("on", i === pos));
+    paintBackdrop(items[pos % n]);
+    setActiveMaterial(items[pos % n]);
+  };
+
+  // кубик: лента разгоняется, прокручивает несколько обложек и плавно тормозит
+  const spinTo = (baseIdx, done) => {
+    if (spinning) return;
+    const cur = nearestPos();
+    // цель — на пару оборотов вперёд, чтобы обложки успели промелькнуть
+    let pos = baseIdx;
+    while (pos < cur + n * 2) pos += n;
+    while (pos >= slots.length) pos -= n;
+    if (pos <= cur) pos += n;
+
+    const from = rail.scrollLeft;
+    const to = targetFor(pos);
+    if (Math.abs(to - from) < 2) { settle(); done && done(); return; }
+
+    spinning = true;
+    clearTimeout(idleTimer);
+    rail.style.scrollSnapType = "none";
+    rail.style.scrollBehavior = "auto";
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(guard);
+      rail.scrollLeft = to;                    // точная доводка без рывка
+      rail.style.scrollSnapType = "x mandatory";
+      rail.style.scrollBehavior = "";
+      spinning = false;
+      const fixed = normalize(pos);
+      slots.forEach((el, i) => el.classList.toggle("on", i === fixed));
+      setActiveMaterial(items[fixed % n]);
+      releaseRail();
+      done && done();
+    };
+
+    // страховка: если кадры не идут (вкладка в фоне), доводим результат сами
+    const guard = setTimeout(finish, 3600);
+
+    const t0 = performance.now(), dur = 2600;
+    const ease = k => 1 - Math.pow(1 - k, 5);   // долгий разгон и мягкое торможение
+    const step = (now) => {
+      if (finished) return;
+      const k = Math.min(1, (now - t0) / dur);
+      rail.scrollLeft = from + (to - from) * ease(k);
+      if (k < 1) requestAnimationFrame(step); else finish();
+    };
+    requestAnimationFrame(step);
+  };
+
+  railApi = {
+    centerOn: (baseIdx, smooth) => centerOn(baseIdx + RAIL_MID * n, smooth),
+    spinTo,
+    indexOfTrack: (track) => items.findIndex(it => it.track === track),
+    indexOf: (track, pieceId) => items.findIndex(it => it.track === track && (!pieceId || it.pieceId === pieceId))
+  };
+
+  centerOn(activeRailIndex(items) + RAIL_MID * n, false);
+  if (n < 2) return;
+
+  // фон догоняет обложку прямо в движении, но не чаще кадра и только при смене обложки —
+  // иначе кроссфейд перезапускается десятки раз за свайп и экран мерцает
+  let bgIdx = -1, bgTick = false, bgFallback = null;
+  const followBackdrop = () => {
+    if (bgTick) return;
+    bgTick = true;
+    const run = () => {
+      if (!bgTick) return;
+      bgTick = false;
+      clearTimeout(bgFallback);
+      const i = nearestPos() % n;
+      if (i === bgIdx) return;
+      bgIdx = i;
+      paintBackdrop(items[i]);
+    };
+    requestAnimationFrame(run);
+    bgFallback = setTimeout(run, 140);   // если кадры не идут (вкладка в фоне) — не залипаем
+  };
+
+  rail.addEventListener("touchstart", () => { touching = true; markRailBusy(); }, { passive: true });
+  ["touchend", "touchcancel"].forEach(ev =>
+    rail.addEventListener(ev, () => { touching = false; settleWhenIdle(); }, { passive: true }));
+
+  rail.addEventListener("scroll", () => {
+    if (!spinning) markRailBusy();
+    followBackdrop();
+    settleWhenIdle();
+  }, { passive: true });
+  if ("onscrollend" in rail) rail.addEventListener("scrollend", () => { if (!spinning) settle(); });
+
+  slots.forEach((el, i) => el.addEventListener("click", () => {
+    if (!el.classList.contains("on")) centerOn(i, true);
+  }));
+}
+
+// смена материала без перерисовки ленты
+function setActiveMaterial(item) {
+  if (!item) return;
+  const same = data.active === item.track &&
+    (item.track !== "piano" || data.piano.activePiece === item.pieceId) &&
+    (item.track !== "book" || data.book.activeBook === item.bookId);
+  if (same) return;
+
+  data.active = item.track;
+  if (item.pieceId) data.piano.activePiece = item.pieceId;
+  if (item.bookId) data.book.activeBook = item.bookId;
+  paintBackdrop(item);
+  pending = []; pickLessons = [];
+  selectedDate = todayStr();
+  syncPickers();
+  saveData();
+  schedulePush();
+  updateHeroInfo();
+  updateAchBadge();   // таббар целиком не перерисовываем: он бы мигал на каждом свайпе
+}
+
+// счётчик открытых наград в таббаре — меняем только цифру
+function updateAchBadge() {
+  const b = document.querySelector('#tabbar button[data-tab="ach"]');
+  if (!b) return;
+  const open = achMaterials().reduce((n, m) => n + m.open, 0);
+  const txt = [...b.childNodes].find(x => x.nodeType === 3);
+  if (txt) txt.nodeValue = `${T("tabAch")} ${open}`;
+}
+
+function updateHeroInfo() {
+  const s = curStats();
+  const doneToday = !!entryFor(todayStr());
+
+  // содержимое кольца меняем внутри элемента: пересоздание запускало анимацию появления заново
+  const ring = $(".ring-wrap");
+  if (ring) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = ringHTML(s.pct);
+    ring.innerHTML = tmp.firstElementChild.innerHTML;
+  }
+
+  const title = $(".hero-title");
+  if (title) title.innerHTML = `
+    <h2>${isBook() ? esc(book().title) : isPastel() ? esc(course().name) : esc(piece().name)}</h2>
+    <p>${heroSub(s)}</p>
+    ${paceHTML()}`;
+
+  const cta = $("#ctaBtn");
+  if (cta) {
+    cta.classList.toggle("locked", !gistReady());
+    cta.classList.toggle("done", gistReady() && doneToday);
+    cta.innerHTML = !gistReady()
+      ? "🔒 Подключить синхронизацию"
+      : doneToday
+        ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
+        : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"));
+  }
+
+  const nudge = $(".nudge");
+  if (nudge) {
+    const freeze = activeFreeze();
+    nudge.innerHTML = freeze
+      ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
+      : "";
+  }
+}
+function barMap(arr, cls) {
+  const bars = piece().bars;
+  let cells = "";
+  for (let b = 1; b <= bars; b++) {
+    const n = arr[b] || 0;
+    const lvl = n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : 3;
+    cells += `<i class="bar l${lvl} ${cls}${b % 10 === 0 && b !== bars ? " tick" : ""}" title="Такт ${b}: ${n} ${plural(n, "проход", "прохода", "проходов")}"></i>`;
+  }
+  return `<div class="bar-strip" style="--n:${bars}">${cells}</div>`;
+}
+
+// активность по дням недели: сколько занятий в каждый день (все хобби)
+function weekDots() {
+  const monday = mondayOf(new Date());
+  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries].filter(e => !e.deleted);
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday); d.setDate(d.getDate() + i);
+    const ds = dateStr(d);
+    const cnt = new Set(all.filter(e => e.date === ds).map(e => e.date + (e.pieceId || e.bookId || e.courseId || ""))).size;
+    out.push({ ds, dow: DOW[i], count: cnt, future: ds > todayStr(), today: ds === todayStr(), frozen: isFrozen(ds) });
+  }
+  return out;
+}
+
+// всё сделанное за отрезок дат: дни, такты, страницы, уроки
+function rangeStats(from, to) {
+  const inRange = e => !e.deleted && e.date >= from && e.date <= to;
+
+  const piano = data.piano.entries.filter(inRange);
+  let bars = 0;
+  for (const e of piano) for (const sp of e.spans || []) bars += sp.to - sp.from + 1;
+
+  const bookList = data.book.entries.filter(inRange);
+  const pages = pagesRead(from, to);
+
+  const pastel = data.pastel.entries.filter(inRange);
+  let lessons = 0;
+  for (const e of pastel) lessons += (e.lessons || []).length;
+
+  const days = new Set([...piano, ...bookList, ...pastel].map(e => e.date)).size;
+  const tracks = new Set([
+    ...(piano.length ? ["piano"] : []),
+    ...(bookList.length ? ["book"] : []),
+    ...(pastel.length ? ["pastel"] : [])
+  ]);
+  return { days, bars, pages, lessons, tracks, entries: piano.length + bookList.length + pastel.length };
+}
+
+/* ── Сколько ещё занятий до конца материала ──
+   Считаем по последним сессиям: сколько единиц (тактов, страниц, уроков)
+   прибавлялось за раз, и делим на остаток. */
+function paceForecast() {
+  const list = entries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  if (!list.length) return null;
+
+  // прогресс в единицах на конец каждой сессии
+  let marks = [], unit = "", total = 0;
+
+  if (isBook()) {
+    const b = book();
+    total = b.pages;
+    unit = "page";
+    let page = b.startPage || 0;
+    for (const e of list) { page = Math.max(page, e.page || 0); marks.push(page); }
+    marks.unshift(b.startPage || 0);
+  } else if (isPastel()) {
+    total = course().lessons.length;
+    unit = "lesson";
+    const seen = new Set();
+    marks.push(0);
+    for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
+  } else {
+    const bars = piece().bars;
+    total = bars * 2;                       // каждая рука отдельно
+    unit = "bar";
+    const r = new Set(), l = new Set();
+    marks.push(0);
+    for (const e of list) {
+      for (const sp of e.spans || []) {
+        const set = sp.hand === "left" ? l : r;
+        for (let i = Math.max(1, sp.from); i <= Math.min(bars, sp.to); i++) set.add(i);
+      }
+      marks.push(r.size + l.size);
+    }
+  }
+
+  const done = marks[marks.length - 1];
+  const left = Math.max(0, total - done);
+  if (!left) return { left: 0, sessions: 0, pace: 0, unit, done: true };
+
+  // средний прирост за последние сессии (берём до пяти, нули не считаем)
+  const gains = [];
+  for (let i = marks.length - 1; i > 0 && gains.length < 8; i--) {
+    const g = marks[i] - marks[i - 1];
+    if (g > 0) gains.push(g);
+  }
+  if (!gains.length) return null;
+
+  // медиана устойчивее среднего: один марафон на полкниги не должен задирать прогноз
+  const sorted = gains.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const pace = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return { left, pace, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+}
+
+/* Чем дальше срок, тем грубее формулировка: точная дата через два месяца —
+   ложная точность, погрешность там всё равно в неделях. */
+const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+function humanWhen(d, days) {
+  const gen = MONTHS_GEN[d.getMonth()];
+  const year = d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "";
+
+  if (days <= 7) return "закончишь на этой неделе";
+  if (days <= 24) return `примерно к ${d.getDate()} ${gen}`;
+  const part = d.getDate() <= 10 ? "началу" : d.getDate() <= 20 ? "середине" : "концу";
+  return `примерно к ${part} ${gen}${year}`;
+}
+
+// короткая строка прогноза: «≈ 12 занятий · примерно до 5 октября»
+function paceHTML() {
+  const f = paceForecast();
+  if (!f) return "";
+  if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
+
+  // прикидка от спокойного ритма: занимаешься через день — вот и срок.
+  // Пропустил — назавтра дата сдвинется, и это нормально
+  const days = f.sessions * 2;
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `<span class="pace">${subLine(
+    `≈ ${f.sessions} ${plural(f.sessions, "занятие", "занятия", "занятий")}`,
+    `в таком темпе ${humanWhen(d, days)}`
+  )}</span>`;
+}
+
+// границы текущего периода — вся неделя или весь месяц
+function periodRange() {
+  const d = new Date();
+  if (period === "month") {
+    return {
+      from: dateStr(new Date(d.getFullYear(), d.getMonth(), 1)),
+      to: dateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+    };
+  }
+  const monday = mondayOf(d);
+  const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
+  return { from: dateStr(monday), to: dateStr(sunday) };
+}
+
+// точки графика: вся текущая неделя или весь месяц, включая дни впереди
+function periodSeries() {
+  const out = [];
+  const today = todayStr();
+
+  if (period === "month") {
+    const d = new Date();
+    const total = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    for (let i = 1; i <= total; i++) {
+      const ds = dateStr(new Date(d.getFullYear(), d.getMonth(), i));
+      out.push({ ds, label: (i === 1 || i % 5 === 0) ? String(i) : "", value: rangeStats(ds, ds).entries,
+        today: ds === today, frozen: isFrozen(ds), future: ds > today });
+    }
+    return out;
+  }
+
+  const monday = mondayOf(new Date());
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday); d.setDate(d.getDate() + i);
+    const ds = dateStr(d);
+    out.push({ ds, label: DOW[i], value: rangeStats(ds, ds).entries,
+      today: ds === today, frozen: isFrozen(ds), future: ds > today });
+  }
+  return out;
+}
+
+// плавная линия активности за выбранный период
+function lineChartHTML(points) {
+  const W = 320, H = 118, padX = 14, top = 16, bottom = 84;
+  const max = Math.max(1, ...points.map(p => p.value));
+  const n = points.length;
+  const pts = points.map((p, i) => ({
+    x: padX + (n > 1 ? i * (W - padX * 2) / (n - 1) : (W - padX * 2) / 2),
+    y: bottom - (p.value / max) * (bottom - top),
+    ...p
+  }));
+
+  let path = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i], p1 = pts[i + 1];
+    const cx = (p0.x + p1.x) / 2;
+    path += ` C ${cx.toFixed(1)} ${p0.y.toFixed(1)}, ${cx.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+  }
+  const area = `${path} L ${pts[pts.length - 1].x.toFixed(1)} ${bottom + 2} L ${pts[0].x.toFixed(1)} ${bottom + 2} Z`;
+  const dotEvery = n > 14 ? Math.ceil(n / 14) : 1;
+
+  return `
+    <div class="wline">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--gold)" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="var(--gold)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="${padX}" y1="${bottom + 2}" x2="${W - padX}" y2="${bottom + 2}" stroke="rgba(255,255,255,0.08)"/>
+        <path d="${area}" fill="url(#lineFill)"/>
+        <path d="${path}" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        ${pts.map((p, i) => (i % dotEvery === 0 || p.today) ? `
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.today ? 5 : 3.5}"
+            fill="${p.value ? "var(--gold)" : "var(--bg)"}" stroke="${p.today ? "var(--ink)" : "var(--gold)"}" stroke-width="${p.today ? 2 : 1.4}"
+            opacity="${p.future ? 0.35 : 1}"/>` : "").join("")}
+      </svg>
+      <div class="wl-days" style="grid-template-columns: repeat(${n}, 1fr)">
+        ${pts.map(p => `<span class="${p.today ? "now" : ""} ${p.frozen ? "frz" : ""}">${esc(p.label || "")}</span>`).join("")}
+      </div>
+    </div>`;
+}
+
+// шапка «Прогресс»: неделя или месяц целиком
+function summaryHTML() {
+  const r = periodRange();
+  const st = rangeStats(r.from, r.to);
+  const g = goalProgress();
+  const now = new Date();
+
+  let ringVal, ringMax, cap, sub, hint;
+  if (period === "month") {
+    const total = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const left = total - now.getDate();
+    const weeks = Math.round(total / 7);           // недель в месяце
+    const monthGoal = (data.weekGoal || 4) * weeks; // цель месяца = недельная × недели
+    ringVal = st.days; ringMax = monthGoal;
+    cap = new Intl.DateTimeFormat("ru", { month: "long" }).format(now);
+    sub = `из ${monthGoal} ${plural(monthGoal, "дня", "дней", "дней")} цели`;
+    hint = ringVal >= monthGoal
+      ? `Цель месяца взята! ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")}`
+      : `Цель месяца: ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")} · впереди ${left} ${plural(left, "день", "дня", "дней")}`;
+  } else {
+    ringVal = g.days; ringMax = g.goal;
+    cap = "Эта неделя";
+    sub = `из ${g.goal} ${plural(g.goal, "дня", "дней", "дней")} цели`;
+    hint = g.done
+      ? "Цель недели закрыта — всё сверху в удовольствие"
+      : `До цели ещё ${g.left} ${plural(g.left, "день", "дня", "дней")}`;
+  }
+
+  const R = 78, C = 2 * Math.PI * R;
+  const on = C * Math.min(1, ringMax ? ringVal / ringMax : 0);
+  const best = bestStreakAll();
+
+  return `
+    <div class="periods">
+      ${[["week", "Неделя"], ["month", "Месяц"]].map(([k, t]) =>
+        `<button class="pbtn ${period === k ? "on" : ""}" data-p="${k}" type="button">${t}</button>`).join("")}
+    </div>
+
+    <div class="summary">
+      <div class="sum-ring">
+        <svg viewBox="0 0 190 190">
+          <circle class="bg" cx="95" cy="95" r="${R}"></circle>
+          ${ringVal ? `<circle class="fg" cx="95" cy="95" r="${R}" stroke-dasharray="${on.toFixed(1)} ${C.toFixed(1)}"></circle>` : ""}
+        </svg>
+        <div class="sum-txt">
+          <span class="sum-cap">${esc(cap)}</span>
+          <b>${ringVal}</b>
+          <span class="sum-sub">${esc(sub)}</span>
+        </div>
+      </div>
+
+      <div class="sum-chips">
+        <div class="sc ${best ? "hot" : ""}"><b>🔥 ${best}</b><span>${T("streak")}</span></div>
+        <div class="sc"><b>${st.days}</b><span>${plural(st.days, "день", "дня", "дней")}</span></div>
+        <div class="sc"><b>${st.bars}</b><span>${plural(st.bars, "такт", "такта", "тактов")}</span></div>
+        <div class="sc"><b>${st.pages}</b><span>страниц</span></div>
+        <div class="sc"><b>${st.lessons}</b><span>${plural(st.lessons, "урок", "урока", "уроков")}</span></div>
+      </div>
+
+      ${lineChartHTML(periodSeries())}
+      <div class="period-hint">${esc(hint)}</div>
+    </div>`;
+}
+
+// серия одна на всё приложение: важно заниматься каждый день, а чем — не важно
+const bestStreakAll = () => streakAll();
+
+function renderEmpty(title, text) {
+  $("#view").innerHTML = `
+    <div class="empty-state">
+      <div class="es-mark">稽古</div>
+      <h2>${esc(title)}</h2>
+      <p>${esc(text)}</p>
+    </div>`;
+}
+
+function renderProgress() {
+  if (!hasMaterials()) { renderEmpty("Пока нечего показывать", "Как появятся материалы, здесь будет прогресс по неделям и месяцам."); return; }
+  $("#view").innerHTML = `
+    <div class="panel sum-panel">
+      ${summaryHTML()}
+    </div>
+
+    <div class="panel">
+      <div class="cal-head">
+        <div class="cal-title" id="calTitle"></div>
+        <div class="cal-nav">
+          <button id="calPrev" type="button">‹</button>
+          <button id="calNext" type="button">›</button>
+        </div>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend">
+        <span><i class="dot p"></i> пианино</span>
+        <span><i class="dot b"></i> чтение</span>
+        <span><i class="dot c"></i> пастель</span>
+        <span><i class="dot f"></i> пауза</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="cal-head">
+        <h3 style="margin:0">День</h3>
+        <div class="day-nav">
+          <button id="dayPrev" type="button">‹</button>
+          <button class="cur" id="dayCur" type="button"></button>
+          <button id="dayNext" type="button">›</button>
+        </div>
+      </div>
+      <div id="dayBox"></div>
+    </div>`;
+
+  renderCalendar();
+  renderDayBox();
+
+  document.querySelectorAll(".pbtn").forEach(b =>
+    b.addEventListener("click", () => {
+      period = b.dataset.p;
+      cfg.period = period; saveCfg();
+      renderProgress();
+    }));
+
+  $("#calPrev").addEventListener("click", () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
+  $("#calNext").addEventListener("click", () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
+  $("#dayPrev").addEventListener("click", () => shiftDay(-1));
+  $("#dayNext").addEventListener("click", () => shiftDay(1));
+  $("#dayCur").addEventListener("click", () => goToDate(todayStr()));
+}
+
+// все записи всех хобби за дату — календарь и день теперь общие
+function allEntriesOn(ds) {
+  const out = [];
+  for (const e of data.piano.entries.filter(e => !e.deleted && e.date === ds)) {
+    const p = data.piano.pieces.find(x => x.id === (e.pieceId || "bwv853"));
+    out.push({ track: "piano", icon: "🎹", title: p ? p.name : "Пианино", entry: e,
+      what: (e.spans || []).length ? e.spans.map(spanText).join(" · ") : "занимался" });
+  }
+  for (const e of data.book.entries.filter(e => !e.deleted && e.date === ds)) {
+    out.push({ track: "book", icon: "📖", title: book().title, entry: e,
+      what: e.page ? `до ${e.page}-й стр.` : "читал" });
+  }
+  for (const e of data.pastel.entries.filter(e => !e.deleted && e.date === ds)) {
+    out.push({ track: "pastel", icon: "🎨", title: course().name, entry: e,
+      what: (e.lessons || []).length ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}` : "занимался" });
+  }
+  return out;
+}
+
+function historyHTML() {
+  const hist = weeklyHistory(12);
+  const max = Math.max(1, ...hist.map(h => h.days));
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
+  const total = hist.reduce((a, h) => a + h.days, 0);
+
+  return `
+    <div class="hist">
+      ${hist.map((h, i) => `
+        <div class="hb" title="${fmt.format(fromStr(h.start))}: ${h.days} ${plural(h.days, "день", "дня", "дней")}">
+          <i style="height:${Math.round(h.days / max * 100)}%"></i>
+          <span>${i % 3 === 0 ? fmt.format(fromStr(h.start)).replace(/\s.*/, "") : ""}</span>
+        </div>`).join("")}
+    </div>
+    <div class="hist-note">За 12 недель — <b>${total}</b> ${plural(total, "занятие", "занятия", "занятий")} по этому материалу</div>`;
+}
+
+function renderCalendar() {
+  const first = new Date(calYear, calMonth, 1);
+  const total = new Date(calYear, calMonth + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;
+  const today = todayStr();
+
+  $("#calTitle").textContent = new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" })
+    .format(first).replace(" г.", "");
+
+  let html = DOW.map(d => `<div class="dow">${d}</div>`).join("");
+  for (let i = 0; i < lead; i++) html += `<div class="day blank"></div>`;
+
+  for (let d = 1; d <= total; d++) {
+    const ds = dateStr(new Date(calYear, calMonth, d));
+    const on = allEntriesOn(ds);
+    const tracks = new Set(on.map(x => x.track));
+    let cls = "day";
+    if (on.length) cls += " has";
+    if (isFrozen(ds)) cls += " frozen";
+    if (ds === today) cls += " today";
+    if (ds === selectedDate) cls += " sel";
+    if (ds > today) cls += " future";
+    const dots = [...tracks].map(t => `<i class="dot ${t === "piano" ? "p" : t === "book" ? "b" : "c"}"></i>`).join("");
+    html += `<div class="${cls}" data-date="${ds}"><b>${d}</b><span class="dots-row">${dots}</span></div>`;
+  }
+  $("#calGrid").innerHTML = html;
+
+  document.querySelectorAll(".day[data-date]").forEach(el =>
+    el.addEventListener("click", () => goToDate(el.dataset.date)));
+}
+
+function renderDayBox() {
+  $("#dayCur").textContent = fmtDay(selectedDate);
+  $("#dayNext").disabled = selectedDate >= todayStr();
+
+  const list = allEntriesOn(selectedDate);
+  const frozen = isFrozen(selectedDate);
+
+  $("#dayBox").innerHTML = `
+    ${frozen ? `<div class="day-freeze">🌴 Этот день в паузе — серию не рвёт</div>` : ""}
+    ${list.length
+      ? `<div class="day-list">${list.map(x => `
+          <div class="rec">
+            <span class="what">${x.icon} ${x.what}</span>
+            <span class="note">${x.entry.note ? esc(x.entry.note) : esc(x.title)}</span>
+            <button class="del" data-del="${x.entry.id}" data-track="${x.track}" type="button">✕</button>
+          </div>`).join("")}</div>`
+      : `<div class="empty">В этот день ничего не отмечено</div>`}
+`;
+
+  document.querySelectorAll("[data-del]").forEach(b =>
+    b.addEventListener("click", () => {
+      const track = b.dataset.track;
+      const e = data[track].entries.find(x => x.id === b.dataset.del);
+      if (!e) return;
+      if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
+      e.deleted = true; e.updatedAt = now();
+      saveData(); schedulePush(); render();
+      toast("Запись удалена");
+    }));
+
+}
+
+// все материалы с их наградами — для входного списка
+function achMaterials() {
+  if (!hasMaterials()) return [];
+  const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
+  const out = [];
+
+  for (const p of data.piano.pieces.filter(x => !x.archived)) {
+    data.active = "piano"; data.piano.activePiece = p.id;
+    const list = achState(); let f = factsState();
+    out.push({ track: "piano", pieceId: p.id, icon: "🎹", title: p.name, sub: p.author,
+      cover: p.cover || "", ratio: p.ratio || "",
+      open: list.filter(a => a.done).length, total: list.length,
+      fOpen: f.filter(x => x.open).length, fTotal: f.length });
+  }
+  data.active = "book";
+  for (const b of data.book.books.filter(x => !x.archived)) {
+    data.book.activeBook = b.id;
+    const l = achState(), fx = factsState();
+    out.push({ track: "book", bookId: b.id, icon: "📖", title: b.title, sub: b.author,
+      cover: b.cover || "", ratio: b.ratio || "",
+      open: l.filter(a => a.done).length, total: l.length,
+      fOpen: fx.filter(x => x.open).length, fTotal: fx.length });
+  }
+
+  data.active = "pastel";
+  let list = course().lessons.length ? achState() : []; let f = course().lessons.length ? factsState() : [];
+  if (course().lessons.length)
+    out.push({ track: "pastel", icon: "🎨", title: course().name, sub: course().author,
+      cover: course().cover || "", ratio: course().ratio || "",
+      open: list.filter(a => a.done).length, total: list.length,
+      fOpen: f.filter(x => x.open).length, fTotal: f.length });
+
+  data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
+  return out;
+}
+
+// выполняет функцию в контексте выбранного материала
+function withMaterial(view, fn) {
+  const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
+  data.active = view.track;
+  if (view.track === "piano" && view.pieceId) data.piano.activePiece = view.pieceId;
+  if (view.track === "book" && view.bookId) data.book.activeBook = view.bookId;
+  const res = fn();
+  data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
+  return res;
+}
+
+function renderAch() {
+  if (!achView) { renderAchList(); return; }
+  if (achTab !== "facts") achTab = "ach";
+  renderAchMaterial(achView);
+}
+
+// входной экран: материалы и сколько наград по каждому
+function renderAchList() {
+  if (achTop === "shelf") { renderShelfInto(); return; }
+  if (!hasMaterials()) { renderEmpty("Достижений пока нет", "Они появятся вместе с первым материалом."); return; }
+  const mats = achMaterials();
+
+  $("#view").innerHTML = `
+    ${achTopHTML()}
+    <div class="mat-list">
+      ${mats.map(m => `
+        <button class="mat-card" data-track="${m.track}" data-piece="${m.pieceId || ""}" data-book="${m.bookId || ""}" type="button">
+          <span class="mc-tile t-${m.track}"><i>${m.icon}</i></span>
+          <span class="mc-body">
+            <span class="mc-title">${esc(m.title)}</span>
+            ${m.sub ? `<span class="mc-sub">${esc(m.sub)}</span>` : ""}
+            <span class="mc-bar"><i style="width:${m.total ? m.open / m.total * 100 : 0}%"></i></span>
+            <span class="mc-tags"><em>✦ ${m.open}/${m.total}</em><em>💡 ${m.fOpen}/${m.fTotal}</em></span>
+          </span>
+          <span class="mc-go">›</span>
+        </button>`).join("")}
+    </div>`;
+
+  bindAchTop();
+  document.querySelectorAll(".mat-card").forEach(b =>
+    b.addEventListener("click", () => {
+      achView = { track: b.dataset.track, pieceId: b.dataset.piece || null, bookId: b.dataset.book || null };
+      cfg.achView = achView; saveCfg();
+      renderAch();
+      $("#view").scrollTop = 0;
+    }));
+}
+
+// карточки знаний по материалу
+function factsBlockHTML(view) {
+  const list = withMaterial(view, () => factsState());
+  if (!list.length) return `<div class="empty-note">Для этого материала карточек пока нет</div>`;
+
+  const lessons = view.track === "pastel";
+  const opened = list.filter(f => f.open).reverse();      // сверху — та, что открылась последней
+  const locked = list.filter(f => !f.open);
+  const next = locked[0];
+  const label = (f) => f.unit === "page"
+    ? `со страницы ${f.need}`
+    : `после ${f.need} ${lessons ? plural(f.need, "урока", "уроков", "уроков") : plural(f.need, "занятия", "занятий", "занятий")}`;
+
+  return `
+    <div class="feed-head">${locked.length
+      ? `Впереди ещё ${locked.length} ${plural(locked.length, "карточка", "карточки", "карточек")}${next ? ` · ближайшая ${label(next)}` : ""}`
+      : "Все карточки открыты 🎉"}</div>
+
+    ${opened.length ? `<div class="feed">
+      ${opened.map(f => `
+        <article class="post">
+          <div class="post-top"><span class="fi">💡</span><h4>${esc(f.t)}</h4></div>
+          <p class="post-text">${esc(f.x)}</p>
+          ${(f.more || []).length ? `<div class="post-dig">
+            ${f.more.map(m => `<div class="dig-item">${esc(m)}</div>`).join("")}
+          </div>` : ""}
+        </article>`).join("")}
+    </div>` : ""}`;
+}
+
+// награды конкретного материала
+function renderAchMaterial(view) {
+  const ach = withMaterial(view, () => achState());
+  const words = withMaterial(view, () => achWords());
+  const title = withMaterial(view, () => isBook() ? book().title : isPastel() ? course().name : piece().name);
+  const icon = view.track === "book" ? "📖" : view.track === "pastel" ? "🎨" : "🎹";
+  const open = ach.filter(a => a.done).length;
+  const facts = withMaterial(view, () => factsState());
+  let teased = 0;
+
+  $("#view").innerHTML = `
+    <button class="back" id="achBack" type="button">‹ Все материалы</button>
+
+    <div class="ach-top">
+      <div class="ach-hero">
+        <span class="mc-tile big t-${view.track}"><i>${icon}</i></span>
+        <span class="ach-hero-txt">
+          <b>${esc(title)}</b>
+          <em>${achTab === "facts" ? `${facts.filter(f => f.open).length} из ${facts.length} карточек знаний` : `${open} из ${ach.length} достижений открыто`}</em>
+        </span>
+      </div>
+      <div class="ach-progress"><i style="width:${achTab === "facts"
+        ? (facts.length ? facts.filter(f => f.open).length / facts.length * 100 : 0)
+        : open / ach.length * 100}%"></i></div>
+    </div>
+
+    <div class="seg" id="achTabs">
+      <button data-at="ach" class="${achTab === "ach" ? "on" : ""}" type="button">${T("segAch")}</button>
+      <button data-at="facts" class="${achTab === "facts" ? "on" : ""}" type="button">${T("segFacts")}</button>
+    </div>
+
+    ${achTab === "facts" ? factsBlockHTML(view) : `
+    <div class="ach-grid">
+      ${ach.map(a => {
+        if (a.done) return `
+          <button class="ach open" data-id="${a.id}" type="button">
+            <span class="ic">${a.icon}</span><span class="nm">${esc(a.name)}</span>
+          </button>`;
+        const tease = !a.secret && teased < 2;
+        if (tease) teased++;
+        return `
+          <button class="ach locked ${tease ? "next" : ""}" data-id="${a.id}" type="button">
+            <span class="ic">${tease ? a.icon : "🔒"}</span>
+            <span class="nm">${tease ? esc(a.name) : "???"}</span>
+          </button>`;
+      }).join("")}
+    </div>`}`;
+
+  document.querySelectorAll("#achTabs button").forEach(b =>
+    b.addEventListener("click", () => {
+      achTab = b.dataset.at; cfg.achTab = achTab; saveCfg();
+      renderAch();
+      $("#view").scrollTop = 0;
+    }));
+
+  $("#achBack").addEventListener("click", () => {
+    achView = null; cfg.achView = null; saveCfg();
+    renderAch();
+    $("#view").scrollTop = 0;
+  });
+
+  document.querySelectorAll(".ach").forEach(b =>
+    b.addEventListener("click", () => {
+      const a = ach.find(x => x.id === b.dataset.id);
+      openAchSheet(a, b.classList.contains("next"), words);
+    }));
+
+  document.querySelectorAll("[data-fact]").forEach(b =>
+    b.addEventListener("click", () => {
+      const f = facts.find(x => x.id === b.dataset.fact);
+      if (f) openFactSheet(f);
+    }));
+}
+
+// Шторка с карточкой знания
+function openFactSheet(f) {
+  sheetMode = "fact";
+  openSheet(`
+    <div class="ach-sheet">
+      <div class="big open">💡</div>
+      <h3>${esc(f.t)}</h3>
+      <p style="max-width:340px">${esc(f.x)}</p>
+      ${(f.more || []).length ? `
+        <div class="dig">
+          <div class="dig-head">Копнуть глубже</div>
+          ${f.more.map(m => `<div class="dig-item">${esc(m)}</div>`).join("")}
+        </div>` : ""}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="factClose" type="button">Закрыть</button>
+    </div>`);
+  $("#factClose").addEventListener("click", closeSheet);
+}
+
+// Шторка с деталями награды
+function openAchSheet(a, teased, words) {
+  sheetMode = "ach";
+  const known = a.done || teased;      // секретные закрытые не раскрываем
+  const s = achView ? withMaterial(achView, () => curStats()) : curStats();
+  const wordOfLocal = (x) => x.word || (words || achWords())[x.id] || x.hint;
+
+  // подсказка «сколько осталось» для понятных числовых условий
+  let progressLine = "";
+  if (!a.done) {
+    const m = { streak3: [s.streak, 3, "дн. с этим материалом"], streak7: [s.streak, 7, "дн. с этим материалом"],
+                streak14: [s.streak, 14, "дн. с этим материалом"], streak30: [s.streak, 30, "дн. с этим материалом"], days10: [s.days, 10, "занятий"], days20: [s.days, 20, "занятий"],
+                samovar: [s.days, 10, "вечеров"] }[a.id];
+    if (m) progressLine = `Сейчас: <b>${m[0]}</b> из ${m[1]} ${m[2]}`;
+    else if (isBook())
+      progressLine = `Сейчас прочитано: <b>${s.page}</b> ${plural(s.page, "страница", "страницы", "страниц")} из ${s.pages} · ${Math.round(s.pct)}%`;
+    else if (!isBook() && ["q1", "half", "q3", "all100"].includes(a.id))
+      progressLine = `Сейчас разобрано: <b>${Math.round(s.pct)}%</b>`;
+  }
+
+  openSheet(`
+    <div class="ach-sheet">
+      <div class="big ${a.done ? "open" : known ? "" : "hidden"}">${known ? a.icon : "🔒"}</div>
+      <h3>${known ? esc(a.name) : "Секретная награда"}</h3>
+      <span class="status ${a.done ? "open" : "wait"}">${a.done ? "Открыто" : "Ещё не открыто"}</span>
+      <p>${known ? esc(a.done ? wordOfLocal(a) : a.hint) : "Откроется сама, когда сделаешь что-то особенное. Подсказки не будет 🙂"}</p>
+      ${progressLine ? `<div class="cond">${progressLine}</div>` : ""}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="achClose" type="button">Закрыть</button>
+    </div>`);
+
+  $("#achClose").addEventListener("click", closeSheet);
+}
+
+/* ══════════ Профили ══════════ */
+
+/* Самый первый экран: пока нет токена, показывать нечего — в приложении
+   не зашито ни одного материала, всё живёт в гисте. */
+function renderConnect(err) {
+  document.body.classList.add("picking");
+  $("#view").innerHTML = `
+    <div class="pick-wrap">
+      <div class="pick-head">
+        <div class="logo big"><em>Кэйко</em><i>稽古</i></div>
+        <p>Приложение пустое: материалы, профили и записи лежат в твоём гисте. Подключи его — и всё появится.</p>
+      </div>
+      <div class="conn-form">
+        <input class="note-input" id="cnToken" type="password" placeholder="ghp_… — токен GitHub" autocomplete="off">
+        <input class="note-input" id="cnGist" type="text" placeholder="id гиста (если знаешь)" autocomplete="off">
+        <button class="btn gold" id="cnGo" type="button">Подключить</button>
+      </div>
+      <div class="pick-note">
+        Нужен <a href="https://github.com/settings/tokens/new?description=%D0%9A%D1%8D%D0%B9%D0%BA%D0%BE&scopes=gist" target="_blank" rel="noopener">классический токен со scope gist</a>.
+        Поле с id можно оставить пустым — приложение найдёт гист само.
+        ${err ? `<br><b>${esc(err)}</b>` : ""}
+      </div>
+    </div>`;
+
+  $("#cnGo").addEventListener("click", async () => {
+    const token = ($("#cnToken").value || "").trim();
+    const gid = ($("#cnGist").value || "").trim();
+    if (!token) { renderConnect("Нужен токен"); return; }
+    cfg.token = token;
+    if (gid) cfg.gistId = gid;
+    saveCfg();
+    try {
+      if (!cfg.gistId) {
+        const r = await gh("/gists?per_page=100");
+        if (r.status === 401) throw new Error("Токен не подошёл");
+        if (!r.ok) throw new Error("GitHub ответил " + r.status);
+        const found = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
+        if (!found) throw new Error("Гист с данными не нашёлся — впиши id вручную");
+        cfg.gistId = found.id; saveCfg();
+      }
+      await catalogPull(true).catch(() => {});     // каталог: профили, награды, карточки
+      const r = await gh("/gists/" + cfg.gistId);
+      if (!r.ok) throw new Error("Гист не открылся");
+      const f = (await r.json()).files[GIST_FILE];
+      if (!f) throw new Error("В гисте нет файла " + GIST_FILE);
+      let txt = f.content;
+      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
+      const box = JSON.parse(txt);
+      cfg.profileIds = Object.keys(box.profiles || {}); saveCfg();
+      profilesFromKeys(cfg.profileIds);
+      document.body.classList.remove("picking");
+      renderProfilePick();
+    } catch (e) {
+      cfg.token = ""; saveCfg();
+      renderConnect(e.message || "Не получилось");
+    }
+  });
+}
+
+// первый запуск: кто занимается
+function renderProfilePick() {
+  document.body.classList.add("picking");
+  $("#view").innerHTML = `
+    <div class="pick-wrap">
+      <div class="pick-head">
+        <div class="logo big"><em>Кэйко</em><i>稽古</i></div>
+        <p>У каждого свой прогресс и свои материалы. Гист при этом общий — один на двоих.</p>
+      </div>
+      <div class="pick-list">
+        ${PROFILES.map(p => `
+          <button class="pick-card" data-profile="${p.id}" type="button">
+            <span class="pc-name">${esc(p.name)}</span>
+            <span class="pc-hint">${esc(p.hint)}</span>
+          </button>`).join("")}
+      </div>
+      <div class="pick-note">Профиль можно сменить в настройках — данные останутся у каждого свои.</div>
+    </div>`;
+
+  document.querySelectorAll("[data-profile]").forEach(b =>
+    b.addEventListener("click", () => {
+      localStorage.setItem(LS_PROFILE, b.dataset.profile);
+      location.replace(location.origin + location.pathname + "?v=" + encodeURIComponent(APP_VERSION));
+    }));
+}
+
+function switchProfile() {
+  if (!confirm("Сменить профиль?\n\nЗаписи текущего останутся на месте.")) return;
+  localStorage.removeItem(LS_PROFILE);
+  location.replace(location.origin + location.pathname + "?v=" + encodeURIComponent(APP_VERSION));
+}
+
+/* ══════════ Мысли ══════════
+   Свой раздел: мысль не отмечает занятие и не влияет на серию —
+   это читательский дневник, привязанный к месту в материале. */
+
+const thoughts = () => (data.thoughts || []).filter(t => !t.deleted);
+const thoughtsOf = (key) => thoughts().filter(t => t.key === key)
+  .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+// ключ материала — тот же, по которому лежат карточки знаний
+function keyOf(m) {
+  if (m.track === "book") return m.bookId || "";
+  if (m.track === "pastel") return "pastel";
+  return m.pieceId || "";
+}
+const currentKey = () => isBook() ? book().id : isPastel() ? "pastel" : (piece() ? piece().id : "");
+
+/* Строка над лентой появляется, только когда лента чем-то сужена:
+   фильтром любимых или случайной мыслью — и даёт путь обратно ко всей ленте. */
+function thoughtHintHTML() {
+  if (shuffleThought)
+    return `<span>🎲 Одна наугад</span><button class="th-link" id="thAll" type="button">вся лента</button>`;
+  if (notesFilter === "liked")
+    return `<span>♥ Только любимые</span><button class="th-link" id="thAll" type="button">вся лента</button>`;
+  return "";
+}
+
+// вытянуть случайную мысль: ту же дважды подряд не показываем
+function shuffleRandomThought() {
+  const pool = thoughts()
+    .filter(t => notesFilter !== "liked" || t.liked)
+    .filter(t => t.id !== shuffleThought);
+  if (!pool.length) { toast("Мыслей пока мало"); return false; }
+  shuffleThought = pool[Math.floor(Math.random() * pool.length)].id;
+  editingThought = null;
+  renderNotes();
+  $("#view").scrollTop = 0;
+  return true;
+}
+
+function renderNotes() {
+  if (!hasMaterials()) { renderEmpty("Мыслей пока нет", "Они появятся вместе с первым материалом."); return; }
+
+  const mats = achMaterials();
+  const key = (cfg.thoughtKey && mats.some(m => keyOf(m) === cfg.thoughtKey)) ? cfg.thoughtKey : currentKey();
+  const cur = mats.find(m => keyOf(m) === key) || mats[0];
+
+  const all = thoughts().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const liked = all.filter(t => t.liked);
+  if (notesFilter === "liked" && !liked.length) notesFilter = "all";
+  let list = notesFilter === "liked" ? liked : all;
+  // «наугад» сворачивает ленту до одной записи — можно тянуть ещё и ещё
+  if (shuffleThought) {
+    const one = list.find(t => t.id === shuffleThought);
+    if (one) list = [one]; else shuffleThought = null;
+  }
+
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const nowYear = new Date().getFullYear();
+  const when = (t) => {
+    const d = fromStr(t.date);
+    const year = d.getFullYear() !== nowYear ? " " + d.getFullYear() : "";
+    return fmt.format(d) + year + (t.createdAt ? ", " + clock.format(new Date(t.createdAt)) : "");
+  };
+  const arch = (data.archive || []).filter(a => !a.deleted);
+  // у мысли своя обложка — по ней видно, откуда она, ещё до чтения текста
+  const sourceOf = (t) => {
+    const m = mats.find(x => keyOf(x) === t.key);
+    if (m) return { icon: m.icon, title: m.title, cover: m.cover, ratio: m.ratio };
+    const a = arch.find(x => x.id === t.key);
+    return a
+      ? { icon: a.icon || "📖", title: a.title, cover: a.cover || "", ratio: a.ratio || "" }
+      : { icon: "📎", title: "Архив", cover: "", ratio: "" };
+  };
+  const sourceHTML = (t) => {
+    const s = sourceOf(t);
+    return `
+      <span class="th-cover">
+        ${s.cover
+          ? `<img src="${esc(s.cover)}" alt="" loading="lazy" decoding="async">`
+          : `<i>${s.icon}</i>`}
+      </span>
+      <span class="th-name">${esc(s.title)}</span>`;
+  };
+
+  $("#view").innerHTML = `
+    <div class="panel th-panel">
+      <textarea class="note-input th-text" id="thText" rows="3" placeholder="Что подумалось?"></textarea>
+      <div class="th-row">
+        <span class="th-select">
+          <span class="ts-label">${cur.icon} ${esc(cur.title)}</span>
+          <span class="ts-arrow">▾</span>
+          <select id="thMat" aria-label="Материал">
+            ${mats.map(m => `<option value="${esc(keyOf(m))}" ${keyOf(m) === key ? "selected" : ""}>${m.icon} ${esc(m.title)}</option>`).join("")}
+          </select>
+        </span>
+        <button class="btn gold th-send" id="thSave" type="button">Записать</button>
+      </div>
+    </div>
+
+    ${thoughtHintHTML() ? `<div class="th-hint">${thoughtHintHTML()}</div>` : ""}
+
+    ${list.length ? `<div class="feed notes-feed">
+      ${list.map(t => t.id === editingThought ? `
+        <article class="post thought editing">
+          <div class="th-head">${sourceHTML(t)}<span class="th-when">${esc(when(t))}</span></div>
+          <textarea class="note-input th-text" id="thEdit" rows="4">${esc(t.text)}</textarea>
+          <div class="th-edit-row">
+            <button class="btn gold" data-save="${t.id}" type="button">Сохранить</button>
+            <button class="btn" data-cancel="1" type="button">Отмена</button>
+          </div>
+        </article>` : `
+        <article class="post thought">
+          <div class="th-head">
+            ${sourceHTML(t)}
+            <span class="th-when">${esc(when(t))}${t.editedAt ? " · изменено" : ""}</span>
+            <span class="th-acts">
+              <button class="th-act like ${t.liked ? "on" : ""}" data-like="${t.id}" type="button"
+                aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
+              <button class="th-act" data-edit="${t.id}" type="button" aria-label="Изменить">✎</button>
+              <button class="th-act" data-th="${t.id}" type="button" aria-label="Удалить">✕</button>
+            </span>
+          </div>
+          <p class="post-text">${esc(t.text)}</p>
+        </article>`).join("")}
+    </div>` : `<div class="empty-note">Здесь будут мысли, которые приходят по ходу.<br>Первую можно записать прямо сейчас.</div>`}`;
+
+  const area = $("#thText");
+  if (editingThought) {
+    const ed = $("#thEdit");
+    if (ed) setTimeout(() => { ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); }, 60);
+    notesFocus = false;
+  } else if (notesFocus) {
+    notesFocus = false;
+    setTimeout(() => area.focus(), 60);
+  }
+
+  $("#thMat").addEventListener("change", (e) => {
+    cfg.thoughtKey = e.target.value; saveCfg();
+    const text = area.value;
+    notesFocus = true;
+    renderNotes();
+    $("#thText").value = text;                  // не теряем начатую мысль при смене материала
+  });
+
+  $("#thSave").addEventListener("click", () => {
+    const text = ($("#thText").value || "").trim();
+    if (!text) { toast("Напиши пару слов"); return; }
+    data.thoughts.push({
+      id: uid(), key, track: cur.track,
+      text: text.slice(0, 2000), date: todayStr(),
+      createdAt: now(), updatedAt: now()
+    });
+    cfg.thoughtKey = key; saveCfg();
+    saveData(); schedulePush();
+    shuffleThought = null;              // новая мысль — возвращаемся к ленте
+    renderNotes();
+    toast("Записано");
+  });
+
+  const showAll = $("#thAll");
+  if (showAll) showAll.addEventListener("click", () => {
+    shuffleThought = null; notesFilter = "all";
+    renderNotes();
+  });
+
+  document.querySelectorAll("[data-like]").forEach(b =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find(x => x.id === b.dataset.like);
+      if (!t) return;
+      t.liked = !t.liked;
+      t.updatedAt = now();
+      saveData(); schedulePush();
+      // в общей ленте меняем только сердечко — иначе лента дёрнется и уедет к началу
+      if (notesFilter === "liked") { renderNotes(); return; }
+      b.classList.toggle("on", !!t.liked);
+      b.textContent = t.liked ? "♥" : "♡";
+      syncNotesFabs();
+    }));
+
+  document.querySelectorAll("[data-edit]").forEach(b =>
+    b.addEventListener("click", () => { editingThought = b.dataset.edit; renderNotes(); }));
+
+  document.querySelectorAll("[data-cancel]").forEach(b =>
+    b.addEventListener("click", () => { editingThought = null; renderNotes(); }));
+
+  document.querySelectorAll("[data-save]").forEach(b =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find(x => x.id === b.dataset.save);
+      const text = ($("#thEdit").value || "").trim();
+      if (!t) return;
+      if (!text) { toast("Мысль не может быть пустой"); return; }
+      t.text = text.slice(0, 2000);
+      t.updatedAt = now(); t.editedAt = now();
+      editingThought = null;
+      saveData(); schedulePush(); renderNotes();
+      toast("Изменено");
+    }));
+
+  document.querySelectorAll("[data-th]").forEach(b =>
+    b.addEventListener("click", () => {
+      if (!confirm("Удалить эту мысль?")) return;
+      const t = (data.thoughts || []).find(x => x.id === b.dataset.th);
+      if (!t) return;
+      t.deleted = true; t.updatedAt = now();
+      saveData(); schedulePush(); renderNotes();
+    }));
+
+  syncNotesFabs();
+}
+
+/* ══════════ Мысль дня ══════════
+   Раз в день показываем одну из записанных мыслей и не повторяемся,
+   пока не покажем все. Состояние своё у каждого профиля. */
+
+const LS_DAILY = () => "keiko-daily" + suffix();
+
+function dailyState() {
+  try { return JSON.parse(localStorage.getItem(LS_DAILY()) || "{}") || {}; } catch { return {}; }
+}
+function saveDaily(st) {
+  try { localStorage.setItem(LS_DAILY(), JSON.stringify(st)); } catch {}
+}
+
+function maybeDailyThought() {
+  const st = dailyState();
+  if (st.off || st.date === todayStr()) return;
+  if (!data || !data.thoughts) return;
+  if ($("#cheer")?.classList.contains("show")) return;   // не перебиваем награды
+  if ($("#sheet")?.classList.contains("show")) return;
+
+  const list = thoughts();
+  if (!list.length) return;                              // нечего показывать — молчим
+
+  const seen = Array.isArray(st.seen) ? st.seen : [];
+  let pool = list.filter(t => !seen.includes(t.id));
+  const fresh = pool.length ? seen : [];                 // круг пройден — начинаем заново
+  if (!pool.length) {
+    const last = seen[seen.length - 1];                  // но вчерашнюю мысль не повторяем
+    pool = list.filter(t => t.id !== last);
+    if (!pool.length) pool = list;
+  }
+
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  saveDaily({ ...st, date: todayStr(), seen: [...fresh, pick.id].slice(-2000) });
+  showDailyThought(pick);
+}
+
+function showDailyThought(t) {
+  const mats = achMaterials();
+  const m = mats.find(x => keyOf(x) === t.key);
+  const a = (data.archive || []).find(x => x.id === t.key);
+  const src = m || a || null;
+  const icon = src ? (src.icon || "📖") : "📎";
+  const title = src ? src.title : "Архив";
+  const cover = src && src.cover ? src.cover : "";
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
+
+  $("#cheerIc").textContent = "💭";
+  $("#cheerTitle").textContent = "Мысль дня";
+  $("#cheerText").innerHTML = `
+    <span class="dt-src">
+      <span class="th-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<i>${icon}</i>`}</span>
+      <span class="dt-src-txt"><b>${esc(title)}</b><em>${esc(fmt.format(fromStr(t.date)))}</em></span>
+    </span>
+    <span class="dt-text">${esc(t.text)}</span>
+    <button class="th-link dt-like ${t.liked ? "on" : ""}" id="dtLike" type="button">${t.liked ? "♥ В любимых" : "♡ Нравится"}</button>`;
+  $("#cheerOk").textContent = "Спасибо";
+  $("#cheer").classList.remove("fact");
+  $("#cheer").classList.add("show", "daily");
+
+  $("#dtLike").addEventListener("click", () => {
+    const th = (data.thoughts || []).find(x => x.id === t.id);
+    if (!th) return;
+    th.liked = !th.liked;
+    th.updatedAt = now();
+    saveData(); schedulePush();
+    const b = $("#dtLike");
+    b.classList.toggle("on", !!th.liked);
+    b.textContent = th.liked ? "♥ В любимых" : "♡ Нравится";
+    if (navigator.vibrate) navigator.vibrate(12);
+  });
+}
+
+function dailyUI() {
+  const st = dailyState();
+  return `
+    <div class="freeze">
+      <div class="fz-head">💭 <b>Мысль дня</b> — раз в день показываю одну из записанных мыслей, без повторов</div>
+      <div class="pick-row">
+        <button class="pick ${!st.off ? "on" : ""}" data-daily="on" type="button"><span class="pk-name">Показывать</span></button>
+        <button class="pick ${st.off ? "on" : ""}" data-daily="off" type="button"><span class="pk-name">Не показывать</span></button>
+      </div>
+    </div>`;
+}
+
+function bindDailyUI() {
+  document.querySelectorAll("[data-daily]").forEach(b =>
+    b.addEventListener("click", () => {
+      const st = dailyState();
+      st.off = b.dataset.daily === "off";
+      saveDaily(st);
+      render();
+      toast(st.off ? "Мысль дня выключена" : "Мысль дня включена");
+    }));
+}
+
+// кнопки в углу ленты мыслей: счётчик любимых и кубик со случайной записью
+function syncNotesFabs() {
+  const like = $("#likeFab"), dice = $("#diceFab");
+  if (!like || !dice) return;
+  const here = tab === "notes" && !settingsOpen && data && data.thoughts;
+  const total = here ? thoughts().length : 0;
+  const n = here ? thoughts().filter(t => t.liked).length : 0;
+  like.classList.toggle("show", n > 0);
+  like.classList.toggle("on", notesFilter === "liked");
+  like.innerHTML = `<i>${notesFilter === "liked" ? "♥" : "♡"}</i><b>${n}</b>`;
+  dice.classList.toggle("show", total > 1);
+}
+
+// материал в том виде, в каком его понимает withMaterial
+const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.bookId || null });
+
+/* ══════════ Монеты и магазин ══════════
+   Баланс считается из данных: заработано минус потрачено.
+   Ничего не хранится отдельно — значит, ничто не разъедется при синхронизации. */
+const THEMES = [
+{ id: "dusk", name: "Сумерки", sub: "как было", cost: 0, kind: "color", dots: ["#8b7cf6", "#ffc94d", "#0d0b14"], vars: {} },
+  { id: "rose", name: "Розовый рассвет", sub: "тёплая розовая", cost: 0, kind: "color",
+    dots: ["#ff8fb8", "#ffb37a", "#170d14"],
+    vars: { "--bg": "#160c13", "--ink": "#fdeef4", "--muted": "#c095a8", "--dim": "#8a6577",
+            "--gold": "#ff8fb8", "--gold-2": "#ffb37a", "--violet": "#d98fe0",
+            "--glass": "rgba(255, 143, 184, 0.07)", "--glass-2": "rgba(255, 143, 184, 0.13)",
+            "--glass-line": "rgba(255, 143, 184, 0.2)", "--glass-hi": "rgba(255, 255, 255, 0.08)",
+            "--track": "rgba(255, 255, 255, 0.1)",
+            "--panel": "rgba(48, 24, 38, 0.55)", "--bar": "rgba(30, 15, 24, 0.74)",
+            "--sheet": "rgba(40, 20, 32, 0.85)", "--sheet-solid": "rgba(40, 20, 32, 0.95)" } },
+  { id: "ink", name: "Тушь и рис", sub: "монохром", cost: 150, kind: "color",
+    dots: ["#e8e3d8", "#a8a29a", "#101012"],
+    vars: { "--bg": "#0e0e10", "--ink": "#f0ede6", "--muted": "#9a958c", "--dim": "#66625c",
+            "--gold": "#e8e3d8", "--gold-2": "#b9b3a8", "--violet": "#9a958c" } },
+  { id: "baikal", name: "Байкальский лёд", sub: "холодная синева", cost: 150, kind: "color",
+    dots: ["#7fd7e8", "#3f9fc4", "#07131c"],
+    vars: { "--bg": "#07131b", "--ink": "#eaf6fb", "--muted": "#84a2b3", "--dim": "#546f7e",
+            "--gold": "#8fdcee", "--gold-2": "#41a6c9", "--violet": "#6fb6d8",
+            "--panel": "rgba(18, 38, 50, 0.55)", "--bar": "rgba(10, 26, 36, 0.72)",
+            "--sheet": "rgba(14, 32, 44, 0.82)", "--sheet-solid": "rgba(14, 32, 44, 0.94)" } },
+  { id: "amber", name: "Тёплый вечер", sub: "лампа и чай", cost: 150, kind: "color",
+    dots: ["#ffb168", "#ff7a45", "#150f0b"],
+    vars: { "--bg": "#150f0b", "--ink": "#faeee2", "--muted": "#b39a86", "--dim": "#7d6a5a",
+            "--gold": "#ffb168", "--gold-2": "#ff7a45", "--violet": "#e08a5c",
+            "--panel": "rgba(46, 32, 24, 0.55)", "--bar": "rgba(30, 21, 15, 0.72)",
+            "--sheet": "rgba(38, 26, 19, 0.82)", "--sheet-solid": "rgba(38, 26, 19, 0.94)" } },
+  { id: "moss", name: "Мох", sub: "хвоя и тишина", cost: 150, kind: "color",
+    dots: ["#9ad9a2", "#4fae7a", "#0b130e"],
+    vars: { "--bg": "#0a130d", "--ink": "#eaf6ec", "--muted": "#8aa892", "--dim": "#5a7263",
+            "--gold": "#9ad9a2", "--gold-2": "#4fae7a", "--violet": "#78c2a4",
+            "--panel": "rgba(20, 42, 30, 0.55)", "--bar": "rgba(12, 28, 19, 0.72)",
+            "--sheet": "rgba(16, 34, 24, 0.82)", "--sheet-solid": "rgba(16, 34, 24, 0.94)" } },
+  { id: "paper", name: "Бумага", sub: "светлая", cost: 200, kind: "color", light: true,
+    dots: ["#c8862a", "#8a8478", "#f4f1ea"],
+    vars: { "--bg": "#f2efe7", "--ink": "#221f1a", "--muted": "#6b6559", "--dim": "#9a9384",
+            "--line": "rgba(0, 0, 0, 0.1)", "--track": "rgba(0, 0, 0, 0.14)",
+            "--gold": "#c07d22", "--gold-2": "#e0a13d", "--violet": "#7a6bd0",
+            "--glass": "rgba(255, 255, 255, 0.55)", "--glass-2": "rgba(255, 255, 255, 0.8)",
+            "--glass-line": "rgba(0, 0, 0, 0.09)", "--glass-hi": "rgba(255, 255, 255, 0.9)",
+            "--panel": "rgba(255, 255, 255, 0.62)", "--bar": "rgba(248, 245, 238, 0.78)",
+            "--sheet": "rgba(250, 247, 240, 0.9)", "--sheet-solid": "rgba(250, 247, 240, 0.96)",
+            "--shadow": "rgba(90, 78, 58, 0.16)" } },
+{
+    id: "orbit", name: "Орбита", sub: "бортовой интерфейс, 1968", cost: 700, kind: "world",
+    dots: ["#ff7a2f", "#ffc04a", "#05060a"],
+    vars: { "--bg": "#05070c", "--ink": "#f2f4f8", "--muted": "#8b93a4", "--dim": "#5a6273",
+            "--gold": "#ff8a3d", "--gold-2": "#ffc04a", "--violet": "#5fa8ff",
+            "--glass": "rgba(255, 255, 255, 0.045)", "--glass-2": "rgba(255, 255, 255, 0.08)",
+            "--glass-line": "rgba(255, 138, 61, 0.22)", "--glass-hi": "rgba(255, 255, 255, 0.05)",
+            "--panel": "rgba(10, 14, 22, 0.62)", "--bar": "rgba(6, 9, 15, 0.78)",
+            "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
+    icons: { home: "◎", progress: "≣", ach: "◆", shop: "◍" },
+    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabShop: "Снабжение",
+             ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок",
+             ctaDone: "Сеанс записан", ctaAdd: "дополнить", coins: "кредитов", coin: "◍", streak: "цикл",
+             segAch: "◆ Допуски", segFacts: "◇ Данные", shopThemes: "Режимы отображения",
+             shopNote: "Кредиты начисляются автоматически: за каждый зафиксированный сеанс, за непрерывность цикла, за допуски и записи данных." },
+    css: `
+      body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .logo em { letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.9em; }
+      .panel, .theme, .mat-card, .fcard, .ach, .sc, .stat { border-radius: 6px; }
+      .cover { border-radius: 10px; }
+      .btn, .cta, .th-btn, .gbtn, .qbtn { border-radius: 999px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.82rem; }
+      .seg { border-radius: 999px; }
+      .seg button { border-radius: 999px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.74rem; }
+      .tabbar button { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.6rem; }
+      .hero-title h2, .shop-head, .ach-hero-txt b { text-transform: uppercase; letter-spacing: 0.09em; }
+      .ring .fg, .sum-ring .fg { filter: drop-shadow(0 0 8px rgba(255, 138, 61, 0.6)); }
+      .panel::before {
+        content: ""; position: absolute; left: 14px; right: 14px; top: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,138,61,.5), transparent);
+      }
+      .panel { position: relative; }
+    `
+  },
+{
+    id: "terminal", name: "Терминал", sub: "зелёный фосфор, ЭЛТ", cost: 750, kind: "world",
+    dots: ["#3dff88", "#12b45a", "#011106"],
+    vars: { "--bg": "#010c05", "--ink": "#c9ffdc", "--muted": "#5fbf87", "--dim": "#38805a",
+            "--gold": "#3dff88", "--gold-2": "#12b45a", "--violet": "#43e0a0",
+            "--glass": "rgba(61, 255, 136, 0.05)", "--glass-2": "rgba(61, 255, 136, 0.1)",
+            "--glass-line": "rgba(61, 255, 136, 0.28)", "--glass-hi": "rgba(61, 255, 136, 0.12)",
+            "--panel": "rgba(2, 20, 10, 0.68)", "--bar": "rgba(1, 14, 7, 0.82)",
+            "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
+    icons: { home: "▮", progress: "▤", ach: "✚", shop: "◈" },
+    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabShop: "Обмен",
+             ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок",
+             ctaDone: "> запись принята", ctaAdd: "дополнить", coins: "жетонов", coin: "◈", streak: "цепочка",
+             segAch: "[ метки ]", segFacts: "[ архив ]", shopThemes: "Оболочки",
+             shopNote: "Жетоны начисляются за каждую запись в журнале, за непрерывную цепочку дней, за метки и записи архива." },
+    css: `
+      body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .logo em { letter-spacing: 0.16em; }
+      .panel, .theme, .mat-card, .fcard, .ach, .sc, .stat, .btn, .cta, .th-btn, .seg, .seg button { border-radius: 3px; }
+      .cover { border-radius: 6px; }
+      .btn, .cta, .th-btn { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.8rem; }
+      .tabbar button { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.6rem; }
+      .hero-title h2, .shop-head { text-transform: uppercase; letter-spacing: 0.1em; }
+      .ring .fg, .sum-ring .fg { filter: drop-shadow(0 0 7px rgba(61, 255, 136, 0.75)); }
+      body::after {
+        content: ""; position: fixed; inset: 0; z-index: 3; pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+      }
+    `
+  }
+];
+
+/* Словарь интерфейса: тема-мир может переписать формулировки под себя */
+const WORDS_BASE = {
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Мысли", tabShop: "Магазин",
+  ctaPiano: "🎹 Отметить занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
+  ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить",
+  coins: "монет", coin: "🪙", streak: "серия",
+  segAch: "✦ Достижения", segFacts: "💡 Знания",
+  shopThemes: "Темы оформления", shopNote: "Монеты капают сами: за каждое отмеченное занятие, за непрерывность, за открытые награды и карточки знаний. Тратить их не обязательно — но приятно."
+};
+const ICON = (k, def) => {
+  const t = themeById(data.shop ? data.shop.theme : "dusk");
+  return (t.icons && t.icons[k]) || def;
+};
+const T = (k) => {
+  const t = themeById(data.shop ? data.shop.theme : "dusk");
+  return (t.words && t.words[k]) || WORDS_BASE[k];
+};
+
+
+const themeById = (id) => THEMES.find(t => t.id === id) || THEMES[0];
+
+function applyTheme(id) {
+  const t = themeById(id);
+  const root = document.documentElement;
+  root.removeAttribute("style");
+  for (const [k, v] of Object.entries(t.vars || {})) root.style.setProperty(k, v);
+  root.style.colorScheme = t.light ? "light" : "dark";
+
+  // тема-мир может менять шрифты, форму элементов и добавлять свои эффекты
+  let sheet = document.getElementById("themeCss");
+  if (!sheet) {
+    sheet = document.createElement("style");
+    sheet.id = "themeCss";
+    document.head.appendChild(sheet);
+  }
+  sheet.textContent = t.css || "";
+
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", (t.vars && t.vars["--bg"]) || "#0d0b14");
+  syncTabHeight();
+  requestAnimationFrame(syncTabHeight);
+}
+
+
+
+// переключатель верхнего уровня «Достижений»: текущие материалы или полка
+function achTopHTML() {
+  return `
+    <div class="seg" id="achTop">
+      <button data-top="mats" class="${achTop === "mats" ? "on" : ""}" type="button">В работе</button>
+      <button data-top="shelf" class="${achTop === "shelf" ? "on" : ""}" type="button">📚 Полка ${shelfItems().length || ""}</button>
+    </div>`;
+}
+function bindAchTop() {
+  document.querySelectorAll("#achTop button").forEach(b =>
+    b.addEventListener("click", () => {
+      achTop = b.dataset.top; cfg.achTop = achTop; saveCfg();
+      renderAchList();
+      $("#view").scrollTop = 0;
+    }));
+}
+function renderShelfInto() {
+  renderShelf();
+  $("#view").insertAdjacentHTML("afterbegin", achTopHTML());
+  bindAchTop();
+  document.querySelectorAll("[data-shelf]").forEach(b =>
+    b.addEventListener("click", () => openShelfSheet(b.dataset.shelf)));
+}
+
+/* ── Полка: всё, что доведено до конца ── */
+const shelfItems = () => (data.archive || []).filter(a => !a.deleted)
+  .sort((a, b) => a.finishedAt < b.finishedAt ? 1 : -1);
+
+function shelfCoverHTML(a) {
+  const own = [...data.book.books, ...(data.piano.pieces || [])].find(x => "bk_" + x.id === a.id || x.id === a.id);
+  if (own && own.cover) return `
+    <div class="cover photo shelf-cover" style="aspect-ratio:${esc(own.ratio || "3 / 4.4")}">
+      <img src="${esc(own.cover)}" alt="${esc(a.title)}" loading="lazy" decoding="async">
+    </div>`;
+  const cls = a.track === "book" ? `book ${a.tone || "sea"}`
+    : a.track === "pastel" ? "pastel"
+    : `piano ${a.tone || "violet"}`;
+  const art = a.track === "pastel" ? `<div class="smears"><i></i><i></i><i></i><i></i></div>`
+    : a.art === "wave" ? SEA_ART
+    : a.art === "pine" ? PINE_ART
+    : a.track === "piano" ? KEYS_ART
+    : `<div class="cv-mark">${a.icon}</div>`;
+  return `
+    <div class="cover shelf-cover ${cls}">
+      <div><div class="cv-author">${esc(a.sub || "")}</div></div>
+      ${art}
+      <div><div class="cv-title">${esc(a.title)}</div></div>
+    </div>`;
+}
+
+const stars = (n, cls) => [1, 2, 3, 4, 5].map(i =>
+  `<span class="${cls || ""} ${i <= n ? "on" : ""}" ${cls ? `data-star="${i}"` : ""}>★</span>`).join("");
+
+function renderShelf() {
+  const list = shelfItems();
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+  const when = (ds) => fmt.format(fromStr(ds)).replace(" г.", "");
+
+  $("#view").innerHTML = `
+    <button class="btn add-book" id="shelfAdd" type="button">＋ Добавить прочитанную книгу</button>
+    ` + (list.length ? `
+    <div class="shelf">
+      ${list.map(a => `
+        <button class="leaf" data-shelf="${a.id}" type="button">
+          ${shelfCoverHTML(a)}
+          <span class="lf-body">
+            <span class="lf-title">${esc(a.title)}</span>
+            ${a.sub ? `<span class="lf-sub">${esc(a.sub)}</span>` : ""}
+            <span class="lf-when">${a.startedAt ? when(a.startedAt) + " — " : ""}${when(a.finishedAt)}</span>
+            <span class="lf-meta">${a.pct}%${a.days ? ` · ${a.days} ${plural(a.days, "день", "дня", "дней")}` : ""}</span>
+            <span class="lf-stars">${stars(a.rating || 0)}</span>
+            ${a.review ? `<span class="lf-review">${esc(a.review)}</span>` : `<span class="lf-empty">нажми, чтобы оценить</span>`}
+          </span>
+        </button>`).join("")}
+    </div>` : `
+    <div class="empty-note">Полка пока пуста.<br>Сюда попадает всё, что доведено до конца, — с оценкой и отзывом.</div>`);
+
+  $("#shelfAdd").addEventListener("click", openAddBookSheet);
+  document.querySelectorAll("[data-shelf]").forEach(b =>
+    b.addEventListener("click", () => openShelfSheet(b.dataset.shelf)));
+}
+
+// книга, прочитанная когда-то давно: всё кроме названия можно не заполнять
+function openAddBookSheet() {
+  sheetMode = "addbook";
+  openSheet(`
+    <h3>Книга на полку</h3>
+    <p class="sub">Обязательно только название — остальное как вспомнится</p>
+    <div class="add-form">
+      <input class="note-input" id="abTitle" placeholder="Название" maxlength="120">
+      <input class="note-input" id="abAuthor" placeholder="Автор" maxlength="120">
+      <input class="note-input" id="abPages" type="number" inputmode="numeric" min="1" max="9999" placeholder="Сколько страниц">
+      <label class="ab-lab">Начал(а) — если помнишь
+        <input class="note-input" id="abFrom" type="date" max="2100-01-01"></label>
+      <label class="ab-lab">Закончил(а)
+        <input class="note-input" id="abTo" type="date" max="2100-01-01" value="${todayStr()}"></label>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn gold" id="abSave" type="button">На полку</button>
+      <button class="btn" id="abClose" type="button">Отмена</button>
+    </div>`);
+
+  $("#abClose").addEventListener("click", closeSheet);
+  $("#abSave").addEventListener("click", () => {
+    const title = ($("#abTitle").value || "").trim();
+    if (!title) { toast("Как называется?"); return; }
+
+    const from = $("#abFrom").value || "";
+    const to = $("#abTo").value || todayStr();
+    const pages = Math.round(Number($("#abPages").value) || 0);
+    let days = 0;
+    if (from && from <= to) days = daysBetween(from, to) + 1;
+
+    const rec = {
+      id: uid(), track: "book", icon: "📖",
+      title, sub: ($("#abAuthor").value || "").trim(),
+      pct: 100, days,
+      pages: pages || 0,
+      art: "", tone: "snow",
+      startedAt: from || to, finishedAt: to,
+      rating: 0, review: "",
+      createdAt: now(), updatedAt: now()
+    };
+    data.archive.push(rec);
+    saveData(); schedulePush();
+    closeSheet();
+    render();
+    openShelfSheet(rec.id);        // сразу предлагаем оценить и записать пару строк
+  });
+}
+
+// шторка: звёзды и отзыв
+function openShelfSheet(id) {
+  const a = shelfItems().find(x => x.id === id) || (data.archive || []).find(x => x.id === id);
+  if (!a) return;
+  sheetMode = "shelf";
+  let rating = a.rating || 0;
+
+  openSheet(`
+    <div class="shelf-sheet">
+      ${shelfCoverHTML(a)}
+      <h3>${esc(a.title)}</h3>
+      <p class="shelf-meta">${a.pct}%${a.days ? ` · ${a.days} ${plural(a.days, "день", "дня", "дней")}` : ""}</p>
+      <div class="star-pick" id="starPick">${stars(rating, "st")}</div>
+      <textarea class="note-input shelf-review" id="shelfReview" rows="4"
+        placeholder="Что осталось после этой вещи? Пара строк для себя">${esc(a.review || "")}</textarea>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn gold" id="shelfSave" type="button">Сохранить</button>
+      <button class="btn" id="shelfClose" type="button">Закрыть</button>
+      <button class="btn danger" id="shelfDel" type="button">Убрать с полки</button>
+    </div>`);
+
+  const paint = () => { $("#starPick").innerHTML = stars(rating, "st"); bindStars(); };
+  const bindStars = () => document.querySelectorAll("#starPick .st").forEach(el =>
+    el.addEventListener("click", () => { rating = +el.dataset.star; paint(); }));
+  bindStars();
+
+  const del = $("#shelfDel");
+  if (del) del.addEventListener("click", () => {
+    if (!confirm(`Убрать «${a.title}» с полки?\n\nОценка и отзыв пропадут.`)) return;
+    a.deleted = true; a.updatedAt = now();
+    saveData(); schedulePush();
+    closeSheet(); render();
+    toast("Убрано с полки");
+  });
+
+  $("#shelfSave").addEventListener("click", () => {
+    a.rating = rating;
+    a.review = ($("#shelfReview").value || "").trim().slice(0, 600);
+    a.updatedAt = now();
+    saveData(); schedulePush();
+    closeSheet();
+    if (tab === "ach") render();
+    toast("Записано на полку");
+  });
+  $("#shelfClose").addEventListener("click", closeSheet);
+}
+
+/* ══════════ Шторка ══════════ */
+
+function openSheet(html) {
+  const sheet = $("#sheet");
+  sheet.innerHTML = `<div class="grab-zone"><div class="grabber"></div></div>` +
+    `<div class="sheet-body">${html}</div>`;
+  sheet.classList.add("show");
+  $("#sheetBg").classList.add("show");
+  const body0 = sheet.querySelector('.sheet-body');
+  if (body0) body0.scrollTop = 0;
+  setupSheetDrag(sheet);
+}
+
+// шторку можно утянуть вниз: за полоску — всегда, за содержимое — когда оно уже прокручено наверх
+function setupSheetDrag(sheet) {
+  let startY = 0, dy = 0, dragging = false, fromGrab = false;
+
+  const onDown = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    fromGrab = !!e.target.closest(".grab-zone");
+    const body = sheet.querySelector('.sheet-body');
+    if (!fromGrab && body && body.scrollTop > 0) return;   // внутри прокрутки — не мешаем
+    dragging = true; startY = e.clientY; dy = 0;
+    sheet.style.transition = "none";
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    dy = e.clientY - startY;
+    if (dy < 0) {                                    // тянут вверх — отдаём прокрутке
+      if (!fromGrab) { reset(); return; }
+      dy = 0;
+    }
+    if (dy > 0) {
+      e.preventDefault();
+      sheet.style.transform = `translateX(-50%) translateY(${dy}px)`;
+      $("#sheetBg").style.opacity = String(Math.max(0, 1 - dy / 420));
+    }
+  };
+
+  const reset = () => {
+    dragging = false;
+    sheet.style.transition = "";
+    sheet.style.transform = "";
+    $("#sheetBg").style.opacity = "";
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    const far = dy > 110;
+    reset();
+    if (far) closeSheet();
+  };
+
+  sheet.addEventListener("pointerdown", onDown);
+  sheet.addEventListener("pointermove", onMove, { passive: false });
+  sheet.addEventListener("pointerup", onUp);
+  sheet.addEventListener("pointercancel", onUp);
+  sheet.addEventListener("pointerleave", onUp);
+}
+function closeSheet() {
+  const sheet = $("#sheet");
+  sheet.style.transition = "";
+  sheet.style.transform = "";
+  $("#sheetBg").style.opacity = "";
+  sheet.classList.remove("show");
+  $("#sheetBg").classList.remove("show");
+  sheetMode = null;
+}
+
+function openLogSheet() {
+  if (!gistReady()) {
+    toast("Сначала подключи синхронизацию — иначе записи могут потеряться");
+    openSettingsSheet();
+    return;
+  }
+  sheetMode = "log";
+  syncPickers();
+  const existing = entryFor(selectedDate);
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isPastel() ? "Какие уроки прошёл?" : "Что разбирал?");
+  const sub = fmtDay(selectedDate) + (existing ? " · запись уже есть" : "");
+
+  openSheet(`
+    <h3>${title}</h3>
+    <p class="sub">${sub}</p>
+    <div id="sheetBody"></div>
+    <input class="note-input" id="noteInput" type="text" maxlength="80" placeholder="Заметка (необязательно)" autocomplete="off">
+    <div class="sheet-actions">
+      <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
+      <button class="btn" id="sheetCancel" type="button">Отмена</button>
+    </div>`);
+
+  renderSheetBody();
+  $("#sheetSave").addEventListener("click", saveEntry);
+  $("#sheetCancel").addEventListener("click", closeSheet);
+}
+
+function renderSheetBody() {
+  $("#sheetBody").innerHTML = isBook() ? bookSheetUI() : isPastel() ? pastelSheetUI() : pianoSheetUI();
+  if (isBook()) bindBookSheet(); else if (isPastel()) bindPastelSheet(); else bindPianoSheet();
+}
+
+function fmtDur(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+function pastelSheetUI() {
+  const done = doneLessons();
+  return `
+    <div class="lessons">
+      ${course().lessons.map((l, i) => {
+        const already = done.has(i);
+        const picked = pickLessons.includes(i);
+        return `
+          <button class="lesson ${already ? "was" : picked ? "pick" : ""}" data-i="${i}" type="button" ${already ? "disabled" : ""}>
+            <span class="ln">${i + 1}</span>
+            <span class="lt">${esc(l.title)}<i>${fmtDur(l.dur)}</i></span>
+            <span class="lc">${already ? "✓" : picked ? "●" : "○"}</span>
+          </button>`;
+      }).join("")}
+    </div>
+    <div class="lesson-hint">${pickLessons.length
+      ? `Выбрано: ${pickLessons.length} ${plural(pickLessons.length, "урок", "урока", "уроков")}`
+      : "Отметь уроки, которые прошёл"}</div>`;
+}
+
+function bindPastelSheet() {
+  document.querySelectorAll(".lesson:not([disabled])").forEach(b =>
+    b.addEventListener("click", () => {
+      const i = Number(b.dataset.i);
+      const at = pickLessons.indexOf(i);
+      if (at >= 0) pickLessons.splice(at, 1); else pickLessons.push(i);
+      renderSheetBody();
+    }));
+}
+
+function bookSheetUI() {
+  const cur = bookProgress();
+  const delta = pickPage - cur;
+  return `
+    <div class="page-pick">
+      <span class="pp-label">Дочитал<br><i>до страницы${delta > 0 ? ` · <b style="color:var(--green)">+${delta}</b>` : ""}</i></span>
+      <div class="stepper">
+        <button class="st-btn" data-d="-1" type="button">−</button>
+        <button class="st-val" id="pageVal" type="button">${pickPage}</button>
+        <button class="st-btn" data-d="1" type="button">＋</button>
+      </div>
+    </div>
+    <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}</div>
+    <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>`;
+}
+
+function bindBookSheet() {
+  const pages = book().pages;
+  document.querySelectorAll(".st-btn").forEach(b =>
+    b.addEventListener("click", () => { pickPage = Math.min(pages, Math.max(0, pickPage + Number(b.dataset.d))); renderSheetBody(); }));
+  document.querySelectorAll(".qbtn").forEach(b =>
+    b.addEventListener("click", () => { pickPage = Math.min(pages, pickPage + Number(b.dataset.add)); renderSheetBody(); }));
+  $("#pageVal").addEventListener("click", () => {
+    const v = prompt("До какой страницы дочитал?", String(pickPage));
+    if (v === null) return;
+    const n = Math.round(Number(v.replace(",", ".")));
+    if (isNaN(n) || n < 0 || n > pages) { toast(`Страница от 0 до ${pages}`); return; }
+    pickPage = n; renderSheetBody();
+  });
+}
+
+function pianoSheetUI() {
+  return `
+    <div class="hand-pick">
+      ${[["right", "𝄞 Правая"], ["left", "𝄢 Левая"], ["both", "🤲 Обе"]].map(([h, l]) =>
+        `<button class="hp ${pickHand === h ? "on" : ""}" data-hand="${h}" type="button">${l}</button>`).join("")}
+    </div>
+    <div class="range">
+      <div class="range-part">
+        <span class="rp-label">с такта</span>
+        <div class="stepper">
+          <button class="st-btn" data-edge="from" data-d="-1" type="button">−</button>
+          <button class="st-val" data-edge="from" type="button">${pickFrom}</button>
+          <button class="st-btn" data-edge="from" data-d="1" type="button">＋</button>
+        </div>
+      </div>
+      <div class="range-part">
+        <span class="rp-label">по такт</span>
+        <div class="stepper">
+          <button class="st-btn" data-edge="to" data-d="-1" type="button">−</button>
+          <button class="st-val" data-edge="to" type="button">${pickTo}</button>
+          <button class="st-btn" data-edge="to" data-d="1" type="button">＋</button>
+        </div>
+      </div>
+    </div>
+    ${pending.length ? `<div class="pending">${pending.map((s, i) => `<button class="pchip" data-i="${i}" type="button">${spanText(s)} ✕</button>`).join("")}</div>` : ""}
+    <button class="link-btn" id="addSpan" type="button">＋ Добавить ещё фрагмент</button>`;
+}
+
+function bindPianoSheet() {
+  const bars = piece().bars;
+  document.querySelectorAll(".hp").forEach(b =>
+    b.addEventListener("click", () => { pickHand = b.dataset.hand; renderSheetBody(); }));
+  document.querySelectorAll(".st-btn").forEach(b =>
+    b.addEventListener("click", () => {
+      const d = Number(b.dataset.d);
+      if (b.dataset.edge === "from") { pickFrom = Math.min(bars, Math.max(1, pickFrom + d)); if (pickTo < pickFrom) pickTo = pickFrom; }
+      else { pickTo = Math.min(bars, Math.max(1, pickTo + d)); if (pickFrom > pickTo) pickFrom = pickTo; }
+      renderSheetBody();
+    }));
+  document.querySelectorAll(".st-val").forEach(b =>
+    b.addEventListener("click", () => {
+      const v = prompt(b.dataset.edge === "from" ? "С какого такта?" : "По какой такт?", b.textContent);
+      if (v === null) return;
+      const n = Math.round(Number(v.replace(",", ".")));
+      if (isNaN(n) || n < 1 || n > bars) { toast(`Такт от 1 до ${bars}`); return; }
+      if (b.dataset.edge === "from") { pickFrom = n; if (pickTo < n) pickTo = n; }
+      else { pickTo = n; if (pickFrom > n) pickFrom = n; }
+      renderSheetBody();
+    }));
+  document.querySelectorAll(".pchip").forEach(b =>
+    b.addEventListener("click", () => { pending.splice(Number(b.dataset.i), 1); renderSheetBody(); }));
+  $("#addSpan").addEventListener("click", () => {
+    pending.push(...(pickHand === "both"
+      ? [normSpan("right", pickFrom, pickTo), normSpan("left", pickFrom, pickTo)]
+      : [normSpan(pickHand, pickFrom, pickTo)]));
+    renderSheetBody();
+  });
+}
+
+/* ══════════ Кубик: чем заняться сегодня ══════════ */
+
+// все материалы одним списком, с текущим состоянием
+function candidates() {
+  const save = data.active, savePiece = data.piano.activePiece;
+  const list = [];
+
+  for (const p of data.piano.pieces.filter(x => !x.archived)) {
+    data.active = "piano"; data.piano.activePiece = p.id;
+    const s = pianoStats();
+    list.push({ track: "piano", pieceId: p.id, icon: "🎹", name: p.name,
+      pct: s.pct, streak: s.streakAll, doneToday: !!entryFor(todayStr()) });
+  }
+  data.active = "book";
+  const b = bookStats();
+  list.push({ track: "book", icon: "📖", name: book().title,
+    pct: b.pct, streak: b.streak, doneToday: !!entryFor(todayStr()) });
+
+  data.active = "pastel";
+  const c = pastelStats();
+  list.push({ track: "pastel", icon: "🎨", name: course().name,
+    pct: c.pct, streak: c.streak, doneToday: !!entryFor(todayStr()) });
+
+  data.active = save; data.piano.activePiece = savePiece;
+  return list;
+}
+
+// взвешенный бросок: чаще выпадает то, что проседает и не тронуто сегодня
+function rollCandidate(exceptName) {
+  const all = candidates();
+  let pool = all.filter(c => !c.doneToday);
+  if (!pool.length) pool = all;
+  if (pool.length > 1 && exceptName) {
+    const other = pool.filter(c => c.name !== exceptName);
+    if (other.length) pool = other;
+  }
+  const weights = pool.map(c => 1 + (100 - Math.min(100, c.pct)) / 40 + (c.streak > 0 ? 0.6 : 0));
+  const total = weights.reduce((a, w) => a + w, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return { pick: pool[i], all };
+  }
+  return { pick: pool[pool.length - 1], all };
+}
+
+/* ── Встряхивание телефона = бросок кубика ── */
+
+let shakeReady = false;
+let lastShake = 0;
+
+const shakeNeedsAsk = () =>
+  typeof window.DeviceMotionEvent === "function" &&
+  typeof window.DeviceMotionEvent.requestPermission === "function";
+
+function handleShake(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a) return;
+  const power = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
+  const now = Date.now();
+  if (power > 32 && now - lastShake > 2500) {
+    lastShake = now;
+    if ($("#sheet")?.classList.contains("show")) return;
+    if ($("#cheer")?.classList.contains("show")) return;
+    if (navigator.vibrate) navigator.vibrate(25);
+    rollDice();
+  }
+}
+
+// подписка на движение; ask=true — можно показать системный запрос (только из обработчика тапа)
+async function enableShake(ask) {
+  if (shakeReady) return true;
+  if (typeof window.DeviceMotionEvent !== "function") return false;
+  try {
+    if (shakeNeedsAsk()) {
+      if (!ask) return false;
+      const res = await window.DeviceMotionEvent.requestPermission();
+      if (res !== "granted") { cfg.shake = false; saveCfg(); return false; }
+    }
+    window.addEventListener("devicemotion", handleShake);
+    shakeReady = true;
+    cfg.shake = true; saveCfg();
+    renderShakeHint();
+    return true;
+  } catch { return false; }
+}
+
+// тихая строчка под кнопкой: включить встряхивание (пока не разрешено)
+function renderShakeHint() {
+  const box = $("#shakeHint");
+  if (!box) return;
+  if (shakeReady || typeof window.DeviceMotionEvent !== "function") { box.innerHTML = ""; return; }
+  box.innerHTML = `<button id="shakeOn" type="button">🎲 Включить выбор встряхиванием</button>`;
+  $("#shakeOn").addEventListener("click", async () => {
+    const ok = await enableShake(true);
+    toast(ok ? "Готово — потряси телефон" : "Доступ к движению не разрешён");
+    renderShakeHint();
+  });
+}
+
+// кубик: просто прокручивает ленту и останавливается на выбранном материале
+function rollDice() {
+  const { pick } = rollCandidate();
+  if (!pick) return;
+
+  if (tab !== "home") { tab = "home"; cfg.tab = tab; saveCfg(); render(); }
+  if (!railApi) return;
+
+  const i = railApi.indexOf(pick.track, pick.pieceId || null);
+  if (i < 0) return;
+  railApi.spinTo(i, () => toast(`Сегодня — ${pick.name}`));
+}
+
+// сверяем свою версию с той, что лежит на сервере — мимо всех кэшей
+async function checkForUpdate() {
+  if (!navigator.onLine) return;
+  try {
+    const r = await withTimeout(fetch("version.json?ts=" + Date.now(), { cache: "no-store" }), 5000);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j.version && j.version !== APP_VERSION) {
+      newVersion = j.version;
+      renderBanner();
+      maybeAutoUpdate();
+    }
+  } catch {}
+}
+
+// полная переустановка: снимаем service worker, чистим кэши, грузим заново
+async function forceUpdate() {
+  const btn = $("#sUpdate");
+  if (btn) { btn.textContent = "Обновляю…"; btn.disabled = true; }
+  toast("Обновляю приложение…");
+
+  const cleanup = (async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      // главное для iOS: заставить браузер перекачать сами файлы, а не отдать их из своего кэша
+      await Promise.all(["index.html", "app.js", "sw.js", "manifest.webmanifest"].map(
+        f => fetch(f, { cache: "reload" }).catch(() => {})
+      ));
+    } catch {}
+  })();
+
+  // если что-то из этого зависнет — на iOS такое бывает, — всё равно перезагружаемся
+  await Promise.race([cleanup, new Promise(r => setTimeout(r, 2500))]);
+
+  // метка версии уходит и в адрес страницы, и в адрес скрипта — тогда старый app.js подхватить неоткуда
+  const url = location.origin + location.pathname + "?v=" + encodeURIComponent(newVersion || Date.now());
+  location.replace(url);
+  // страховка: если standalone проигнорировал replace, пробуем обычным переходом
+  setTimeout(() => { location.href = url; }, 1200);
+}
+
+// новая версия при запуске ставится сама: одна попытка за сессию, дальше остаётся баннер
+function maybeAutoUpdate() {
+  if (!newVersion || sheetMode) return;
+  try {
+    if (sessionStorage.getItem("keiko-autoupd") === newVersion) return;
+    sessionStorage.setItem("keiko-autoupd", newVersion);
+  } catch { return; }
+  forceUpdate();
+}
+
+function openAboutSheet() {
+  sheetMode = "about";
+  openSheet(`
+    <div class="ach-sheet">
+      <div class="big open" style="font-size:2rem">稽古</div>
+      <h3>Кэйко</h3>
+      <p style="max-width:340px">
+        В Японии так называют регулярную практику в традиционных искусствах — музыке, каллиграфии,
+        чайной церемонии, боевых искусствах. Иероглифы 稽古 буквально значат «размышлять о старом»:
+        учиться, вглядываясь в то, что сделали до тебя.
+      </p>
+
+      <div class="dig">
+        <div class="dig-head">Зачем повторять чужое</div>
+        <div class="dig-item">Разбирая Баха, ты не переписываешь его — ты влезаешь в его способ думать. Своё появляется потом, из накопленного чужого: язык сначала перенимают, а уже затем говорят на нём своё</div>
+        <div class="dig-item">В японской традиции это описано как сюхари: сначала точно следуй форме, потом отклоняйся от неё, и лишь затем отпускай — но пропустить первую ступень нельзя</div>
+        <div class="dig-item">Мастера говорят: не ты осваиваешь форму, а форма меняет тебя. Руки, слух, внимание перестраиваются незаметно, пока ты просто повторяешь</div>
+      </div>
+
+      <div class="dig">
+        <div class="dig-head">Что это даёт человеку</div>
+        <div class="dig-item">Занятие без цели «стать лучше всех» снимает тревогу: сегодня достаточно трёх тактов, и этого уже хватает</div>
+        <div class="dig-item">Повторение с полным вниманием работает как медитация в действии — мозг отдыхает от многозадачности, а тело успокаивается</div>
+        <div class="dig-item">Медленный видимый прогресс — редкое в современной жизни ощущение, что время потрачено не впустую</div>
+        <div class="dig-item">Практика даёт устойчивость: у тебя есть дело, которое никуда не денется в плохой день и не зависит от чужой оценки</div>
+      </div>
+
+      <p style="max-width:340px;color:var(--dim);font-size:0.86rem">
+        Поэтому здесь нет соревнования и рейтингов: только ты, материал и отметка о том,
+        что сегодня ты к нему возвращался.
+      </p>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="aboutClose" type="button">Закрыть</button>
+    </div>`);
+  $("#aboutClose").addEventListener("click", closeSheet);
+}
+
+// оформление живёт в настройках: цвета и «миры», меняющие интерфейс целиком
+function themeUI() {
+  const cur = data.shop.theme || "dusk";
+  const row = (t) => `
+    <button class="pick ${cur === t.id ? "on" : ""}" data-theme="${t.id}" type="button">
+      <span class="pk-dots">${t.dots.map(c => `<i style="background:${c}"></i>`).join("")}</span>
+      <span class="pk-name">${esc(t.name)}</span>
+    </button>`;
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">🎨 <b>Оформление</b> — цвета и целые миры со своим шрифтом и словами</div>
+      <div class="pick-row">${THEMES.filter(t => t.kind !== "world").map(row).join("")}</div>
+      <div class="fz-head" style="margin-top:2px">Миры</div>
+      <div class="pick-row">${THEMES.filter(t => t.kind === "world").map(row).join("")}</div>
+    </div>`;
+}
+
+function bindThemeUI() {
+  document.querySelectorAll("[data-theme]").forEach(b =>
+    b.addEventListener("click", () => {
+      data.shop.theme = b.dataset.theme;
+      saveData(); schedulePush();
+      applyTheme(data.shop.theme);
+      closeSheet();
+      render();
+      toast(`Тема «${themeById(data.shop.theme).name}»`);
+    }));
+}
+
+function backupBlob() {
+  const pack = {
+    app: "keiko", v: 1, savedAt: now(),
+    version: APP_VERSION, profile: profileId,
+    data: exportData()
+  };
+  return new Blob([JSON.stringify(pack, null, 1)], { type: "application/json" });
+}
+
+async function exportBackup() {
+  const name = `keiko-${profileId}-${todayStr()}.json`;
+  const blob = backupBlob();
+  try {
+    const file = new File([blob], name, { type: "application/json" });
+    // на телефоне удобнее системное «Поделиться»: можно сохранить в Файлы или отправить себе
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Кэйко — копия данных" });
+      return;
+    }
+  } catch { return; }        // пользователь закрыл окно — это не ошибка
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast("Копия сохранена");
+}
+
+// восстановление сливает копию с тем, что есть: ничего не затирается
+function restoreBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let pack;
+    try { pack = JSON.parse(reader.result); } catch { toast("Файл не читается"); return; }
+    const d = pack && (pack.data || pack);
+    if (!d || !d.piano) { toast("Это не копия Кэйко"); return; }
+
+    if (pack.profile && pack.profile !== profileId &&
+        !confirm(`Копия сделана в профиле «${pack.profile}», а сейчас открыт «${profileId}».\n\nВсё равно восстановить сюда?`)) return;
+
+    const before = dataStamp();
+    data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
+    data.book.entries = mergeLists(data.book.entries, (d.book && d.book.entries) || []);
+    data.pastel.entries = mergeLists(data.pastel.entries, (d.pastel && d.pastel.entries) || []);
+    data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
+    data.archive = mergeLists(data.archive || [], d.archive || []);
+    data.freezes = mergeLists(data.freezes || [], d.freezes || []);
+
+    // материалы, которых у нас нет, тоже возвращаем
+    for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
+    for (const b of ((d.book && d.book.books) || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
+
+    normalizeActive();
+    saveData(); schedulePush();
+    closeSheet(); render();
+    toast(before === dataStamp() ? "Всё это уже было" : "Данные восстановлены");
+  };
+  reader.readAsText(file);
+}
+
+/* ══════════ Каталог: обмен с гистом ══════════
+   Отдельный гист, чтобы не тащить его при каждой синхронизации данных.
+   Тексты — одним файлом, обложки — по файлу на материал, чтобы ни один не разросся. */
+
+const CAT_FILE = "catalog.json";
+const CAT_COVER_FILE = (id) => `cover-${id}.txt`;
+const CAT_EVERY = 24 * 3600e3;
+
+async function ensureCatalogGist(create) {
+  if (cfg.catalogId) return cfg.catalogId;
+  const r = await gh("/gists?per_page=100");
+  if (!r.ok) throw new Error("список гистов недоступен");
+  const found = (await r.json()).find(g => g.files && g.files[CAT_FILE]);
+  if (found) { cfg.catalogId = found.id; saveCfg(); return found.id; }
+  if (!create) return "";
+
+  const cr = await gh("/gists", {
+    method: "POST",
+    body: JSON.stringify({
+      description: "Кэйко — каталог материалов (награды, карточки, обложки)",
+      public: false,
+      files: { [CAT_FILE]: { content: JSON.stringify({ v: 1, savedAt: now(), materials: {} }) } }
+    })
+  });
+  if (!cr.ok) throw new Error("каталог не создался");
+  cfg.catalogId = (await cr.json()).id; saveCfg();
+  return cfg.catalogId;
+}
+
+function applyCatalog(pack) {
+  if (!pack || !pack.materials) return 0;
+  CATALOG = pack.materials;
+  if (Array.isArray(pack.profiles) && pack.profiles.length) PROFILES = pack.profiles;
+  achCache.clear(); coverCache.clear();
+  try { localStorage.setItem(LS_CAT, JSON.stringify({ materials: CATALOG, profiles: PROFILES })); } catch {}
+  cfg.catalogAt = now(); saveCfg();
+  return Object.keys(CATALOG).length;
+}
+
+// профили, о которых знает гист: если каталога ещё нет, имена возьмём из ключей
+function profilesFromKeys(keys) {
+  if (PROFILES.length) return;
+  PROFILES = (keys || []).map(id => ({ id, name: id, hint: "из гиста" }));
+}
+
+async function catalogPull(force) {
+  if (!cfg.token) return;
+  if (!force && now() - (cfg.catalogAt || 0) < CAT_EVERY) return;
+  const id = await ensureCatalogGist(false);
+  if (!id) return;
+  const r = await gh("/gists/" + id);
+  if (!r.ok) throw new Error("каталог недоступен");
+  const f = (await r.json()).files[CAT_FILE];
+  if (!f) return;
+  let txt = f.content;
+  if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
+  return applyCatalog(JSON.parse(txt));
+}
+
+// обложки качаем по одной и только когда материал реально показан
+const coverPulling = new Set();
+async function pullCover(id) {
+  if (!cfg.token || !cfg.catalogId || coverPulling.has(id)) return;
+  coverPulling.add(id);
+  try {
+    const r = await gh("/gists/" + cfg.catalogId);
+    if (!r.ok) return;
+    const f = (await r.json()).files[CAT_COVER_FILE(id)];
+    if (!f) return;
+    let txt = f.content;
+    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 25000)).text();
+    txt = txt.trim();
+    if (!txt.startsWith("data:")) return;
+    try { localStorage.setItem(LS_COVER(id), txt); } catch {}
+    coverCache.set(id, txt);
+    render();
+  } catch {} finally { coverPulling.delete(id); }
+}
+
+/* Разовый перенос: собираем то, что зашито в коде, и кладём в гист.
+   Условия наград превращаем в данные — разбираем исходник простых проверок. */
+function whenOf(fn) {
+  const body = String(fn).replace(/^[^=]*=>/, "");
+  const out = [];
+  for (const part of body.split("&&")) {
+    let m = part.match(/s\.(\w+)\s*(>=|<=|===|==|>|<)\s*([\d.]+)/);
+    if (m) { out.push([m[1], m[2] === "===" || m[2] === "==" ? "==" : m[2], Number(m[3])]); continue; }
+    m = part.match(/s\.(\w+)\.has\(\s*([\d.]+)\s*\)/);
+    if (m) { out.push([m[1], "has", Number(m[2])]); continue; }
+    m = part.match(/^\s*!?\s*s\.(\w+)\s*$/);
+    if (m) { out.push([m[1], "is", !/!\s*s\./.test(part)]); continue; }
+    return null;                        // условие сложнее — материал не переносим молча
+  }
+  return out.length ? out : null;
+}
+
+function packMaterial(id) {
+  const ach = (BOOK_ACH[id] || (id === "pastel" ? ACH_PASTEL : null) ||
+    (data.piano.pieces.some(p => p.id === id) ? ACH_PIANO : ACH_BOOK));
+  const words = BOOK_WORDS[id] || (id === "pastel" ? WORDS_PASTEL : null) ||
+    (data.piano.pieces.some(p => p.id === id) ? WORDS_PIANO : WORDS_BOOK);
+
+  const list = [];
+  for (const a of ach) {
+    const when = whenOf(a.test);
+    if (!when) return { error: `не разобрал условие награды «${a.name}»` };
+    list.push({ id: a.id, icon: a.icon, name: a.name, hint: a.hint, secret: !!a.secret, when });
+  }
+  return { ach: list, words, facts: FACTS[id] || [] };
+}
+
+async function fileToDataUri(url) {
+  const r = await withTimeout(fetch(url), 20000);
+  if (!r.ok) throw new Error("обложка не читается: " + url);
+  const blob = await r.blob();
+  return await new Promise((ok, bad) => {
+    const fr = new FileReader();
+    fr.onload = () => ok(String(fr.result));
+    fr.onerror = () => bad(new Error("обложка не прочиталась"));
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function catalogPush(ids) {
+  const id = await ensureCatalogGist(true);
+
+  // забираем то, что уже лежит в каталоге, чтобы не потерять другие материалы
+  let pack = { v: 1, materials: {} };
+  const cur = await gh("/gists/" + id);
+  if (cur.ok) {
+    const f = (await cur.json()).files[CAT_FILE];
+    if (f) {
+      let txt = f.content;
+      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
+      try { pack = JSON.parse(txt); pack.materials = pack.materials || {}; } catch {}
+    }
+  }
+
+  const files = {};
+  for (const mid of ids) {
+    const m = packMaterial(mid);
+    if (m.error) throw new Error(m.error);
+
+    // исходную картинку кладём отдельным файлом рядом
+    const src = (data.book.books.find(b => b.id === mid) || data.piano.pieces.find(p => p.id === mid) || {}).cover;
+    if (src && !src.startsWith("data:")) {
+      const uri = await fileToDataUri(src);
+      files[CAT_COVER_FILE(mid)] = { content: uri };
+      m.cover = true;
+    }
+    pack.materials[mid] = m;
+  }
+
+  pack.savedAt = now();
+  pack.profiles = PROFILES;            // имена профилей тоже часть каталога, а не кода
+  files[CAT_FILE] = { content: JSON.stringify(pack) };
+  const up = await gh("/gists/" + id, { method: "PATCH", body: JSON.stringify({ files }) });
+  if (!up.ok) throw new Error("каталог не записался");
+
+  applyCatalog(pack);
+  return Object.keys(pack.materials).length;
+}
+
+function catalogUI() {
+  if (!cfg.token || !cfg.gistId)
+    return `<div class="freeze"><div class="fz-head">📚 <b>Каталог</b> — появится, когда подключишь синхронизацию</div></div>`;
+
+  const inCat = Object.keys(CATALOG);
+  const mats = achMaterials();
+  const when = cfg.catalogAt ? fmtDay(dateStr(new Date(cfg.catalogAt))) : "не загружался";
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">📚 <b>Каталог</b> — награды, карточки знаний и обложки могут жить в гисте, а не в коде приложения</div>
+      <div class="fz-empty">В каталоге: ${inCat.length ? esc(inCat.join(", ")) : "пусто"} · сверка ${esc(when)}</div>
+      <div class="fz-form2">
+        <button class="btn" id="catPull" type="button">Обновить из гиста</button>
+        <button class="btn" id="catDrop" type="button">Забыть каталог</button>
+      </div>
+      <div class="fz-head" style="margin-top:10px">Выгрузить материал в гист</div>
+      <div class="pick-row">
+        ${mats.map(m => `<button class="pick" data-catpush="${esc(keyOf(m))}" type="button">
+          <span class="pk-name">${m.icon} ${esc(m.title)}${CATALOG[keyOf(m)] ? " ✓" : ""}</span></button>`).join("")}
+      </div>
+    </div>`;
+}
+
+function bindCatalogUI() {
+  const pull = $("#catPull");
+  if (pull) pull.addEventListener("click", async () => {
+    toast("Смотрю каталог…");
+    try {
+      const n = await catalogPull(true);
+      toast(n ? `Загружено материалов: ${n}` : "Каталог пуст");
+      render();
+    } catch (e) { toast(e.message || "Не получилось"); }
+  });
+
+  const drop = $("#catDrop");
+  if (drop) drop.addEventListener("click", () => {
+    if (!confirm("Забыть загруженный каталог?\n\nПриложение вернётся к зашитым текстам и обложкам. Гист останется на месте.")) return;
+    Object.keys(CATALOG).forEach(id => { try { localStorage.removeItem(LS_COVER(id)); } catch {} });
+    CATALOG = {}; achCache.clear(); coverCache.clear();
+    try { localStorage.removeItem(LS_CAT); } catch {}
+    cfg.catalogAt = 0; saveCfg(); render();
+    toast("Каталог забыт");
+  });
+
+  document.querySelectorAll("[data-catpush]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.dataset.catpush;
+      b.disabled = true;
+      toast("Выгружаю…");
+      try {
+        const n = await catalogPush([id]);
+        toast(`В каталоге материалов: ${n}`);
+        render();
+      } catch (e) { toast(e.message || "Не получилось"); b.disabled = false; }
+    }));
+}
+
+/* ══════════ Автокопия ══════════
+   Раз в неделю кладём снимок всех данных в отдельный гист-архив: файл на месяц,
+   двенадцать последних месяцев. Основной гист может испортиться или пропасть —
+   архив живёт отдельно и не требует ни одного нажатия. */
+
+const ARCH_FILE = (d = new Date()) =>
+  `keiko-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}.json`;
+const ARCH_KEEP = 12;
+const ARCH_EVERY = 7 * 864e5;
+
+async function ensureArchiveGist() {
+  if (cfg.archiveId) return cfg.archiveId;
+  const r = await gh("/gists?per_page=100");
+  if (!r.ok) throw new Error("список гистов недоступен");
+  const found = (await r.json()).find(g => (g.description || "").startsWith("Кэйко — архив"));
+  if (found) { cfg.archiveId = found.id; saveCfg(); return found.id; }
+
+  const cr = await gh("/gists", {
+    method: "POST",
+    body: JSON.stringify({
+      description: "Кэйко — архив копий (создаётся приложением)",
+      public: false,
+      files: { "readme.md": { content: "Снимки данных Кэйко. По файлу на месяц, последние 12." } }
+    })
+  });
+  if (!cr.ok) throw new Error("архив не создался");
+  cfg.archiveId = (await cr.json()).id; saveCfg();
+  return cfg.archiveId;
+}
+
+// box — то, что сейчас лежит в основном гисте: конверт с обоими профилями
+async function archiveNow(box, manual) {
+  const id = await ensureArchiveGist();
+  const files = { [ARCH_FILE()]: { content: JSON.stringify({ ...box, archivedAt: now(), by: profileId }) } };
+
+  // ротация: держим только последние снимки, лишние удаляем (значение null)
+  const r = await gh("/gists/" + id);
+  if (r.ok) {
+    const names = Object.keys((await r.json()).files || {})
+      .filter(n => n.startsWith("keiko-") && n !== ARCH_FILE())
+      .sort();
+    const extra = names.length - (ARCH_KEEP - 1);
+    for (let i = 0; i < extra; i++) files[names[i]] = null;
+  }
+
+  const up = await gh("/gists/" + id, { method: "PATCH", body: JSON.stringify({ files }) });
+  if (!up.ok) throw new Error("копия не записалась");
+  cfg.lastArchive = now(); saveCfg();
+  if (manual) toast("Копия сохранена в архив");
+}
+
+// вызывается после удачной синхронизации: раз в неделю и молча
+function maybeArchive(box) {
+  if (!cfg.token || !cfg.gistId || cfg.archiveOff) return;   // по умолчанию включена
+  if (now() - (cfg.lastArchive || 0) < ARCH_EVERY) return;
+  archiveNow(box, false).catch(() => {});   // не получилось — попробуем в следующий раз
+}
+
+// список снимков в архиве: для восстановления
+async function archiveList() {
+  if (!cfg.archiveId) return [];
+  const r = await gh("/gists/" + cfg.archiveId);
+  if (!r.ok) throw new Error("архив недоступен");
+  const g = await r.json();
+  return Object.values(g.files || {})
+    .filter(f => f.filename.startsWith("keiko-"))
+    .sort((a, b) => b.filename.localeCompare(a.filename));
+}
+
+// восстановление из снимка: то же слияние, что и у файла с устройства
+async function restoreArchive(file) {
+  let txt = file.content;
+  if (file.truncated && file.raw_url) txt = await (await withTimeout(fetch(file.raw_url), 15000)).text();
+  let box;
+  try { box = JSON.parse(txt); } catch { toast("Снимок не читается"); return; }
+  const d = migrate((box.profiles && box.profiles[profileId]) || null);
+  if (!d || !d.piano) { toast("В снимке нет этого профиля"); return; }
+
+  const before = dataStamp();
+  data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
+  data.book.entries = mergeLists(data.book.entries, d.book.entries || []);
+  data.pastel.entries = mergeLists(data.pastel.entries, d.pastel.entries || []);
+  data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
+  data.archive = mergeLists(data.archive || [], d.archive || []);
+  data.freezes = mergeLists(data.freezes || [], d.freezes || []);
+  for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
+  for (const b of (d.book.books || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
+
+  normalizeActive();
+  saveData(); schedulePush(); render();
+  toast(before === dataStamp() ? "Всё это уже было" : "Данные восстановлены");
+}
+
+function archiveBackupUI() {
+  if (!cfg.token || !cfg.gistId)
+    return `<div class="freeze"><div class="fz-head">☁️ <b>Автокопия</b> — появится, когда подключишь синхронизацию</div></div>`;
+
+  const when = cfg.lastArchive ? fmtDay(dateStr(new Date(cfg.lastArchive))) : "ещё не делалась";
+  return `
+    <div class="freeze">
+      <div class="fz-head">☁️ <b>Автокопия</b> — раз в неделю снимок всех данных уезжает в отдельный гист-архив, ${ARCH_KEEP} последних месяцев</div>
+      <div class="fz-empty">Последняя: ${esc(when)}${cfg.archiveOff ? " · выключена" : ""}</div>
+      <div class="fz-form2">
+        <button class="btn" id="arcNow" type="button">Сделать копию сейчас</button>
+        <button class="btn" id="arcList" type="button">Копии в архиве</button>
+      </div>
+      <div id="arcBox"></div>
+      <div class="pick-row" style="margin-top:8px">
+        <button class="pick ${!cfg.archiveOff ? "on" : ""}" data-arc="on" type="button"><span class="pk-name">Включена</span></button>
+        <button class="pick ${cfg.archiveOff ? "on" : ""}" data-arc="off" type="button"><span class="pk-name">Выключена</span></button>
+      </div>
+    </div>`;
+}
+
+function bindArchiveBackupUI() {
+  const now_ = $("#arcNow"), list = $("#arcList"), box = $("#arcBox");
+
+  if (now_) now_.addEventListener("click", async () => {
+    now_.disabled = true; toast("Сохраняю…");
+    try {
+      const r = await gh("/gists/" + cfg.gistId);
+      if (!r.ok) throw new Error("основной гист недоступен");
+      const f = (await r.json()).files[GIST_FILE];
+      let txt = f.content;
+      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 15000)).text();
+      await archiveNow(JSON.parse(txt), true);
+      render();
+    } catch (e) { toast(e.message || "Не получилось"); now_.disabled = false; }
+  });
+
+  if (list && box) list.addEventListener("click", async () => {
+    box.innerHTML = `<div class="fz-empty">Смотрю…</div>`;
+    try {
+      const files = await archiveList();
+      if (!files.length) { box.innerHTML = `<div class="fz-empty">Пока пусто</div>`; return; }
+      box.innerHTML = files.map(f => `
+        <button class="arc-row" data-arcfile="${esc(f.filename)}" type="button">
+          <b>${esc(f.filename.replace("keiko-", "").replace(".json", ""))}</b>
+          <em>${Math.round((f.size || 0) / 1024)} КБ · восстановить</em>
+        </button>`).join("");
+      box.querySelectorAll("[data-arcfile]").forEach(b =>
+        b.addEventListener("click", () => {
+          const f = files.find(x => x.filename === b.dataset.arcfile);
+          if (!f) return;
+          if (!confirm(`Восстановить из снимка «${f.filename}»?\n\nНичего не сотрётся: записи сольются с нынешними.`)) return;
+          restoreArchive(f).catch(() => toast("Не получилось"));
+        }));
+    } catch (e) { box.innerHTML = `<div class="fz-empty">${esc(e.message || "не вышло")}</div>`; }
+  });
+
+  document.querySelectorAll("[data-arc]").forEach(b =>
+    b.addEventListener("click", () => {
+      cfg.archiveOff = b.dataset.arc === "off";
+      saveCfg(); render();
+      toast(cfg.archiveOff ? "Автокопия выключена" : "Автокопия включена");
+    }));
+}
+
+function backupUI() {
+  const counts = [
+    [data.piano.entries.length + data.book.entries.length + data.pastel.entries.length, "занятие", "занятия", "занятий"],
+    [(data.thoughts || []).filter(t => !t.deleted).length, "мысль", "мысли", "мыслей"],
+    [(data.archive || []).filter(a => !a.deleted).length, "книга на полке", "книги на полке", "книг на полке"]
+  ].map(([n, a, b, c]) => `${n} ${plural(n, a, b, c)}`).join(" · ");
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">💾 <b>Копия данных</b> — файл со всем, что накопилось: ${counts}</div>
+      <div class="fz-form2">
+        <button class="btn" id="bkSave" type="button">Сохранить копию</button>
+        <button class="btn" id="bkLoad" type="button">Восстановить из копии</button>
+      </div>
+      <input type="file" id="bkFile" accept="application/json,.json" style="display:none">
+      <div class="fz-empty">Восстановление ничего не затирает: записи сливаются по времени изменения.</div>
+    </div>`;
+}
+
+function bindBackupUI() {
+  const save = $("#bkSave"), load = $("#bkLoad"), file = $("#bkFile");
+  if (save) save.addEventListener("click", exportBackup);
+  if (load && file) {
+    load.addEventListener("click", () => file.click());
+    file.addEventListener("change", () => { if (file.files[0]) restoreBackup(file.files[0]); });
+  }
+}
+
+/* ══════════ Настройки: отдельный экран с разделами ══════════ */
+
+const SETTINGS_SECTIONS = [
+  { id: "profile",   icon: "👤", name: "Профиль",       hint: () => profile().name },
+  { id: "sync",      icon: "🔄", name: "Синхронизация", hint: () => (cfg.token && cfg.gistId) ? "подключена" : "не подключена" },
+  { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
+  { id: "look",      icon: "🎨", name: "Оформление",    hint: () => themeById(data.shop.theme).name },
+  { id: "materials", icon: "📦", name: "Материалы",     hint: () => hasMaterials() ? currentMaterial().title : "пусто" },
+  { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
+      const n = (data.freezes || []).filter(f => !f.deleted).length;
+      return n ? `${n} ${plural(n, "период", "периода", "периодов")}` : "нет"; } },
+  { id: "data",      icon: "💾", name: "Данные",        hint: () => "копия и перенос" },
+  { id: "about",     icon: "稽", name: "О приложении",  hint: () => APP_VERSION }
+];
+
+function openSettingsSheet() {   // старое имя оставлено: на него завязаны баннеры и пустые состояния
+  settingsOpen = true; settingsView = null;
+  closeSheet();
+  render();
+}
+
+function renderSettings() {
+  if (settingsView) { renderSettingsSection(settingsView); return; }
+
+  $("#view").innerHTML = `
+    <h2 class="set-title">Настройки</h2>
+    <div class="set-list">
+      ${SETTINGS_SECTIONS.map(sec => `
+        <button class="set-row" data-sec="${sec.id}" type="button">
+          <span class="set-ic">${sec.icon}</span>
+          <span class="set-txt"><b>${sec.name}</b><em>${esc(String(sec.hint()))}</em></span>
+          <span class="mc-go">›</span>
+        </button>`).join("")}
+    </div>
+    <button class="btn set-back" id="setDone" type="button">Готово</button>`;
+
+  document.querySelectorAll("[data-sec]").forEach(b =>
+    b.addEventListener("click", () => {
+      settingsView = b.dataset.sec;
+      render();
+      $("#view").scrollTop = 0;
+    }));
+  $("#setDone").addEventListener("click", () => { settingsOpen = false; settingsView = null; render(); });
+}
+
+function renderSettingsSection(id) {
+  const sec = SETTINGS_SECTIONS.find(x => x.id === id) || SETTINGS_SECTIONS[0];
+  const connected = cfg.token && cfg.gistId;
+  let body = "";
+
+  if (id === "profile") {
+    body = `
+      <div class="info-note prof-note">
+        Сейчас: <b>${esc(profile().name)}</b>. У каждого профиля свои материалы и прогресс, гист общий.
+        <button class="btn" id="sProfile" type="button">Сменить профиль</button>
+      </div>`;
+  } else if (id === "sync") {
+    body = connected ? `
+      <div class="info-note">Гист <b>${esc(cfg.gistId)}</b>${cfg.lastSync ? ` · последняя сверка ${fmtDay(dateStr(new Date(cfg.lastSync)))}` : ""}</div>
+      <div class="sheet-actions">
+        <button class="btn gold" id="sSync" type="button">Синхронизировать сейчас</button>
+        <button class="btn danger" id="sOff" type="button">Отключить</button>
+      </div>
+      <div class="diag">${diagLine()}</div>` : `
+      <div class="info-note">
+        Подключи <b>GitHub Gist</b>, чтобы прогресс жил на всех устройствах.<br>
+        Токен: <a href="https://github.com/settings/tokens/new?description=%D0%9A%D1%8D%D0%B9%D0%BA%D0%BE&scopes=gist" target="_blank" rel="noopener">classic со scope gist</a>
+      </div>
+      <input class="note-input" id="sToken" type="password" placeholder="ghp_…" autocomplete="off">
+      <div class="sheet-actions"><button class="btn gold" id="sConnect" type="button">Подключить</button></div>`;
+  } else if (id === "goal") {
+    body = goalUI();
+  } else if (id === "look") {
+    body = themeUI() + dailyUI();
+  } else if (id === "materials") {
+    body = catalogUI() + (archiveUI() || "");
+  } else if (id === "pause") {
+    body = freezeUI();
+  } else if (id === "data") {
+    body = archiveBackupUI() + backupUI();
+  } else {
+    body = `
+      <div class="info-note">Кэйко · версия ${APP_VERSION}</div>
+      <div class="sheet-actions">
+        <button class="btn" id="sAbout" type="button">Что такое кэйко</button>
+        <button class="btn" id="sUpdate" type="button">Обновить приложение</button>
+      </div>
+      ${shakeUI()}
+      <div class="diag">${diagLine()}</div>`;
+  }
+
+  $("#view").innerHTML = `
+    <button class="back" id="setBack" type="button">‹ Настройки</button>
+    <h2 class="set-title">${sec.icon} ${sec.name}</h2>
+    ${body}`;
+
+  $("#setBack").addEventListener("click", () => { settingsView = null; render(); $("#view").scrollTop = 0; });
+
+  const pr = $("#sProfile");
+  if (pr) pr.addEventListener("click", switchProfile);
+  const up = $("#sUpdate");
+  if (up) up.addEventListener("click", forceUpdate);
+  const ab = $("#sAbout");
+  if (ab) ab.addEventListener("click", openAboutSheet);
+  const sy = $("#sSync");
+  if (sy) sy.addEventListener("click", () => syncNow(true));
+  const off = $("#sOff");
+  if (off) off.addEventListener("click", () => {
+    if (!confirm("Отключить синхронизацию?\n\nЗаписи останутся на устройстве, но перестанут уходить в гист — и записывать новые будет нельзя, пока не подключишь снова.")) return;
+    cfg.token = ""; cfg.gistId = ""; saveCfg(); setSyncDot(""); render(); toast("Отключено");
+  });
+  const conn = $("#sConnect");
+  if (conn) conn.addEventListener("click", () => connectGitHub($("#sToken").value.trim()));
+
+  bindFreezeUI();
+  bindGoalUI();
+  bindThemeUI();
+  bindDailyUI();
+  bindBackupUI();
+  bindArchiveBackupUI();
+  bindCatalogUI();
+  bindShakeUI();
+  bindArchiveUI();
+}
+
+/* ══════════ Gist ══════════ */
+
+function setSyncDot(state) { $("#syncDot").className = "sync-dot" + (state ? " " + state : ""); }
+
+function gh(path, opts = {}) {
+  return withTimeout(fetch("https://api.github.com" + path, Object.assign({
+    headers: { "Authorization": "Bearer " + cfg.token, "Accept": "application/vnd.github+json" }
+  }, opts)), 12000);
+}
+
+// без потолка по времени запрос в самолёте висит до системного таймаута — и всё приложение ждёт
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("нет связи")), ms))
+  ]);
+}
+
+async function connectGitHub(token) {
+  if (!token) { toast("Вставь токен"); return; }
+  cfg.token = token; saveCfg();
+  setSyncDot("busy");
+  try {
+    const r = await gh("/gists?per_page=100");
+    if (r.status === 401) throw new Error("Токен не подошёл");
+    if (!r.ok) throw new Error("GitHub ответил " + r.status);
+    const found = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
+    if (found) { cfg.gistId = found.id; saveCfg(); await syncNow(false); toast("Подключено"); }
+    else {
+      const cr = await gh("/gists", {
+        method: "POST",
+        body: JSON.stringify({ description: "Кэйко — данные профилей", public: false,
+          files: { [GIST_FILE]: { content: JSON.stringify({ v: 8, savedAt: now(), profiles: { [profileId]: exportData() } }) } } })
+      });
+      if (!cr.ok) throw new Error("Не создался гист");
+      cfg.gistId = (await cr.json()).id; cfg.lastSync = now(); saveCfg();
+      setSyncDot("ok"); toast("Гист создан");
+    }
+    closeSheet();
+    syncError = "";
+    render();
+  } catch (e) {
+    cfg.token = ""; saveCfg(); setSyncDot("err");
+    render();
+    toast(e.message || "Не получилось");
+  }
+}
+
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive });
+
+function mergeLists(local, remote) {
+  const map = new Map();
+  for (const i of remote || []) map.set(i.id, i);
+  for (const i of local || []) {
+    const o = map.get(i.id);
+    if (!o || (i.updatedAt || 0) >= (o.updatedAt || 0)) map.set(i.id, i);
+  }
+  return [...map.values()];
+}
+
+async function syncNow(manual) {
+  if (!cfg.token || !cfg.gistId || syncing) { if (manual && !cfg.token) openSettingsSheet(); return; }
+  if (!navigator.onLine) { online = false; setSyncDot("off"); renderBanner(); return; }
+  syncing = true; setSyncDot("busy");
+  const stampBefore = dataStamp();
+  try {
+    const r = await gh("/gists/" + cfg.gistId);
+    if (!r.ok) throw new Error("Ошибка сети (" + r.status + ")");
+    const g = await r.json();
+    const f = g.files && g.files[GIST_FILE];
+    let box = {};                       // содержимое файла целиком: { profiles: {...} }
+    let remote = emptyData();
+    if (f) {
+      let txt = f.content;
+      if (f.truncated && f.raw_url) txt = await (await fetch(f.raw_url)).text();
+      try {
+        const parsed = JSON.parse(txt);
+        // старый файл был плоским — считаем его данными первого профиля
+        box = parsed && parsed.profiles ? parsed : { profiles: { anton: parsed } };
+        remote = migrate(box.profiles[profileId] || null);
+      } catch {}
+    }
+    if (!box.profiles) box = { profiles: {} };
+    cfg.profileIds = Object.keys(box.profiles); saveCfg();
+    profilesFromKeys(cfg.profileIds);
+    // определения материалов живут в гисте наравне с записями
+    data.piano.pieces = mergeLists(data.piano.pieces, remote.piano.pieces);
+    data.book.books = mergeLists(data.book.books, remote.book.books);
+    if (remote.pastel.course && (!data.pastel.course ||
+        (remote.pastel.course.updatedAt || 0) >= (data.pastel.course.updatedAt || 0))) {
+      data.pastel.course = remote.pastel.course;
+    }
+    if (!data.piano.activePiece && data.piano.pieces[0]) data.piano.activePiece = data.piano.pieces[0].id;
+    if (!data.book.activeBook && data.book.books[0]) data.book.activeBook = data.book.books[0].id;
+
+    data.piano.entries = mergeLists(data.piano.entries, remote.piano.entries);
+    data.book.entries = mergeLists(data.book.entries, remote.book.entries);
+    data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
+    if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
+    data.freezes = mergeLists(data.freezes, remote.freezes);
+    data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
+    if (remote.shop) {
+      data.shop.purchases = mergeLists(data.shop.purchases, remote.shop.purchases || []);
+      if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
+        if (remote.shop.theme) data.shop.theme = remote.shop.theme;
+      }
+    }
+    data.archive = mergeLists(data.archive, remote.archive);
+    normalizeActive();
+    saveData();
+    const changed = JSON.stringify([data.piano, data.book, data.pastel])
+      !== JSON.stringify([remote.piano, remote.book, remote.pastel]);
+    if (changed) {
+      box.profiles[profileId] = exportData();     // чужой профиль в файле остаётся нетронутым
+      box.v = 8; box.savedAt = now();
+      const pr = await gh("/gists/" + cfg.gistId, {
+        method: "PATCH",
+        body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(box) } } })
+      });
+      if (!pr.ok) throw new Error("Не сохранилось");
+    }
+    cfg.lastSync = now(); saveCfg(); setSyncDot("ok");
+    maybeArchive(box);                  // раз в неделю снимок уезжает в архив, молча
+    catalogPull(false).catch(() => {});  // каталог сверяем не чаще раза в сутки
+    syncError = "";
+    syncPickers();
+    if (stampBefore !== dataStamp()) render(true);   // тихо и только если данные правда изменились
+    else renderBanner();
+    maybeDailyThought();               // мысли могли приехать из гиста только что
+    if (manual) toast("Синхронизировано");
+  } catch (e) {
+    if (!navigator.onLine) { online = false; setSyncDot("off"); renderBanner(); return; }
+    setSyncDot("err");
+    syncError = e.message || "нет связи с GitHub";
+    renderBanner();
+    if (manual) toast(syncError);
+  } finally { syncing = false; }
+}
+
+function schedulePush() {
+  if (!cfg.token || !cfg.gistId) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => syncNow(false), 1500);
+}
+
+/* ══════════ Запуск ══════════ */
+
+function init() {
+  try {
+    boot();
+    try { sessionStorage.removeItem("keiko-selfheal"); } catch {}
+  } catch (e) { console.error(e); crashScreen(e); }
+}
+
+function boot() {
+  profileId = localStorage.getItem(LS_PROFILE);
+  try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
+  if (!cfg.token || !cfg.gistId) { renderConnect(); return; }   // пока нет гиста — показывать нечего
+  if (!PROFILES.length) profilesFromKeys(cfg.profileIds);
+  if (!profileId) { renderProfilePick(); return; }               // кто занимается
+
+  load();
+  normalizeActive();
+  saveData();   // закрепляем данные в актуальной схеме сразу после миграции
+  if (["home", "progress", "ach", "notes"].includes(cfg.tab)) tab = cfg.tab;
+  applyTheme(data.shop.theme);
+  if (["week", "month"].includes(cfg.period)) period = cfg.period;
+  if (cfg.achView && cfg.achView.track) achView = cfg.achView;
+  if (cfg.achTab === "facts") achTab = "facts";
+  if (cfg.achTop === "shelf") achTop = "shelf";
+  const t = new Date();
+  calYear = t.getFullYear(); calMonth = t.getMonth();
+  syncPickers();
+
+  // без него приложение не открывается офлайн: sw.js кэширует оболочку.
+  // Ставим с задержкой и только если запуск прошёл без сбоев
+  if ("serviceWorker" in navigator) {
+    setTimeout(() => {
+      let broken = "";
+      try { broken = sessionStorage.getItem("keiko-selfheal") || ""; } catch {}
+      if (broken === "1") return;
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
+    }, 2500);
+  }
+
+  // длинные ленты: кнопка возврата к началу
+  const view = $("#view"), top = $("#toTop");
+  if (view && top) {
+    view.addEventListener("scroll", () => {
+      top.classList.toggle("show", view.scrollTop > 420);
+    }, { passive: true });
+    top.addEventListener("click", () => {
+      view.scrollTo({ top: 0, behavior: "smooth" });
+      // если плавная прокрутка не поддержана — доводим сами
+      setTimeout(() => { if (view.scrollTop > 0) view.scrollTop = 0; }, 600);
+    });
+  }
+
+  const fab = $("#likeFab");
+  if (fab) fab.addEventListener("click", () => {
+    notesFilter = notesFilter === "liked" ? "all" : "liked";
+    shuffleThought = null;
+    renderNotes();
+    if (view) view.scrollTop = 0;
+  });
+
+  const diceFab = $("#diceFab");
+  if (diceFab) diceFab.addEventListener("click", () => {
+    if (navigator.vibrate) navigator.vibrate(15);
+    shuffleRandomThought();
+  });
+
+  window.addEventListener("online", () => {
+    online = true; setSyncDot(""); renderBanner();
+    if (gistReady()) syncNow(false);        // догоняем всё, что накопилось офлайн
+  });
+  window.addEventListener("offline", () => { online = false; setSyncDot("off"); renderBanner(); });
+  if (!online) setSyncDot("off");
+
+  $("#gearBtn").addEventListener("click", openSettingsSheet);
+  document.querySelector(".logo").addEventListener("click", openAboutSheet);
+  // если доступ к движению уже разрешён — просто подписываемся
+  if (cfg.shake || !shakeNeedsAsk()) enableShake(false);
+
+  $("#sheetBg").addEventListener("click", closeSheet);
+  $("#cheerOk").addEventListener("click", () => {
+    $("#cheer").classList.remove("show", "daily");
+    if (overlayQueue.length) setTimeout(showNextOverlay, 220);
+  });
+  $("#cheer").addEventListener("click", e => {
+    if (e.target === e.currentTarget) $("#cheer").classList.remove("show", "daily");
+  });
+
+  window.addEventListener("resize", syncTabHeight);
+  window.addEventListener("orientationchange", () => setTimeout(syncTabHeight, 200));
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      checkForUpdate(); if (selectedDate > todayStr()) selectedDate = todayStr(); syncNow(false); render(); }
+  });
+
+  render();
+  setTimeout(maybeDailyThought, 900);
+  checkForUpdate();
+  if (cfg.token && cfg.gistId && navigator.onLine) { setSyncDot("ok"); syncNow(false); }
+
+
+}
+
+init();
