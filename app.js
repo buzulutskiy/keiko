@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 18";
+const APP_VERSION = "Кэйко 19";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -960,6 +960,16 @@ function renderBanner() {
 function crashScreen(e) {
   const box = $("#view");
   if (!box) return;
+  // карта — оверлей поверх всего: если её не убрать, человек увидит её вместо сообщения
+  try { if (window.closeKnowledgeMap) window.closeKnowledgeMap(); } catch {}
+  // запоминаем причину: экран можно закрыть и забыть, а разбираться потом по чему-то надо
+  try {
+    localStorage.setItem("keiko-last-crash", JSON.stringify({
+      at: new Date().toISOString(), profile: profileId || "",
+      tab, achTop, achView, msg: String((e && e.message) || e || ""),
+      stack: String((e && e.stack) || "").slice(0, 600)
+    }));
+  } catch {}
 
   // первая попытка — молча снять service worker и перезагрузиться: чаще всего виноват он
   let tried = "1";
@@ -1047,11 +1057,29 @@ function renderInner() {
   renderTabbar();
   // главная всегда влезает в экран, остальные вкладки скроллятся внутри себя
   $("#view").className = (tab === "home" && !settingsOpen ? "fixed" : "scrolls") + (quietRender ? " quiet" : "");
-  if (settingsOpen) renderSettings();
-  else if (tab === "home") renderHome();
-  else if (tab === "progress") renderProgress();
-  else if (tab === "notes") renderNotes();
-  else renderAch();
+  /* Сбой внутри одной вкладки не должен убивать приложение: сбрасываем то, что
+     чаще всего протухает при смене профиля, и показываем главную. */
+  try {
+    if (settingsOpen) renderSettings();
+    else if (tab === "home") renderHome();
+    else if (tab === "progress") renderProgress();
+    else if (tab === "notes") renderNotes();
+    else renderAch();
+  } catch (e) {
+    console.error("вкладка " + (settingsOpen ? "настройки" : tab) + ":", e);
+    try {
+      localStorage.setItem("keiko-last-crash", JSON.stringify({
+        at: new Date().toISOString(), profile: profileId || "", tab, achTop, achView,
+        msg: String((e && e.message) || e || ""), stack: String((e && e.stack) || "").slice(0, 600)
+      }));
+    } catch {}
+    settingsOpen = false; achView = null; cfg.achView = null; achTop = "mats";
+    tab = "home"; cfg.tab = "home"; saveCfg();
+    renderTabbar();
+    $("#view").className = "fixed";
+    renderHome();
+    toast("Экран не открылся — вернул на главную");
+  }
   syncNotesFabs();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
@@ -3173,7 +3201,7 @@ function shelfCoverHTML(a) {
     : a.art === "wave" ? SEA_ART
     : a.art === "pine" ? PINE_ART
     : a.track === "piano" ? KEYS_ART
-    : `<div class="cv-mark">${a.icon}</div>`;
+    : `<div class="cv-mark">${a.icon || "📖"}</div>`;
   return `
     <div class="cover shelf-cover ${cls}">
       <div><div class="cv-author">${esc(a.sub || "")}</div></div>
@@ -3893,8 +3921,20 @@ async function pullCover(id) {
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
     await coverSave(id, txt);
-    render();
+    coversArrived();
   } catch {} finally { coverPulling.delete(id); }
+}
+
+/* Обложки приезжают по одной. Раньше каждая дёргала полную громкую перерисовку —
+   на полке это давало серию рывков. Теперь копим и перерисовываем один раз, тихо. */
+let coversTimer = 0;
+function coversArrived() {
+  clearTimeout(coversTimer);
+  coversTimer = setTimeout(() => {
+    render(true);
+    const ov = document.getElementById("kmap");
+    if (ov && !ov.hidden && window.refreshKnowledgeMap) window.refreshKnowledgeMap();
+  }, 260);
 }
 
 /* Наполнение каталога: файл, собранный из первой версии приложения.
@@ -4557,15 +4597,6 @@ init();
   const ctx = cv.getContext("2d");
   let W = 0, H = 0, sheetH = 0, MAP = null, path = [], anim = null, hitZones = [];
 
-  const TONE = (f) => ({
-    "роман": ["#3b2f57", "#231b38"], "повесть": ["#3b2f57", "#231b38"],
-    "рассказ": ["#37304f", "#221c33"], "поэма": ["#4a3556", "#281c33"],
-    "нон-фикшн": ["#2c4150", "#1b2733"], "мемуары": ["#4a3f2c", "#2b241a"],
-    "дневник": ["#2f4438", "#1c2922"], "пьеса": ["#4a3350", "#2a1c30"],
-    "курс": ["#463a24", "#2a2216"]
-  })[f] || ["#332c47", "#1f1a2e"];
-  const formOf = (track) => track === "piano" ? "пьеса" : track === "pastel" ? "курс" : "роман";
-
   const count = (n) => n.sub ? n.sub.reduce((s, x) => s + count(x), 0) : n.books.length;
   const nodeAt = (p) => p.reduce((n, i) => n.sub[i], MAP);
   const ease = (t) => 1 - Math.pow(1 - t, 3);
@@ -4584,7 +4615,7 @@ init();
     for (const a of shelfItems()) {
       const code = CATEGORIES[a.srcId] || CATEGORIES[a.id];
       const leaf = code && byCode[code];
-      if (leaf) leaf.books.push({ t: a.title, a: a.sub || "", track: a.track, id: a.srcId || a.id });
+      if (leaf) leaf.books.push(a);   // кладём саму запись полки — обложку рисуем ею же
     }
     return root;
   }
@@ -4722,23 +4753,8 @@ init();
       sheet.appendChild(cap);
       const shelf = document.createElement("div");
       shelf.className = "km-shelf"; shelf.dataset.sec = ci;
-      books.forEach(bk => {
-        const cover = document.createElement("div"); cover.className = "km-cover";
-        const src = coverSrc(bk.id, "");
-        if (src && src.startsWith("data:")) {
-          cover.classList.add("photo");
-          const img = document.createElement("img");
-          img.src = src; img.alt = bk.t; img.loading = "lazy"; img.decoding = "async";
-          cover.appendChild(img);
-        } else {
-          const tone = TONE(formOf(bk.track));
-          cover.style.background = `linear-gradient(155deg, ${tone[0]}, ${tone[1]})`;
-          const s = document.createElement("s"); s.textContent = bk.a;
-          const b = document.createElement("b"); b.textContent = bk.t;
-          cover.append(s, b);
-        }
-        shelf.appendChild(cover);
-      });
+      // обложка ровно та же, что на Полке — одна функция на всё приложение
+      shelf.innerHTML = books.map(a => `<div class="km-item">${shelfCoverHTML(a)}</div>`).join("");
       sheet.appendChild(shelf);
     }
     const empty = (node.sub || []).map((s, i) => [s, i]).filter(([s]) => !count(s));
@@ -4805,9 +4821,24 @@ init();
   };
   window.closeKnowledgeMap = function () {
     const ov = document.getElementById("kmap");
-    ov.hidden = true; ov.setAttribute("aria-hidden", "true");
+    if (ov) { ov.hidden = true; ov.setAttribute("aria-hidden", "true"); }
     document.body.classList.remove("km-on");
+    clearInterval(animTimer); clearInterval(scrollTimer); anim = null;
+  };
+  // перерисовать открытую карту после прихода свежих данных или обложек
+  window.refreshKnowledgeMap = function () {
+    const ov = document.getElementById("kmap");
+    if (!ov || ov.hidden || !TAXONOMY || !data) return;
+    MAP = buildTree();
+    if (path.length && !nodeAt([]).sub.length) path = [];
+    render();
   };
   const closeBtn = document.getElementById("kmClose");
   if (closeBtn) closeBtn.addEventListener("click", window.closeKnowledgeMap);
+  // системная «назад» и Esc закрывают карту, а не выкидывают из приложения
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const ov = document.getElementById("kmap");
+    if (ov && !ov.hidden) { e.preventDefault(); path.length ? back() : window.closeKnowledgeMap(); }
+  });
 })();
