@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 23";
+const APP_VERSION = "Кэйко 24";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -35,7 +35,7 @@ const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
 /* ── Состояние ── */
 let data = null;
-let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false };
+let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true };
 let period = "week";   // week | month — что показываем на «Прогрессе»
 let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
 let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
@@ -1270,6 +1270,7 @@ const howls = new Map();              // id → Howl
 let audioNow = "";                    // что звучит (или вот-вот зазвучит)
 let audioUnlocked = false;
 let audioSwitchTimer = 0;             // ждём, пока лента успокоится
+let audioStarting = false;            // запуск назначен, но ещё не случился
 const AUDIO_VOL = 0.55;
 const FADE_OUT = 700;
 const FADE_IN = 1100;
@@ -1303,26 +1304,235 @@ function audioSync() {
   const want = (cfg.sound && audioUnlocked && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials()) ? curKey() : "";
 
-  if (want === audioNow) return;
-  clearTimeout(audioSwitchTimer);
+  /* Раньше здесь был простой выход при совпадении. Но метка audioNow ставится
+     заранее, ещё до запуска: если быстро уйти с обложки и вернуться, трек успевал
+     остановиться, а метка оставалась — и звук пропадал насовсем. Поэтому сверяем
+     не метку, а то, играет ли он на самом деле. */
+  if (want && want === audioNow) {
+    if (audioStarting) return;                         // запуск уже назначен
+    const h = howls.get(want);
+    if (h && h.playing()) {
+      // вернулись на обложку, пока трек гас — поднимаем обратно, а не начинаем заново
+      if (h.volume() < AUDIO_VOL * 0.9) h.fade(h.volume(), AUDIO_VOL, FADE_IN);
+      if (window.waveStart) waveStart();
+      return;
+    }
+  } else {
+    clearTimeout(audioSwitchTimer); audioStarting = false;
+  }
 
-  if (!want) { audioNow = ""; stopAllExcept(null); return; }
+  if (!want) {
+    clearTimeout(audioSwitchTimer); audioStarting = false;
+    audioNow = ""; stopAllExcept(null); return;
+  }
 
   if (!audioUrls.has(want)) pullAudio(want);
   const url = audioUrls.get(want);
-  if (!url) { audioNow = ""; stopAllExcept(null); return; }
+  if (!url) { audioNow = ""; stopAllExcept(null); return; }   // звук ещё качается
 
   audioNow = want;
   stopAllExcept(want);                             // старое уходит сразу
+  audioStarting = true;
 
   // новое вводим, только когда человек действительно остановился на этой обложке
+  clearTimeout(audioSwitchTimer);
   audioSwitchTimer = setTimeout(() => {
+    audioStarting = false;
     if (audioNow !== want) return;
     const h = howlFor(want, url);
     if (!h.playing()) { h.volume(0); h.play(); }
     h.fade(h.volume(), AUDIO_VOL, FADE_IN);
+    if (window.waveStart) waveStart();
   }, SETTLE_MS + FADE_OUT * 0.6);                  // подхватываем к концу затухания, без наложения
 }
+
+/* ══════════ Волны под музыку ══════════
+   Огибающая посчитана заранее и лежит в гисте: шесть каналов десять раз в секунду —
+   три полосы громкости, ход музыки, тембр и атаки. Живой анализ звука не нужен,
+   поэтому работает ровно на любом телефоне и ничего не может сломать. */
+const ENV_FILE = "keiko-audio-envelopes.json";
+const LS_ENV = "keiko-envelopes-v1";
+let ENVEL = null;
+try { ENVEL = JSON.parse(localStorage.getItem(LS_ENV) || "null"); } catch {}
+
+const BG_PRESETS = [
+  { id: "still", name: "Тихая вода", hint: "почти неподвижно", blur: 22,
+    cfg: { gain:0.85, gamma:1.25, smooth:1.6, speed:0.42, amp:0.85, bright:1.05, tone:0.7, hit:0.25 },
+    layers: [[0.34,0,0.030,1.5,2.6,0.060,1.10,0.50],[0.52,1,0.024,1.2,2.1,0.075,1.00,0.46],
+             [0.70,2,0.036,1.9,3.0,0.050,0.88,0.36],[0.86,0,0.020,1.0,1.8,0.090,1.06,0.30]] },
+  { id: "breath", name: "Дыхание", hint: "золотая середина", blur: 18,
+    cfg: { gain:1.05, gamma:1.15, smooth:0.85, speed:0.75, amp:1.10, bright:1.20, tone:0.85, hit:0.55 },
+    layers: [[0.30,0,0.055,2.1,3.7,0.055,1.18,0.55],[0.46,1,0.041,1.6,2.9,0.070,1.00,0.50],
+             [0.62,2,0.068,2.7,4.3,0.048,0.84,0.42],[0.78,0,0.033,1.3,2.3,0.085,1.10,0.38]] },
+  { id: "tide", name: "Прилив", hint: "крупные валы", blur: 16,
+    cfg: { gain:1.25, gamma:1.0, smooth:0.55, speed:0.9, amp:1.55, bright:1.25, tone:0.8, hit:0.7 },
+    layers: [[0.38,0,0.045,0.9,1.7,0.135,1.15,0.60],[0.58,1,0.033,0.7,1.4,0.160,1.02,0.54],
+             [0.76,0,0.026,0.6,1.1,0.180,1.10,0.42]] },
+  { id: "aurora", name: "Сияние", hint: "перелив цвета", blur: 26,
+    cfg: { gain:1.15, gamma:1.35, smooth:1.1, speed:0.6, amp:1.0, bright:1.45, tone:1.6, hit:0.4 },
+    layers: [[0.22,2,0.050,3.1,5.2,0.045,0.78,0.50],[0.36,1,0.038,2.4,4.0,0.058,0.95,0.52],
+             [0.50,0,0.030,1.7,3.1,0.070,1.25,0.48],[0.66,2,0.062,3.6,5.8,0.038,0.80,0.38],
+             [0.82,1,0.026,1.4,2.5,0.080,1.00,0.32]] },
+  { id: "pulse", name: "Пульс", hint: "точно в ритм", blur: 14,
+    cfg: { gain:1.2, gamma:1.0, smooth:0.28, speed:1.0, amp:1.15, bright:1.2, tone:0.7, hit:1.3 },
+    layers: [[0.32,0,0.060,2.4,4.1,0.055,1.16,0.58],[0.48,1,0.048,1.9,3.3,0.068,1.00,0.54],
+             [0.64,2,0.075,3.0,4.9,0.046,0.86,0.46],[0.80,0,0.038,1.5,2.7,0.080,1.08,0.40]] },
+  { id: "mist", name: "Туман", hint: "движение угадывается", blur: 34,
+    cfg: { gain:0.75, gamma:1.4, smooth:2.2, speed:0.30, amp:0.70, bright:1.0, tone:0.6, hit:0.15 },
+    layers: [[0.40,0,0.018,0.8,1.5,0.075,1.08,0.44],[0.60,1,0.014,0.6,1.2,0.090,1.00,0.40],
+             [0.80,2,0.022,1.1,1.9,0.065,0.90,0.32]] },
+];
+const bgPreset = () => BG_PRESETS.find(p => p.id === cfg.bgPreset) || BG_PRESETS[1];
+
+async function pullEnvelopes() {
+  if (!cfg.token || !cfg.catalogId || ENVEL) return;
+  try {
+    const r = await gh("/gists/" + cfg.catalogId);
+    if (!r.ok) return;
+    const f = (await r.json()).files[ENV_FILE];
+    if (!f) return;
+    let txt = f.content;
+    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 30000)).text();
+    ENVEL = JSON.parse(txt);
+    try { localStorage.setItem(LS_ENV, txt); } catch {}
+    waveStart();
+  } catch {}
+}
+
+(function () {
+  const PHI = 1.6180339887, SQ2 = 1.4142135624, SQ3 = 1.7320508076;
+  const LW = 160, LH = 340;
+  let cv, ctx, layers = [], raf = 0, last = 0, flow = 0;
+  let paceSm = 0.5, toneSm = 0.5, hitSm = 0, bytes = null, curId = "";
+
+  function build() {
+    const P = bgPreset();
+    layers = P.layers.map(([y, band, sp, k1, k2, amp, hue, a]) => ({
+      y, band, sp, k1, k2, amp, hue, a, lvl: 0,
+      ph: Math.random() * 6.283, d1: sp * PHI, d2: sp * SQ2 * 0.61, d3: sp * SQ3 * 0.37
+    }));
+    if (cv) cv.style.filter = `blur(${P.blur}px) saturate(1.25)`;
+  }
+
+  function envBytes(id) {
+    const e = ENVEL && ENVEL.tracks && ENVEL.tracks[id];
+    if (!e) return null;
+    if (!e._b) {
+      const raw = atob(e.d), a = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
+      e._b = a;
+    }
+    return e;
+  }
+  function bandsAt(id, sec) {
+    const e = envBytes(id);
+    if (!e) return null;
+    const i = Math.min(e.n - 1, Math.max(0, Math.floor(sec * e.hz)));
+    const j = Math.min(e.n - 1, i + 1), f = sec * e.hz - i, d = e._b, out = [];
+    for (let b = 0; b < 6; b++) {
+      const a = d[i * 6 + b] / 255, c = d[j * 6 + b] / 255;
+      out.push(a + (c - a) * f);
+    }
+    return out;
+  }
+
+  // цвет берём у обложки активного материала — как и у статичного фона
+  function tone() {
+    const m = lastPainted;
+    const src = m && (m.track === "book" ? (m.book || book()) : m.track === "piano" ? (m.piece || piece()) : null);
+    const fromCover = src && src.cover ? readCoverTones(src.cover) : null;
+    const pair = fromCover || (m && TONES[toneOf(m)]) || TONES.violet;
+    return String(pair[0]).split(",").map(n => +n || 0);
+  }
+
+  function draw(bands) {
+    const P = bgPreset(), C = P.cfg, [r, g, bl] = tone();
+    ctx.clearRect(0, 0, LW, LH);
+    ctx.globalCompositeOperation = "lighter";
+    const warm = 1 + (0.5 - toneSm) * 0.9 * C.tone;
+    const cool = 1 + (toneSm - 0.5) * 0.9 * C.tone;
+    const B = C.bright * (1 + 0.22 * hitSm * C.hit);
+    const dt = 0.016;
+    for (const L of layers) {
+      let t = bands ? bands[L.band] : 0.30;
+      t = Math.min(1, Math.pow(t, C.gamma) * C.gain);
+      L.lvl += (t - L.lvl) * (1 - Math.exp(-dt / Math.max(0.05, C.smooth)));
+      const amp = LH * (L.amp * C.amp * (0.45 + 1.35 * L.lvl + 0.28 * hitSm * C.hit));
+      const base = LH * L.y;
+      const wave = (x) => {
+        const u = x / LW;
+        return base
+          + amp * Math.sin(u * L.k1 * 6.283 + flow * L.d1 * 6.283 * C.speed + L.ph)
+          + amp * 0.55 * Math.sin(u * L.k2 * 6.283 - flow * L.d2 * 6.283 * C.speed + L.ph * PHI)
+          + amp * 0.30 * Math.sin(u * (L.k1 + L.k2) * 3.1 + flow * L.d3 * 6.283 * C.speed);
+      };
+      ctx.beginPath(); ctx.moveTo(-4, LH + 4);
+      for (let x = -4; x <= LW + 4; x += 4) ctx.lineTo(x, wave(x));
+      ctx.lineTo(LW + 4, LH + 4); ctx.closePath();
+      const cr = Math.min(255, r * L.hue * B * warm * (0.9 + 1.5 * L.lvl));
+      const cg = Math.min(255, g * B * (0.9 + 1.5 * L.lvl));
+      const cb = Math.min(255, bl * B * cool * (0.9 + 1.5 * L.lvl));
+      /* Заливка лежит под кривой, поэтому у самой кривой прозрачность обязана быть
+         нулевой — иначе на тихой музыке волна выпрямляется и граница читается
+         как резкий обрез. Свечение начинается ниже всех возможных гребней. */
+      /* Растушёвка задаётся в пикселях, а не долей амплитуды: иначе на тихой
+         музыке волна выпрямляется, переход схлопывается и виден резкий обрез.
+         Всё выше yStart прозрачно — холст подставляет туда первую метку. */
+      const yStart = base + amp * 2.0;         // ниже самых глубоких провалов кривой
+      const yEnd = yStart + 210;               // свет живёт полосой, а не заливает низ целиком
+      const span = yEnd - yStart;
+      const fIn = 90 / span;                   // 90 пикселей мягкого входа
+      const peak = (L.a * (0.14 + 0.34 * L.lvl)).toFixed(3);
+      const grd = ctx.createLinearGradient(0, yStart, 0, yEnd);
+      grd.addColorStop(0, `rgba(${cr|0},${cg|0},${cb|0},0)`);
+      grd.addColorStop(fIn, `rgba(${cr|0},${cg|0},${cb|0},${peak})`);
+      grd.addColorStop(1, `rgba(${cr|0},${cg|0},${cb|0},0)`);
+      ctx.fillStyle = grd; ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function step(now) {
+    raf = 0;
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const on = cfg.sound && cfg.bgWave !== false && tab === "home" && !settingsOpen
+      && !document.hidden && audioNow && ENVEL;
+    const h = on ? howls.get(audioNow) : null;
+    if (!h || !h.playing()) { hide(); return; }
+
+    if (curId !== audioNow) { curId = audioNow; build(); }
+    const bands = bandsAt(audioNow, h.seek() || 0);
+    const ease = (tau) => 1 - Math.exp(-dt / tau);
+    paceSm += ((bands ? bands[3] : 0.45) - paceSm) * ease(2.5);
+    toneSm += ((bands ? bands[4] : 0.5) - toneSm) * ease(4.0);
+    const hn = bands ? bands[5] : 0;
+    hitSm += (hn > hitSm ? (hn - hitSm) * ease(0.22) : (hn - hitSm) * ease(1.6));
+    flow += dt * (0.35 + 1.5 * paceSm);        // скорость волн идёт за темпом музыки
+    draw(bands);
+    cv.classList.add("on");
+    raf = requestAnimationFrame(step);
+  }
+
+  function hide() {
+    if (cv) cv.classList.remove("on");
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+  }
+
+  window.waveStart = function () {
+    if (!cv) {
+      cv = document.getElementById("bgWave");
+      if (!cv) return;
+      ctx = cv.getContext("2d");
+      cv.width = LW; cv.height = LH;
+      build();
+    }
+    if (!ENVEL) { pullEnvelopes(); return; }
+    if (raf) return;
+    last = performance.now();
+    raf = requestAnimationFrame(step);
+  };
+  window.waveRebuild = function () { curId = ""; build(); };
+})();
 
 // первое касание разблокирует звук: iOS иначе не даёт играть
 function unlockAudio() {
@@ -3107,6 +3317,10 @@ function soundUI() {
         <button class="pick ${cfg.sound ? "on" : ""}" data-sound="on" type="button"><span class="pk-name">Включить</span></button>
         <button class="pick ${!cfg.sound ? "on" : ""}" data-sound="off" type="button"><span class="pk-name">Тишина</span></button>
       </div>
+      ${cfg.sound ? `<div class="pick-row bg-row">${BG_PRESETS.map(p => `
+        <button class="pick ${bgPreset().id === p.id ? "on" : ""}" data-bg="${p.id}" type="button">
+          <span class="pk-name">${p.name}</span><span class="pk-hint">${p.hint}</span>
+        </button>`).join("")}</div>` : ""}
       <div class="fz-note">${cfg.sound
         ? (has ? "У текущего материала звук есть" : "У текущего материала звука пока нет — тишина")
         : "Звук есть не у всех материалов"}</div>
@@ -3121,6 +3335,13 @@ function bindSoundUI() {
       audioUnlocked = true;         // это и есть нужный жест
       render();
       toast(cfg.sound ? "Атмосфера включена" : "Тишина");
+    }));
+  document.querySelectorAll("[data-bg]").forEach(b =>
+    b.addEventListener("click", () => {
+      cfg.bgPreset = b.dataset.bg; saveCfg();
+      if (window.waveRebuild) waveRebuild();
+      render();
+      toast("Фон: " + bgPreset().name);
     }));
 }
 
@@ -4727,6 +4948,7 @@ function boot() {
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
   audioLoadAll().then(audioSync);     // звук материала, если уже скачан
+  setTimeout(pullEnvelopes, 3000);    // огибающие для волн — без спешки
 
   // iOS не даёт играть до жеста — ловим самое первое касание, дальше не мешаем
   ["pointerdown", "keydown"].forEach(ev =>
