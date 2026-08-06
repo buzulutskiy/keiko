@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 24";
+const APP_VERSION = "Кэйко 25";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -35,7 +35,7 @@ const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
 /* ── Состояние ── */
 let data = null;
-let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true };
+let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true, zen: true };
 let period = "week";   // week | month — что показываем на «Прогрессе»
 let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
 let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
@@ -1082,6 +1082,7 @@ function renderInner() {
   }
   syncNotesFabs();
   audioSync();
+  zenArm();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
 
@@ -1343,6 +1344,7 @@ function audioSync() {
     if (!h.playing()) { h.volume(0); h.play(); }
     h.fade(h.volume(), AUDIO_VOL, FADE_IN);
     if (window.waveStart) waveStart();
+    zenArm();
   }, SETTLE_MS + FADE_OUT * 0.6);                  // подхватываем к концу затухания, без наложения
 }
 
@@ -1436,13 +1438,14 @@ async function pullEnvelopes() {
     return out;
   }
 
-  // цвет берём у обложки активного материала — как и у статичного фона
+  /* Цвет не вычисляем заново: берём ровно тот, которым покрашен верхний фон.
+     Иначе сверху один тон, снизу другой — и экран разваливается надвое. */
+  let toneNow = [110, 90, 160];
   function tone() {
-    const m = lastPainted;
-    const src = m && (m.track === "book" ? (m.book || book()) : m.track === "piano" ? (m.piece || piece()) : null);
-    const fromCover = src && src.cover ? readCoverTones(src.cover) : null;
-    const pair = fromCover || (m && TONES[toneOf(m)]) || TONES.violet;
-    return String(pair[0]).split(",").map(n => +n || 0);
+    const want = bgTone || toneNow;
+    // переползаем к новому цвету плавно, чтобы смена материала не щёлкала
+    for (let i = 0; i < 3; i++) toneNow[i] += (want[i] - toneNow[i]) * 0.04;
+    return toneNow;
   }
 
   function draw(bands) {
@@ -1533,6 +1536,43 @@ async function pullEnvelopes() {
   };
   window.waveRebuild = function () { curId = ""; build(); };
 })();
+
+/* ══════════ Погружение ══════════
+   Если человек просто слушает и ничего не трогает — интерфейс уходит, остаётся
+   обложка и цвет. Любое касание возвращает всё обратно. Экран при этом держим
+   включённым, но не блокируем: музыка играет и в фоне. */
+const ZEN_AFTER = 13000;
+let zenTimer = 0, zenOn = false, wakeLock = null;
+
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}          // на части устройств недоступно — не беда
+}
+
+function zenEnter() {
+  if (zenOn) return;
+  zenOn = true;
+  document.body.classList.add("zen");
+  keepAwake(true);
+}
+function zenExit() {
+  if (zenOn) { zenOn = false; document.body.classList.remove("zen"); keepAwake(false); }
+  zenArm();
+}
+// условия: главная, звук играет, ничего не открыто
+function zenArm() {
+  clearTimeout(zenTimer);
+  const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
+    && !document.hidden && audioNow && !sheetOpen();
+  if (!can) { if (zenOn) zenExit(); return; }
+  zenTimer = setTimeout(zenEnter, ZEN_AFTER);
+}
+const sheetOpen = () => !!document.querySelector(".sheet.show, .sheet-bg.show")
+  || !(document.getElementById("kmap") || {}).hidden;
 
 // первое касание разблокирует звук: iOS иначе не даёт играть
 function unlockAudio() {
@@ -1740,6 +1780,7 @@ function readCoverTones(url) {
 }
 
 let lastPainted = null;
+let bgTone = null;      // цвет верхнего фона — волны берут его же, чтобы не спорить
 
 function paintBackdrop(item) {
   const layers = document.querySelectorAll(".bgfx i");
@@ -1749,6 +1790,7 @@ function paintBackdrop(item) {
   const src = item.track === "book" ? (item.book || book()) : item.track === "piano" ? (item.piece || piece()) : null;
   const fromCover = src && src.cover ? readCoverTones(src.cover) : null;
   const [c1, c2] = fromCover || TONES[toneOf(item)] || TONES.violet;
+  bgTone = String(c1).split(",").map(n => +n || 0);      // им же красим волны
   const css =
     `radial-gradient(980px 560px at 78% -12%, rgba(${c1}, 0.32), transparent 62%),` +
     `radial-gradient(760px 460px at -6% 4%, rgba(${c2}, 0.18), transparent 58%),` +
@@ -4953,6 +4995,17 @@ function boot() {
   // iOS не даёт играть до жеста — ловим самое первое касание, дальше не мешаем
   ["pointerdown", "keydown"].forEach(ev =>
     document.addEventListener(ev, unlockAudio, { once: true, passive: true }));
+
+  /* Выход из погружения: первое касание только возвращает интерфейс и никуда
+     не нажимает — иначе легко случайно отметить занятие. */
+  document.addEventListener("pointerdown", (e) => {
+    if (!zenOn) { zenArm(); return; }
+    e.preventDefault(); e.stopPropagation();
+    zenExit();
+  }, true);
+  ["keydown", "wheel", "touchmove"].forEach(ev =>
+    document.addEventListener(ev, () => { zenOn ? zenExit() : zenArm(); }, { passive: true, capture: true }));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) zenExit(); else zenArm(); });
   // ушли из приложения — глушим, чтобы не играло в кармане
   document.addEventListener("visibilitychange", audioSync);
   setTimeout(maybeDailyThought, 900);
