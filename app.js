@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 17";
+const APP_VERSION = "Кэйко 18";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1055,6 +1055,10 @@ function renderInner() {
   syncNotesFabs();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
+
+  // успешный рендер — снимаем флаг восстановления. Если рендер упал, флаг остаётся,
+  // и следующая попытка покажет экран ошибки вместо бесконечной перезагрузки.
+  try { sessionStorage.removeItem("keiko-selfheal"); } catch {}
 }
 
 function renderSeg() {
@@ -2254,7 +2258,16 @@ function withMaterial(view, fn) {
   return res;
 }
 
+// материал из achView мог остаться от другого профиля — тогда его тут нет
+function viewMaterialExists(v) {
+  if (!v || !v.track) return false;
+  if (v.track === "book") return (data.book.books || []).some(b => b.id === v.bookId);
+  if (v.track === "pastel") return !!(data.pastel && data.pastel.course);
+  return (data.piano.pieces || []).some(p => p.id === v.pieceId);
+}
+
 function renderAch() {
+  if (achView && !viewMaterialExists(achView)) { achView = null; cfg.achView = null; saveCfg(); }
   if (!achView) { renderAchList(); return; }
   if (achTab !== "facts") achTab = "ach";
   renderAchMaterial(achView);
@@ -4433,7 +4446,6 @@ function schedulePush() {
 function init() {
   try {
     boot();
-    try { sessionStorage.removeItem("keiko-selfheal"); } catch {}
   } catch (e) { console.error(e); crashScreen(e); }
 }
 
@@ -4773,14 +4785,23 @@ init();
   });
   window.addEventListener("resize", () => { const ov = document.getElementById("kmap"); if (ov && !ov.hidden) size(); });
 
+  // подтянуть свежие taxonomy+categories и перестроить карту, если она открыта
+  function refreshFromGist() {
+    catalogPull(true).then(() => {
+      const ov = document.getElementById("kmap");
+      if (ov && !ov.hidden) { MAP = buildTree(); render(); }
+    }).catch(() => {});
+  }
+
   window.openKnowledgeMap = function () {
     if (!data) return;
-    if (!TAXONOMY) { toast("Карта ещё грузится — попробуй через миг"); catalogPull(true).catch(() => {}); return; }
+    if (!TAXONOMY) { toast("Карта ещё грузится — попробуй через миг"); refreshFromGist(); return; }
     MAP = buildTree(); path = []; anim = null;
     const ov = document.getElementById("kmap");
     ov.hidden = false; ov.setAttribute("aria-hidden", "false");
     document.body.classList.add("km-on");
     setTimeout(size, 0);
+    refreshFromGist();   // категории кэшируются на 24ч — освежаем при каждом открытии
   };
   window.closeKnowledgeMap = function () {
     const ov = document.getElementById("kmap");
