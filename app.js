@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 21";
+const APP_VERSION = "Кэйко 22";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1221,23 +1221,6 @@ const audioKey = (id) => "keiko-audio/" + encodeURIComponent(id);
 const CAT_AUDIO_FILE = (id) => `audio-${id}.txt`;
 const audioUrls = new Map();          // id → blob-ссылка
 const audioPulling = new Set();
-/* Два проигрывателя, чтобы смена материала была перетеканием, а не обрывом:
-   один гаснет, второй в это же время разгорается. */
-const players = [];
-let deck = 0;                         // какой сейчас основной
-let audioNow = "";                    // что играет сейчас
-let audioUnlocked = false;            // iOS: до первого касания звук не запустить
-const AUDIO_VOL = 0.55;
-const FADE_MS = 1600;
-
-function playerAt(i) {
-  if (!players[i]) {
-    const a = new Audio();
-    a.loop = true; a.preload = "none"; a.volume = 0;
-    players[i] = { el: a, timer: 0 };
-  }
-  return players[i];
-}
 
 async function audioBox() { return await caches.open(AUDIO_CACHE); }
 
@@ -1270,59 +1253,75 @@ async function pullAudio(id) {
     const f = (await r.json()).files[CAT_AUDIO_FILE(id)];
     if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
     let txt = f.content;
-    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 60000)).text();
+    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 90000)).text();
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
     await audioSave(id, txt);
-    if (tab === "home" && !settingsOpen) audioSync();
+    audioNow = "";                                    // пусть audioSync подхватит заново
+    audioSync();
   } catch {} finally { audioPulling.delete(id); }
 }
 
-// плавно подводим громкость к цели; 0 — и ставим на паузу
-/* Плавно ведём громкость одного проигрывателя к цели. */
-function fadeTo(slot, to, ms, thenStop) {
-  clearInterval(slot.timer);
-  const el = slot.el, from = el.volume, steps = Math.max(1, Math.round(ms / 50));
-  let k = 0;
-  slot.timer = setInterval(() => {
-    k++;
-    const v = from + (to - from) * (k / steps);
-    try { el.volume = Math.max(0, Math.min(1, v)); } catch {}
-    if (k >= steps) {
-      clearInterval(slot.timer);
-      if (thenStop) { try { el.pause(); el.currentTime = 0; } catch {} }
-    }
-  }, 50);
+/* Проигрывание — на howler.js: он ведёт громкость плавно (а не рывками по таймеру),
+   сам разбирается с политикой автозапуска и разблокировкой звука на iOS.
+   Два разных произведения намеренно НЕ накладываются: старое уходит, потом
+   приходит новое. Наложение музыки звучит грязно — проверено на слух. */
+const howls = new Map();              // id → Howl
+let audioNow = "";                    // что звучит (или вот-вот зазвучит)
+let audioUnlocked = false;
+let audioSwitchTimer = 0;             // ждём, пока лента успокоится
+const AUDIO_VOL = 0.55;
+const FADE_OUT = 700;
+const FADE_IN = 1100;
+const SETTLE_MS = 420;                // свайп через несколько обложек не дёргает звук
+
+function howlFor(id, url) {
+  let h = howls.get(id);
+  if (h) return h;
+  h = new Howl({
+    src: [url], format: ["mp4"],
+    html5: true,                      // потоком: длинная запись не разворачивается в память целиком
+    loop: true, volume: 0, preload: true
+  });
+  howls.set(id, h);
+  return h;
+}
+
+function stopAllExcept(keepId) {
+  howls.forEach((h, id) => {
+    if (id === keepId) return;
+    if (!h.playing()) { h.volume(0); return; }
+    h.fade(h.volume(), 0, FADE_OUT);
+    h.once("fade", () => { if (h.volume() === 0) h.pause(); });
+  });
 }
 
 /* Что должно звучать прямо сейчас: только главная, только активный материал,
-   только если человек включил звук и уже коснулся экрана.
-   Смена материала — перетекание: старый гаснет, новый разгорается одновременно. */
+   только если человек включил звук и уже коснулся экрана. */
 function audioSync() {
+  if (typeof Howl !== "function") return;          // библиотека не догрузилась — просто тишина
   const want = (cfg.sound && audioUnlocked && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials()) ? curKey() : "";
 
-  if (want && !audioUrls.has(want)) pullAudio(want);
-  const url = want ? audioUrls.get(want) : "";
-  const cur = players[deck];
+  if (want === audioNow) return;
+  clearTimeout(audioSwitchTimer);
 
-  if (!url) {                                        // тишина
-    if (cur && !cur.el.paused) fadeTo(cur, 0, 700, true);
-    audioNow = "";
-    return;
-  }
-  if (audioNow === want && cur && !cur.el.paused) return;   // уже звучит нужное
+  if (!want) { audioNow = ""; stopAllExcept(null); return; }
 
-  const next = playerAt(deck ^ 1);
-  if (cur && !cur.el.paused) fadeTo(cur, 0, FADE_MS, true);  // старый уходит
+  if (!audioUrls.has(want)) pullAudio(want);
+  const url = audioUrls.get(want);
+  if (!url) { audioNow = ""; stopAllExcept(null); return; }
 
-  next.el.src = url;
-  next.el.volume = 0;
-  const pr = next.el.play();
-  if (pr && pr.catch) pr.catch(() => {});            // iOS может отказать — молча
-  fadeTo(next, AUDIO_VOL, FADE_MS);                  // новый приходит
-  deck ^= 1;
   audioNow = want;
+  stopAllExcept(want);                             // старое уходит сразу
+
+  // новое вводим, только когда человек действительно остановился на этой обложке
+  audioSwitchTimer = setTimeout(() => {
+    if (audioNow !== want) return;
+    const h = howlFor(want, url);
+    if (!h.playing()) { h.volume(0); h.play(); }
+    h.fade(h.volume(), AUDIO_VOL, FADE_IN);
+  }, SETTLE_MS + FADE_OUT * 0.6);                  // подхватываем к концу затухания, без наложения
 }
 
 // первое касание разблокирует звук: iOS иначе не даёт играть

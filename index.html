@@ -1975,9 +1975,12 @@
     // грузим app.js с той же меткой версии, что и страница, — иначе iOS отдаёт скрипт из своего кэша
     (function () {
       var v = new URLSearchParams(location.search).get("v") || "";
+      var h = document.createElement("script");
+      h.src = "howler.min.js" + (v ? "?v=" + encodeURIComponent(v) : "");
       var s = document.createElement("script");
       s.src = "app.js" + (v ? "?v=" + encodeURIComponent(v) : "");
-      document.body.appendChild(s);
+      h.onload = h.onerror = function () { document.body.appendChild(s); };
+      document.body.appendChild(h);
     })();
   </script>
 </body>
