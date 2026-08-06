@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 19";
+const APP_VERSION = "Кэйко 20";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -35,7 +35,7 @@ const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
 /* ── Состояние ── */
 let data = null;
-let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false };
+let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false };
 let period = "week";   // week | month — что показываем на «Прогрессе»
 let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
 let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
@@ -1081,6 +1081,7 @@ function renderInner() {
     toast("Экран не открылся — вернул на главную");
   }
   syncNotesFabs();
+  audioSync();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
 
@@ -1212,6 +1213,106 @@ function activeRailIndex(items) {
 /* Обложки лежат в Cache Storage, а не в localStorage: там место меряется
    сотнями мегабайт, и картинка хранится файлом, а не строкой в памяти. */
 const coverCache = new Map();          // id → blob-ссылка, готовая для <img>
+/* ── Атмосфера: у материала может быть свой звук ──
+   Хранится как обложки: в приватном гисте каталога, на устройстве — в Cache Storage.
+   Играет только на главной, только когда материал активен, и только по разрешению. */
+const AUDIO_CACHE = "keiko-audio-v1";
+const audioKey = (id) => "keiko-audio/" + encodeURIComponent(id);
+const CAT_AUDIO_FILE = (id) => `audio-${id}.txt`;
+const audioUrls = new Map();          // id → blob-ссылка
+const audioPulling = new Set();
+let player = null;                    // <audio>, один на всё приложение
+let audioNow = "";                    // что играет сейчас
+let audioFade = 0;
+let audioUnlocked = false;            // iOS: до первого касания звук не запустить
+
+async function audioBox() { return await caches.open(AUDIO_CACHE); }
+
+async function audioSave(id, dataUri) {
+  const blob = await (await fetch(dataUri)).blob();
+  const box = await audioBox();
+  await box.put(audioKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "audio/mp4" } }));
+  audioUrls.set(id, URL.createObjectURL(blob));
+}
+
+async function audioLoadAll() {
+  if (!window.caches) return;
+  try {
+    const box = await audioBox();
+    for (const req of await box.keys()) {
+      const id = decodeURIComponent(req.url.split("/").pop());
+      if (audioUrls.get(id)) continue;
+      const res = await box.match(req);
+      if (res) audioUrls.set(id, URL.createObjectURL(await res.blob()));
+    }
+  } catch {}
+}
+
+async function pullAudio(id) {
+  if (!cfg.token || !cfg.catalogId || audioPulling.has(id) || audioUrls.has(id)) return;
+  audioPulling.add(id);
+  try {
+    const r = await gh("/gists/" + cfg.catalogId);
+    if (!r.ok) return;
+    const f = (await r.json()).files[CAT_AUDIO_FILE(id)];
+    if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
+    let txt = f.content;
+    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 60000)).text();
+    txt = txt.trim();
+    if (!txt.startsWith("data:")) return;
+    await audioSave(id, txt);
+    if (tab === "home" && !settingsOpen) audioSync();
+  } catch {} finally { audioPulling.delete(id); }
+}
+
+// плавно подводим громкость к цели; 0 — и ставим на паузу
+function audioRamp(to, ms, thenPause) {
+  clearInterval(audioFade);
+  if (!player) return;
+  const from = player.volume, steps = Math.max(1, Math.round(ms / 50));
+  let k = 0;
+  audioFade = setInterval(() => {
+    k++;
+    const v = from + (to - from) * (k / steps);
+    try { player.volume = Math.max(0, Math.min(1, v)); } catch {}
+    if (k >= steps) {
+      clearInterval(audioFade);
+      if (thenPause) { try { player.pause(); } catch {} }
+    }
+  }, 50);
+}
+
+/* Что должно звучать прямо сейчас: только главная, только активный материал,
+   только если человек включил звук и уже коснулся экрана. */
+function audioSync() {
+  const want = (cfg.sound && audioUnlocked && tab === "home" && !settingsOpen
+    && !document.hidden && hasMaterials()) ? curKey() : "";
+
+  if (want && !audioUrls.has(want)) pullAudio(want);
+  const url = want ? audioUrls.get(want) : "";
+
+  if (!url) {                                   // тишина
+    if (player && !player.paused) audioRamp(0, 600, true);
+    audioNow = "";
+    return;
+  }
+  if (audioNow === want && player && !player.paused) return;   // уже играет то, что надо
+
+  if (!player) { player = new Audio(); player.loop = true; player.preload = "none"; }
+  if (audioNow !== want) { player.src = url; audioNow = want; }
+  player.volume = 0;
+  const p = player.play();
+  if (p && p.catch) p.catch(() => {});          // iOS может отказать — молча
+  audioRamp(0.55, 1200);
+}
+
+// первое касание разблокирует звук: iOS иначе не даёт играть
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  audioSync();
+}
+
 const COVER_CACHE = "keiko-covers-v1";
 const coverKey = (id) => "keiko-cover/" + encodeURIComponent(id);
 
@@ -2976,6 +3077,34 @@ function dailyUI() {
     </div>`;
 }
 
+/* Атмосфера: звук материала на главной. По умолчанию выключено —
+   играть без спроса нельзя, да и iOS всё равно потребует касания. */
+function soundUI() {
+  const has = audioUrls.get(curKey());
+  return `
+    <div class="freeze">
+      <div class="fz-head">🎧 <b>Атмосфера</b> — на главной тихо звучит материал, который сейчас открыт</div>
+      <div class="pick-row">
+        <button class="pick ${cfg.sound ? "on" : ""}" data-sound="on" type="button"><span class="pk-name">Включить</span></button>
+        <button class="pick ${!cfg.sound ? "on" : ""}" data-sound="off" type="button"><span class="pk-name">Тишина</span></button>
+      </div>
+      <div class="fz-note">${cfg.sound
+        ? (has ? "У текущего материала звук есть" : "У текущего материала звука пока нет — тишина")
+        : "Звук есть не у всех материалов"}</div>
+    </div>`;
+}
+
+function bindSoundUI() {
+  document.querySelectorAll("[data-sound]").forEach(b =>
+    b.addEventListener("click", () => {
+      cfg.sound = b.dataset.sound === "on";
+      saveCfg();
+      audioUnlocked = true;         // это и есть нужный жест
+      render();
+      toast(cfg.sound ? "Атмосфера включена" : "Тишина");
+    }));
+}
+
 function bindDailyUI() {
   document.querySelectorAll("[data-daily]").forEach(b =>
     b.addEventListener("click", () => {
@@ -4281,7 +4410,7 @@ function renderSettingsSection(id) {
   } else if (id === "goal") {
     body = goalUI();
   } else if (id === "look") {
-    body = themeUI() + dailyUI();
+    body = themeUI() + soundUI() + dailyUI();
   } else if (id === "materials") {
     body = catalogUI() + (archiveUI() || "");
   } else if (id === "pause") {
@@ -4324,6 +4453,7 @@ function renderSettingsSection(id) {
   bindFreezeUI();
   bindGoalUI();
   bindThemeUI();
+  bindSoundUI();
   bindDailyUI();
   bindBackupUI();
   bindArchiveBackupUI();
@@ -4577,6 +4707,13 @@ function boot() {
 
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
+  audioLoadAll().then(audioSync);     // звук материала, если уже скачан
+
+  // iOS не даёт играть до жеста — ловим самое первое касание, дальше не мешаем
+  ["pointerdown", "keydown"].forEach(ev =>
+    document.addEventListener(ev, unlockAudio, { once: true, passive: true }));
+  // ушли из приложения — глушим, чтобы не играло в кармане
+  document.addEventListener("visibilitychange", audioSync);
   setTimeout(maybeDailyThought, 900);
   checkForUpdate();
   if (cfg.token && cfg.gistId && navigator.onLine) { setSyncDot("ok"); syncNow(false); }
