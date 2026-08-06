@@ -78,8 +78,11 @@
     .bgfx i.on { opacity: 1; }
     /* Волны под музыку. Канва нарочно крошечная и растянута на экран:
        мягкость получается от растяжения, а не от дорогого фильтра. */
+    /* Канва выходит за края экрана: blur гасит собственные границы элемента,
+       и на экране это читалось как светлая полоса с ровным краем. */
     #bgWave {
-      position: absolute; inset: 0; width: 100%; height: 100%;
+      position: absolute; top: -80px; left: -80px;
+      width: calc(100% + 160px); height: calc(100% + 160px);
       filter: blur(18px) saturate(1.25);
       opacity: 0; transition: opacity 1.2s ease;
     }
