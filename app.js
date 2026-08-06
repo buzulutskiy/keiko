@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 22";
+const APP_VERSION = "Кэйко 23";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1861,6 +1861,7 @@ function setActiveMaterial(item) {
   schedulePush();
   updateHeroInfo();
   updateAchBadge();   // таббар целиком не перерисовываем: он бы мигал на каждом свайпе
+  audioSync();        // лента меняет материал мимо render(), иначе звук остался бы прежним
 }
 
 // счётчик открытых наград в таббаре — меняем только цифру
