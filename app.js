@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 25";
+const APP_VERSION = "Кэйко 26";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1289,12 +1289,23 @@ function howlFor(id, url) {
   return h;
 }
 
+/* Раньше остановка висела на событии "fade" от библиотеки. В потоковом режиме
+   это событие приходит не всегда, и прошлая композиция продолжала звучать
+   поверх новой. Теперь гасим по таймеру — событие лишь ускоряет развязку. */
+const stopTimers = new Map();
+function hardStop(h, id) {
+  clearTimeout(stopTimers.get(id));
+  stopTimers.set(id, setTimeout(() => {
+    try { h.volume(0); h.pause(); } catch {}
+    stopTimers.delete(id);
+  }, FADE_OUT + 120));
+}
 function stopAllExcept(keepId) {
   howls.forEach((h, id) => {
-    if (id === keepId) return;
-    if (!h.playing()) { h.volume(0); return; }
-    h.fade(h.volume(), 0, FADE_OUT);
-    h.once("fade", () => { if (h.volume() === 0) h.pause(); });
+    if (id === keepId) { clearTimeout(stopTimers.get(id)); stopTimers.delete(id); return; }
+    if (!h.playing()) { try { h.volume(0); h.pause(); } catch {} return; }
+    try { h.fade(h.volume(), 0, FADE_OUT); } catch {}
+    hardStop(h, id);                    // страховка: замолчит в любом случае
   });
 }
 
@@ -1482,10 +1493,10 @@ async function pullEnvelopes() {
          музыке волна выпрямляется, переход схлопывается и виден резкий обрез.
          Всё выше yStart прозрачно — холст подставляет туда первую метку. */
       const yStart = base + amp * 2.0;         // ниже самых глубоких провалов кривой
-      const yEnd = yStart + 210;               // свет живёт полосой, а не заливает низ целиком
+      const yEnd = yStart + 260;               // свет живёт полосой, а не заливает низ целиком
       const span = yEnd - yStart;
       const fIn = 90 / span;                   // 90 пикселей мягкого входа
-      const peak = (L.a * (0.14 + 0.34 * L.lvl)).toFixed(3);
+      const peak = (L.a * (0.34 + 0.80 * L.lvl)).toFixed(3);
       const grd = ctx.createLinearGradient(0, yStart, 0, yEnd);
       grd.addColorStop(0, `rgba(${cr|0},${cg|0},${cb|0},0)`);
       grd.addColorStop(fIn, `rgba(${cr|0},${cg|0},${cb|0},${peak})`);
