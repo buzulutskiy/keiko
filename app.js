@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 20";
+const APP_VERSION = "Кэйко 21";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1221,10 +1221,23 @@ const audioKey = (id) => "keiko-audio/" + encodeURIComponent(id);
 const CAT_AUDIO_FILE = (id) => `audio-${id}.txt`;
 const audioUrls = new Map();          // id → blob-ссылка
 const audioPulling = new Set();
-let player = null;                    // <audio>, один на всё приложение
+/* Два проигрывателя, чтобы смена материала была перетеканием, а не обрывом:
+   один гаснет, второй в это же время разгорается. */
+const players = [];
+let deck = 0;                         // какой сейчас основной
 let audioNow = "";                    // что играет сейчас
-let audioFade = 0;
 let audioUnlocked = false;            // iOS: до первого касания звук не запустить
+const AUDIO_VOL = 0.55;
+const FADE_MS = 1600;
+
+function playerAt(i) {
+  if (!players[i]) {
+    const a = new Audio();
+    a.loop = true; a.preload = "none"; a.volume = 0;
+    players[i] = { el: a, timer: 0 };
+  }
+  return players[i];
+}
 
 async function audioBox() { return await caches.open(AUDIO_CACHE); }
 
@@ -1266,44 +1279,50 @@ async function pullAudio(id) {
 }
 
 // плавно подводим громкость к цели; 0 — и ставим на паузу
-function audioRamp(to, ms, thenPause) {
-  clearInterval(audioFade);
-  if (!player) return;
-  const from = player.volume, steps = Math.max(1, Math.round(ms / 50));
+/* Плавно ведём громкость одного проигрывателя к цели. */
+function fadeTo(slot, to, ms, thenStop) {
+  clearInterval(slot.timer);
+  const el = slot.el, from = el.volume, steps = Math.max(1, Math.round(ms / 50));
   let k = 0;
-  audioFade = setInterval(() => {
+  slot.timer = setInterval(() => {
     k++;
     const v = from + (to - from) * (k / steps);
-    try { player.volume = Math.max(0, Math.min(1, v)); } catch {}
+    try { el.volume = Math.max(0, Math.min(1, v)); } catch {}
     if (k >= steps) {
-      clearInterval(audioFade);
-      if (thenPause) { try { player.pause(); } catch {} }
+      clearInterval(slot.timer);
+      if (thenStop) { try { el.pause(); el.currentTime = 0; } catch {} }
     }
   }, 50);
 }
 
 /* Что должно звучать прямо сейчас: только главная, только активный материал,
-   только если человек включил звук и уже коснулся экрана. */
+   только если человек включил звук и уже коснулся экрана.
+   Смена материала — перетекание: старый гаснет, новый разгорается одновременно. */
 function audioSync() {
   const want = (cfg.sound && audioUnlocked && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials()) ? curKey() : "";
 
   if (want && !audioUrls.has(want)) pullAudio(want);
   const url = want ? audioUrls.get(want) : "";
+  const cur = players[deck];
 
-  if (!url) {                                   // тишина
-    if (player && !player.paused) audioRamp(0, 600, true);
+  if (!url) {                                        // тишина
+    if (cur && !cur.el.paused) fadeTo(cur, 0, 700, true);
     audioNow = "";
     return;
   }
-  if (audioNow === want && player && !player.paused) return;   // уже играет то, что надо
+  if (audioNow === want && cur && !cur.el.paused) return;   // уже звучит нужное
 
-  if (!player) { player = new Audio(); player.loop = true; player.preload = "none"; }
-  if (audioNow !== want) { player.src = url; audioNow = want; }
-  player.volume = 0;
-  const p = player.play();
-  if (p && p.catch) p.catch(() => {});          // iOS может отказать — молча
-  audioRamp(0.55, 1200);
+  const next = playerAt(deck ^ 1);
+  if (cur && !cur.el.paused) fadeTo(cur, 0, FADE_MS, true);  // старый уходит
+
+  next.el.src = url;
+  next.el.volume = 0;
+  const pr = next.el.play();
+  if (pr && pr.catch) pr.catch(() => {});            // iOS может отказать — молча
+  fadeTo(next, AUDIO_VOL, FADE_MS);                  // новый приходит
+  deck ^= 1;
+  audioNow = want;
 }
 
 // первое касание разблокирует звук: iOS иначе не даёт играть
