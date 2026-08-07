@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 28";
+const APP_VERSION = "Кэйко 29";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1309,25 +1309,28 @@ function audioProgress(id, v) {
 function paintSndBtn() {
   const b = document.getElementById("sndBtn");
   if (!b) return;
-  // показываем только там, где звук вообще уместен
-  const show = tab === "home" && !settingsOpen && hasMaterials();
-  b.hidden = !show;
-  if (!show) return;
+  const loading = cfg.sound && audioPulling.size > 0
+    && tab === "home" && !settingsOpen && hasMaterials();
 
-  const loading = cfg.sound && audioPulling.size > 0;
-  const playing = cfg.sound && audioNow && howls.get(audioNow) && howls.get(audioNow).playing();
-  b.classList.toggle("load", !!loading);
-  b.classList.toggle("play", !loading && !!playing);
-  b.classList.toggle("off", !cfg.sound);
+  // показываем только пока грузится; догрузилось — исчезает
+  b.hidden = !loading;
+  b.classList.toggle("show", !!loading);
+  if (!loading) return;
+
+  // встаём в правый верхний угол активной обложки
+  const cov = document.querySelector(".slot.on .cover");
+  if (cov) {
+    const r = cov.getBoundingClientRect();
+    b.style.left = Math.round(r.right - 38) + "px";
+    b.style.top = Math.round(r.top + 8) + "px";
+  }
 
   const bar = b.querySelector(".sn-bar");
-  const C = 97.4;                                     // длина окружности r=15.5
-  const v = loading ? audioPct.v : (cfg.sound ? 1 : 0);
-  if (bar) bar.style.strokeDashoffset = String(C * (1 - v));
-  b.setAttribute("aria-label",
-    loading ? `Музыка грузится, ${Math.round(audioPct.v * 100)}%`
-      : cfg.sound ? "Звук включён — выключить" : "Звук выключен — включить");
+  if (bar) bar.style.strokeDashoffset = String(94.2 * (1 - audioPct.v));
+  b.setAttribute("aria-label", `Музыка грузится, ${Math.round(audioPct.v * 100)}% — нажми, чтобы отключить звук`);
 }
+
+
 
 /* Проигрывание — на howler.js: он ведёт громкость плавно (а не рывками по таймеру),
    сам разбирается с политикой автозапуска и разблокировкой звука на iOS.
@@ -2194,6 +2197,7 @@ function setActiveMaterial(item) {
   updateHeroInfo();
   updateAchBadge();   // таббар целиком не перерисовываем: он бы мигал на каждом свайпе
   audioSync();        // лента меняет материал мимо render(), иначе звук остался бы прежним
+  paintSndBtn();      // нота держится угла активной обложки
 }
 
 // счётчик открытых наград в таббаре — меняем только цифру
