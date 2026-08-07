@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 29";
+const APP_VERSION = "Кэйко 30";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1307,28 +1307,20 @@ function audioProgress(id, v) {
   paintSndBtn();
 }
 function paintSndBtn() {
-  const b = document.getElementById("sndBtn");
-  if (!b) return;
-  const loading = cfg.sound && audioPulling.size > 0
-    && tab === "home" && !settingsOpen && hasMaterials();
-
-  // показываем только пока грузится; догрузилось — исчезает
-  b.hidden = !loading;
-  b.classList.toggle("show", !!loading);
-  if (!loading) return;
-
-  // встаём в правый верхний угол активной обложки
-  const cov = document.querySelector(".slot.on .cover");
-  if (cov) {
-    const r = cov.getBoundingClientRect();
-    b.style.left = Math.round(r.right - 38) + "px";
-    b.style.top = Math.round(r.top + 8) + "px";
-  }
-
-  const bar = b.querySelector(".sn-bar");
-  if (bar) bar.style.strokeDashoffset = String(94.2 * (1 - audioPct.v));
-  b.setAttribute("aria-label", `Музыка грузится, ${Math.round(audioPct.v * 100)}% — нажми, чтобы отключить звук`);
+  /* Нота живёт внутри обложки, а не поверх экрана: при листании она едет
+     вместе со своей книгой и не тащится следом. */
+  const id = audioPulling.size ? audioPct.id : "";
+  const on = !!id && cfg.sound && tab === "home" && !settingsOpen;
+  document.querySelectorAll("[data-snd]").forEach(el => {
+    const mine = on && el.dataset.snd === id;
+    el.classList.toggle("show", mine);
+    if (!mine) return;
+    const bar = el.querySelector(".sn-bar");
+    if (bar) bar.style.strokeDashoffset = String(94.2 * (1 - audioPct.v));
+    el.setAttribute("aria-label", `Музыка грузится, ${Math.round(audioPct.v * 100)}%`);
+  });
 }
+
 
 
 
@@ -1395,8 +1387,12 @@ function audioSync() {
     if (audioStarting) return;                         // запуск уже назначен
     const h = howls.get(want);
     if (h && h.playing()) {
-      // вернулись на обложку, пока трек гас — поднимаем обратно, а не начинаем заново
-      if (h.volume() < AUDIO_VOL * 0.9) h.fade(h.volume(), AUDIO_VOL, FADE_IN);
+      // вернулись на обложку, пока трек гас: начинаем мелодию сначала —
+      // возвращение к материалу должно звучать как начало, а не как середина
+      if (h.volume() < AUDIO_VOL * 0.9) {
+        try { h.seek(0); } catch {}
+        h.fade(0, AUDIO_VOL, FADE_IN);
+      }
       if (window.waveStart) waveStart();
       return;
     }
@@ -1423,7 +1419,8 @@ function audioSync() {
     audioStarting = false;
     if (audioNow !== want) return;
     const h = howlFor(want, url);
-    if (!h.playing()) { h.volume(0); h.play(); }
+    // пауза в howler запоминает место, поэтому перематываем в начало сами
+    if (!h.playing()) { h.volume(0); try { h.seek(0); } catch {} h.play(); }
     h.fade(h.volume(), AUDIO_VOL, FADE_IN);
     if (window.waveStart) waveStart();
     zenArm();
@@ -1891,6 +1888,10 @@ const RAIL_COPIES = 5;   // копии ленты для бесшовного ц
 const RAIL_MID = 2;      // рабочая копия — центральная
 
 // лента бесконечная: рендерим несколько копий и незаметно возвращаемся в середину
+// ключ материала карточки ленты — совпадает с ключом, по которому лежит звук
+const railKey = (it) => it.track === "book" ? it.bookId
+  : it.track === "pastel" ? "pastel" : it.pieceId;
+
 function coverRailHTML() {
   const items = railItems();
   const n = items.length;
@@ -1899,7 +1900,11 @@ function coverRailHTML() {
   for (let copy = 0; copy < RAIL_COPIES; copy++) {
     items.forEach((it, i) => {
       const on = copy === RAIL_MID && i === idx;
-      html += `<div class="slot ${on ? "on" : ""}" data-i="${i}" data-pos="${copy * n + i}">${coverOf(it)}</div>`;
+      html += `<div class="slot ${on ? "on" : ""}" data-i="${i}" data-pos="${copy * n + i}">${coverOf(it)}`
+        + `<span class="cov-snd" data-snd="${esc(railKey(it))}" role="button" aria-label="Музыка грузится">`
+        + `<svg viewBox="0 0 36 36" aria-hidden="true">`
+        + `<circle class="sn-track" cx="18" cy="18" r="15"></circle>`
+        + `<circle class="sn-bar" cx="18" cy="18" r="15"></circle></svg><i>♪</i></span></div>`;
     });
   }
   return `<div class="rail" id="rail">${html}</div>`;
@@ -5103,15 +5108,16 @@ function boot() {
   // ушли из приложения — глушим, чтобы не играло в кармане
   document.addEventListener("visibilitychange", () => { audioSync(); paintSndBtn(); });
 
-  const snd = $("#sndBtn");
-  if (snd) snd.addEventListener("click", (e) => {
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest && e.target.closest("[data-snd]");
+    if (!el || !el.classList.contains("show")) return;
     e.stopPropagation();
     cfg.sound = !cfg.sound; saveCfg();
     audioUnlocked = true;              // нажатие и есть нужный жест
     if (!cfg.sound) { stopAllExcept(null); audioNow = ""; }
     audioSync(); paintSndBtn();
     toast(cfg.sound ? "Атмосфера включена" : "Тишина");
-  });
+  }, true);
   setTimeout(maybeDailyThought, 900);
   checkForUpdate();
   if (cfg.token && cfg.gistId && navigator.onLine) { setSyncDot("ok"); syncNow(false); }

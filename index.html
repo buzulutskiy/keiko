@@ -963,30 +963,30 @@
     .dig-item { font-size: 0.86rem; color: var(--muted); line-height: 1.4; }
     .dig-item::before { content: "→ "; color: var(--dim); }
 
-    /* ── Нота в углу обложки: видно, что музыка грузится.
-       Догрузилась — исчезает совсем, чтобы не мозолить глаз. ── */
-    .snd {
-      position: fixed; z-index: 5; width: 30px; height: 30px;
-      padding: 0; border: 0; background: rgba(12, 10, 18, 0.42);
-      border-radius: 50%; cursor: pointer; color: rgba(255, 255, 255, 0.9);
+    /* ── Нота в углу обложки: живёт внутри карточки, поэтому едет вместе
+       с лентой. Догрузилась — исчезает совсем. ── */
+    .slot { position: relative; }
+    .cov-snd {
+      position: absolute; top: 13px; right: 13px; width: 28px; height: 28px;
+      border-radius: 50%; background: rgba(12, 10, 18, 0.42);
       backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-      -webkit-tap-highlight-color: transparent;
-      opacity: 0; transition: opacity 0.5s ease;
+      color: rgba(255, 255, 255, 0.92); cursor: pointer;
+      opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s;
     }
-    .snd.show { opacity: 1; }
-    .snd svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-    .snd circle { fill: none; stroke-width: 2; }
-    .snd .sn-track { stroke: rgba(255, 255, 255, 0.16); }
-    .snd .sn-bar {
+    .cov-snd.show { opacity: 1; visibility: visible; }
+    .cov-snd svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+    .cov-snd circle { fill: none; stroke-width: 2; }
+    .cov-snd .sn-track { stroke: rgba(255, 255, 255, 0.16); }
+    .cov-snd .sn-bar {
       stroke: currentColor; stroke-linecap: round;
       stroke-dasharray: 94.2; stroke-dashoffset: 94.2;
       transition: stroke-dashoffset 0.3s ease;
     }
-    .snd i {
+    .cov-snd i {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      font-style: normal; font-size: 0.8rem; line-height: 1;
+      font-style: normal; font-size: 0.78rem; line-height: 1;
     }
-    body.zen .snd { opacity: 0 !important; }
+    body.zen .cov-snd { opacity: 0 !important; }
 
     .cheer-dig {
       display: block; margin-top: 12px;
@@ -1977,15 +1977,7 @@
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
-    <button class="snd" id="sndBtn" type="button" hidden aria-label="Музыка грузится">
-    <svg viewBox="0 0 36 36" aria-hidden="true">
-      <circle class="sn-track" cx="18" cy="18" r="15"></circle>
-      <circle class="sn-bar" cx="18" cy="18" r="15"></circle>
-    </svg>
-    <i>♪</i>
-  </button>
-
-  <div id="banner"></div>
+    <div id="banner"></div>
     <div id="view"></div>
   </main>
 
