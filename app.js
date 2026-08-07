@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 39";
+const APP_VERSION = "Кэйко 40";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1267,7 +1267,7 @@ async function audioLoadAll() {
 }
 
 /* Скачиваем с отчётом о ходе: нота в шапке показывает, что музыка грузится. */
-async function readWithProgress(res, id) {
+async function readWithProgress(res, id, report) {
   const len = +(res.headers.get("content-length") || 0);
   if (!res.body || !len) return await res.text();     // длины нет — просто ждём
   const rd = res.body.getReader(), parts = [];
@@ -1276,7 +1276,7 @@ async function readWithProgress(res, id) {
     const { done, value } = await rd.read();
     if (done) break;
     parts.push(value); got += value.length;
-    audioProgress(id, got / len);
+    (report || audioProgress)(id, got / len);
   }
   let all = new Uint8Array(got), at = 0;
   for (const p of parts) { all.set(p, at); at += p.length; }
@@ -1673,6 +1673,15 @@ const TAKE_CACHE = "keiko-takes-v1";
 const takeKey = (id) => "keiko-take/" + encodeURIComponent(id);
 const TAKE_FILE = (id) => `take-${id}.txt`;
 const takeUrls = new Map();
+const takePct = new Map();     // id → 0..1, чтобы было видно, сколько осталось
+const takeBusy = new Set();
+const takeFail = new Map();    // id → когда сорвалось: не долбим гист на каждой перерисовке
+let takeRepaint = 0;
+function takeProgress(id, v) {
+  takePct.set(id, Math.max(0, Math.min(1, v)));
+  clearTimeout(takeRepaint);   // перерисовываем не чаще, чем раз в четверть секунды
+  takeRepaint = setTimeout(() => { if (tab === "notes" && !settingsOpen) renderNotes(); }, 250);
+}
 
 async function takesBox() { return await caches.open(TAKE_CACHE); }
 
@@ -1726,19 +1735,31 @@ async function takePush(id, blob) {
 
 async function takePull(id) {
   const gid = (data && data.takesId) || cfg.takesId;
-  if (!cfg.token || !gid || takeUrls.has(id)) return;
+  if (!cfg.token || !gid || takeUrls.has(id) || takeBusy.has(id)) return;
+  const failedAt = takeFail.get(id) || 0;
+  if (now() - failedAt < 20000) return;          // сорвалось только что — подождём
+  takeBusy.add(id);
+  takeProgress(id, 0);
   try {
     const r = await gh("/gists/" + gid);
-    if (!r.ok) return;
+    if (!r.ok) { takePct.delete(id); takeFail.set(id, now()); return; }
     const f = (await r.json()).files[TAKE_FILE(id)];
-    if (!f) return;
+    if (!f) { takePct.delete(id); takeFail.set(id, now()); return; }
     let txt = f.content;
-    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 60000)).text();
+    if (f.truncated && f.raw_url) {
+      const res = await withTimeout(fetch(f.raw_url), 90000);
+      txt = await readWithProgress(res, id, takeProgress);
+    }
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
+    takeProgress(id, 1);
     await takeSave(id, await (await fetch(txt)).blob());
+    takePct.delete(id);
     render();
-  } catch {}
+    takeFail.delete(id);
+  } catch {
+    takePct.delete(id); takeFail.set(id, now());
+  } finally { takeBusy.delete(id); }
 }
 
 const takesFor = (srcId) => (data.takes || [])
@@ -3118,31 +3139,111 @@ function openShotFull(url, when) {
   openSheet(`
     <div class="ach-sheet">
       ${when ? `<h3>${esc(when)}</h3>` : ""}
-      <img class="tk-full" src="${esc(url)}" alt="">
+      <div class="shot-box" id="shotBox">
+        <img class="tk-full" id="shotImg" src="${esc(url)}" alt="" draggable="false">
+      </div>
+      <div class="shot-hint">Двумя пальцами — приблизить, двойное касание — вернуть</div>
     </div>
     <div class="sheet-actions">
+      <button class="btn gold" id="shotSave" type="button">Сохранить</button>
       <button class="btn" id="shotClose" type="button">Закрыть</button>
     </div>`);
+
+  bindShotZoom($("#shotBox"), $("#shotImg"));
   $("#shotClose").addEventListener("click", closeSheet);
+  $("#shotSave").addEventListener("click", () => saveShot(url, when));
+}
+
+/* Приближение двумя пальцами и перетаскивание. Свой обработчик, а не системный
+   зум страницы: шторка фиксированная, и страницу масштабировать нечего. */
+function bindShotZoom(box, img) {
+  if (!box || !img) return;
+  let k = 1, x = 0, y = 0;          // масштаб и сдвиг
+  let d0 = 0, k0 = 1, px = 0, py = 0, panning = false;
+  const apply = () => {
+    const lim = (v, m) => Math.max(-m, Math.min(m, v));
+    const m = Math.max(0, (k - 1) * box.clientWidth / 2);
+    x = lim(x, m); y = lim(y, m);
+    img.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
+    box.classList.toggle("zoomed", k > 1.02);
+  };
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  box.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) { d0 = dist(e.touches); k0 = k; panning = false; }
+    else if (e.touches.length === 1 && k > 1.02) {
+      panning = true; px = e.touches[0].clientX - x; py = e.touches[0].clientY - y;
+    }
+  }, { passive: true });
+
+  box.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 2 && d0) {
+      e.preventDefault();
+      k = Math.max(1, Math.min(5, k0 * (dist(e.touches) / d0)));
+      apply();
+    } else if (panning && e.touches.length === 1) {
+      e.preventDefault();
+      x = e.touches[0].clientX - px; y = e.touches[0].clientY - py;
+      apply();
+    }
+  }, { passive: false });
+
+  box.addEventListener("touchend", () => { d0 = 0; panning = false; if (k <= 1.02) { k = 1; x = y = 0; apply(); } });
+
+  let tapAt = 0;
+  box.addEventListener("click", () => {
+    const t = Date.now();
+    if (t - tapAt < 300) { k = k > 1.02 ? 1 : 2.5; x = y = 0; apply(); }
+    tapAt = t;
+  });
+}
+
+/* Сохранение на устройство. На iOS правильный путь — системный лист «Поделиться»:
+   оттуда снимок кладётся в «Фото». Обычная ссылка на скачивание там просто
+   открыла бы картинку в новой вкладке. */
+async function saveShot(url, when) {
+  const name = "keiko-" + (when || "снимок").replace(/[^\wа-яё0-9]+/gi, "-") + ".jpg";
+  try {
+    const blob = await (await fetch(url)).blob();
+    const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("Снимок сохранён");
+  } catch (e) {
+    if (e && e.name === "AbortError") return;      // просто закрыл лист — не ошибка
+    toast("Не получилось сохранить");
+  }
 }
 
 function openShotSheet(id) {
   const t = (data.takes || []).find(x => x.id === id);
   const url = takeUrls.get(id);
   if (!t || !url) return;
-  sheetMode = "shot";
   const when = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" })
     .format(new Date(t.at)).replace(" г.", "");
+  sheetMode = "shot";
   openSheet(`
     <div class="ach-sheet">
       <h3>${esc(when)}</h3>
-      <img class="tk-full" src="${esc(url)}" alt="">
+      <div class="shot-box" id="shotBox">
+        <img class="tk-full" id="shotImg" src="${esc(url)}" alt="" draggable="false">
+      </div>
+      <div class="shot-hint">Двумя пальцами — приблизить, двойное касание — вернуть</div>
     </div>
     <div class="sheet-actions">
+      <button class="btn gold" id="shotSave" type="button">Сохранить</button>
       <button class="btn danger" id="shotDel" type="button">Удалить</button>
       <button class="btn" id="shotClose" type="button">Закрыть</button>
     </div>`);
+  bindShotZoom($("#shotBox"), $("#shotImg"));
   $("#shotClose").addEventListener("click", closeSheet);
+  $("#shotSave").addEventListener("click", () => saveShot(url, when));
   $("#shotDel").addEventListener("click", () => {
     if (!confirm("Удалить снимок?")) return;
     t.deleted = true; t.updatedAt = now();
@@ -3524,7 +3625,16 @@ function bindPasteCleanup(area) {
 function mediaHTML(t) {
   if (!t.mediaId) return "";
   const url = takeUrls.get(t.mediaId);
-  if (!url) { takePull(t.mediaId); return `<div class="tk-wait">вложение качается…</div>`; }
+  if (!url) {
+    takePull(t.mediaId);
+    const p = takePct.get(t.mediaId);
+    const pct = p == null ? null : Math.round(p * 100);
+    return `
+      <div class="tk-load">
+        <div class="tk-load-bar"><i style="width:${pct == null ? 8 : Math.max(4, pct)}%"></i></div>
+        <span>${t.mediaKind === "photo" ? "снимок" : "запись"} загружается${pct == null ? "…" : " · " + pct + "%"}</span>
+      </div>`;
+  }
   return t.mediaKind === "photo"
     ? `<img class="th-shot" src="${esc(url)}" alt="" loading="lazy" decoding="async" data-shot-src="${esc(url)}" data-shot-when="${esc(t.date ? fmtDay(t.date) : "")}">`
     : `<audio class="th-audio" controls preload="none" src="${esc(url)}"></audio>`;
