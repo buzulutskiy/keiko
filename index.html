@@ -963,6 +963,35 @@
     .dig-item { font-size: 0.86rem; color: var(--muted); line-height: 1.4; }
     .dig-item::before { content: "→ "; color: var(--dim); }
 
+    /* ── Нота в шапке: видно, что музыка грузится; нажатие выключает звук ── */
+    .snd {
+      position: relative; width: 34px; height: 34px; flex: 0 0 auto;
+      margin-right: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+      color: var(--gold); -webkit-tap-highlight-color: transparent;
+    }
+    .snd svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+    .snd circle { fill: none; stroke-width: 2.2; }
+    .snd .sn-track { stroke: rgba(255, 255, 255, 0.10); }
+    .snd .sn-bar {
+      stroke: var(--gold); stroke-linecap: round;
+      stroke-dasharray: 97.4; stroke-dashoffset: 97.4;
+      transition: stroke-dashoffset 0.25s ease, opacity 0.3s ease;
+    }
+    .snd i {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-style: normal; font-size: 0.95rem; line-height: 1;
+    }
+    /* качается, пока идёт загрузка */
+    .snd.load i { animation: sndSway 1.1s ease-in-out infinite; }
+    @keyframes sndSway { 0%, 100% { transform: translateY(-1px) rotate(-6deg); } 50% { transform: translateY(1px) rotate(6deg); } }
+    /* дышит, пока играет */
+    .snd.play .sn-bar { opacity: 0; }
+    .snd.play i { animation: sndBeat 2.6s ease-in-out infinite; }
+    @keyframes sndBeat { 0%, 100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.12); } }
+    .snd.off { color: var(--dim); }
+    .snd.off .sn-bar { opacity: 0; }
+    @media (prefers-reduced-motion: reduce) { .snd i { animation: none !important; } }
+
     .cheer-dig {
       display: block; margin-top: 12px;
       font-size: 0.84rem; color: var(--gold); line-height: 1.4;
@@ -1949,6 +1978,13 @@
     <header>
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
+      <button class="snd" id="sndBtn" type="button" hidden aria-label="Звук">
+        <svg viewBox="0 0 36 36" aria-hidden="true">
+          <circle class="sn-track" cx="18" cy="18" r="15.5"></circle>
+          <circle class="sn-bar" cx="18" cy="18" r="15.5"></circle>
+        </svg>
+        <i>♪</i>
+      </button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 

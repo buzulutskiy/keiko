@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 27";
+const APP_VERSION = "Кэйко 28";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1098,6 +1098,7 @@ function renderInner() {
   syncNotesFabs();
   audioSync();
   zenArm();
+  paintSndBtn();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
 
@@ -1260,22 +1261,72 @@ async function audioLoadAll() {
   } catch {}
 }
 
+/* Скачиваем с отчётом о ходе: нота в шапке показывает, что музыка грузится. */
+async function readWithProgress(res, id) {
+  const len = +(res.headers.get("content-length") || 0);
+  if (!res.body || !len) return await res.text();     // длины нет — просто ждём
+  const rd = res.body.getReader(), parts = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await rd.read();
+    if (done) break;
+    parts.push(value); got += value.length;
+    audioProgress(id, got / len);
+  }
+  let all = new Uint8Array(got), at = 0;
+  for (const p of parts) { all.set(p, at); at += p.length; }
+  return new TextDecoder().decode(all);
+}
+
 async function pullAudio(id) {
   if (!cfg.token || !cfg.catalogId || audioPulling.has(id) || audioUrls.has(id)) return;
   audioPulling.add(id);
+  audioProgress(id, 0);
   try {
     const r = await gh("/gists/" + cfg.catalogId);
     if (!r.ok) return;
     const f = (await r.json()).files[CAT_AUDIO_FILE(id)];
     if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
     let txt = f.content;
-    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 90000)).text();
+    if (f.truncated && f.raw_url) {
+      const res = await withTimeout(fetch(f.raw_url), 90000);
+      txt = await readWithProgress(res, id);
+    }
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
     await audioSave(id, txt);
     audioNow = "";                                    // пусть audioSync подхватит заново
     audioSync();
-  } catch {} finally { audioPulling.delete(id); }
+  } catch {} finally { audioPulling.delete(id); audioProgress(id, 1); }
+}
+
+/* ── Нота в шапке ── */
+let audioPct = { id: "", v: 0 };
+function audioProgress(id, v) {
+  audioPct = { id, v: Math.max(0, Math.min(1, v)) };
+  paintSndBtn();
+}
+function paintSndBtn() {
+  const b = document.getElementById("sndBtn");
+  if (!b) return;
+  // показываем только там, где звук вообще уместен
+  const show = tab === "home" && !settingsOpen && hasMaterials();
+  b.hidden = !show;
+  if (!show) return;
+
+  const loading = cfg.sound && audioPulling.size > 0;
+  const playing = cfg.sound && audioNow && howls.get(audioNow) && howls.get(audioNow).playing();
+  b.classList.toggle("load", !!loading);
+  b.classList.toggle("play", !loading && !!playing);
+  b.classList.toggle("off", !cfg.sound);
+
+  const bar = b.querySelector(".sn-bar");
+  const C = 97.4;                                     // длина окружности r=15.5
+  const v = loading ? audioPct.v : (cfg.sound ? 1 : 0);
+  if (bar) bar.style.strokeDashoffset = String(C * (1 - v));
+  b.setAttribute("aria-label",
+    loading ? `Музыка грузится, ${Math.round(audioPct.v * 100)}%`
+      : cfg.sound ? "Звук включён — выключить" : "Звук выключен — включить");
 }
 
 /* Проигрывание — на howler.js: он ведёт громкость плавно (а не рывками по таймеру),
@@ -1315,6 +1366,8 @@ function hardStop(h, id) {
     stopTimers.delete(id);
   }, FADE_OUT + 120));
 }
+const anyPlaying = () => { let n = false; howls.forEach(h => { if (h.playing()) n = true; }); return n; };
+
 function stopAllExcept(keepId) {
   howls.forEach((h, id) => {
     if (id === keepId) { clearTimeout(stopTimers.get(id)); stopTimers.delete(id); return; }
@@ -1371,7 +1424,8 @@ function audioSync() {
     h.fade(h.volume(), AUDIO_VOL, FADE_IN);
     if (window.waveStart) waveStart();
     zenArm();
-  }, SETTLE_MS + FADE_OUT * 0.6);                  // подхватываем к концу затухания, без наложения
+    paintSndBtn();
+  }, anyPlaying() ? SETTLE_MS + FADE_OUT * 0.6 : 120);   // гасить нечего — стартуем почти сразу
 }
 
 /* ══════════ Волны под музыку ══════════
@@ -5020,8 +5074,13 @@ function boot() {
 
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
-  audioLoadAll().then(audioSync);     // звук материала, если уже скачан
-  setTimeout(pullEnvelopes, 3000);    // огибающие для волн — без спешки
+  audioLoadAll().then(() => {
+    audioSync();
+    // не ждём касания, чтобы начать качать: к моменту жеста звук уже готов
+    if (cfg.sound && hasMaterials()) pullAudio(curKey());
+    paintSndBtn();
+  });
+  pullEnvelopes();                    // огибающие нужны сразу, иначе волны запаздывают
 
   // iOS не даёт играть до жеста — ловим самое первое касание, дальше не мешаем
   ["pointerdown", "keydown"].forEach(ev =>
@@ -5038,7 +5097,17 @@ function boot() {
     document.addEventListener(ev, () => { zenOn ? zenExit() : zenArm(); }, { passive: true, capture: true }));
   document.addEventListener("visibilitychange", () => { if (document.hidden) zenExit(); else zenArm(); });
   // ушли из приложения — глушим, чтобы не играло в кармане
-  document.addEventListener("visibilitychange", audioSync);
+  document.addEventListener("visibilitychange", () => { audioSync(); paintSndBtn(); });
+
+  const snd = $("#sndBtn");
+  if (snd) snd.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cfg.sound = !cfg.sound; saveCfg();
+    audioUnlocked = true;              // нажатие и есть нужный жест
+    if (!cfg.sound) { stopAllExcept(null); audioNow = ""; }
+    audioSync(); paintSndBtn();
+    toast(cfg.sound ? "Атмосфера включена" : "Тишина");
+  });
   setTimeout(maybeDailyThought, 900);
   checkForUpdate();
   if (cfg.token && cfg.gistId && navigator.onLine) { setSyncDot("ok"); syncNow(false); }
