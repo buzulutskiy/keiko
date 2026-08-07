@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 40";
+const APP_VERSION = "Кэйко 41";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1381,8 +1381,10 @@ function stopAllExcept(keepId) {
    только если человек включил звук и уже коснулся экрана. */
 function audioSync() {
   if (typeof Howl !== "function") return;          // библиотека не догрузилась — просто тишина
-  const want = (cfg.sound && !takeMute && audioUnlocked && tab === "home" && !settingsOpen
-    && !document.hidden && hasMaterials()) ? curKey() : "";
+  /* Музыка не начинается сразу при входе на главную: она вступает, когда
+     человек задержался и интерфейс ушёл. Иначе звук догоняет тебя на бегу. */
+  const want = (cfg.sound && !takeMute && audioUnlocked && zenOn && tab === "home"
+    && !settingsOpen && !document.hidden && hasMaterials()) ? curKey() : "";
 
   /* Раньше здесь был простой выход при совпадении. Но метка audioNow ставится
      заранее, ещё до запуска: если быстро уйти с обложки и вернуться, трек успевал
@@ -1489,7 +1491,7 @@ async function pullEnvelopes() {
 (function () {
   const PHI = 1.6180339887, SQ2 = 1.4142135624, SQ3 = 1.7320508076;
   const LW = 160, LH = 340;
-  let cv, ctx, layers = [], raf = 0, last = 0, flow = 0;
+  let cv, ctx, layers = [], raf = 0, last = 0, flow = 0, beat = 0;
   let paceSm = 0.5, toneSm = 0.5, hitSm = 0, bytes = null, curId = "";
 
   function build() {
@@ -1582,6 +1584,7 @@ async function pullEnvelopes() {
 
   function step(now) {
     raf = 0;
+    beat = Date.now();                 // отметка живости: по ней видно, что цикл идёт
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     const on = cfg.sound && cfg.bgWave !== false && tab === "home" && !settingsOpen
       && !document.hidden && audioNow && ENVEL;
@@ -1615,8 +1618,12 @@ async function pullEnvelopes() {
       build();
     }
     if (!ENVEL) { pullEnvelopes(); return; }
-    if (raf) return;
-    last = performance.now();
+    /* Если экран погас или приложение уходило в фон, кадры перестают приходить,
+       а флаг занятости остаётся выставленным — и цикл больше не оживает.
+       Поэтому смотрим не на флаг, а на то, когда был последний кадр. */
+    if (raf && Date.now() - beat < 1500) return;
+    if (raf) { try { cancelAnimationFrame(raf); } catch {} raf = 0; }
+    last = performance.now(); beat = Date.now();
     raf = requestAnimationFrame(step);
   };
   window.waveRebuild = function () { curId = ""; build(); };
@@ -1629,30 +1636,86 @@ async function pullEnvelopes() {
 const ZEN_AFTER = 13000;
 let zenTimer = 0, zenOn = false, wakeLock = null;
 
+/* Не давать экрану гаснуть. Штатный Wake Lock есть не везде — на iOS он
+   появился поздно и в приложении с домашнего экрана срабатывает не всегда.
+   Запасной путь — играющее видео: пока оно идёт, система экран не тушит.
+   Кадр берём с пустой канвы, поэтому никаких файлов не нужно. */
+let wakeVideo = null, wakeStream = null;
+
 async function keepAwake(on) {
-  try {
-    if (on && !wakeLock && navigator.wakeLock) {
-      wakeLock = await navigator.wakeLock.request("screen");
-      wakeLock.addEventListener("release", () => { wakeLock = null; });
-    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
-  } catch {}          // на части устройств недоступно — не беда
+  if (on) {
+    try {
+      if (!wakeLock && navigator.wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+        return;                                  // штатный способ сработал
+      }
+      if (wakeLock) return;
+    } catch {}
+    startWakeVideo();                            // не дали — идём в обход
+  } else {
+    try { if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch {}
+    stopWakeVideo();
+  }
 }
+
+function startWakeVideo() {
+  if (wakeVideo) { wakeVideo.play().catch(() => {}); return; }
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = 2;
+    const cx2 = c.getContext("2d");
+    cx2.fillStyle = "#000"; cx2.fillRect(0, 0, 2, 2);
+    // поток должен обновляться, иначе часть браузеров считает видео замершим
+    setInterval(() => { cx2.fillRect(0, 0, 2, 2); }, 1000);
+    wakeStream = c.captureStream(1);
+    const v = document.createElement("video");
+    v.srcObject = wakeStream;
+    v.muted = true; v.loop = true; v.playsInline = true;
+    v.setAttribute("playsinline", ""); v.setAttribute("muted", "");
+    v.style.cssText = "position:fixed;width:2px;height:2px;opacity:0.01;pointer-events:none;bottom:0;left:0";
+    document.body.appendChild(v);
+    v.play().catch(() => {});
+    wakeVideo = v;
+  } catch {}
+}
+
+function stopWakeVideo() {
+  try {
+    if (wakeVideo) { wakeVideo.pause(); wakeVideo.remove(); wakeVideo = null; }
+    if (wakeStream) { wakeStream.getTracks().forEach(t => t.stop()); wakeStream = null; }
+  } catch {}
+}
+
+// вернулись в приложение — блокировку экрана надо запросить заново
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (zenOn) keepAwake(true);
+  if (window.waveStart) waveStart();          // кадры могли встать, пока нас не было
+});
 
 function zenEnter() {
   if (zenOn) return;
   zenOn = true;
   document.body.classList.add("zen");
   keepAwake(true);
+  audioSync();                      // вот теперь музыка вступает
+  if (window.waveStart) waveStart();
 }
 function zenExit() {
-  if (zenOn) { zenOn = false; document.body.classList.remove("zen"); keepAwake(false); }
+  if (zenOn) {
+    zenOn = false;
+    document.body.classList.remove("zen");
+    keepAwake(false);
+    audioSync();                    // вышли — музыка мягко уходит
+  }
   zenArm();
 }
 // условия: главная, звук играет, ничего не открыто
 function zenArm() {
   clearTimeout(zenTimer);
   const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
-    && !document.hidden && audioNow && !sheetOpen();
+    && !document.hidden && hasMaterials() && !sheetOpen();
   if (!can) { if (zenOn) zenExit(); return; }
   zenTimer = setTimeout(zenEnter, ZEN_AFTER);
 }
