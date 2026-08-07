@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 34";
+const APP_VERSION = "Кэйко 35";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2099,7 +2099,7 @@ function renderHome() {
         <p>${sub}</p>
         ${paceHTML()}
       </div>
-      <div class="cta-row">
+      <div class="cta-row${isPiano() && canRecord() && gistReady() ? " joined" : ""}${doneToday ? " done" : ""}">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
