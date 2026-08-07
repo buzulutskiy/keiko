@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 26";
+const APP_VERSION = "Кэйко 27";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -297,6 +297,15 @@ function pianoStats() {
     pctR: bars ? touchedR / bars * 100 : 0,
     pctL: bars ? touchedL / bars * 100 : 0,
     pct: bars ? (touchedR + touchedL) / (bars * 2) * 100 : 0,
+    // Пройденный один раз такт ещё не выучен: чтобы он закрепился, нужно FIRM_AT
+    // проходов. Этот процент и показываем — он честнее отвечает «сколько осталось».
+    // pct выше не трогаем: на нём висят условия наград.
+    pctLearn: bars ? (() => {
+      let n = 0;
+      for (let b = 1; b <= bars; b++)
+        n += Math.min(p.right[b], FIRM_AT) + Math.min(p.left[b], FIRM_AT);
+      return n / (bars * 2 * FIRM_AT) * 100;
+    })() : 0,
     pctFirm: bars ? (firmR + firmL) / (bars * 2) * 100 : 0,
     bothInOne, maxRun, weekend, comeback
   };
@@ -375,6 +384,8 @@ function pastelStats() {
 }
 
 const curStats = () => isBook() ? bookStats() : isPastel() ? pastelStats() : pianoStats();
+// на экране — процент выученности; для пианино он строже, чем «такт задет»
+const shownPct = (s) => isPiano() && typeof s.pctLearn === "number" ? s.pctLearn : s.pct;
 
 /* ── Достижения ── */
 const ACH_PIANO = [];
@@ -594,7 +605,9 @@ function currentMaterial() {
     return { icon: "🎨", title: c.name, sub: `${s.done} из ${s.lessons} уроков`, pct: s.pct };
   }
   const p = piece(), s = pianoStats();
-  return { icon: "🎹", title: p.name, sub: `${s.touchedR + s.touchedL} из ${s.bars * 2} тактов-рук`, pct: s.pct };
+  return { icon: "🎹", title: p.name,
+    sub: `${s.touchedR + s.touchedL} из ${s.bars * 2} тактов-рук`,
+    pct: s.pctLearn };
 }
 
 function archiveCurrent() {
@@ -828,9 +841,11 @@ function showFacts(list) {
         <span class="cheer-item">
           <b>${esc(f.t)}</b>
           <i>${esc(f.x)}</i>
-          ${(f.more || []).length ? `<em>→ ${esc(f.more[0])}</em>` : ""}
+          ${(f.more || []).map(m => `<em>→ ${esc(m)}</em>`).join("")}
         </span>`).join("")}</span>`
-    : esc(list[0].x) + ((list[0].more || []).length ? `<span class="cheer-dig">Копнуть глубже: ${esc(list[0].more[0])}</span>` : "");
+    : esc(list[0].x) + ((list[0].more || []).length
+        ? `<span class="cheer-dig"><b>Копнуть глубже</b>${(list[0].more || []).map(m => `<i>${esc(m)}</i>`).join("")}</span>`
+        : "");
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Интересно!";
   $("#cheer").classList.add("show", "fact");
 }
@@ -1877,7 +1892,7 @@ function renderHome() {
   $("#view").innerHTML = `
     <div class="hero">
       ${coverRailHTML()}
-      ${ringHTML(s.pct)}
+      ${ringHTML(shownPct(s))}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isPastel() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
@@ -2144,7 +2159,7 @@ function updateHeroInfo() {
   const ring = $(".ring-wrap");
   if (ring) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = ringHTML(s.pct);
+    tmp.innerHTML = ringHTML(shownPct(s));
     ring.innerHTML = tmp.firstElementChild.innerHTML;
   }
 
@@ -2246,17 +2261,22 @@ function paceForecast() {
     marks.push(0);
     for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
   } else {
+    /* Такт не выучивается с одного касания: к нему возвращаются. Поэтому цель —
+       не «задеть все такты», а пройти каждый FIRM_AT раз. Иначе срок выходил
+       втрое оптимистичнее правды. */
     const bars = piece().bars;
-    total = bars * 2;                       // каждая рука отдельно
+    total = bars * 2 * FIRM_AT;             // каждая рука отдельно, каждая — по FIRM_AT проходов
     unit = "bar";
-    const r = new Set(), l = new Set();
+    const r = new Array(bars + 1).fill(0), l = new Array(bars + 1).fill(0);
     marks.push(0);
     for (const e of list) {
       for (const sp of e.spans || []) {
-        const set = sp.hand === "left" ? l : r;
-        for (let i = Math.max(1, sp.from); i <= Math.min(bars, sp.to); i++) set.add(i);
+        const arr = sp.hand === "left" ? l : r;
+        for (let i = Math.max(1, sp.from); i <= Math.min(bars, sp.to); i++) arr[i]++;
       }
-      marks.push(r.size + l.size);
+      let n = 0;
+      for (let i = 1; i <= bars; i++) n += Math.min(r[i], FIRM_AT) + Math.min(l[i], FIRM_AT);
+      marks.push(n);
     }
   }
 
