@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 38";
+const APP_VERSION = "Кэйко 39";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -114,6 +114,7 @@ function emptyData() {
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
     takes: [],     // записи собственной игры: как звучало в тот день
+    takesId: "",   // гист с файлами вложений — общий для всех устройств
     daily: { date: "", seen: [], off: false }   // мысль дня: когда показывали и что уже видели
   };
 }
@@ -158,6 +159,7 @@ function migrate(obj) {
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
+  if (typeof obj.takesId === "string") base.takesId = obj.takesId;
   if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
@@ -1695,7 +1697,8 @@ async function takeLoadAll() {
 
 // гист под записи заводим отдельный и только когда он реально понадобился
 async function ensureTakesGist() {
-  if (cfg.takesId) return cfg.takesId;
+  if (data && data.takesId) { cfg.takesId = data.takesId; return data.takesId; }
+  if (cfg.takesId) { if (data) { data.takesId = cfg.takesId; saveData(); } return cfg.takesId; }
   if (!cfg.token) return "";
   const r = await gh("/gists", {
     method: "POST",
@@ -1707,6 +1710,7 @@ async function ensureTakesGist() {
   });
   if (!r.ok) return "";
   cfg.takesId = (await r.json()).id; saveCfg();
+  if (data) { data.takesId = cfg.takesId; saveData(); schedulePush(); }
   return cfg.takesId;
 }
 
@@ -1721,9 +1725,10 @@ async function takePush(id, blob) {
 }
 
 async function takePull(id) {
-  if (!cfg.token || !cfg.takesId || takeUrls.has(id)) return;
+  const gid = (data && data.takesId) || cfg.takesId;
+  if (!cfg.token || !gid || takeUrls.has(id)) return;
   try {
-    const r = await gh("/gists/" + cfg.takesId);
+    const r = await gh("/gists/" + gid);
     if (!r.ok) return;
     const f = (await r.json()).files[TAKE_FILE(id)];
     if (!f) return;
@@ -1823,7 +1828,7 @@ function shrinkPhoto(file, max = 1400, q = 0.82) {
 function pickPhoto() {
   return new Promise((res) => {
     const inp = document.createElement("input");
-    inp.type = "file"; inp.accept = "image/*"; inp.capture = "environment";
+    inp.type = "file"; inp.accept = "image/*";   // без capture iOS предложит и снять, и выбрать
     inp.style.display = "none";
     document.body.appendChild(inp);
     inp.addEventListener("change", () => {
@@ -2169,7 +2174,7 @@ function renderHome() {
         <p>${sub}</p>
         ${paceHTML()}
       </div>
-      <div class="cta-row${gistReady() && (isPastel() || (isPiano() && canRecord())) ? " joined" : ""}${doneToday ? " done" : ""}">
+      <div class="cta-row">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
@@ -2177,10 +2182,6 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-      ${gistReady() && isPiano() && canRecord()
-        ? `<button class="cta-mic" id="micBtn" type="button" aria-label="Записать, как звучит">🎙</button>` : ""}
-      ${gistReady() && isPastel()
-        ? `<button class="cta-mic" id="camBtn" type="button" aria-label="Снять, что получилось">📷</button>` : ""}
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -2190,10 +2191,6 @@ function renderHome() {
     selectedDate = todayStr();
     openLogSheet();
   });
-  const mic = $("#micBtn");
-  if (mic) mic.addEventListener("click", () => openTakeSheet(true));
-  const cam = $("#camBtn");
-  if (cam) cam.addEventListener("click", addPhotoTake);
 
   paintBackdrop(railItems()[activeRailIndex(railItems())]);
   setupRail();
@@ -3116,6 +3113,19 @@ function takesBlockHTML(view) {
 }
 
 // снимок во весь экран: разглядеть штрих в сетке невозможно
+function openShotFull(url, when) {
+  sheetMode = "shot";
+  openSheet(`
+    <div class="ach-sheet">
+      ${when ? `<h3>${esc(when)}</h3>` : ""}
+      <img class="tk-full" src="${esc(url)}" alt="">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="shotClose" type="button">Закрыть</button>
+    </div>`);
+  $("#shotClose").addEventListener("click", closeSheet);
+}
+
 function openShotSheet(id) {
   const t = (data.takes || []).find(x => x.id === id);
   const url = takeUrls.get(id);
@@ -3516,7 +3526,7 @@ function mediaHTML(t) {
   const url = takeUrls.get(t.mediaId);
   if (!url) { takePull(t.mediaId); return `<div class="tk-wait">вложение качается…</div>`; }
   return t.mediaKind === "photo"
-    ? `<img class="th-shot" src="${esc(url)}" alt="" loading="lazy" decoding="async" data-shot-src="${esc(url)}">`
+    ? `<img class="th-shot" src="${esc(url)}" alt="" loading="lazy" decoding="async" data-shot-src="${esc(url)}" data-shot-when="${esc(t.date ? fmtDay(t.date) : "")}">`
     : `<audio class="th-audio" controls preload="none" src="${esc(url)}"></audio>`;
 }
 
@@ -3581,8 +3591,8 @@ function renderNotes() {
           ${canRecord() ? `<button class="th-clip" id="thMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
           <button class="th-clip" id="thCam" type="button" aria-label="Приложить снимок">📷</button>
         </span>
-        <button class="btn gold th-send" id="thSave" type="button">Записать</button>
       </div>
+      <button class="btn gold th-send" id="thSave" type="button">Записать</button>
       ${pendingMedia ? `
         <div class="th-pending">
           ${pendingMedia.kind === "photo"
@@ -3619,6 +3629,9 @@ function renderNotes() {
           ${mediaHTML(t)}
         </article>`).join("")}
     </div>` : `<div class="empty-note">Здесь копятся моменты: мысль, запись, снимок.<br>Первый можно оставить прямо сейчас.</div>`}`;
+
+  document.querySelectorAll("[data-shot-src]").forEach(el =>
+    el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen)));
 
   const area = $("#thText");
   bindPasteCleanup(area);
@@ -5355,7 +5368,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive, daily: data.daily });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -5416,6 +5429,10 @@ async function syncNow(manual) {
     }
     data.archive = mergeLists(data.archive, remote.archive);
     data.takes = mergeLists(data.takes || [], remote.takes || []);
+    // адрес гиста с файлами обязан жить в данных, а не в настройках устройства,
+    // иначе на втором телефоне вложения просто неоткуда взять
+    if (!data.takesId && remote.takesId) data.takesId = remote.takesId;
+    if (data.takesId) { cfg.takesId = data.takesId; saveCfg(); }
     if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
       data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
     }
