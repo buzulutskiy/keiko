@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 37";
+const APP_VERSION = "Кэйко 38";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1753,12 +1753,33 @@ function recMime() {
 }
 const canRecord = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
-async function startTake(onTick) {
+async function startTake(onTick, onLevel) {
+  /* Раньше здесь стояло autoGainControl: false — «чтобы не портить музыку».
+     На деле рояль в комнате пишется еле слышно: у телефона крошечный микрофон,
+     и без автоусиления уровень остаётся на уровне шума. Возвращаем. */
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
   });
   const mime = recMime();
-  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 64000 } : undefined);
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 96000 } : undefined);
+
+  /* Индикатор уровня — отдельной веткой, в запись не вмешивается.
+     Если полоска молчит, значит микрофон не слышит, а не «плохо записалось». */
+  let actx = null, meter = 0;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    await actx.resume();
+    const an = actx.createAnalyser(); an.fftSize = 512;
+    actx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    meter = setInterval(() => {
+      an.getByteTimeDomainData(buf);
+      let peak = 0;
+      for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+      onLevel && onLevel(Math.min(1, peak / 90));
+    }, 90);
+  } catch {}
+
   const parts = [];
   mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
   const t0 = Date.now();
@@ -1767,6 +1788,8 @@ async function startTake(onTick) {
   const done = new Promise(res => {
     mr.onstop = () => {
       clearInterval(tick);
+      clearInterval(meter);
+      try { actx && actx.close(); } catch {}
       stream.getTracks().forEach(t => t.stop());
       res({ blob: new Blob(parts, { type: mime || "audio/mp4" }), ms: Date.now() - t0 });
     };
@@ -4300,6 +4323,7 @@ function openTakeSheet(autoStart, onDone) {
       <h3>Как звучит сейчас</h3>
       <p style="max-width:320px">Сыграй, как играется сейчас. Через месяцы услышишь разницу — её не покажет ни один процент.</p>
       <button class="tk-btn" id="tkGo" type="button"><i>●</i></button>
+      <div class="tk-level" id="tkLevel" hidden><i></i></div>
       <div class="tk-time" id="tkTime">${last ? "прошлая запись " + fmtDay(dateStr(new Date(last.at))) : "нажми, чтобы начать"}</div>
       <audio id="tkPlay" controls hidden style="width:100%;margin-top:12px"></audio>
     </div>
@@ -4317,15 +4341,26 @@ function openTakeSheet(autoStart, onDone) {
     if (busy) { recStop && recStop(); return; }     // второй тап — остановка
     busy = true; go.classList.add("rec"); sv.hidden = true; pl.hidden = true;
     takeMute = true; audioSync();                   // фон замолкает сразу
+    // Пауза не отпускает звуковой тракт: пока проигрыватель жив, iOS держит
+    // режим воспроизведения и отдаёт микрофон в заметно худшем качестве.
+    try { howls.forEach(h => h.unload()); howls.clear(); audioNow = ""; } catch {}
+    await new Promise(r => setTimeout(r, 260));      // даём системе переключиться
     tm.textContent = "0:00 · нажми, чтобы остановить";
     try {
-      const done = await startTake(t => {
-        tm.textContent = mmss(Math.floor(t / 1000)) + " · нажми, чтобы остановить";
-      });
+      const lv = $("#tkLevel"), lvBar = lv && lv.firstElementChild;
+      if (lv) lv.hidden = false;
+      let heard = 0;
+      const done = await startTake(
+        t => { tm.textContent = mmss(Math.floor(t / 1000)) + " · нажми, чтобы остановить"; },
+        v => { if (lvBar) lvBar.style.width = (v * 100).toFixed(0) + "%"; if (v > 0.08) heard++; }
+      );
       const r = await done;
       blob = r.blob; ms = r.ms;
+      if (lv) lv.hidden = true;
       pl.src = URL.createObjectURL(blob); pl.hidden = false;
-      tm.textContent = `записано ${mmss(Math.round(ms / 1000))} — послушай и сохрани`;
+      tm.textContent = heard
+        ? `записано ${mmss(Math.round(ms / 1000))} — послушай и сохрани`
+        : `записано ${mmss(Math.round(ms / 1000))}, но микрофон почти ничего не слышал`;
       sv.hidden = false;
     } catch (e) {
       tm.textContent = "не дали доступ к микрофону";

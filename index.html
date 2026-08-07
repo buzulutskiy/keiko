@@ -1105,6 +1105,15 @@
     .tk-btn:active { transform: scale(0.94); }
     .tk-btn.rec { border-color: var(--red); animation: tkPulse 1.4s ease-in-out infinite; }
     @keyframes tkPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.35); } 50% { box-shadow: 0 0 0 14px rgba(248, 113, 113, 0); } }
+    .tk-level {
+      height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.08);
+      margin: 0 auto 10px; max-width: 220px; overflow: hidden;
+    }
+    .tk-level i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--green), var(--gold));
+      transition: width 0.08s linear;
+    }
     .tk-time { text-align: center; color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 
     /* Работы: сетка снимков с датой под каждым */
