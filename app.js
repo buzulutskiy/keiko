@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 32";
+const APP_VERSION = "Кэйко 33";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -112,6 +112,7 @@ function emptyData() {
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
+    takes: [],     // записи собственной игры: как звучало в тот день
     daily: { date: "", seen: [], off: false }   // мысль дня: когда показывали и что уже видели
   };
 }
@@ -155,6 +156,7 @@ function migrate(obj) {
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts;
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
+  if (Array.isArray(obj.takes)) base.takes = obj.takes;
   if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
@@ -1025,7 +1027,7 @@ function crashScreen(e) {
 // снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
 const dataStamp = () => [
   data.piano.entries, data.book.entries, data.pastel.entries,
-  data.thoughts || [], data.archive || [], data.freezes || []
+  data.thoughts || [], data.archive || [], data.freezes || [], data.takes || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
   + "|" + (data.shop.theme || "");
 // выбранный материал в снимок не входит: он меняется от свайпа и уже показан на экране —
@@ -1659,6 +1661,132 @@ function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
   audioSync();
+}
+
+/* ── Записи собственной игры ──
+   Аудио — в Cache Storage и в отдельном приватном гисте (не в каталоге:
+   каталог тянется целиком, а записей со временем станет много). */
+const TAKE_CACHE = "keiko-takes-v1";
+const takeKey = (id) => "keiko-take/" + encodeURIComponent(id);
+const TAKE_FILE = (id) => `take-${id}.txt`;
+const takeUrls = new Map();
+
+async function takesBox() { return await caches.open(TAKE_CACHE); }
+
+async function takeSave(id, blob) {
+  const box = await takesBox();
+  await box.put(takeKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "audio/mp4" } }));
+  takeUrls.set(id, URL.createObjectURL(blob));
+}
+
+async function takeLoadAll() {
+  if (!window.caches) return;
+  try {
+    const box = await takesBox();
+    for (const req of await box.keys()) {
+      const id = decodeURIComponent(req.url.split("/").pop());
+      if (takeUrls.get(id)) continue;
+      const res = await box.match(req);
+      if (res) takeUrls.set(id, URL.createObjectURL(await res.blob()));
+    }
+  } catch {}
+}
+
+// гист под записи заводим отдельный и только когда он реально понадобился
+async function ensureTakesGist() {
+  if (cfg.takesId) return cfg.takesId;
+  if (!cfg.token) return "";
+  const r = await gh("/gists", {
+    method: "POST",
+    body: JSON.stringify({
+      description: "Кэйко — записи собственной игры",
+      public: false,
+      files: { "readme.txt": { content: "Записи из приложения Кэйко. Не удалять." } }
+    })
+  });
+  if (!r.ok) return "";
+  cfg.takesId = (await r.json()).id; saveCfg();
+  return cfg.takesId;
+}
+
+async function takePush(id, blob) {
+  const gid = await ensureTakesGist();
+  if (!gid) return;
+  const uri = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(blob); });
+  await gh("/gists/" + gid, {
+    method: "PATCH",
+    body: JSON.stringify({ files: { [TAKE_FILE(id)]: { content: uri } } })
+  });
+}
+
+async function takePull(id) {
+  if (!cfg.token || !cfg.takesId || takeUrls.has(id)) return;
+  try {
+    const r = await gh("/gists/" + cfg.takesId);
+    if (!r.ok) return;
+    const f = (await r.json()).files[TAKE_FILE(id)];
+    if (!f) return;
+    let txt = f.content;
+    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 60000)).text();
+    txt = txt.trim();
+    if (!txt.startsWith("data:")) return;
+    await takeSave(id, await (await fetch(txt)).blob());
+    render();
+  } catch {}
+}
+
+const takesFor = (srcId) => (data.takes || [])
+  .filter(t => !t.deleted && t.srcId === srcId)
+  .sort((a, b) => a.at - b.at);
+
+/* Запись с микрофона. Safari пишет в audio/mp4 — тот же формат, что у
+   остальных звуков, поэтому ничего перекодировать не нужно. */
+const TAKE_MAX = 45000;                 // дольше и не надо: это слепок, а не концерт
+let rec = null, recStop = null;
+
+function recMime() {
+  const want = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
+  for (const m of want) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+const canRecord = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+
+async function startTake(onTick) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  const mime = recMime();
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 96000 } : undefined);
+  const parts = [];
+  mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  const t0 = Date.now();
+  const tick = setInterval(() => onTick && onTick(Date.now() - t0), 200);
+
+  const done = new Promise(res => {
+    mr.onstop = () => {
+      clearInterval(tick);
+      stream.getTracks().forEach(t => t.stop());
+      res({ blob: new Blob(parts, { type: mime || "audio/mp4" }), ms: Date.now() - t0 });
+    };
+  });
+  mr.start();
+  const auto = setTimeout(() => { try { mr.stop(); } catch {} }, TAKE_MAX);
+  rec = mr;
+  recStop = () => { clearTimeout(auto); try { mr.stop(); } catch {} };
+  return done;
+}
+
+async function saveTake(blob, ms) {
+  const id = uid();
+  const t = { id, srcId: curKey(), track: data.active,
+    title: currentMaterial().title, at: now(), ms: Math.round(ms),
+    createdAt: now(), updatedAt: now() };
+  await takeSave(id, blob);
+  data.takes = data.takes || [];
+  data.takes.push(t);
+  saveData(); schedulePush();
+  takePush(id, blob).catch(() => {});     // в гист — фоном, без ожидания
+  return t;
 }
 
 const COVER_CACHE = "keiko-covers-v1";
@@ -2826,7 +2954,7 @@ function viewMaterialExists(v) {
 function renderAch() {
   if (achView && !viewMaterialExists(achView)) { achView = null; cfg.achView = null; saveCfg(); }
   if (!achView) { renderAchList(); return; }
-  if (achTab !== "facts") achTab = "ach";
+  if (achTab !== "facts" && achTab !== "takes") achTab = "ach";
   renderAchMaterial(achView);
 }
 
@@ -2863,6 +2991,32 @@ function renderAchList() {
 }
 
 // карточки знаний по материалу
+/* Список записей материала: сверху самая свежая, ниже — как звучало раньше. */
+function takesBlockHTML(view) {
+  const src = view.pieceId || view.bookId || (view.track === "pastel" ? "pastel" : "");
+  const list = takesFor(src).slice().reverse();
+  if (!list.length) return `
+    <div class="empty-note">Записей пока нет.<br>
+      После занятия нажми «🎙 Как звучит» — и через месяцы услышишь разницу.</div>`;
+
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+  return `<div class="tk-list">${list.map((t, i) => {
+    const url = takeUrls.get(t.id);
+    if (!url) takePull(t.id);
+    const when = fmt.format(new Date(t.at)).replace(" г.", "");
+    const ago = i === 0 ? "последняя" : plural(
+      Math.max(1, Math.round((list[0].at - t.at) / 864e5)),
+      "день назад", "дня назад", "дней назад");
+    const n = i === 0 ? "" : Math.max(1, Math.round((list[0].at - t.at) / 864e5)) + " ";
+    return `
+      <div class="tk-row">
+        <div class="tk-head"><b>${esc(when)}</b><em>${esc(n + ago)} · ${(t.ms / 1000).toFixed(0)} с</em></div>
+        ${url ? `<audio controls preload="none" src="${esc(url)}"></audio>`
+              : `<div class="tk-wait">качается…</div>`}
+      </div>`;
+  }).join("")}</div>`;
+}
+
 function factsBlockHTML(view) {
   const list = withMaterial(view, () => factsState());
   if (!list.length) return `<div class="empty-note">Для этого материала карточек пока нет</div>`;
@@ -2921,9 +3075,10 @@ function renderAchMaterial(view) {
     <div class="seg" id="achTabs">
       <button data-at="ach" class="${achTab === "ach" ? "on" : ""}" type="button">${T("segAch")}</button>
       <button data-at="facts" class="${achTab === "facts" ? "on" : ""}" type="button">${T("segFacts")}</button>
+      ${view.track === "piano" ? `<button data-at="takes" class="${achTab === "takes" ? "on" : ""}" type="button">🎙 Записи</button>` : ""}
     </div>
 
-    ${achTab === "facts" ? factsBlockHTML(view) : `
+    ${achTab === "takes" ? takesBlockHTML(view) : achTab === "facts" ? factsBlockHTML(view) : `
     <div class="ach-grid">
       ${ach.map(a => {
         if (a.done) return `
@@ -3981,6 +4136,53 @@ function closeSheet() {
   sheetMode = null;
 }
 
+/* Шторка записи: кнопка-кружок, отсчёт и прослушивание перед сохранением. */
+function openTakeSheet() {
+  if (!canRecord()) { toast("Это устройство не даёт записывать звук"); return; }
+  sheetMode = "take";
+  const last = takesFor(curKey()).slice(-1)[0];
+  openSheet(`
+    <div class="ach-sheet">
+      <h3>Как звучит сейчас</h3>
+      <p style="max-width:320px">Полминуты игры. Через месяцы услышишь разницу — её не покажет ни один процент.</p>
+      <button class="tk-btn" id="tkGo" type="button"><i>●</i></button>
+      <div class="tk-time" id="tkTime">${last ? "прошлая запись " + fmtDay(dateStr(new Date(last.at))) : "нажми, чтобы начать"}</div>
+      <audio id="tkPlay" controls hidden style="width:100%;margin-top:12px"></audio>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn gold" id="tkSave" type="button" hidden>Сохранить</button>
+      <button class="btn" id="tkClose" type="button">Закрыть</button>
+    </div>`);
+
+  const go = $("#tkGo"), tm = $("#tkTime"), pl = $("#tkPlay"), sv = $("#tkSave");
+  let blob = null, ms = 0, busy = false;
+
+  go.addEventListener("click", async () => {
+    if (busy) { recStop && recStop(); return; }
+    busy = true; go.classList.add("rec"); sv.hidden = true; pl.hidden = true;
+    try {
+      const done = await startTake(t => { tm.textContent = (t / 1000).toFixed(1) + " с"; });
+      const r = await done;
+      blob = r.blob; ms = r.ms;
+      pl.src = URL.createObjectURL(blob); pl.hidden = false;
+      tm.textContent = `записано ${(ms / 1000).toFixed(1)} с — послушай и сохрани`;
+      sv.hidden = false;
+    } catch (e) {
+      tm.textContent = "не дали доступ к микрофону";
+    }
+    busy = false; go.classList.remove("rec");
+  });
+
+  sv.addEventListener("click", async () => {
+    if (!blob) return;
+    sv.disabled = true;
+    await saveTake(blob, ms);
+    closeSheet(); render();
+    toast("Записано — теперь в «Достижениях» у материала");
+  });
+  $("#tkClose").addEventListener("click", () => { recStop && recStop(); closeSheet(); });
+}
+
 function openLogSheet() {
   if (!gistReady()) {
     toast("Сначала подключи синхронизацию — иначе записи могут потеряться");
@@ -4000,8 +4202,12 @@ function openLogSheet() {
     <input class="note-input" id="noteInput" type="text" maxlength="80" placeholder="Заметка (необязательно)" autocomplete="off">
     <div class="sheet-actions">
       <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
+      ${isPiano() && canRecord() ? `<button class="btn" id="sheetTake" type="button">🎙 Как звучит</button>` : ""}
       <button class="btn" id="sheetCancel" type="button">Отмена</button>
     </div>`);
+
+  const tk = $("#sheetTake");
+  if (tk) tk.addEventListener("click", () => { closeSheet(); setTimeout(openTakeSheet, 220); });
 
   renderSheetBody();
   $("#sheetSave").addEventListener("click", saveEntry);
@@ -5009,6 +5215,7 @@ async function syncNow(manual) {
       }
     }
     data.archive = mergeLists(data.archive, remote.archive);
+    data.takes = mergeLists(data.takes || [], remote.takes || []);
     if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
       data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
     }
@@ -5147,6 +5354,7 @@ function boot() {
 
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
+  takeLoadAll();                      // записи собственной игры
   audioLoadAll().then(() => {
     audioSync();
     // не ждём касания, чтобы начать качать: к моменту жеста звук уже готов
