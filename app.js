@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 33";
+const APP_VERSION = "Кэйко 34";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1378,7 +1378,7 @@ function stopAllExcept(keepId) {
    только если человек включил звук и уже коснулся экрана. */
 function audioSync() {
   if (typeof Howl !== "function") return;          // библиотека не догрузилась — просто тишина
-  const want = (cfg.sound && audioUnlocked && tab === "home" && !settingsOpen
+  const want = (cfg.sound && !takeMute && audioUnlocked && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials()) ? curKey() : "";
 
   /* Раньше здесь был простой выход при совпадении. Но метка audioNow ставится
@@ -1741,8 +1741,9 @@ const takesFor = (srcId) => (data.takes || [])
 
 /* Запись с микрофона. Safari пишет в audio/mp4 — тот же формат, что у
    остальных звуков, поэтому ничего перекодировать не нужно. */
-const TAKE_MAX = 45000;                 // дольше и не надо: это слепок, а не концерт
+const TAKE_MAX = 5 * 60 * 1000;          // пять минут — дальше автостоп
 let rec = null, recStop = null;
+let takeMute = false;     // пока пишем — фон молчит, иначе он попадёт в микрофон
 
 function recMime() {
   const want = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
@@ -1756,7 +1757,7 @@ async function startTake(onTick) {
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
   });
   const mime = recMime();
-  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 96000 } : undefined);
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 64000 } : undefined);
   const parts = [];
   mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
   const t0 = Date.now();
@@ -2098,6 +2099,7 @@ function renderHome() {
         <p>${sub}</p>
         ${paceHTML()}
       </div>
+      <div class="cta-row">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
@@ -2105,6 +2107,9 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
+      ${isPiano() && canRecord() && gistReady()
+        ? `<button class="cta-mic" id="micBtn" type="button" aria-label="Записать, как звучит">🎙</button>` : ""}
+      </div>
       <div class="nudge">${nudge}</div>
     </div>`;
 
@@ -2113,6 +2118,8 @@ function renderHome() {
     selectedDate = todayStr();
     openLogSheet();
   });
+  const mic = $("#micBtn");
+  if (mic) mic.addEventListener("click", () => openTakeSheet(true));
 
   paintBackdrop(railItems()[activeRailIndex(railItems())]);
   setupRail();
@@ -3010,7 +3017,7 @@ function takesBlockHTML(view) {
     const n = i === 0 ? "" : Math.max(1, Math.round((list[0].at - t.at) / 864e5)) + " ";
     return `
       <div class="tk-row">
-        <div class="tk-head"><b>${esc(when)}</b><em>${esc(n + ago)} · ${(t.ms / 1000).toFixed(0)} с</em></div>
+        <div class="tk-head"><b>${esc(when)}</b><em>${esc(n + ago)} · ${Math.floor(t.ms / 60000)}:${String(Math.round(t.ms / 1000) % 60).padStart(2, "0")}</em></div>
         ${url ? `<audio controls preload="none" src="${esc(url)}"></audio>`
               : `<div class="tk-wait">качается…</div>`}
       </div>`;
@@ -4137,14 +4144,14 @@ function closeSheet() {
 }
 
 /* Шторка записи: кнопка-кружок, отсчёт и прослушивание перед сохранением. */
-function openTakeSheet() {
+function openTakeSheet(autoStart) {
   if (!canRecord()) { toast("Это устройство не даёт записывать звук"); return; }
   sheetMode = "take";
   const last = takesFor(curKey()).slice(-1)[0];
   openSheet(`
     <div class="ach-sheet">
       <h3>Как звучит сейчас</h3>
-      <p style="max-width:320px">Полминуты игры. Через месяцы услышишь разницу — её не покажет ни один процент.</p>
+      <p style="max-width:320px">Сыграй, как играется сейчас. Через месяцы услышишь разницу — её не покажет ни один процент.</p>
       <button class="tk-btn" id="tkGo" type="button"><i>●</i></button>
       <div class="tk-time" id="tkTime">${last ? "прошлая запись " + fmtDay(dateStr(new Date(last.at))) : "нажми, чтобы начать"}</div>
       <audio id="tkPlay" controls hidden style="width:100%;margin-top:12px"></audio>
@@ -4157,30 +4164,44 @@ function openTakeSheet() {
   const go = $("#tkGo"), tm = $("#tkTime"), pl = $("#tkPlay"), sv = $("#tkSave");
   let blob = null, ms = 0, busy = false;
 
-  go.addEventListener("click", async () => {
-    if (busy) { recStop && recStop(); return; }
+  const mmss = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+
+  async function toggle() {
+    if (busy) { recStop && recStop(); return; }     // второй тап — остановка
     busy = true; go.classList.add("rec"); sv.hidden = true; pl.hidden = true;
+    takeMute = true; audioSync();                   // фон замолкает сразу
+    tm.textContent = "0:00 · нажми, чтобы остановить";
     try {
-      const done = await startTake(t => { tm.textContent = (t / 1000).toFixed(1) + " с"; });
+      const done = await startTake(t => {
+        tm.textContent = mmss(Math.floor(t / 1000)) + " · нажми, чтобы остановить";
+      });
       const r = await done;
       blob = r.blob; ms = r.ms;
       pl.src = URL.createObjectURL(blob); pl.hidden = false;
-      tm.textContent = `записано ${(ms / 1000).toFixed(1)} с — послушай и сохрани`;
+      tm.textContent = `записано ${mmss(Math.round(ms / 1000))} — послушай и сохрани`;
       sv.hidden = false;
     } catch (e) {
       tm.textContent = "не дали доступ к микрофону";
     }
     busy = false; go.classList.remove("rec");
-  });
+  }
+
+  go.addEventListener("click", toggle);
+  // нажатие на микрофон и есть жест разрешения — начинаем сразу, без лишнего тапа
+  if (autoStart) toggle();
 
   sv.addEventListener("click", async () => {
     if (!blob) return;
     sv.disabled = true;
     await saveTake(blob, ms);
+    takeMute = false;
     closeSheet(); render();
     toast("Записано — теперь в «Достижениях» у материала");
   });
-  $("#tkClose").addEventListener("click", () => { recStop && recStop(); closeSheet(); });
+  $("#tkClose").addEventListener("click", () => {
+    recStop && recStop();
+    takeMute = false; closeSheet(); audioSync();
+  });
 }
 
 function openLogSheet() {
@@ -4202,12 +4223,8 @@ function openLogSheet() {
     <input class="note-input" id="noteInput" type="text" maxlength="80" placeholder="Заметка (необязательно)" autocomplete="off">
     <div class="sheet-actions">
       <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
-      ${isPiano() && canRecord() ? `<button class="btn" id="sheetTake" type="button">🎙 Как звучит</button>` : ""}
       <button class="btn" id="sheetCancel" type="button">Отмена</button>
     </div>`);
-
-  const tk = $("#sheetTake");
-  if (tk) tk.addEventListener("click", () => { closeSheet(); setTimeout(openTakeSheet, 220); });
 
   renderSheetBody();
   $("#sheetSave").addEventListener("click", saveEntry);
