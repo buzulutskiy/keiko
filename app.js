@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 36";
+const APP_VERSION = "Кэйко 37";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -39,7 +39,8 @@ let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", ach
 let period = "week";   // week | month — что показываем на «Прогрессе»
 let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
 let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
-let editingThought = null; // мысль, которую сейчас правим
+let editingThought = null; // момент, который сейчас правим
+let pendingMedia = null;   // вложение, которое уедет вместе с моментом
 let settingsOpen = false, settingsView = null;   // настройки — отдельный экран
 let notesFocus = false;    // ставить ли курсор в поле мысли при следующем рендере
 let notesFilter = "all";   // all | liked — что показываем в ленте мыслей
@@ -3485,8 +3486,19 @@ function bindPasteCleanup(area) {
   });
 }
 
+/* Вложение момента: снимок или запись. Файл лежит там же, где записи игры,
+   момент хранит только ссылку на него. */
+function mediaHTML(t) {
+  if (!t.mediaId) return "";
+  const url = takeUrls.get(t.mediaId);
+  if (!url) { takePull(t.mediaId); return `<div class="tk-wait">вложение качается…</div>`; }
+  return t.mediaKind === "photo"
+    ? `<img class="th-shot" src="${esc(url)}" alt="" loading="lazy" decoding="async" data-shot-src="${esc(url)}">`
+    : `<audio class="th-audio" controls preload="none" src="${esc(url)}"></audio>`;
+}
+
 function renderNotes() {
-  if (!hasMaterials()) { renderEmpty("Мыслей пока нет", "Они появятся вместе с первым материалом."); return; }
+  if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
 
   const mats = achMaterials();
   const key = (cfg.thoughtKey && mats.some(m => keyOf(m) === cfg.thoughtKey)) ? cfg.thoughtKey : currentKey();
@@ -3533,7 +3545,7 @@ function renderNotes() {
 
   $("#view").innerHTML = `
     <div class="panel th-panel">
-      <textarea class="note-input th-text" id="thText" rows="3" placeholder="Что подумалось?"></textarea>
+      <textarea class="note-input th-text" id="thText" rows="3" placeholder="Что подумалось? Можно приложить запись или снимок"></textarea>
       <div class="th-row">
         <span class="th-select">
           <span class="ts-label">${cur.icon} ${esc(cur.title)}</span>
@@ -3542,8 +3554,19 @@ function renderNotes() {
             ${mats.map(m => `<option value="${esc(keyOf(m))}" ${keyOf(m) === key ? "selected" : ""}>${m.icon} ${esc(m.title)}</option>`).join("")}
           </select>
         </span>
+        <span class="th-attach">
+          ${canRecord() ? `<button class="th-clip" id="thMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
+          <button class="th-clip" id="thCam" type="button" aria-label="Приложить снимок">📷</button>
+        </span>
         <button class="btn gold th-send" id="thSave" type="button">Записать</button>
       </div>
+      ${pendingMedia ? `
+        <div class="th-pending">
+          ${pendingMedia.kind === "photo"
+            ? `<img src="${esc(pendingMedia.url)}" alt="">`
+            : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
+          <button class="th-drop" id="thDrop" type="button" aria-label="Убрать вложение">✕</button>
+        </div>` : ""}
     </div>
 
     ${thoughtHintHTML() ? `<div class="th-hint">${thoughtHintHTML()}</div>` : ""}
@@ -3569,9 +3592,10 @@ function renderNotes() {
               <button class="th-act" data-th="${t.id}" type="button" aria-label="Удалить">✕</button>
             </span>
           </div>
-          <p class="post-text">${esc(t.text)}</p>
+          ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
+          ${mediaHTML(t)}
         </article>`).join("")}
-    </div>` : `<div class="empty-note">Здесь будут мысли, которые приходят по ходу.<br>Первую можно записать прямо сейчас.</div>`}`;
+    </div>` : `<div class="empty-note">Здесь копятся моменты: мысль, запись, снимок.<br>Первый можно оставить прямо сейчас.</div>`}`;
 
   const area = $("#thText");
   bindPasteCleanup(area);
@@ -3598,18 +3622,46 @@ function renderNotes() {
     // текст мог попасть в поле как угодно — склеиваем разорванные слова уже при записи,
     // но переводы строк не трогаем: они могут быть поставлены нарочно
     const text = fixHyphenBreaks($("#thText").value || "").trim();
-    if (!text) { toast("Напиши пару слов"); return; }
-    data.thoughts.push({
+    if (!text && !pendingMedia) { toast("Напиши пару слов или приложи что-нибудь"); return; }
+    const rec = {
       id: uid(), key, track: cur.track,
       text: text.slice(0, 2000), date: todayStr(),
       createdAt: now(), updatedAt: now()
-    });
+    };
+    if (pendingMedia) {                 // вложение кладём в то же хранилище, что записи игры
+      rec.mediaId = pendingMedia.id;
+      rec.mediaKind = pendingMedia.kind;
+      const mid = pendingMedia.id, mblob = pendingMedia.blob;
+      takeSave(mid, mblob)
+        .then(() => { if (tab === "notes") renderNotes(); return takePush(mid, mblob); })
+        .catch(() => {});
+      pendingMedia = null;
+    }
+    data.thoughts.push(rec);
     cfg.thoughtKey = key; saveCfg();
     saveData(); schedulePush();
-    shuffleThought = null;              // новая мысль — возвращаемся к ленте
+    shuffleThought = null;              // новый момент — возвращаемся к ленте
     renderNotes();
     toast("Записано");
   });
+
+  const mic = $("#thMic");
+  if (mic) mic.addEventListener("click", () => openTakeSheet(true, (blob, ms) => {
+    pendingMedia = { id: uid(), kind: "audio", blob, ms, url: URL.createObjectURL(blob) };
+    renderNotes();
+  }));
+  const cam = $("#thCam");
+  if (cam) cam.addEventListener("click", async () => {
+    const f = await pickPhoto();
+    if (!f) return;
+    try {
+      const blob = await shrinkPhoto(f);
+      pendingMedia = { id: uid(), kind: "photo", blob, ms: 0, url: URL.createObjectURL(blob) };
+      renderNotes();
+    } catch { toast("Не получилось прочитать снимок"); }
+  });
+  const drop = $("#thDrop");
+  if (drop) drop.addEventListener("click", () => { pendingMedia = null; renderNotes(); });
 
   const showAll = $("#thAll");
   if (showAll) showAll.addEventListener("click", () => {
@@ -3941,7 +3993,7 @@ const THEMES = [
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Мысли", tabShop: "Магазин",
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabShop: "Магазин",
   ctaPiano: "🎹 Отметить занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить",
   coins: "монет", coin: "🪙", streak: "серия",
@@ -4239,7 +4291,7 @@ function closeSheet() {
 }
 
 /* Шторка записи: кнопка-кружок, отсчёт и прослушивание перед сохранением. */
-function openTakeSheet(autoStart) {
+function openTakeSheet(autoStart, onDone) {
   if (!canRecord()) { toast("Это устройство не даёт записывать звук"); return; }
   sheetMode = "take";
   const last = takesFor(curKey()).slice(-1)[0];
@@ -4288,8 +4340,9 @@ function openTakeSheet(autoStart) {
   sv.addEventListener("click", async () => {
     if (!blob) return;
     sv.disabled = true;
-    await saveTake(blob, ms);
     takeMute = false;
+    if (onDone) { const b = blob, m = ms; closeSheet(); onDone(b, m); return; }
+    await saveTake(blob, ms);
     closeSheet(); render();
     toast("Записано — теперь в «Достижениях» у материала");
   });
