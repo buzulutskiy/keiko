@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 41";
+const APP_VERSION = "Кэйко 42";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -585,8 +585,13 @@ function weekSummary(offset = 0) {
   const inWeek = (e) => !e.deleted && e.date >= from && e.date <= to;
 
   const pianoEntries = data.piano.entries.filter(inWeek);
-  let bars = 0;
-  for (const e of pianoEntries) for (const sp of e.spans || []) bars += sp.to - sp.from + 1;
+  /* Считаем РАЗНЫЕ такты, а не сумму проходов. Сыграл 1–8, назавтра 1–4 —
+     это по-прежнему восемь тактов, а не двенадцать: дальше ты не ушёл. */
+  const barSet = new Set();
+  for (const e of pianoEntries)
+    for (const sp of e.spans || [])
+      for (let i = Math.max(1, sp.from); i <= sp.to; i++) barSet.add(i);
+  const bars = barSet.size;
 
   const bookEntries = data.book.entries.filter(inWeek);
   const pages = pagesRead(from, to);
@@ -1528,11 +1533,18 @@ async function pullEnvelopes() {
   /* Цвет не вычисляем заново: берём ровно тот, которым покрашен верхний фон.
      Иначе сверху один тон, снизу другой — и экран разваливается надвое. */
   let toneNow = [110, 90, 160];
+  const lifted = [0, 0, 0];
   function tone() {
     const want = bgTone || toneNow;
     // переползаем к новому цвету плавно, чтобы смена материала не щёлкала
     for (let i = 0; i < 3; i++) toneNow[i] += (want[i] - toneNow[i]) * 0.04;
-    return toneNow;
+    /* Цвет берётся с обложки, а обложки бывают почти чёрные — тогда и волны
+       выходили чёрными на чёрном, то есть их просто не было видно.
+       Поднимаем яркость до рабочей, оттенок при этом сохраняется. */
+    const mx = Math.max(toneNow[0], toneNow[1], toneNow[2]);
+    const k = mx < 120 ? 120 / Math.max(8, mx) : 1;
+    for (let i = 0; i < 3; i++) lifted[i] = Math.min(255, toneNow[i] * k);
+    return lifted;
   }
 
   function draw(bands) {
@@ -1635,6 +1647,7 @@ async function pullEnvelopes() {
    включённым, но не блокируем: музыка играет и в фоне. */
 const ZEN_AFTER = 13000;
 let zenTimer = 0, zenOn = false, wakeLock = null;
+let zenHold = 0;   // до этого времени в погружение не входим: человек вышел сам
 
 /* Не давать экрану гаснуть. Штатный Wake Lock есть не везде — на iOS он
    появился поздно и в приложении с домашнего экрана срабатывает не всегда.
@@ -1702,12 +1715,15 @@ function zenEnter() {
   audioSync();                      // вот теперь музыка вступает
   if (window.waveStart) waveStart();
 }
-function zenExit() {
+function zenExit(manual) {
   if (zenOn) {
     zenOn = false;
     document.body.classList.remove("zen");
     keepAwake(false);
-    audioSync();                    // вышли — музыка мягко уходит
+    /* Тапнул — значит музыка надоела. Гасим сразу и не возвращаемся сами:
+       иначе через тринадцать секунд она заиграла бы снова, поверх нежелания. */
+    if (manual) zenHold = now() + 3 * 60 * 1000;
+    audioSync();
   }
   zenArm();
 }
@@ -1715,7 +1731,7 @@ function zenExit() {
 function zenArm() {
   clearTimeout(zenTimer);
   const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
-    && !document.hidden && hasMaterials() && !sheetOpen();
+    && !document.hidden && hasMaterials() && !sheetOpen() && now() > zenHold;
   if (!can) { if (zenOn) zenExit(); return; }
   zenTimer = setTimeout(zenEnter, ZEN_AFTER);
 }
@@ -2581,8 +2597,11 @@ function rangeStats(from, to) {
   const inRange = e => !e.deleted && e.date >= from && e.date <= to;
 
   const piano = data.piano.entries.filter(inRange);
-  let bars = 0;
-  for (const e of piano) for (const sp of e.spans || []) bars += sp.to - sp.from + 1;
+  const barSet = new Set();          // разные такты, а не сумма повторов
+  for (const e of piano)
+    for (const sp of e.spans || [])
+      for (let i = Math.max(1, sp.from); i <= sp.to; i++) barSet.add(i);
+  const bars = barSet.size;
 
   const bookList = data.book.entries.filter(inRange);
   const pages = pagesRead(from, to);
@@ -5762,10 +5781,10 @@ function boot() {
   document.addEventListener("pointerdown", (e) => {
     if (!zenOn) { zenArm(); return; }
     e.preventDefault(); e.stopPropagation();
-    zenExit();
+    zenExit(true);
   }, true);
   ["keydown", "wheel", "touchmove"].forEach(ev =>
-    document.addEventListener(ev, () => { zenOn ? zenExit() : zenArm(); }, { passive: true, capture: true }));
+    document.addEventListener(ev, () => { zenOn ? zenExit(true) : zenArm(); }, { passive: true, capture: true }));
   document.addEventListener("visibilitychange", () => { if (document.hidden) zenExit(); else zenArm(); });
   // ушли из приложения — глушим, чтобы не играло в кармане
   document.addEventListener("visibilitychange", () => { audioSync(); paintSndBtn(); });
