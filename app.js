@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 35";
+const APP_VERSION = "Кэйко 36";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1777,10 +1777,56 @@ async function startTake(onTick) {
   return done;
 }
 
-async function saveTake(blob, ms) {
+/* Снимок работы. Телефон отдаёт 3–4 МБ, поэтому ужимаем на месте:
+   длинная сторона 1400 px этого достаточно, чтобы разглядеть штрих. */
+function shrinkPhoto(file, max = 1400, q = 0.82) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => b ? res(b) : rej(new Error("не вышло")), "image/jpeg", q);
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => rej(new Error("не картинка"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// снимок делаем системной камерой: свой интерфейс тут только помешал бы
+function pickPhoto() {
+  return new Promise((res) => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*"; inp.capture = "environment";
+    inp.style.display = "none";
+    document.body.appendChild(inp);
+    inp.addEventListener("change", () => {
+      const f = inp.files && inp.files[0];
+      inp.remove();
+      res(f || null);
+    }, { once: true });
+    inp.click();
+  });
+}
+
+async function addPhotoTake() {
+  const f = await pickPhoto();
+  if (!f) return;
+  toast("Готовлю снимок…");
+  try {
+    const blob = await shrinkPhoto(f);
+    await saveTake(blob, 0, "photo");
+    render();
+    toast("Снимок в «Достижениях» у материала");
+  } catch { toast("Не получилось прочитать снимок"); }
+}
+
+async function saveTake(blob, ms, kind) {
   const id = uid();
-  const t = { id, srcId: curKey(), track: data.active,
-    title: currentMaterial().title, at: now(), ms: Math.round(ms),
+  const t = { id, srcId: curKey(), track: data.active, kind: kind || "audio",
+    title: currentMaterial().title, at: now(), ms: Math.round(ms || 0),
     createdAt: now(), updatedAt: now() };
   await takeSave(id, blob);
   data.takes = data.takes || [];
@@ -2099,7 +2145,7 @@ function renderHome() {
         <p>${sub}</p>
         ${paceHTML()}
       </div>
-      <div class="cta-row${isPiano() && canRecord() && gistReady() ? " joined" : ""}${doneToday ? " done" : ""}">
+      <div class="cta-row${gistReady() && (isPastel() || (isPiano() && canRecord())) ? " joined" : ""}${doneToday ? " done" : ""}">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
@@ -2107,8 +2153,10 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-      ${isPiano() && canRecord() && gistReady()
+      ${gistReady() && isPiano() && canRecord()
         ? `<button class="cta-mic" id="micBtn" type="button" aria-label="Записать, как звучит">🎙</button>` : ""}
+      ${gistReady() && isPastel()
+        ? `<button class="cta-mic" id="camBtn" type="button" aria-label="Снять, что получилось">📷</button>` : ""}
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -2120,6 +2168,8 @@ function renderHome() {
   });
   const mic = $("#micBtn");
   if (mic) mic.addEventListener("click", () => openTakeSheet(true));
+  const cam = $("#camBtn");
+  if (cam) cam.addEventListener("click", addPhotoTake);
 
   paintBackdrop(railItems()[activeRailIndex(railItems())]);
   setupRail();
@@ -3002,26 +3052,68 @@ function renderAchList() {
 function takesBlockHTML(view) {
   const src = view.pieceId || view.bookId || (view.track === "pastel" ? "pastel" : "");
   const list = takesFor(src).slice().reverse();
+  const photo = view.track === "pastel";
   if (!list.length) return `
-    <div class="empty-note">Записей пока нет.<br>
-      После занятия нажми «🎙 Как звучит» — и через месяцы услышишь разницу.</div>`;
+    <div class="empty-note">${photo
+      ? "Снимков пока нет.<br>После занятия нажми 📷 — и увидишь, как менялась рука."
+      : "Записей пока нет.<br>После занятия нажми 🎙 — и через месяцы услышишь разницу."}</div>`;
 
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+  const ago = (t, i) => {
+    if (i === 0) return "последняя";
+    const d = Math.max(1, Math.round((list[0].at - t.at) / 864e5));
+    return d + " " + plural(d, "день назад", "дня назад", "дней назад");
+  };
+
+  if (photo) return `
+    <div class="tk-grid">${list.map((t, i) => {
+      const url = takeUrls.get(t.id);
+      if (!url) takePull(t.id);
+      return `
+        <figure class="tk-shot" ${url ? `data-shot="${esc(t.id)}"` : ""}>
+          ${url ? `<img src="${esc(url)}" alt="${esc(fmt.format(new Date(t.at)))}" loading="lazy" decoding="async">`
+                : `<div class="tk-wait">качается…</div>`}
+          <figcaption>${esc(fmt.format(new Date(t.at)).replace(" г.", ""))}</figcaption>
+        </figure>`;
+    }).join("")}</div>`;
+
   return `<div class="tk-list">${list.map((t, i) => {
     const url = takeUrls.get(t.id);
     if (!url) takePull(t.id);
-    const when = fmt.format(new Date(t.at)).replace(" г.", "");
-    const ago = i === 0 ? "последняя" : plural(
-      Math.max(1, Math.round((list[0].at - t.at) / 864e5)),
-      "день назад", "дня назад", "дней назад");
-    const n = i === 0 ? "" : Math.max(1, Math.round((list[0].at - t.at) / 864e5)) + " ";
+    const mm = `${Math.floor(t.ms / 60000)}:${String(Math.round(t.ms / 1000) % 60).padStart(2, "0")}`;
     return `
       <div class="tk-row">
-        <div class="tk-head"><b>${esc(when)}</b><em>${esc(n + ago)} · ${Math.floor(t.ms / 60000)}:${String(Math.round(t.ms / 1000) % 60).padStart(2, "0")}</em></div>
+        <div class="tk-head"><b>${esc(fmt.format(new Date(t.at)).replace(" г.", ""))}</b>
+          <em>${esc(ago(t, i))} · ${mm}</em></div>
         ${url ? `<audio controls preload="none" src="${esc(url)}"></audio>`
               : `<div class="tk-wait">качается…</div>`}
       </div>`;
   }).join("")}</div>`;
+}
+
+// снимок во весь экран: разглядеть штрих в сетке невозможно
+function openShotSheet(id) {
+  const t = (data.takes || []).find(x => x.id === id);
+  const url = takeUrls.get(id);
+  if (!t || !url) return;
+  sheetMode = "shot";
+  const when = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" })
+    .format(new Date(t.at)).replace(" г.", "");
+  openSheet(`
+    <div class="ach-sheet">
+      <h3>${esc(when)}</h3>
+      <img class="tk-full" src="${esc(url)}" alt="">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn danger" id="shotDel" type="button">Удалить</button>
+      <button class="btn" id="shotClose" type="button">Закрыть</button>
+    </div>`);
+  $("#shotClose").addEventListener("click", closeSheet);
+  $("#shotDel").addEventListener("click", () => {
+    if (!confirm("Удалить снимок?")) return;
+    t.deleted = true; t.updatedAt = now();
+    saveData(); schedulePush(); closeSheet(); render();
+  });
 }
 
 function factsBlockHTML(view) {
@@ -3082,7 +3174,8 @@ function renderAchMaterial(view) {
     <div class="seg" id="achTabs">
       <button data-at="ach" class="${achTab === "ach" ? "on" : ""}" type="button">${T("segAch")}</button>
       <button data-at="facts" class="${achTab === "facts" ? "on" : ""}" type="button">${T("segFacts")}</button>
-      ${view.track === "piano" ? `<button data-at="takes" class="${achTab === "takes" ? "on" : ""}" type="button">🎙 Записи</button>` : ""}
+      ${view.track === "piano" || view.track === "pastel"
+        ? `<button data-at="takes" class="${achTab === "takes" ? "on" : ""}" type="button">${view.track === "pastel" ? "📷 Работы" : "🎙 Записи"}</button>` : ""}
     </div>
 
     ${achTab === "takes" ? takesBlockHTML(view) : achTab === "facts" ? factsBlockHTML(view) : `
@@ -3102,6 +3195,8 @@ function renderAchMaterial(view) {
       }).join("")}
     </div>`}`;
 
+  document.querySelectorAll("[data-shot]").forEach(el =>
+    el.addEventListener("click", () => openShotSheet(el.dataset.shot)));
   document.querySelectorAll("#achTabs button").forEach(b =>
     b.addEventListener("click", () => {
       achTab = b.dataset.at; cfg.achTab = achTab; saveCfg();

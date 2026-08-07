@@ -1,4 +1,4 @@
-const CACHE = "keiko-v35";
+const CACHE = "keiko-v36";
 const SHELL = ["./", "./index.html", "./app.js", "./howler.min.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -8,9 +8,11 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      // чистим только прошлые версии оболочки: обложки лежат отдельно и переживают обновление
+      /* Чистим ТОЛЬКО прошлые версии оболочки (keiko-v*). Всё остальное —
+         обложки, звуки, записи собственной игры — данные пользователя и
+         обновление их не касается. Записи вообще незаменимы. */
       .then((keys) => Promise.all(keys
-        .filter((k) => k !== CACHE && !k.startsWith("keiko-covers"))
+        .filter((k) => k !== CACHE && /^keiko-v\d+$/.test(k))
         .map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );

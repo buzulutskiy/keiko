@@ -1078,6 +1078,28 @@
     @keyframes tkPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.35); } 50% { box-shadow: 0 0 0 14px rgba(248, 113, 113, 0); } }
     .tk-time { text-align: center; color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 
+    /* Работы: сетка снимков с датой под каждым */
+    .tk-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 12px; margin-top: 4px;
+    }
+    .tk-shot { margin: 0; cursor: pointer; }
+    .tk-shot img {
+      width: 100%; aspect-ratio: 3 / 4; object-fit: cover;
+      border-radius: 12px; display: block;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .tk-shot:active img { transform: scale(0.97); }
+    .tk-shot figcaption {
+      margin-top: 6px; text-align: center;
+      color: var(--dim); font-size: 0.72rem;
+    }
+    .tk-full {
+      width: 100%; border-radius: 14px; display: block;
+      max-height: 62vh; object-fit: contain;
+    }
+
     .tk-list { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
     .tk-row {
       background: var(--card); border: 1px solid var(--line);
