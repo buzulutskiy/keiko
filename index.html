@@ -403,6 +403,27 @@
     .dot.b { background: var(--violet); }
     .dot.c { background: #f0a3b5; }
     .dot.f { background: rgba(139, 124, 246, 0.5); }
+    /* ── Суточные циклы ── */
+    .dc-note { color: var(--muted); font-size: 0.78rem; }
+    .dc-chart {
+      display: flex; align-items: flex-end; gap: 2px;
+      height: 64px; margin: 14px 0 5px;
+    }
+    .dc-chart i {
+      flex: 1; display: block; border-radius: 3px 3px 1px 1px;
+      background: rgba(255, 255, 255, 0.05); min-height: 3px;
+      transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .dc-chart i.on { box-shadow: 0 0 10px rgba(0, 0, 0, 0.35); }
+    .dc-chart i.on.p { background: linear-gradient(to top, rgba(255, 201, 77, 0.45), var(--gold)); }
+    .dc-chart i.on.b { background: linear-gradient(to top, rgba(139, 124, 246, 0.45), var(--violet)); }
+    .dc-chart i.on.c { background: linear-gradient(to top, rgba(240, 163, 181, 0.45), #f0a3b5); }
+    .dc-axis {
+      display: flex; justify-content: space-between;
+      color: var(--dim); font-size: 0.66rem; font-variant-numeric: tabular-nums;
+      margin-bottom: 10px;
+    }
+
     .cal-legend {
       display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
       margin-top: 12px; font-size: 0.72rem; color: var(--dim);

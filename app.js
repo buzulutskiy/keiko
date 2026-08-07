@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 31";
+const APP_VERSION = "Кэйко 32";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2563,12 +2563,65 @@ function renderEmpty(title, text) {
     </div>`;
 }
 
+
+/* ── Суточные циклы: когда в течение дня ты обычно занимаешься ──
+   Берём время создания записи: отмечаешь обычно сразу после занятия,
+   так что это лучший доступный слепок реального ритма. */
+function dayCycleHTML() {
+  const rows = [
+    ["p", (data.piano.entries || [])],
+    ["b", (data.book.entries || [])],
+    ["c", (data.pastel.entries || [])]
+  ];
+  const hours = Array.from({ length: 24 }, () => ({ p: 0, b: 0, c: 0, all: 0 }));
+  let total = 0;
+  for (const [key, list] of rows)
+    for (const e of list) {
+      if (!e || !e.createdAt || e.deleted) continue;
+      const h = new Date(e.createdAt).getHours();
+      hours[h][key]++; hours[h].all++; total++;
+    }
+  if (total < 3) return "";                       // пока не о чем говорить
+
+  const max = Math.max(...hours.map(h => h.all)) || 1;
+  // самое частое время — по трёхчасовому окну, одиночный час слишком капризен
+  let bestH = 0, bestSum = -1;
+  for (let h = 0; h < 24; h++) {
+    const sum = hours[(h + 23) % 24].all + hours[h].all + hours[(h + 1) % 24].all;
+    if (sum > bestSum) { bestSum = sum; bestH = h; }
+  }
+  const part = bestH < 5 ? "ночью" : bestH < 12 ? "утром" : bestH < 17 ? "днём" : bestH < 22 ? "вечером" : "поздним вечером";
+
+  const bars = hours.map((h, i) => {
+    const pct = h.all ? Math.max(9, h.all / max * 100) : 0;
+    // цвет столбика — по тому треку, которого в этом часе больше
+    const top = h.p >= h.b && h.p >= h.c ? "p" : h.b >= h.c ? "b" : "c";
+    return `<i class="${h.all ? "on " + top : ""}" style="height:${pct}%"
+      title="${i}:00 — ${h.all || 0}"></i>`;
+  }).join("");
+
+  return `
+    <div class="panel">
+      <div class="cal-head"><h3 style="margin:0">Сутки</h3>
+        <span class="dc-note">чаще всего ${part}, около ${bestH}:00</span></div>
+      <div class="dc-chart">${bars}</div>
+      <div class="dc-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+      <div class="cal-legend">
+        <span><i class="dot p"></i> пианино</span>
+        <span><i class="dot b"></i> чтение</span>
+        <span><i class="dot c"></i> пастель</span>
+      </div>
+    </div>`;
+}
+
 function renderProgress() {
   if (!hasMaterials()) { renderEmpty("Пока нечего показывать", "Как появятся материалы, здесь будет прогресс по неделям и месяцам."); return; }
   $("#view").innerHTML = `
     <div class="panel sum-panel">
       ${summaryHTML()}
     </div>
+
+    ${dayCycleHTML()}
 
     <div class="panel">
       <div class="cal-head">
