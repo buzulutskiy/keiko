@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 30";
+const APP_VERSION = "Кэйко 31";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1728,6 +1728,16 @@ function coverOf(item) {
   }
   if (item.track === "pastel") {
     const c = data.pastel.course;
+    // у курса обложка тоже может лежать в каталоге — раньше эту ветку пропускали
+    const csrc = coverSrc("pastel", c.cover || "");
+    if (csrc) return `
+      <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
+        <img src="${esc(csrc)}" alt="${esc(c.name)}" loading="lazy" decoding="async">
+        <div class="cv-over">
+          <div class="cv-author">${esc(c.author || "курс")}</div>
+          <div class="cv-title">${esc(c.name)}</div>
+        </div>
+      </div>`;
     return `
       <div class="cover pastel">
         <div><div class="cv-author">${esc(c.author || "")}</div></div>
@@ -3694,7 +3704,8 @@ const shelfItems = () => (data.archive || []).filter(a => !a.deleted)
 
 function shelfCoverHTML(a) {
   const own = [...data.book.books, ...(data.piano.pieces || [])].find(x => "bk_" + x.id === a.id || x.id === a.id);
-  const ownSrc = own ? coverSrc(own.id, own.cover || "") : "";
+  let ownSrc = own ? coverSrc(own.id, own.cover || "") : "";
+  if (!ownSrc && a.track === "pastel") ownSrc = coverSrc("pastel", "");   // курс тоже с обложкой
   if (ownSrc) return `
     <div class="cover photo shelf-cover" style="aspect-ratio:${esc(own.ratio || "3 / 4.4")}">
       <img src="${esc(ownSrc)}" alt="${esc(a.title)}" loading="lazy" decoding="async">
