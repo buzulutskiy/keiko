@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 47";
+const APP_VERSION = "Кэйко 48";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -55,7 +55,7 @@ let pickPage = 0;
 let pickLessons = [];
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
-let libBook = null;    // открытая книга в разделе «Библиотека»
+let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
 let partUpto = {};     // выбранная страница внутри части             // выбранные уроки курса
 let sheetMode = null;             // log | settings
 let pushTimer = null, syncing = false;
@@ -202,6 +202,7 @@ const piece = () => data.piano.pieces.find(p => p.id === data.piano.activePiece)
 const course = () => data.pastel.course || { id: "", name: "", author: "", lessons: [] };
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
+const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
 const bookEntriesOf = (id) => data.book.entries.filter(e => !e.deleted && (e.bookId || "snow-1") === id);
 
 // сколько страниц прочитано за период — считаем прирост отдельно по каждой книге
@@ -5352,40 +5353,69 @@ async function catalogUpload(file) {
    там отмечают рассказы, а не «докуда дошёл». */
 const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
 
-/* ── Библиотека: список книг, у каждой своя страница со всем, что известно ── */
+/* ── Библиотека: все материалы, у каждого своя страница со всем, что известно ── */
 function libraryUI() {
-  const list = (data.book.books || []).filter(b => !b.archived);
-  if (!list.length) return `<div class="empty-note">Книг пока нет.<br>Они появятся вместе с каталогом.</div>`;
+  const books  = (data.book.books || []).filter(b => !b.archived);
+  const pieces = (data.piano.pieces || []).filter(p => !p.archived);
+  const hasPastel = course().lessons.length > 0;
+  if (!books.length && !pieces.length && !hasPastel)
+    return `<div class="empty-note">Материалов пока нет.<br>Они появятся вместе с каталогом.</div>`;
 
   if (libBook) {
-    const b = list.find(x => x.id === libBook) || (data.book.books || []).find(x => x.id === libBook);
-    if (b) return bookPageUI(b);
+    const [kind, id] = libBook.split(":");
+    if (kind === "bk") {
+      const b = (data.book.books || []).find(x => x.id === id);
+      if (b) return bookPageUI(b);
+    }
+    if (kind === "pf") {
+      const pc = (data.piano.pieces || []).find(x => x.id === id);
+      if (pc) return piecePageUI(pc);
+    }
+    if (kind === "ps" && hasPastel) return pastelPageUI();
+    libBook = null;
   }
 
-  return `
-    <div class="lib-list">
-      ${list.map(b => {
-        const ent = bookEntriesOf(b.id);
-        const cov = Math.min(b.pages || 0, bookCovered(b));
-        const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
-        return `
-          <button class="lib-row" data-lib="${esc(b.id)}" type="button">
-            <span class="lib-cover">${b.cover || coverSrc(b.id, "")
-              ? `<img src="${esc(coverSrc(b.id, b.cover || ""))}" alt="" loading="lazy">`
-              : `<i>📖</i>`}</span>
-            <span class="lib-body">
-              <b>${esc(b.title)}</b>
-              <em>${esc(b.author || "")}</em>
-              <span class="lib-bar"><i style="width:${pct}%"></i></span>
-              <span class="lib-meta">${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}</span>
-            </span>
-            <span class="mc-go">›</span>
-          </button>`;
-      }).join("")}
-    </div>`;
+  const row = (key, cover, fallback, title, sub, pct, meta) => `
+    <button class="lib-row" data-lib="${esc(key)}" type="button">
+      <span class="lib-cover">${cover ? `<img src="${esc(cover)}" alt="" loading="lazy">` : `<i>${fallback}</i>`}</span>
+      <span class="lib-body">
+        <b>${esc(title)}</b>
+        <em>${esc(sub || "")}</em>
+        <span class="lib-bar"><i style="width:${pct}%"></i></span>
+        <span class="lib-meta">${meta}</span>
+      </span>
+      <span class="mc-go">›</span>
+    </button>`;
+
+  const group = (name, rows) => rows.length
+    ? `<div class="lib-group">${esc(name)}</div><div class="lib-list">${rows.join("")}</div>` : "";
+
+  const bookRows = books.map(b => {
+    const ent = bookEntriesOf(b.id);
+    const cov = Math.min(b.pages || 0, bookCovered(b));
+    const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
+    return row("bk:" + b.id, coverSrc(b.id, b.cover || ""), "📖", b.title, b.author, pct,
+      `${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`);
+  });
+
+  const pieceRows = pieces.map(pc => {
+    const st = withMaterial({ track: "piano", pieceId: pc.id }, pianoStats);
+    const pct = Math.round(shownPct(st) || 0);
+    const ent = pieceEntriesOf(pc.id);
+    return row("pf:" + pc.id, coverSrc(pc.id, pc.cover || ""), "🎹", pc.name, pc.author, pct,
+      `${pct}% · ${pc.bars} ${plural(pc.bars, "такт", "такта", "тактов")} · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`);
+  });
+
+  const pastelRows = hasPastel ? (() => {
+    const st = withMaterial({ track: "pastel" }, pastelStats);
+    const pct = Math.round(st.pct);
+    return [row("ps:pastel", coverSrc("pastel", ""), "🎨", course().name, course().author, pct,
+      `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`)];
+  })() : [];
+
+  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows);
 }
 
-/* Страница книги: всё, что о ней известно, в одном месте. */
 function bookPageUI(b) {
   const ent = bookEntriesOf(b.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
   const spans = mergeSpans(bookSpans(b));
@@ -5413,7 +5443,7 @@ function bookPageUI(b) {
   }).join("");
 
   return `
-    <button class="back" id="libBack" type="button">‹ Все книги</button>
+    <button class="back" id="libBack" type="button">‹ Все материалы</button>
 
     <div class="panel lib-head">
       <div class="lib-cover big">${coverSrc(b.id, b.cover || "")
@@ -5462,6 +5492,101 @@ function bookPageUI(b) {
               <span class="pt-meta">${k >= 100 ? "прочитан" : k > 0 ? k + "%" : `${p.from}–${p.to}`}</span>
             </div>`;
         }).join("")}
+      </div>
+    </div>`;
+}
+
+// страница композиции — только чтение, всё собранное в одном месте
+function piecePageUI(pc) {
+  const st  = withMaterial({ track: "piano", pieceId: pc.id }, pianoStats);
+  const ent = pieceEntriesOf(pc.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+  const notes = ent.filter(e => e.note).length;
+  const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === pc.id).length;
+  const days = new Set(ent.map(e => e.date)).size;
+
+  // карта тактов: по строке на руку, насыщенность — число проходов
+  const strip = (arr) => Array.from({ length: pc.bars }, (_, i) => {
+    const n = arr[i + 1] || 0;
+    return `<i style="opacity:${(0.10 + 0.9 * Math.min(1, n / FIRM_AT)).toFixed(2)}"></i>`;
+  }).join("");
+
+  return `
+    <button class="back" id="libBack" type="button">‹ Все материалы</button>
+
+    <div class="panel lib-head">
+      <div class="lib-cover big">${coverSrc(pc.id, pc.cover || "")
+        ? `<img src="${esc(coverSrc(pc.id, pc.cover || ""))}" alt="">` : `<i>🎹</i>`}</div>
+      <div class="lib-title"><b>${esc(pc.name)}</b><em>${esc(pc.author || "")}</em></div>
+    </div>
+
+    <div class="panel">
+      <div class="lib-hand">правая</div>
+      <div class="lib-map bars">${strip(st.passes.right)}</div>
+      <div class="lib-hand">левая</div>
+      <div class="lib-map bars">${strip(st.passes.left)}</div>
+      <div class="lib-num">
+        <div><b>${Math.round(shownPct(st) || 0)}%</b><span>выучено</span></div>
+        <div><b>${pc.bars}</b><span>${plural(pc.bars, "такт", "такта", "тактов")}</span></div>
+        <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
+        <div><b>${st.maxPass}</b><span>${plural(st.maxPass, "проход", "прохода", "проходов")}</span></div>
+      </div>
+      <div class="lib-rows">
+        <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
+        <div><span>Последняя</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
+        <div><span>Задето тактов</span><b>${st.touchedR} пр · ${st.touchedL} лев</b></div>
+        <div><span>Выучено крепко</span><b>${st.firmR} пр · ${st.firmL} лев</b></div>
+        <div><span>Заметок при отметке</span><b>${notes}</b></div>
+        <div><span>Моментов о композиции</span><b>${thoughts}</b></div>
+      </div>
+    </div>
+
+    <div class="freeze"><div class="fz-head">🎹 <b>Как считается</b> — такт считается выученным после ${FIRM_AT} проходов, поэтому процент строже, чем «задет»</div></div>`;
+}
+
+// страница курса — тоже только чтение
+function pastelPageUI() {
+  const c  = course();
+  const st = withMaterial({ track: "pastel" }, pastelStats);
+  const ent = data.pastel.entries.filter(e => !e.deleted).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+  const notes = ent.filter(e => e.note).length;
+  const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
+  const days = new Set(ent.map(e => e.date)).size;
+
+  return `
+    <button class="back" id="libBack" type="button">‹ Все материалы</button>
+
+    <div class="panel lib-head">
+      <div class="lib-cover big">${coverSrc("pastel", "")
+        ? `<img src="${esc(coverSrc("pastel", ""))}" alt="">` : `<i>🎨</i>`}</div>
+      <div class="lib-title"><b>${esc(c.name)}</b><em>${esc(c.author || "")}</em></div>
+    </div>
+
+    <div class="panel">
+      <div class="lib-map">${c.lessons.map((_, i) =>
+        `<i style="opacity:${st.doneSet.has(i) ? 1 : 0.10}"></i>`).join("")}</div>
+      <div class="lib-num">
+        <div><b>${Math.round(st.pct)}%</b><span>пройдено</span></div>
+        <div><b>${st.done}</b><span>из ${st.lessons} уроков</span></div>
+        <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
+        <div><b>${st.minutes}</b><span>мин</span></div>
+      </div>
+      <div class="lib-rows">
+        <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
+        <div><span>Последняя</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
+        <div><span>Заметок при отметке</span><b>${notes}</b></div>
+        <div><span>Моментов о курсе</span><b>${thoughts}</b></div>
+      </div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">🎨 <b>Уроки</b> — ${st.lessons} ${plural(st.lessons, "урок", "урока", "уроков")}</div>
+      <div class="parts">
+        ${c.lessons.map((l, i) => `
+          <div class="pt-main ${st.doneSet.has(i) ? "full" : ""}" style="cursor:default">
+            <span class="pt-fill" style="width:${st.doneSet.has(i) ? 100 : 0}%"></span>
+            <span class="pt-name">${esc(l.name || "Урок " + (i + 1))}</span>
+            <span class="pt-meta">${st.doneSet.has(i) ? "пройден" : Math.round(l.dur / 60) + " мин"}</span>
+          </div>`).join("")}
       </div>
     </div>`;
 }
@@ -5735,8 +5860,8 @@ const SETTINGS_SECTIONS = [
   { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
   { id: "look",      icon: "🎨", name: "Оформление",    hint: () => themeById(data.shop.theme).name },
   { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
-      const n = (data.book.books || []).filter(b => !b.archived).length;
-      return n ? `${n} ${plural(n, "книга", "книги", "книг")}` : "пусто"; } },
+      const n = railItems().length;
+      return n ? `${n} ${plural(n, "материал", "материала", "материалов")}` : "пусто"; } },
   { id: "materials", icon: "📦", name: "Материалы",     hint: () => hasMaterials() ? currentMaterial().title : "пусто" },
   { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
       const n = (data.freezes || []).filter(f => !f.deleted).length;
