@@ -48,6 +48,10 @@
   .bar-num b { display: block; font-size: 3.6rem; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
   .bar-num i { font-style: normal; display: block; color: var(--dim); font-size: 0.82rem; margin-top: 6px; }
 
+  .tick {
+    text-align: center; font-variant-numeric: tabular-nums;
+    color: var(--dim); font-size: 0.86rem; margin: 12px 0 0;
+  }
   .say { text-align: center; font-size: 0.95rem; color: var(--muted); margin: 18px 0 14px; }
   .lead { font-size: 1rem; line-height: 1.55; margin: 0 0 6px; }
   .lead + .lead { margin-top: 12px; }
@@ -142,6 +146,15 @@ const fresh = () => ({
   blind: false,        // дошли до игры без нот
   rounds: 0,           // подходов к текущему такту
   fixed: [],           // что стало уверенным за занятие
+  slow: [],            // сыграно уверенно, но заметно дольше прочих
+  startedAt: 0,        // когда сели за инструмент
+  breakMs: 0,          // сколько из этого времени отдыхали
+  restUntil: 0,        // до какого времени идёт перерыв
+  restFrom: 0,         // когда перерыв начался
+  askedAt: 0,          // на какой минуте в последний раз предлагали передышку
+  backTo: "",          // куда вернуться после перерыва
+  times: {},           // такт → сколько секунд ушло на проверке
+  workTimes: {},       // такт → сколько ушло, когда играл без нот
 });
 let st = loadSt() || fresh();
 
@@ -153,6 +166,32 @@ const plural = (n, a, b, c) => {
 };
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
+/* Секундомер на такт. Время — единственное, что тут измеряется само,
+   без веры на слово: сколько ты думал над тактом, столько и думал. */
+let clockFrom = 0, clockTimer = 0;
+function clockStart() {
+  clockFrom = performance.now();
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => {
+    const el = $("#tick");
+    if (el) el.textContent = ((performance.now() - clockFrom) / 1000).toFixed(1) + " с";
+  }, 100);
+}
+function clockStop() {
+  clearInterval(clockTimer);
+  clockTimer = 0;
+  return clockFrom ? (performance.now() - clockFrom) / 1000 : 0;
+}
+const medianOf = (a) => {
+  if (!a.length) return 0;
+  const v = a.slice().sort((x, y) => x - y);
+  return v[Math.floor(v.length / 2)];
+};
+const avg = (o) => {
+  const v = Object.values(o);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+};
+
 function stripHTML(active) {
   let out = '<div class="strip" style="grid-template-columns:repeat(' + LEARNED + ',1fr)">';
   for (let b = 1; b <= LEARNED; b++) {
@@ -163,13 +202,53 @@ function stripHTML(active) {
   return out + "</div>";
 }
 
+/* ══════════ Часы занятия ══════════
+   Полчаса — предлагаем передышку, можно отказаться. Час — говорим прямо,
+   что пора закругляться. За инструментом время исчезает, и лучше пусть
+   об этом напомнит приложение, чем спина. */
+const REST_AT = 30, STOP_AT = 60, ASK_AGAIN = 15;
+
+const elapsedMin = () => st.startedAt ? (Date.now() - st.startedAt - st.breakMs) / 60000 : 0;
+
+let restTimer = 0;
+function paintRest() {
+  clearInterval(restTimer);
+  if (st.screen !== "resting") return;
+  const draw = () => {
+    const left = Math.max(0, st.restUntil - Date.now());
+    const el = $("#restLeft");
+    if (!el) return;
+    el.textContent = Math.floor(left / 60000) + ":" + String(Math.floor(left / 1000) % 60).padStart(2, "0");
+    if (left <= 0) { clearInterval(restTimer); endRest(); }
+  };
+  draw();
+  restTimer = setInterval(draw, 250);
+}
+
+function watchClock() {
+  if (!st.startedAt) return;
+  if (["break", "resting", "wrap", "end", "start"].includes(st.screen)) return;
+  const m = elapsedMin();
+  if (m >= STOP_AT && m - st.askedAt >= ASK_AGAIN) {
+    st.askedAt = m; st.backTo = st.screen; st.screen = "wrap"; return render();
+  }
+  if (m >= REST_AT && m - st.askedAt >= ASK_AGAIN) {
+    st.askedAt = m; st.backTo = st.screen; st.screen = "break"; return render();
+  }
+}
+setInterval(watchClock, 5000);
+
 /* ══════════ Экраны ══════════ */
 function render() {
   $("#pieceName").textContent = PIECE.name;
-  $("#sessionLine").textContent = today() + " · занятие " + st.session;
+  const m = Math.floor(elapsedMin());
+  $("#sessionLine").textContent = today() + " · занятие " + st.session
+    + (st.startedAt ? " · " + m + " мин" : "");
   const box = $("#stage");
   box.innerHTML = "";
   box.appendChild(SCREENS[st.screen]());
+  if ($("#tick")) clockStart(); else clockStop();
+  paintRest();
   save();
 }
 
@@ -189,11 +268,12 @@ const SCREENS = {
       <div>
         <p class="step-of">Проверка · ${st.at} из ${LEARNED}</p>
         <div class="bar-num"><b>${st.at}</b><i>такт</i></div>
+        <p class="tick" id="tick">0.0 с</p>
         <p class="say">Сыграл? Как вышло?</p>
         <div class="choices">
           <button class="good" data-m="sure"><b>Уверенно</b><em>руки сами помнят</em></button>
-          <button data-m="shaky"><b>С запинкой</b><em>вышло, но думал</em></button>
-          <button data-m="no"><b>Не помню</b><em>без нот не играется</em></button>
+          <button data-m="shaky"><b>Тяжеловато</b><em>вышло, но с усилием</em></button>
+          <button data-m="no"><b>Не идёт</b><em>без нот не играется</em></button>
         </div>
         ${stripHTML(st.at)}
       </div>`);
@@ -206,7 +286,12 @@ const SCREENS = {
     return el(`
       <div>
         <p class="step-of">Что получилось</p>
-        <p class="lead">Уверенно идёт <b>${sure} из ${LEARNED}</b> ${plural(LEARNED, "такта", "тактов", "тактов")}.</p>
+        <p class="lead">Уверенно идёт <b>${sure} из ${LEARNED}</b> ${plural(LEARNED, "такта", "тактов", "тактов")}.
+          В среднем <b>${avg(st.times).toFixed(1)} с</b> на такт.</p>
+        ${(st.slow || []).length
+          ? `<p class="lead dim">Такт${st.slow.length > 1 ? "ы" : ""} <b>${st.slow.join(", ")}</b>
+               ты отметил уверенно, но думал над ${st.slow.length > 1 ? "ними" : "ним"} заметно дольше —
+               беру ${st.slow.length > 1 ? "их" : "его"} тоже.</p>` : ""}
         ${list.length
           ? `<p class="lead dim">Сегодня займёмся тактами <b>${list.join(", ")}</b> —
                остальное трогать не будем, оно и так живо.</p>
@@ -240,16 +325,55 @@ const SCREENS = {
         <p class="step-of">Такт ${bar} · без нот</p>
         <div class="bar-num"><b>${bar}</b><i>такт</i></div>
         <p class="say">Ноты закрой. Как теперь?</p>
+        <p class="tick" id="tick">0.0 с</p>
         <div class="choices">
           <button class="good" data-w="sure"><b>Уверенно</b><em>пошло</em></button>
-          <button data-w="shaky"><b>Ещё думаю</b><em>но играется</em></button>
+          <button data-w="shaky"><b>Тяжеловато</b><em>но играется</em></button>
           <button data-w="no"><b>Не идёт</b><em>вернёмся ещё раз</em></button>
         </div>
       </div>`);
   },
 
+  break: () => el(`
+    <div>
+      <p class="step-of">Передышка</p>
+      <p class="lead">За инструментом уже <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минута", "минуты", "минут")}</b>.</p>
+      <p class="lead dim">Руки устают раньше, чем это чувствуется, и дальше занятие идёт вхолостую.
+        Отойди ненадолго — вернёшься, и пойдёт легче.</p>
+      <div class="choices">
+        <button class="good" data-rest="5"><b>Перерыв 5 минут</b></button>
+        <button data-rest="10"><b>Перерыв 10 минут</b></button>
+        <button data-rest="0"><b>Ещё поиграю</b><em>напомню через ${ASK_AGAIN} минут</em></button>
+      </div>
+    </div>`),
+
+  resting: () => el(`
+    <div>
+      <p class="step-of">Перерыв</p>
+      <div class="bar-num"><b id="restLeft">—</b><i>осталось</i></div>
+      <p class="lead dim" style="text-align:center">Встань, разомни кисти, посмотри в окно.</p>
+      <button class="big-btn" id="restDone">Я готов, продолжаем</button>
+    </div>`),
+
+  wrap: () => el(`
+    <div>
+      <p class="step-of">Пора закругляться</p>
+      <p class="lead">Занятие идёт <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минуту", "минуты", "минут")}</b>.</p>
+      <p class="lead dim">Дальше запоминается хуже, чем портится. Лучше закончить сейчас
+        и вернуться завтра — так вещь учится быстрее, чем одним длинным заходом.</p>
+      <div class="choices">
+        <button class="good" id="finish"><b>Завершить занятие</b></button>
+        <button data-rest="0"><b>Ещё немного</b><em>спрошу снова через ${ASK_AGAIN} минут</em></button>
+      </div>
+    </div>`),
+
   end: () => {
     const sure = Object.entries(st.marks).filter(([, m]) => m === "sure").map(([b]) => +b);
+    const slowest = Object.entries(st.times).sort((a, b) => b[1] - a[1])[0];
+    const gains = Object.entries(st.workTimes)
+      .filter(([b, t]) => st.times[b] && t < st.times[b] - 0.5)
+      .map(([b, t]) => ({ bar: +b, was: st.times[b], now: t }))
+      .sort((a, b) => a.bar - b.bar);
     return el(`
       <div>
         <p class="step-of">Занятие окончено</p>
@@ -258,9 +382,16 @@ const SCREENS = {
           : "Сегодня без сдвигов — бывает."}</p>
         <ul class="list">
           <li>Уверенно идёт<span>${sure.length} из ${LEARNED} ${plural(LEARNED, "такта", "тактов", "тактов")}</span></li>
+          <li>Среднее время на такт<span>${avg(st.times).toFixed(1)} с</span></li>
+          ${slowest ? `<li>Дольше всего<span>такт ${slowest[0]} · ${(+slowest[1]).toFixed(1)} с</span></li>` : ""}
           <li>Разобрано<span>до ${LEARNED}-го такта из ${PIECE.bars}</span></li>
           <li>Осталось слабых<span>${st.focus.length - st.fixed.length}</span></li>
         </ul>
+        ${gains.length ? `
+          <p class="step-of" style="margin:18px 0 8px">Стало быстрее</p>
+          <ul class="list">
+            ${gains.map((g) => `<li>Такт ${g.bar}<span>${g.was.toFixed(1)} с → ${g.now.toFixed(1)} с</span></li>`).join("")}
+          </ul>` : ""}
         ${stripHTML(0)}
         <button class="big-btn" id="next">Следующее занятие</button>
         <button class="ghost" id="reset">Сбросить прототип</button>
@@ -273,18 +404,40 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (!t) return;
 
+  if (t.dataset.rest !== undefined) {
+    const min = +t.dataset.rest;
+    if (min) {
+      st.restFrom = Date.now();
+      st.restUntil = st.restFrom + min * 60000;
+      st.screen = "resting";
+    } else st.screen = st.backTo || "test";
+    return render();
+  }
+
+  if (t.id === "restDone") return endRest();
+
+  if (t.id === "finish") { st.screen = "end"; return render(); }
+
   if (t.id === "go") {
+    if (!st.startedAt) st.startedAt = Date.now();
     st.screen = st.screen === "start" ? "test" : "work";
     if (st.screen === "work") { st.fi = 0; st.played = 0; st.blind = false; st.rounds = 0; }
     return render();
   }
 
   if (t.dataset.m) {                          // ответ на проверке
+    st.times[st.at] = clockStop();
     st.marks[st.at] = t.dataset.m;
     if (st.at < LEARNED) { st.at++; return render(); }
-    /* Фокус — только слабое. Всё, что идёт уверенно, сегодня не трогаем:
-       перебирать выученное — самый простой способ не сдвинуться. */
-    st.focus = Object.entries(st.marks).filter(([, m]) => m !== "sure").map(([b]) => +b).sort((a, b) => a - b);
+    /* Фокус — слабое и медленное. «Уверенно, но вдвое дольше остальных» —
+       это ещё не выучено: руки помнят, но не сами. Всё остальное сегодня
+       не трогаем: перебирать выученное — простейший способ не сдвинуться. */
+    const med = medianOf(Object.values(st.times));
+    st.slow = Object.entries(st.times)
+      .filter(([b, t]) => st.marks[b] === "sure" && med && t > med * 2 && t - med > 3)
+      .map(([b]) => +b);
+    const weak = Object.entries(st.marks).filter(([, m]) => m !== "sure").map(([b]) => +b);
+    st.focus = [...new Set([...weak, ...st.slow])].sort((a, b) => a - b);
     st.screen = "plan";
     return render();
   }
@@ -297,6 +450,7 @@ document.addEventListener("click", (e) => {
 
   if (t.dataset.w) {                          // как вышло без нот
     const bar = st.focus[st.fi];
+    st.workTimes[bar] = clockStop();
     if (t.dataset.w === "sure") {
       st.marks[bar] = "sure";
       st.fixed.push(bar);
@@ -325,6 +479,16 @@ document.addEventListener("click", (e) => {
     return render();
   }
 });
+
+/* Отдых из счётчика занятия вычитаем: полчаса игры и полчаса игры
+   с перерывом посередине — разные вещи. */
+function endRest() {
+  if (st.restFrom) st.breakMs += Date.now() - st.restFrom;
+  st.restFrom = 0; st.restUntil = 0;
+  st.askedAt = elapsedMin();
+  st.screen = st.backTo || "test";
+  render();
+}
 
 function nextFocus() {
   st.fi++;
