@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 45";
+const APP_VERSION = "Кэйко 46";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1812,11 +1812,19 @@ const takeUrls = new Map();
 const takePct = new Map();     // id → 0..1, чтобы было видно, сколько осталось
 const takeBusy = new Set();
 const takeFail = new Map();    // id → когда сорвалось: не долбим гист на каждой перерисовке
-let takeRepaint = 0;
+/* Пока вложение качается, обновляем ТОЛЬКО полоску, а не всю ленту.
+   Раньше здесь стояла перерисовка: лента пересобиралась четыре раза в секунду,
+   интерфейс дёргался, и в выпадающий список было не попасть — он закрывался
+   вместе со старым узлом. */
 function takeProgress(id, v) {
-  takePct.set(id, Math.max(0, Math.min(1, v)));
-  clearTimeout(takeRepaint);   // перерисовываем не чаще, чем раз в четверть секунды
-  takeRepaint = setTimeout(() => { if (tab === "notes" && !settingsOpen) renderNotes(); }, 250);
+  const pct = Math.max(0, Math.min(1, v));
+  takePct.set(id, pct);
+  const box = document.querySelector(`[data-media="${id}"]`);
+  if (!box) return;                       // не на экране — просто запомнили
+  const bar = box.querySelector("i");
+  const cap = box.querySelector("span");
+  if (bar) bar.style.width = Math.max(4, Math.round(pct * 100)) + "%";
+  if (cap) cap.textContent = cap.dataset.what + " загружается · " + Math.round(pct * 100) + "%";
 }
 
 async function takesBox() { return await caches.open(TAKE_CACHE); }
@@ -3768,10 +3776,11 @@ function mediaHTML(t) {
     takePull(t.mediaId);
     const p = takePct.get(t.mediaId);
     const pct = p == null ? null : Math.round(p * 100);
+    const what = t.mediaKind === "photo" ? "снимок" : "запись";
     return `
-      <div class="tk-load">
+      <div class="tk-load" data-media="${esc(t.mediaId)}">
         <div class="tk-load-bar"><i style="width:${pct == null ? 8 : Math.max(4, pct)}%"></i></div>
-        <span>${t.mediaKind === "photo" ? "снимок" : "запись"} загружается${pct == null ? "…" : " · " + pct + "%"}</span>
+        <span data-what="${what}">${what} загружается${pct == null ? "…" : " · " + pct + "%"}</span>
       </div>`;
   }
   return t.mediaKind === "photo"
