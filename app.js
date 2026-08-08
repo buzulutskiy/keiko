@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 44";
+const APP_VERSION = "Кэйко 45";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -391,11 +391,15 @@ function bookStats() {
     prev = e.date;
   }
   const covered = Math.min(b.pages || 0, bookCovered(b));
+  /* Линейная книга считается как раньше — по курсору. Так и должно быть:
+     у книги может стоять старт с середины (у «Снега на траве» со 183-й),
+     и всё до него уже прочитано, просто не отмечено записями. Покрытие
+     этого не знает и занижало процент втрое.
+     Вразнобой — там курсора нет, и процент честно считается по покрытию. */
+  const parts = bookMode(b) === "parts";
   return {
     pages: b.pages, page, covered,
-    // процент — доля прочитанного, а не «докуда дошёл»: вернулся к пропущенному
-    // месту в начале, и процент вырос, а не откатился
-    pct: b.pages ? covered / b.pages * 100 : 0,
+    pct: b.pages ? (parts ? covered / b.pages : page / b.pages) * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapter: chapterAt(page)
   };
