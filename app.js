@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 61";
+const APP_VERSION = "Кэйко 62";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4606,9 +4606,21 @@ const pracStore = () => {
 };
 
 const pracKey = (u, hand) => u.size + ":" + u.from + "-" + u.to + ":" + hand;
+/* Последнее окно сдвигается назад, а не обрезается. Часть из пяти тактов
+   на этапе «по 4 такта» давала окна 1–4 и 5–5 — одинокий такт противоречил
+   названию этапа. Теперь это 1–4 и 2–5: окно всегда той длины, что обещано,
+   и каждый такт хоть раз оказывается внутри полного отрезка. */
 const pracUnits = (from, to, size) => {
+  const len = to - from + 1;
+  if (size >= len) return [{ from, to, size: len }];
   const out = [];
-  for (let f = from; f <= to; f += size) out.push({ from: f, to: Math.min(to, f + size - 1), size });
+  for (let f = from; f <= to; f += size) {
+    let a = f, b = f + size - 1;
+    if (b > to) { b = to; a = to - size + 1; }
+    if (out.length && out[out.length - 1].from === a) break;
+    out.push({ from: a, to: b, size });
+    if (b === to) break;
+  }
   return out;
 };
 const pracSteps = (p) => {
@@ -4915,20 +4927,17 @@ function pracRender() {
     top = "повторяем пройденное";
     stage = "Освежаем то, что делали раньше";
   } else if (w.seam) {
-    top = `часть ${w.a.i + 1} из ${w.parts.length} и часть ${w.b.i + 1}`;
+    top = (w.a.why || "часть " + (w.a.i + 1)) + " + " + (w.b.why || "часть " + (w.b.i + 1));
     stage = "Стык двух частей";
     after = "обе части уже звучат порознь — важно только место склейки";
   } else if (w.part) {
     const steps = pracSteps(w.part);
     const at = steps.indexOf(w.size);
-    const us = pracUnits(w.part.from, w.part.to, w.size);
-    const done = us.filter(pracUnitDone).length;
-    top = `этап ${at + 1} из ${steps.length} · часть ${w.part.i + 1} из ${w.parts.length}`;
+    top = w.part.why || `часть ${w.part.i + 1} из ${w.parts.length}`;
     stage = pracStepName(w.size, w.part);
     after = at + 1 < steps.length
       ? "дальше: " + pracStepName(steps[at + 1], w.part).toLowerCase()
-      : (w.part.i + 1 < w.parts.length ? "дальше: стык с частью " + (w.part.i + 2) : "дальше: сборка пьесы");
-    if (us.length > 1) top += ` · ${done} из ${us.length}`;
+      : (w.part.i + 1 < w.parts.length ? "дальше: стык со следующей частью" : "дальше: сборка пьесы");
   } else {
     top = "все части готовы";
     stage = "Собираем пьесу целиком";
