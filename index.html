@@ -1260,6 +1260,44 @@
     .tk-wait { color: var(--dim); font-size: 0.8rem; padding: 6px 0; }
 
     /* «2 из 3» — счётчик, когда за раз открылось несколько наград */
+    /* Обложка видео: 16:9, но уже по ширине — чтобы соседние материалы выглядывали
+       по краям, как книги. На всю высоту ленты её растягивать нельзя: при 16:9
+       это давало карточку во весь экран. */
+    .cover-fit { height: 100%; display: flex; align-items: center; }
+    .cover.clip {
+      height: auto;
+      width: min(62vw, 244px);
+      aspect-ratio: 16 / 9;
+      border-radius: 10px;
+      padding: 12px 14px;
+      transform: rotate(-0.6deg);
+    }
+    .cover.clip::before, .cover.clip::after { display: none; }   /* корешок и обрез — только у книг */
+    .cover.clip .cv-title {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 0.95rem; line-height: 1.25;
+    }
+    .cover.clip .cv-mark { place-self: center; font-size: 2rem; }
+
+    /* шторка отметки просмотра */
+    .wt-mark { display: flex; align-items: center; gap: 12px; }
+    .wt-mark-thumb {
+      flex: 0 0 auto; width: 112px; aspect-ratio: 16 / 9;
+      border-radius: 8px; overflow: hidden; background: var(--glass-2);
+      display: grid; place-items: center;
+    }
+    .wt-mark-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .wt-mark-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .wt-mark-body b {
+      font-size: 0.95rem; line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .wt-mark-body em { font-style: normal; font-size: 0.78rem; color: var(--muted); }
+
+    .wt-page-acts { display: flex; gap: 8px; margin-top: 10px; }
+    .wt-page-acts .btn { flex: 1; text-align: center; text-decoration: none; }
+
     /* «Смотрю»: добавление ссылки и список роликов */
     .wt-add { display: flex; gap: 8px; margin-top: 10px; }
     .wt-add input {

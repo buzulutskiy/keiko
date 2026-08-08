@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 49";
+const APP_VERSION = "Кэйко 50";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -71,6 +71,28 @@ const $ = (s) => document.querySelector(s);
 const uid = () => crypto.randomUUID();
 const now = () => Date.now();
 function todayStr() { return dateStr(new Date()); }
+
+function copyText(text) {
+  const t = String(text || "");
+  if (!t) return;
+  /* Сначала старый способ через выделение: он синхронный и потому переживает
+     жест надёжнее, чем обещание clipboard API. */
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t;
+    ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (ok) { toast("Название скопировано"); return; }
+  } catch {}
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t)
+      .then(() => toast("Название скопировано"))
+      .catch(() => toast("Не вышло скопировать"));
+  } else toast("Не вышло скопировать");
+}
 function dateStr(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function fromStr(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
 function daysBetween(a, b) { return Math.round((fromStr(b) - fromStr(a)) / 864e5); }
@@ -112,7 +134,7 @@ function emptyData() {
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
     pastel: { course: null, entries: [] },
-    watch:  { course: null, entries: [] },
+    watch:  { videos: [], activeVideo: "", entries: [] },
     shop: { theme: "dusk", purchases: [] },
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
@@ -156,8 +178,30 @@ function migrate(obj) {
   }
 
   if (obj.watch) {
+    base.watch.videos = Array.isArray(obj.watch.videos) ? obj.watch.videos : [];
     base.watch.entries = Array.isArray(obj.watch.entries) ? obj.watch.entries : [];
-    if (obj.watch.course) base.watch.course = obj.watch.course;
+    /* Первая версия «Смотрю» держала ролики одним списком-курсом, а отметки —
+       номерами позиций. Переселяем: каждый ролик становится своим материалом. */
+    if (!base.watch.videos.length && obj.watch.course && Array.isArray(obj.watch.course.lessons)) {
+      const seen = new Set();
+      for (const e of base.watch.entries) for (const i of e.lessons || []) seen.add(i);
+      base.watch.videos = obj.watch.course.lessons.map((l, i) => ({
+        id: "v_" + (l.videoId || i), videoId: l.videoId || "", title: l.title || "Ролик",
+        author: l.author || "", url: l.url || "", thumb: l.thumb || "",
+        addedAt: l.addedAt || 0, archived: !!l.hidden,
+        done: seen.has(i), doneAt: seen.has(i) ? (l.addedAt || 0) : 0
+      }));
+      base.watch.entries = base.watch.entries.map(e => {
+        const i = (e.lessons || [])[0];
+        const v = base.watch.videos[i];
+        return { ...e, lessons: undefined, videoId: v ? v.id : "" };
+      }).filter(e => e.videoId);
+    }
+    if (obj.watch.activeVideo && base.watch.videos.some(v => v.id === obj.watch.activeVideo)) {
+      base.watch.activeVideo = obj.watch.activeVideo;
+    } else if (base.watch.videos[0]) {
+      base.watch.activeVideo = base.watch.videos[0].id;
+    }
   }
 
   if (obj.shop) {
@@ -202,9 +246,14 @@ const saveCfg = () => localStorage.setItem(LS.cfg, JSON.stringify(cfg));
 const isBook = () => data.active === "book";
 const isPastel = () => data.active === "pastel";
 const isWatch  = () => data.active === "watch";
-// пастель и «Смотрю» устроены одинаково: список пунктов, отмечаешь любые, прогресс = сколько из скольких
-const isCourse = () => isPastel() || isWatch();
-const courseTrack = () => isWatch() ? data.watch : data.pastel;
+const isCourse = () => isPastel();
+const courseTrack = () => data.pastel;
+
+// каждое видео — самостоятельный материал: со своим прогрессом, мыслями и завершением
+const EMPTY_VIDEO = { id: "", videoId: "", title: "", author: "", url: "", thumb: "", done: false };
+const videos = () => (data.watch && data.watch.videos) || [];
+const video = () => videos().find(v => v.id === data.watch.activeVideo) || videos()[0] || EMPTY_VIDEO;
+const watchEntriesOf = (id) => watchEntries().filter(e => (e.videoId || "") === id);
 const isPiano = () => data.active === "piano";
 const trackOf = () => data[data.active];
 const EMPTY_PIECE = { id: "", name: "", author: "", bars: 0, tone: "violet" };
@@ -234,7 +283,9 @@ const entries = () => isPiano()
   ? data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === piece().id)
   : isBook()
     ? bookEntriesOf(book().id)
-    : courseTrack().entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
+    : isWatch()
+      ? watchEntriesOf(video().id)
+      : courseTrack().entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
 const entryFor = d => entries().find(e => e.date === d);
 
 // день попадает в паузу (отпуск) — такие дни серию не рвут
@@ -432,10 +483,8 @@ let watchBusy = false;
 async function watchAdd(url) {
   const vid = ytId(url);
   if (!vid) { toast("Это не похоже на ссылку с YouTube"); return false; }
-  if (!data.watch.course) data.watch.course = { id: "watch", name: "Смотрю", author: "", lessons: [], updatedAt: now() };
-  const list = data.watch.course.lessons;
-  const was = list.findIndex(l => l.videoId === vid);
-  if (was >= 0 && !list[was].hidden) { toast("Такой ролик уже в списке"); return false; }
+  const was = videos().find(v => v.videoId === vid);
+  if (was && !was.archived) { toast(was.done ? "Это видео уже посмотрено" : "Это видео уже добавлено"); return false; }
 
   watchBusy = true; render();
   try {
@@ -444,13 +493,16 @@ async function watchAdd(url) {
     if (!r.ok) { toast(r.status === 404 ? "Ролик не найден или закрыт" : "YouTube не ответил"); return false; }
     const j = await r.json();
 
-    if (was >= 0) { list[was].hidden = false; }          // вернули ранее убранный — прошлые отметки на месте
-    else list.push({
-      title: j.title || "Ролик", author: j.author_name || "", videoId: vid,
-      url: "https://www.youtube.com/watch?v=" + vid,
-      thumb: j.thumbnail_url || "", dur: 0, addedAt: now()
-    });
-    data.watch.course.updatedAt = now();
+    let v = was;
+    if (v) { v.archived = false; v.updatedAt = now(); }   // вернули убранное — записи и мысли на месте
+    else {
+      v = { id: uid(), videoId: vid, title: j.title || "Ролик", author: j.author_name || "",
+            url: "https://www.youtube.com/watch?v=" + vid, thumb: j.thumbnail_url || "",
+            addedAt: now(), updatedAt: now(), done: false, doneAt: 0 };
+      data.watch.videos.push(v);
+    }
+    data.watch.activeVideo = v.id;
+    data.active = "watch";
     saveData(); schedulePush();
     pullWatchThumb(vid);                                  // обложку кладём в кэш, чтобы работала офлайн
     toast("Добавлено: " + (j.title || "ролик"));
@@ -476,7 +528,6 @@ async function pullWatchThumb(vid) {
   }
 }
 
-const watchCourse = () => (data.watch && data.watch.course) || { id: "watch", name: "Смотрю", author: "", lessons: [] };
 const watchEntries = () => (data.watch && data.watch.entries) || [];
 
 function doneLessons() {
@@ -516,7 +567,19 @@ function pastelStats() {
   };
 }
 
-const curStats = () => isBook() ? bookStats() : isCourse() ? pastelStats() : pianoStats();
+function watchStats() {
+  const v = video();
+  const list = entries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  return {
+    done: v.done ? 1 : 0, lessons: 1, watched: v.done,
+    pct: v.done ? 100 : 0,
+    days: list.length, streak: streak(), streakAll: streakAll(),
+    first: list[0] ? list[0].date : "", last: list.length ? list[list.length - 1].date : "",
+    notes: list.filter(e => e.note).length
+  };
+}
+
+const curStats = () => isBook() ? bookStats() : isWatch() ? watchStats() : isCourse() ? pastelStats() : pianoStats();
 // на экране — процент выученности; для пианино он строже, чем «такт задет»
 const shownPct = (s) => isPiano() && typeof s.pctLearn === "number" ? s.pctLearn : s.pct;
 
@@ -594,7 +657,7 @@ const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
   return OPS[op] ? OPS[op](Number(s[m]) || 0, Number(v)) : false;
 });
 
-const curKey = () => isBook() ? book().id : isCourse() ? data.active : (piece() ? piece().id : "");
+const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : (piece() ? piece().id : "");
 const catOf = (id) => CATALOG[id] || null;
 
 const achCache = new Map();
@@ -653,7 +716,7 @@ const FACTS = {};
    У курса занятий мало (уроки), поэтому там за раз открывается несколько.
    Когда материал пройден до конца — открывается всё, что осталось. */
 function factsState() {
-  const key = isBook() ? book().id : isCourse() ? data.active : piece().id;
+  const key = isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : piece().id;
   const list = (catOf(key) || {}).facts || FACTS[key] || [];
   if (!list.length) return [];
   // у курса шагом служат пройденные уроки: их мало, поэтому за раз открывается несколько карточек
@@ -729,8 +792,7 @@ function weekSummary(offset = 0) {
   for (const e of pastelEntries) lessons += (e.lessons || []).length;
 
   const watchList = watchEntries().filter(inWeek);
-  let watched = 0;
-  for (const e of watchList) watched += (e.lessons || []).length;
+  const watched = watchList.length;
 
   const allDays = new Set([...pianoEntries, ...bookEntries, ...pastelEntries, ...watchList].map(e => e.date));
   return { from, to, days: allDays.size, bars, pages, lessons, watched };
@@ -742,10 +804,13 @@ function currentMaterial() {
     const b = book(), s = bookStats();
     return { icon: "📖", title: b.title, sub: `${s.page} из ${s.pages} стр.`, pct: s.pct };
   }
+  if (isWatch()) {
+    const v = video(), s = watchStats();
+    return { icon: "🎬", title: v.title, sub: v.author || "видео", pct: s.pct };
+  }
   if (isCourse()) {
     const c = course(), s = pastelStats();
-    return { icon: isWatch() ? "🎬" : "🎨", title: c.name,
-      sub: `${s.done} из ${s.lessons} ${isWatch() ? "посмотрено" : "уроков"}`, pct: s.pct };
+    return { icon: "🎨", title: c.name, sub: `${s.done} из ${s.lessons} уроков`, pct: s.pct };
   }
   const p = piece(), s = pianoStats();
   return { icon: "🎹", title: p.name,
@@ -933,7 +998,8 @@ function saveEntry() {
   const note = ($("#noteInput") && $("#noteInput").value.trim()) || "";
 
   if (existing) {
-    if (isBook() && bookMode(book()) === "parts") {
+    if (isWatch()) { /* пересмотр: новых единиц нет, важна только сама дата */ }
+    else if (isBook() && bookMode(book()) === "parts") {
       existing.spans = mergeSpans((existing.spans || []).concat(pickSpans));
     } else if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
     else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
@@ -943,9 +1009,15 @@ function saveEntry() {
   } else {
     trackOf().entries.push(Object.assign(
       { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
+      isWatch() ? { videoId: video().id } :
       isBook() ? Object.assign({ bookId: book().id },
         bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage }) : isCourse() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
     ));
+  }
+
+  if (isWatch()) {
+    const v = video();
+    if (v.id && !v.done) { v.done = true; v.doneAt = now(); v.updatedAt = now(); }
   }
 
   pending = [];
@@ -958,6 +1030,10 @@ function saveEntry() {
   const after = curStats();
   const fresh = achState().filter(a => a.done && !beforeDone.has(a.id));
   const freshFacts = factsState().filter(f => f.open && !beforeFacts.has(f.id));
+  /* Снимок вида материала ДО перерисовки: досмотренное видео уходит из ленты,
+     активным становится соседний материал — и итог рассказал бы про него. */
+  const ctx = { watch: isWatch(), book: isBook(), course: isCourse(),
+                title: isWatch() ? video().title : "" };
   render();
 
   overlayQueue = [];
@@ -967,7 +1043,7 @@ function saveEntry() {
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
   if (overlayQueue.length) { showNextOverlay(); return; }
-  showDone(before, after, !!existing);
+  showDone(before, after, !!existing, ctx);
 }
 
 let overlayQueue = [];
@@ -1012,7 +1088,7 @@ function showCheer(a, i, n) {
   $("#cheer").classList.add("show");
 }
 
-function showDone(before, after, wasExisting) {
+function showDone(before, after, wasExisting, ctx) {
   if (selectedDate !== todayStr()) { toast(fmtDay(selectedDate) + " отмечено"); return; }
   if (wasExisting) { toast("Запись дополнена"); return; }
 
@@ -1020,15 +1096,14 @@ function showDone(before, after, wasExisting) {
   $("#cheerIc").textContent = after.streakAll >= 2 ? "🔥" : "🎉";
   $("#cheerTitle").textContent = rnd(DONE_TITLES);
   let text;
-  if (isBook()) {
+  if (ctx.book) {
     const g = after.page - before.page;
     text = g > 0 ? `Дочитал до ${after.page}-й страницы (+${stranic(g)}), это ${Math.round(after.pct)}% книги. ` : "Перечитывал уже пройденное — тоже дело. ";
-  } else if (isWatch()) {
-    const g = after.done - before.done;
-    text = g > 0
-      ? `+${g} ${plural(g, "ролик", "ролика", "роликов")}, посмотрено ${after.done} из ${after.lessons}. `
-      : "Пересматривал — тоже дело. ";
-  } else if (isCourse()) {
+  } else if (ctx.watch) {
+    text = before.watched
+      ? "Пересмотрел — значит, зацепило. "
+      : `«${ctx.title}» — посмотрено. Видео ушло с главной, но осталось в библиотеке. `;
+  } else if (ctx.course) {
     const g = after.done - before.done;
     text = g > 0
       ? `+${g} ${plural(g, "урок", "урока", "уроков")}, пройдено ${after.done} из ${after.lessons}. `
@@ -1358,7 +1433,7 @@ function railItems() {
     .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
   if ((data.pastel.course || { lessons: [] }).lessons.length) out.push({ track: "pastel" });
-  if (watchCourse().lessons.length) out.push({ track: "watch" });
+  for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
   return out;
 }
 const hasMaterials = () => railItems().length > 0;
@@ -1369,18 +1444,21 @@ function normalizeActive() {
   if (!items.length) return;
   const ok = items.some(i => i.track === data.active
     && (i.track !== "piano" || i.pieceId === data.piano.activePiece)
-    && (i.track !== "book" || i.bookId === data.book.activeBook));
+    && (i.track !== "book" || i.bookId === data.book.activeBook)
+    && (i.track !== "watch" || i.videoId === data.watch.activeVideo));
   if (ok) return;
   const first = items[0];
   data.active = first.track;
   if (first.pieceId) data.piano.activePiece = first.pieceId;
   if (first.bookId) data.book.activeBook = first.bookId;
+  if (first.videoId) data.watch.activeVideo = first.videoId;
 }
 
 function activeRailIndex(items) {
   const i = items.findIndex(it => it.track === data.active &&
     (it.track !== "piano" || it.pieceId === data.piano.activePiece) &&
-    (it.track !== "book" || it.bookId === data.book.activeBook));
+    (it.track !== "book" || it.bookId === data.book.activeBook) &&
+    (it.track !== "watch" || it.videoId === data.watch.activeVideo));
   return Math.max(0, i);
 }
 
@@ -1879,6 +1957,7 @@ function zenExit(manual) {
 // условия: главная, звук играет, ничего не открыто
 function zenArm() {
   clearTimeout(zenTimer);
+  zenTimer = 0;                       // не только гасим таймер, но и признаём это состоянием
   const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials() && !sheetOpen() && now() > zenHold;
   if (!can) { if (zenOn) zenExit(); return; }
@@ -2194,22 +2273,16 @@ function coverOf(item) {
       </div>`;
   }
   if (item.track === "watch") {
-    const list = watchCourse().lessons.filter(l => !l.hidden);
-    const top = list[list.length - 1];
-    const src = top ? watchThumb(top) : "";
-    if (src) return `
-      <div class="cover photo titled" style="aspect-ratio:16 / 9">
-        <img src="${esc(src)}" alt="${esc(top.title)}" loading="lazy" decoding="async">
-        <div class="cv-over">
-          <div class="cv-author">${esc(top.author || "видео")}</div>
-          <div class="cv-title">${esc(top.title)}</div>
-        </div>
-      </div>`;
+    const v = item.video || video();
+    const src = watchThumb(v);
+    /* Названия на обложке нет намеренно: в кадре ютуба почти всегда уже есть
+       свой крупный текст, и подпись поверх него читается кашей.
+       Название — под кружком прогресса. */
     return `
-      <div class="cover watch">
-        <div><div class="cv-author">видео</div></div>
-        <div class="cv-mark">🎬</div>
-        <div><div class="cv-title">Смотрю</div></div>
+      <div class="cover-fit">
+        <div class="cover clip ${src ? "photo" : "watch"}">
+          ${src ? `<img src="${esc(src)}" alt="${esc(v.title)}" loading="lazy" decoding="async">` : `<div class="cv-mark">🎬</div>`}
+        </div>
       </div>`;
   }
   if (item.track === "pastel") {
@@ -2427,7 +2500,7 @@ const subLine = (...parts) => parts.filter(Boolean)
 
 function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
-  if (isWatch()) return subLine(`${s.done} из ${s.lessons} посмотрено`, s.lessons > s.done ? `осталось ${s.lessons - s.done}` : "всё посмотрено");
+  if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
   if (isCourse()) return subLine(`${s.done} из ${s.lessons} уроков`, `${s.minutes} мин пройдено`);
   return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
 }
@@ -2453,7 +2526,7 @@ function renderHome() {
       ${coverRailHTML()}
       ${ringHTML(shownPct(s))}
       <div class="hero-title">
-        <h2>${isBook() ? esc(book().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
+        <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
         ${paceHTML()}
       </div>
@@ -2686,12 +2759,19 @@ function setActiveMaterial(item) {
   if (!item) return;
   const same = data.active === item.track &&
     (item.track !== "piano" || data.piano.activePiece === item.pieceId) &&
-    (item.track !== "book" || data.book.activeBook === item.bookId);
+    (item.track !== "book" || data.book.activeBook === item.bookId) &&
+    (item.track !== "watch" || data.watch.activeVideo === item.videoId);
   if (same) return;
 
   data.active = item.track;
   if (item.pieceId) data.piano.activePiece = item.pieceId;
   if (item.bookId) data.book.activeBook = item.bookId;
+  if (item.videoId) data.watch.activeVideo = item.videoId;
+  /* Пауза погружения держалась на всё приложение: тапнул один раз — и следующие
+     три минуты музыка не включалась ни на одном материале. Но смена обложки —
+     это новое намерение, поэтому пауза снимается вместе с ней. */
+  zenHold = 0;
+  zenArm();
   paintBackdrop(item);
   pending = []; pickLessons = []; pickSpans = [];
   selectedDate = todayStr();
@@ -2727,7 +2807,7 @@ function updateHeroInfo() {
 
   const title = $(".hero-title");
   if (title) title.innerHTML = `
-    <h2>${isBook() ? esc(book().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
+    <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
     <p>${heroSub(s)}</p>
     ${paceHTML()}`;
 
@@ -2794,8 +2874,7 @@ function rangeStats(from, to) {
   for (const e of pastel) lessons += (e.lessons || []).length;
 
   const watchList = watchEntries().filter(inRange);
-  let watched = 0;
-  for (const e of watchList) watched += (e.lessons || []).length;
+  const watched = watchList.length;
 
   const days = new Set([...piano, ...bookList, ...pastel, ...watchList].map(e => e.date)).size;
   const tracks = new Set([
@@ -2825,6 +2904,8 @@ function paceForecast() {
     let page = b.startPage || 0;
     for (const e of list) { page = Math.max(page, e.page || 0); marks.push(page); }
     marks.unshift(b.startPage || 0);
+  } else if (isWatch()) {
+    return null;
   } else if (isCourse()) {
     total = course().lessons.length;
     unit = "lesson";
@@ -3178,7 +3259,10 @@ function allEntriesOn(ds) {
       what: (e.spans || []).length ? e.spans.map(spanText).join(" · ") : "занимался" });
   }
   for (const e of data.book.entries.filter(e => !e.deleted && e.date === ds)) {
-    out.push({ track: "book", icon: "📖", title: book().title, entry: e,
+    /* Раньше здесь стояло book() — АКТИВНАЯ книга, а не та, к которой относится
+       запись. В дне и календаре чтение подписывалось тем, что открыто сейчас. */
+    const b = (data.book.books || []).find(x => x.id === (e.bookId || "snow-1"));
+    out.push({ track: "book", icon: "📖", bookId: e.bookId || "snow-1", title: b ? b.title : "Книга", entry: e,
       what: e.page ? `до ${e.page}-й стр.` : "читал" });
   }
   for (const e of data.pastel.entries.filter(e => !e.deleted && e.date === ds)) {
@@ -3186,10 +3270,8 @@ function allEntriesOn(ds) {
       what: (e.lessons || []).length ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}` : "занимался" });
   }
   for (const e of watchEntries().filter(e => !e.deleted && e.date === ds)) {
-    const wc = (data.watch && data.watch.course) || { lessons: [] };
-    const names = (e.lessons || []).map(i => (wc.lessons[i] || {}).title).filter(Boolean);
-    out.push({ track: "watch", icon: "🎬", title: "Смотрю", entry: e,
-      what: names.length ? names.join(" · ") : "смотрел" });
+    const v = videos().find(x => x.id === e.videoId);
+    out.push({ track: "watch", icon: "🎬", title: v ? v.title : "Видео", entry: e, what: "посмотрел" });
   }
   return out;
 }
@@ -3276,7 +3358,7 @@ function renderDayBox() {
 
 // все материалы с их наградами — для входного списка
 function achMaterials() {
-  if (!hasMaterials()) return [];
+  if (!hasMaterials() && !videos().length) return [];
   const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
   const out = [];
 
@@ -3306,6 +3388,20 @@ function achMaterials() {
       open: list.filter(a => a.done).length, total: list.length,
       fOpen: f.filter(x => x.open).length, fTotal: f.length });
 
+  /* Завершённые видео остаются здесь: мысль о фильме приходит и после того,
+     как он досмотрен, — а с главной он уже ушёл. */
+  const saveVideo = data.watch.activeVideo;
+  data.active = "watch";
+  for (const v of videos().filter(x => !x.archived)) {
+    data.watch.activeVideo = v.id;
+    const l = achState(), fx = factsState();
+    out.push({ track: "watch", videoId: v.id, icon: "🎬", title: v.title, sub: v.author,
+      cover: watchThumb(v), ratio: "16 / 9", done: v.done,
+      open: l.filter(a => a.done).length, total: l.length,
+      fOpen: fx.filter(x => x.open).length, fTotal: fx.length });
+  }
+  data.watch.activeVideo = saveVideo;
+
   data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
   return out;
 }
@@ -3313,11 +3409,14 @@ function achMaterials() {
 // выполняет функцию в контексте выбранного материала
 function withMaterial(view, fn) {
   const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
+  const saveVideo = data.watch.activeVideo;
   data.active = view.track;
   if (view.track === "piano" && view.pieceId) data.piano.activePiece = view.pieceId;
   if (view.track === "book" && view.bookId) data.book.activeBook = view.bookId;
+  if (view.track === "watch" && view.videoId) data.watch.activeVideo = view.videoId;
   const res = fn();
   data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
+  data.watch.activeVideo = saveVideo;
   return res;
 }
 
@@ -3326,7 +3425,7 @@ function viewMaterialExists(v) {
   if (!v || !v.track) return false;
   if (v.track === "book") return (data.book.books || []).some(b => b.id === v.bookId);
   if (v.track === "pastel") return !!(data.pastel && data.pastel.course);
-  if (v.track === "watch") return watchCourse().lessons.length > 0;
+  if (v.track === "watch") return videos().some(x => x.id === v.videoId);
   return (data.piano.pieces || []).some(p => p.id === v.pieceId);
 }
 
@@ -3564,7 +3663,7 @@ function factsBlockHTML(view) {
 function renderAchMaterial(view) {
   const ach = withMaterial(view, () => achState());
   const words = withMaterial(view, () => achWords());
-  const title = withMaterial(view, () => isBook() ? book().title : isCourse() ? course().name : piece().name);
+  const title = withMaterial(view, () => isBook() ? book().title : isWatch() ? video().title : isCourse() ? course().name : piece().name);
   const icon = view.track === "book" ? "📖" : view.track === "pastel" ? "🎨" : "🎹";
   const open = ach.filter(a => a.done).length;
   const facts = withMaterial(view, () => factsState());
@@ -3796,9 +3895,10 @@ const thoughtsOf = (key) => thoughts().filter(t => t.key === key)
 function keyOf(m) {
   if (m.track === "book") return m.bookId || "";
   if (m.track === "pastel") return "pastel";
+  if (m.track === "watch") return m.videoId || "";
   return m.pieceId || "";
 }
-const currentKey = () => isBook() ? book().id : isCourse() ? data.active : (piece() ? piece().id : "");
+const currentKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : (piece() ? piece().id : "");
 
 /* Строка над лентой появляется, только когда лента чем-то сужена:
    фильтром любимых или случайной мыслью — и даёт путь обратно ко всей ленте. */
@@ -4306,7 +4406,7 @@ function syncNotesFabs() {
 }
 
 // материал в том виде, в каком его понимает withMaterial
-const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.bookId || null });
+const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.bookId || null, videoId: m.videoId || null });
 
 /* ══════════ Монеты и магазин ══════════
    Баланс считается из данных: заработано минус потрачено.
@@ -4497,10 +4597,7 @@ function shelfCoverHTML(a) {
   const own = [...data.book.books, ...(data.piano.pieces || [])].find(x => "bk_" + x.id === a.id || x.id === a.id);
   let ownSrc = own ? coverSrc(own.id, own.cover || "") : "";
   if (!ownSrc && a.track === "pastel") ownSrc = coverSrc("pastel", "");   // курс тоже с обложкой
-  if (!ownSrc && a.track === "watch") {
-    const list = watchCourse().lessons.filter(l => !l.hidden);
-    ownSrc = list.length ? watchThumb(list[list.length - 1]) : "";
-  }
+  if (!ownSrc && a.track === "watch") ownSrc = watchThumb(videos().find(v => v.id === a.videoId) || {});
   if (ownSrc) return `
     <div class="cover photo shelf-cover" style="aspect-ratio:${esc(own.ratio || "3 / 4.4")}">
       <img src="${esc(ownSrc)}" alt="${esc(a.title)}" loading="lazy" decoding="async">
@@ -4807,7 +4904,7 @@ function openLogSheet() {
   pickSpans = []; partOpen = null; partUpto = {};
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? "Что посмотрел?" : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
   const sub = fmtDay(selectedDate) + (existing ? " · запись уже есть" : "");
 
   openSheet(`
@@ -4828,9 +4925,10 @@ function openLogSheet() {
 function renderSheetBody() {
   const parts = isBook() && bookMode(book()) === "parts";
   $("#sheetBody").innerHTML = parts ? bookPartsUI()
-    : isBook() ? bookSheetUI() : isCourse() ? pastelSheetUI() : pianoSheetUI();
+    : isBook() ? bookSheetUI() : isWatch() ? watchSheetUI() : isCourse() ? pastelSheetUI() : pianoSheetUI();
   if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
+  else if (isWatch()) { /* выбирать нечего: у ролика одно состояние */ }
   else if (isCourse()) bindPastelSheet();
   else bindPianoSheet();
 }
@@ -4838,6 +4936,22 @@ function renderSheetBody() {
 function fmtDur(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
   return m + ":" + String(s).padStart(2, "0");
+}
+
+function watchSheetUI() {
+  const v = video();
+  const src = watchThumb(v);
+  return `
+    <div class="wt-mark">
+      <div class="wt-mark-thumb">${src ? `<img src="${esc(src)}" alt="">` : `<i>🎬</i>`}</div>
+      <div class="wt-mark-body">
+        <b>${esc(v.title)}</b>
+        <em>${esc(v.author || "видео")}</em>
+      </div>
+    </div>
+    <div class="lesson-hint">${v.done
+      ? "Уже отмечено как посмотренное. Новая отметка — это пересмотр."
+      : "Отметишь — видео станет завершённым и уйдёт с главной. В библиотеке и в моментах оно останется."}</div>`;
 }
 
 function pastelSheetUI() {
@@ -5099,21 +5213,25 @@ function candidates() {
   const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
   const list = [];
 
+  const saveVideo = data.watch.activeVideo;
   for (const it of railItems()) {
     data.active = it.track;
     if (it.pieceId) data.piano.activePiece = it.pieceId;
     if (it.bookId) data.book.activeBook = it.bookId;
+    if (it.videoId) data.watch.activeVideo = it.videoId;
     const s = curStats();
     list.push({
-      track: it.track, pieceId: it.pieceId || null, bookId: it.bookId || null,
-      icon: it.track === "piano" ? "🎹" : it.track === "book" ? "📖" : "🎨",
-      name: it.track === "piano" ? piece().name : it.track === "book" ? book().title : course().name,
+      track: it.track, pieceId: it.pieceId || null, bookId: it.bookId || null, videoId: it.videoId || null,
+      icon: it.track === "piano" ? "🎹" : it.track === "book" ? "📖" : it.track === "watch" ? "🎬" : "🎨",
+      name: it.track === "piano" ? piece().name : it.track === "book" ? book().title
+        : it.track === "watch" ? video().title : course().name,
       pct: s.pct, streak: s.streakAll || s.streak || 0,
       doneToday: !!entryFor(todayStr())
     });
   }
 
   data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
+  data.watch.activeVideo = saveVideo;
   return list;
 }
 
@@ -5327,8 +5445,8 @@ function restoreBackup(file) {
     data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
     data.book.entries = mergeLists(data.book.entries, (d.book && d.book.entries) || []);
     data.pastel.entries = mergeLists(data.pastel.entries, (d.pastel && d.pastel.entries) || []);
+    data.watch.videos = mergeLists(data.watch.videos, (d.watch && d.watch.videos) || []);
     data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
-    if (d.watch && d.watch.course) data.watch.course = d.watch.course;
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
     data.freezes = mergeLists(data.freezes || [], d.freezes || []);
@@ -5505,7 +5623,7 @@ function libraryUI() {
       if (pc) return piecePageUI(pc);
     }
     if (kind === "ps" && hasPastel) return pastelPageUI();
-    if (kind === "wt") return watchPageUI();
+    if (kind === "wt") { const v = videos().find(x => x.id === id); if (v) return watchPageUI(v); libBook = null; }
     libBook = null;
   }
 
@@ -5540,16 +5658,12 @@ function libraryUI() {
       `${pct}% · ${pc.bars} ${plural(pc.bars, "такт", "такта", "тактов")} · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`);
   });
 
-  const watchList = watchCourse().lessons.filter(l => !l.hidden);
-  const watchRows = (() => {
-    const st = withMaterial({ track: "watch" }, pastelStats);
-    const pct = watchList.length ? Math.round(st.pct) : 0;
-    const top = watchList[watchList.length - 1];
-    return [row("wt:watch", top ? watchThumb(top) : "", "🎬", "Смотрю", "ролики и кино", pct,
-      watchList.length
-        ? `${pct}% · ${st.done} из ${st.lessons} посмотрено`
-        : "пусто — добавь ссылку", true)];
-  })();
+  const watchRows = videos().filter(v => !v.archived).slice().reverse().map(v => {
+    const ent = watchEntriesOf(v.id);
+    const last = ent.length ? fmtDay(ent[ent.length - 1].date) : "";
+    return row("wt:" + v.id, watchThumb(v), "🎬", v.title, v.author, v.done ? 100 : 0,
+      v.done ? `посмотрено${last ? " · " + last : ""}` : "в очереди", true);
+  });
 
   const pastelRows = hasPastel ? (() => {
     const st = withMaterial({ track: "pastel" }, pastelStats);
@@ -5558,7 +5672,9 @@ function libraryUI() {
       `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`)];
   })() : [];
 
-  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows) + group("Смотрю", watchRows);
+  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows)
+    + `<div class="lib-group">Видео</div>` + watchAddUI()
+    + (watchRows.length ? `<div class="lib-list">${watchRows.join("")}</div>` : "");
 }
 
 function bookPageUI(b) {
@@ -5641,67 +5757,55 @@ function bookPageUI(b) {
     </div>`;
 }
 
-/* «Смотрю» — единственный материал, который заводится руками.
-   Убранное не вырезаем из списка: отметки прошлых дней ссылаются на позиции. */
-function watchPageUI() {
-  const c = watchCourse();
-  const st = withMaterial({ track: "watch" }, pastelStats);
-  const vis = c.lessons.map((l, i) => ({ l, i })).filter(x => !x.l.hidden).reverse();
-  const ent = watchEntries().filter(e => !e.deleted);
-  const days = new Set(ent.map(e => e.date)).size;
-
+/* Видео — единственный материал, который заводится руками. */
+function watchAddUI() {
   return `
-    <button class="back" id="libBack" type="button">‹ Все материалы</button>
-
-    <div class="panel lib-head">
-      <div class="lib-cover big wide">${vis.length && watchThumb(vis[0].l)
-        ? `<img src="${esc(watchThumb(vis[0].l))}" alt="">` : `<i>🎬</i>`}</div>
-      <div class="lib-title"><b>Смотрю</b><em>ролики и кино</em></div>
-    </div>
-
     <div class="freeze">
-      <div class="fz-head">🔗 <b>Добавить</b> — вставь ссылку на ролик с YouTube</div>
+      <div class="fz-head">🔗 <b>Добавить видео</b> — вставь ссылку с YouTube</div>
       <div class="wt-add">
         <input id="wtUrl" type="url" inputmode="url" autocomplete="off"
                placeholder="https://youtu.be/…" ${watchBusy ? "disabled" : ""}>
         <button class="btn" id="wtAdd" type="button" ${watchBusy ? "disabled" : ""}>${watchBusy ? "Гружу…" : "Добавить"}</button>
       </div>
-      <div class="wt-hint">Название, автора и обложку возьмём с самого ютуба.</div>
+      <div class="wt-hint">Название, автора и обложку возьмём с самого ютуба. Каждое видео — отдельный материал на главной.</div>
+    </div>`;
+}
+
+function watchPageUI(v) {
+  const st = withMaterial({ track: "watch", videoId: v.id }, watchStats);
+  const ent = watchEntriesOf(v.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+  const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === v.id).length;
+  const src = watchThumb(v);
+
+  return `
+    <button class="back" id="libBack" type="button">‹ Все материалы</button>
+
+    <div class="panel lib-head">
+      <div class="lib-cover big wide">${src ? `<img src="${esc(src)}" alt="">` : `<i>🎬</i>`}</div>
+      <div class="lib-title"><b>${esc(v.title)}</b><em>${esc(v.author || "видео")}</em></div>
     </div>
 
-    ${vis.length ? `
     <div class="panel">
-      <div class="lib-num">
-        <div><b>${Math.round(st.pct)}%</b><span>посмотрено</span></div>
-        <div><b>${st.done}</b><span>из ${st.lessons}</span></div>
-        <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
-        <div><b>${st.lessons - st.done}</b><span>в очереди</span></div>
+      <div class="lib-rows">
+        <div><span>Состояние</span><b>${v.done ? "посмотрено" : "в очереди"}</b></div>
+        <div><span>Добавлено</span><b>${v.addedAt ? esc(fmtDay(dateStr(new Date(v.addedAt)))) : "—"}</b></div>
+        <div><span>Просмотров</span><b>${ent.length}</b></div>
+        <div><span>Последний</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
+        <div><span>Заметок при отметке</span><b>${st.notes}</b></div>
+        <div><span>Моментов о видео</span><b>${thoughts}</b></div>
       </div>
     </div>
 
     <div class="freeze">
-      <div class="fz-head">🎬 <b>Список</b> — новое сверху</div>
-      <div class="wt-list">
-        ${vis.map(({ l, i }) => {
-          const seen = st.doneSet.has(i);
-          return `
-            <div class="wt-item ${seen ? "seen" : ""}">
-              <a class="wt-thumb" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
-                ${watchThumb(l) ? `<img src="${esc(watchThumb(l))}" alt="" loading="lazy">` : `<i>🎬</i>`}
-                <span class="wt-play">▶</span>
-              </a>
-              <div class="wt-body">
-                <b>${esc(l.title)}</b>
-                <em>${esc(l.author || "")}</em>
-                <span class="wt-state">${seen ? "✓ посмотрено" : "в очереди"}</span>
-              </div>
-              ${seen ? "" : `<button class="wt-del" data-wtdel="${i}" type="button" aria-label="Убрать">✕</button>`}
-            </div>`;
-        }).join("")}
+      <div class="fz-head">🎬 <b>Видео</b></div>
+      <div class="wt-page-acts">
+        <a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">Открыть на YouTube</a>
+        <button class="btn" data-wtcopy="${esc(v.title)}" type="button">Скопировать название</button>
       </div>
-    </div>` : `<div class="empty-note">Пока пусто.<br>Вставь ссылку — ролик появится на главной.</div>`}`;
+      ${v.done ? `<button class="btn" data-wtback="${esc(v.id)}" type="button" style="margin-top:10px">Вернуть на главную</button>` : ""}
+      <button class="btn" data-wtdel="${esc(v.id)}" type="button" style="margin-top:10px">Убрать из библиотеки</button>
+    </div>`;
 }
-
 // страница композиции — только чтение, всё собранное в одном месте
 function piecePageUI(pc) {
   const st  = withMaterial({ track: "piano", pieceId: pc.id }, pianoStats);
@@ -5812,13 +5916,23 @@ function bindLibraryUI() {
     wtAdd.addEventListener("click", go);
     wtUrl.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });
   }
+  document.querySelectorAll("[data-wtcopy]").forEach(btn =>
+    btn.addEventListener("click", () => copyText(btn.dataset.wtcopy)));
+  document.querySelectorAll("[data-wtback]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const v = videos().find(x => x.id === btn.dataset.wtback);
+      if (!v) return;
+      v.done = false; v.doneAt = 0; v.updatedAt = now();
+      data.watch.activeVideo = v.id;
+      saveData(); schedulePush(); render(); toast("Вернулось на главную");
+    }));
   document.querySelectorAll("[data-wtdel]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const i = Number(btn.dataset.wtdel);
-      const l = watchCourse().lessons[i];
-      if (!l || !confirm(`Убрать «${l.title}» из списка?`)) return;
-      l.hidden = true; data.watch.course.updatedAt = now();
-      saveData(); schedulePush(); render(); toast("Убрано");
+      const v = videos().find(x => x.id === btn.dataset.wtdel);
+      /* Убираем пометкой, а не вырезанием: записи и мысли ссылаются на этот материал. */
+      if (!v || !confirm(`Убрать «${v.title}» из библиотеки?\n\nЗаписи и моменты о нём останутся.`)) return;
+      v.archived = true; v.updatedAt = now();
+      saveData(); schedulePush(); libBook = null; render(); toast("Убрано");
     }));
   document.querySelectorAll("[data-bm]").forEach(btn =>
     btn.addEventListener("click", () => {
@@ -5972,8 +6086,8 @@ async function restoreArchive(file) {
   data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
   data.book.entries = mergeLists(data.book.entries, d.book.entries || []);
   data.pastel.entries = mergeLists(data.pastel.entries, d.pastel.entries || []);
+  data.watch.videos = mergeLists(data.watch.videos, (d.watch && d.watch.videos) || []);
   data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
-  if (d.watch && d.watch.course) data.watch.course = d.watch.course;
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.freezes = mergeLists(data.freezes || [], d.freezes || []);
@@ -6307,11 +6421,9 @@ async function syncNow(manual) {
     data.book.entries = mergeLists(data.book.entries, remote.book.entries);
     data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
 
-    if (remote.watch.course && (!data.watch.course ||
-        (remote.watch.course.updatedAt || 0) >= (data.watch.course.updatedAt || 0))) {
-      data.watch.course = remote.watch.course;
-    }
+    data.watch.videos = mergeLists(data.watch.videos, remote.watch.videos);
     data.watch.entries = mergeLists(data.watch.entries, remote.watch.entries);
+    if (!data.watch.activeVideo && data.watch.videos[0]) data.watch.activeVideo = data.watch.videos[0].id;
     if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
     data.freezes = mergeLists(data.freezes, remote.freezes);
     data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
