@@ -59,6 +59,8 @@
   .two button { flex: 1; border: 0; border-radius: 16px; padding: 17px 8px; font: inherit; font-size: 1rem; font-weight: 600; }
   .two .clean { background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021; }
   .two .miss { background: var(--glass); color: var(--ink); border: 1px solid var(--glass-line); }
+  .big-btn.go { background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021; margin-top: 14px; }
+  .say.dim2 { font-size: 0.88rem; line-height: 1.6; margin: 14px 0 0; }
 
   .big-btn {
     width: 100%; border: 0; border-radius: 16px; padding: 18px; font: inherit;
@@ -101,6 +103,30 @@
   .lvl.now b { color: var(--gold); }
   .lvl.done b { color: var(--muted); }
 
+  .hint-btn { margin-top: 14px; }
+  .hint-box {
+    margin-top: 10px; border-radius: 14px; padding: 14px 15px;
+    background: rgba(139, 124, 246, 0.09);
+    border: 1px solid rgba(139, 124, 246, 0.25);
+    font-size: 0.9rem; line-height: 1.65;
+  }
+  .hb { padding: 7px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+  .hb:first-child { border-top: 0; padding-top: 0; }
+  .hn {
+    display: inline-block; min-width: 30px; font-weight: 700;
+    color: var(--gold); font-size: 0.82rem; font-variant-numeric: tabular-nums;
+  }
+  .hh { color: var(--dim); font-size: 0.78rem; font-weight: 600; }
+  .hint-box b { font-weight: 600; color: var(--ink); }
+  .hint-box i { font-style: normal; color: var(--gold-2); font-size: 0.8rem; }
+  .hint-box .c {
+    display: inline-block; background: rgba(255, 255, 255, 0.1); border-radius: 3px;
+    padding: 0 5px; margin: 0 3px 0 5px; font-weight: 700; font-size: 0.74rem; color: var(--muted);
+  }
+  .hint-leg {
+    margin: 12px 0 0; padding-top: 10px; font-size: 0.72rem; color: var(--dim);
+    line-height: 1.55; border-top: 1px solid rgba(255, 255, 255, 0.07);
+  }
   .list { margin: 14px 0 0; padding: 0; list-style: none; }
   .list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--glass-line); font-size: 0.9rem; }
   .list li:first-child { border-top: 0; }
@@ -147,32 +173,53 @@ const PIECE = { name: "Бах — Прелюдия es-moll", bars: 40 };
 
    Руки порознь, потом вместе, но в одном занятии: Chang за долгую
    изоляцию рук, Fitch против. Взята середина. */
-const PART = 8;                       // тактов в части
-const REPS = 3;
+/* Части нарезаны по тому, как устроена сама пьеса, а не по восемь подряд:
+   границы стоят там, где меняется фактура — вступает или замолкает левая
+   рука, начинаются длинные пробежки, наступает передышка. Взято из твоего
+   же разбора; это не музыковедческий анализ фраз, и если по нотам видно
+   иначе — границы правятся здесь одной строкой. */
+/* Подсказки — из твоего разбора 02-bach-razbor.html: по такту, отдельно
+   на каждую руку. Здесь они лежат как есть, вместе с разметкой счёта. */
+const HINTS = {"1":{"r":"<span class=\"c\">1</span><b>ми♭4+соль♭4+си♭4</b> →2сч <span class=\"c\">3</span><b>ми♭4+соль♭4</b> →2сч <span class=\"c\">4и</span><b>си♭4</b> <span class=\"c\">5</span>то же →2сч + <b>ми♭5</b> →1½ <span class=\"c\">6и</span><b>соль♭5</b>","l":""},"2":{"r":"<span class=\"c\">1</span><b>ми♭4+ля♭4+до♭5<i>=си4</i></b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">4и</span><b>ми♭5</b> <span class=\"c\">5</span>то же →2сч + <b>ля♭5</b> →1½ <span class=\"c\">6и</span><b>до♭6<i>=си5</i></b>","l":""},"3":{"r":"<span class=\"c\">1</span><b>ми♭4+фа4+ля♭4+ре5♮</b> →2сч <span class=\"c\">3</span><b>ре4♮+фа4+ля♭4</b> →2сч <span class=\"c\">4и</span><b>фа5</b> <span class=\"c\">5</span><b>ре4+фа4</b> →2сч + <b>ля♭4∿<i>(чередуй с си♭4)</i></b> →1сч <span class=\"c\">6</span>быстро: <b>ля♭4 соль♭4 ля♭4 си♭4</b>","l":""},"4":{"r":"<span class=\"c\">1</span><b>ми♭4</b> →2сч + <b>соль♭4∿<i>(чередуй с ля♭4)</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>фа4 ми♭4</b> <span class=\"c\">3</span><b>соль♭5</b> →2сч <span class=\"c\">5</span>перекат <b>соль♭4→си♭4→ми♭5→соль♭5</b> →2сч","l":"<span class=\"c\">4и</span><b>си♭3</b> <span class=\"c\">5</span><b>соль♭3</b> →1½ <span class=\"c\">6и</span><b>ми♭3</b>"},"5":{"r":"<span class=\"c\">1</span>перекат <b>соль♭4→си♭4→ре♭5→соль♭5</b> →2сч <span class=\"c\">4</span>быстро: <b>соль♭5 фа♭5<i>=ми5</i> ми♭5</b> <span class=\"c\">5</span><b>фа♭5<i>=ми5</i></b> →1½ <span class=\"c\">6и</span><b>ре♭5</b>","l":"<span class=\"c\">1</span><b>си♭2</b> →2сч <span class=\"c\">3</span>перекат <b>си♭2→ре♭3→соль♭3→си♭3</b> →2сч <span class=\"c\">5</span>то же →2сч"},"6":{"r":"<span class=\"c\">1</span><b>ми♭4+соль♭4+до♭5<i>=си4</i>+ми♭5</b> →2сч <span class=\"c\">3</span>перекат <b>соль♭4→до♭5<i>=си4</i>→ми♭5</b> →2сч <span class=\"c\">5</span>то же →2сч","l":"<span class=\"c\">1</span><b>до♭3<i>=си2</i>+ми♭3+соль♭3+до♭4<i>=си3</i></b> →2сч <span class=\"c\">4и</span><b>соль♭3</b> <span class=\"c\">5</span><b>ми♭3</b> →1½ <span class=\"c\">6и</span><b>до♭3<i>=си2</i></b>"},"7":{"r":"<span class=\"c\">1</span>перекат <b>си♭4→ми♭5→си♭5</b> →2сч <span class=\"c\">4</span>быстро: <b>ми♭5 ре♭5 до♭5<i>=си4</i></b> <span class=\"c\">5</span><b>ре♭5</b> →1½ <span class=\"c\">6и</span><b>си♭4</b>","l":"<span class=\"c\">1</span><b>соль2♮</b> →2сч <span class=\"c\">3</span>перекат <b>соль2→си♭2→ми♭3→соль3♮</b> →2сч <span class=\"c\">5</span>то же →2сч"},"8":{"r":"<span class=\"c\">1</span><b>до♭5<i>=си4</i>∿<i>(чередуй с ре♭5)</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>си♭4 ля♭4</b> <span class=\"c\">3</span>перекат <b>ми♭5→ля♭5→до♭6<i>=си5</i></b> →2сч <span class=\"c\">4и</span><b>до♭5<i>=си4</i></b> <span class=\"c\">5</span>то же →2сч + <b>ля♭4</b> →1½ <span class=\"c\">6и</span><b>фа4</b>","l":"<span class=\"c\">1</span>перекат <b>ля♭2→до♭3<i>=си2</i>→ми♭3→ля♭3</b> →2сч"},"9":{"r":"<span class=\"c\">1</span>перекат <b>ре4♮→фа5→ля♭5→до♭6<i>=си5</i></b> →2сч <span class=\"c\">3</span>перекат <b>ре4→фа4→си♭4</b> →2сч <span class=\"c\">4</span>быстро: <b>си♭5 ля♭5 соль♭5</b> <span class=\"c\">5</span>то же →2сч + <b>фа5</b> <span class=\"c\">5</span>быстро: <b>соль♭5 фа5 соль♭5 ля♭5 соль♭5 ля♭5 фа5</b>","l":""},"10":{"r":"<span class=\"c\">1</span>перекат <b>ми♭4→соль♭4→си♭4</b> →2сч + <b>соль♭5∿<i>(чередуй с ля♭5)</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>фа5 ми♭5</b> <span class=\"c\">3</span>перекат <b>си♭4→ми♭5→соль♭5→си♭5</b> →2сч <span class=\"c\">4и</span><b>соль♭4</b> <span class=\"c\">5</span>перекат <b>ре♭5→ми♭5→соль♭5→си♭5</b> →2сч + <b>ми♭4</b> →1½ <span class=\"c\">6и</span><b>до4♮</b>","l":""},"11":{"r":"<span class=\"c\">1</span>перекат <b>до5♮→ми♭5→соль♭5→до6♮</b> →2сч <span class=\"c\">4</span>быстро: <b>фа5 ми♭5 ре♭5 до5♮ ре♭5 до5 ре♭5 ми♭5 ре♭5 ми♭5 до5</b>","l":"<span class=\"c\">1</span><b>ля3♮</b> →2сч <span class=\"c\">3</span>перекат <b>ля3→до4♮→фа4</b> →2сч <span class=\"c\">5</span>то же →2сч"},"12":{"r":"<span class=\"c\">1</span><b>ре♭5∿<i>(чередуй с ми♭5)</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>до5♮ си♭4</b> <span class=\"c\">3</span><b>си♭4+ре♭5+фа5</b> →1сч <span class=\"c\">4</span>быстро: <b>фа5 соль♭5 фа5 ми♭5 ре♭5 до5♮ си♭4 ля♭4</b> <span class=\"c\">6</span><b>соль♭4</b> <span class=\"c\">6и</span>быстро: <b>ля♭4 фа4</b>","l":"<span class=\"c\">1</span>перекат <b>си♭3→ре♭4→фа4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч"},"13":{"r":"<span class=\"c\">1</span><b>ми♭4+соль♭4</b> →1сч <span class=\"c\">2</span><b>соль♭4</b> <span class=\"c\">2и</span>быстро: <b>си♭4 ре♭5</b> <span class=\"c\">3</span><b>соль♭5</b> →1сч <span class=\"c\">4</span>быстро: <b>соль♭5 фа5 ми♭5 ре♭5</b> <span class=\"c\">5</span><b>до5♮</b> →¾ <span class=\"c\">5</span>быстро: <b>ми♭5 ре♭5 до5 ре♭5</b> <span class=\"c\">6и</span><b>ми♭5</b>","l":"<span class=\"c\">1</span><b>ми♭3+си♭3+ре♭4</b> →2сч <span class=\"c\">3</span>перекат <b>ми♭3→си♭3→до4♮</b> →2сч <span class=\"c\">5</span>то же →2сч"},"14":{"r":"<span class=\"c\">1</span><b>фа4</b> →¾ <span class=\"c\">1</span>быстро: <b>соль4♮ ля4♮</b> <span class=\"c\">2</span><b>ля4∿<i>(чередуй с си♭4)</i></b> →¾ <span class=\"c\">2</span>быстро: <b>соль4 ля4</b> <span class=\"c\">3</span><b>си♭4</b> →4сч <span class=\"c\">4и</span><b>фа4</b> <span class=\"c\">5</span><b>соль♭4</b> →1½ <span class=\"c\">6и</span><b>ми♭4</b>","l":"<span class=\"c\">1</span>перекат <b>ми♭3→ля3♮→до4♮</b> →2сч <span class=\"c\">3</span>перекат <b>ре♭3→фа3→си♭3</b> →2сч <span class=\"c\">5</span>перекат <b>ми♭3→си♭3</b> →2сч"},"15":{"r":"<span class=\"c\">1</span><b>си♭4</b> →4сч + <b>до4♮</b> →1сч <span class=\"c\">2</span>быстро: <b>до4 ре♭4 до4 ре♭4 ми♭4 ре♭4 до4 ре♭4 ми♭4 фа4 ми♭4 фа4</b> <span class=\"c\">5</span><b>до4♮+ля4♮</b> →2сч + <b>соль♭4</b> →1сч <span class=\"c\">6</span><b>фа4tr<i>(чередуй с соль♭4)</i></b> →¾ <span class=\"c\">6</span><b>ми♭4</b>","l":"<span class=\"c\">1</span><b>фа3</b> →2сч <span class=\"c\">3</span><b>фа2+фа3</b> →2сч <span class=\"c\">5</span>то же →2сч"},"16":{"r":"<span class=\"c\">1</span><b>ре♭4+си♭4</b> →1½ <span class=\"c\">2и</span><b>ми♭4+до5♮</b> <span class=\"c\">3</span><b>фа4+си♭4+ре♭5</b> →2сч <span class=\"c\">5</span>то же →2сч","l":"<span class=\"c\">1</span><b>си♭2+фа3+си♭3</b> →2сч <span class=\"c\">4и</span><b>си♭2</b> <span class=\"c\">5</span><b>ре♭3</b> →1½ <span class=\"c\">6и</span><b>фа3</b>"},"17":{"r":"<span class=\"c\">1</span><b>фа♭4<i>=ми4</i>+си♭4+ре♭5</b> →1½ <span class=\"c\">2и</span>быстро: <b>до♭5<i>=си4</i> си♭4</b> <span class=\"c\">3</span><b>си♭4+ре♭5+фа♭5<i>=ми5</i></b> →2сч <span class=\"c\">5</span>то же →1½ <span class=\"c\">6и</span>быстро: <b>ми♭5 ре♭5</b>","l":"<span class=\"c\">1</span><b>соль2♮</b> →2сч <span class=\"c\">3</span><b>соль2</b> →1сч <span class=\"c\">4</span>быстро: <b>соль2 си♭2 ля♭2 соль2</b> <span class=\"c\">5</span><b>ре♭3</b> →2сч"},"18":{"r":"<span class=\"c\">1</span><b>си♭4+ре♭5+соль5♮</b> →2сч <span class=\"c\">3</span>то же →1½ <span class=\"c\">4и</span>быстро: <b>фа5 ми♭5</b> <span class=\"c\">5</span><b>до♭5<i>=си4</i>+ми♭5+ля♭5</b> →2сч","l":"<span class=\"c\">1</span><b>ре♭3</b> →1½ <span class=\"c\">2и</span>быстро: <b>до♭3<i>=си2</i> си♭2</b> <span class=\"c\">3</span><b>фа♭3<i>=ми3</i></b> <span class=\"c\">3и</span><b>ми♭3</b> <span class=\"c\">4</span><b>фа♭3<i>=ми3</i></b> <span class=\"c\">4и</span><b>ре♭3</b> <span class=\"c\">5</span>быстро: <b>до♭3<i>=си2</i> си♭2 ля♭2 си♭2 до♭3<i>=си2</i> ля♭2 си♭2 до♭3<i>=си2</i></b>"},"19":{"r":"<span class=\"c\">1</span><b>ля♭5</b> <span class=\"c\">1и</span><b>соль5♮</b> <span class=\"c\">2</span><b>ля♭5</b> <span class=\"c\">2и</span><b>си♭5</b> <span class=\"c\">3</span><b>соль5♮</b> →4сч + <b>си♭5∿<i>(чередуй с до♭6)</i></b> →3сч + <b>ми♭5</b> →2сч <span class=\"c\">5</span><b>ре♭5</b> →2сч <span class=\"c\">6</span><b>ля♭5</b> →1сч","l":"<span class=\"c\">1</span><b>фа♭2<i>=ми2</i></b> →1сч <span class=\"c\">2</span>быстро: <b>фа♭2<i>=ми2</i> фа♭3<i>=ми3</i> ми♭3 ре♭3</b> <span class=\"c\">3</span><b>ми♭3</b> →1½ <span class=\"c\">4и</span><b>ре♭3</b> <span class=\"c\">5</span><b>ми♭3</b> →1½ <span class=\"c\">6и</span><b>ми♭2</b>"},"20":{"r":"<span class=\"c\">1</span><b>до♭5<i>=си4</i>+ми♭5+ля♭5</b> →1½ <span class=\"c\">2и</span><b>до♭6<i>=си5</i></b> <span class=\"c\">3</span><b>фа5</b> →1½ <span class=\"c\">4и</span>быстро: <b>соль♭5 ля♭5</b> <span class=\"c\">5</span><b>ре5♮</b> →1½ <span class=\"c\">6и</span>быстро: <b>ми♭5 фа5</b>","l":"<span class=\"c\">1</span><b>ля♭2</b> →2сч <span class=\"c\">4и</span><b>до♭4<i>=си3</i></b> <span class=\"c\">5</span><b>фа3</b> →1½ <span class=\"c\">6и</span>быстро: <b>соль♭3 ля♭3</b>"},"21":{"r":"<span class=\"c\">1</span><b>си♭4</b> →1½ <span class=\"c\">2и</span><b>ля♭5</b> <span class=\"c\">3</span><b>ре5♮</b> →1½ <span class=\"c\">4и</span>быстро: <b>ми♭5 фа5</b> <span class=\"c\">5</span><b>си♭4</b> →1½ <span class=\"c\">6и</span>быстро: <b>до5♮ ре5♮</b>","l":"<span class=\"c\">1</span><b>ре3♮</b> →1½ <span class=\"c\">2и</span>быстро: <b>ми♭3 фа3</b> <span class=\"c\">3</span><b>си♭2</b> →1½ <span class=\"c\">4и</span><b>ля♭3</b> <span class=\"c\">5</span><b>ре3♮</b> →1½ <span class=\"c\">6и</span>быстро: <b>ми♭3 фа3</b>"},"22":{"r":"<span class=\"c\">1</span><b>ми♭5</b> →1½ <span class=\"c\">2и</span>быстро: <b>ре♭5 до♭5<i>=си4</i></b> <span class=\"c\">3</span><b>ре♭5</b> →2сч <span class=\"c\">5</span><b>ми♭4+си♭4+ре♭5</b> →2сч","l":"<span class=\"c\">1</span><b>соль♭2</b> →2сч <span class=\"c\">3</span><b>соль2♮</b> →1½ <span class=\"c\">4и</span><b>си♭3</b> <span class=\"c\">5</span><b>соль3♮</b> →1½ <span class=\"c\">6и</span><b>ми♭3</b>"},"23":{"r":"<span class=\"c\">1</span><b>ми♭4+си♭4+ре♭5</b> →1½ <span class=\"c\">2и</span>быстро: <b>до♭5<i>=си4</i> си♭4</b> <span class=\"c\">3</span><b>до♭5<i>=си4</i></b> →2сч <span class=\"c\">5</span><b>ми♭4+ля♭4+до♭5<i>=си4</i></b> →2сч","l":"<span class=\"c\">1</span><b>ля♭2</b> →2сч <span class=\"c\">4и</span><b>до♭4<i>=си3</i></b> <span class=\"c\">5</span><b>ля♭3</b> →1½ <span class=\"c\">6и</span><b>фа3</b>"},"24":{"r":"<span class=\"c\">1</span><b>фа4+ля♭4+до♭5<i>=си4</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>си♭4 ля♭4</b> <span class=\"c\">3</span><b>фа5</b> →1½ <span class=\"c\">4и</span><b>до♭5<i>=си4</i></b> <span class=\"c\">5</span><b>си♭4∿<i>(чередуй с до♭5)</i></b> →1½ <span class=\"c\">6и</span>быстро: <b>до♭5<i>=си4</i> ля♭4</b>","l":"<span class=\"c\">1</span>перекат <b>ре3♮→фа3→ля♭3</b> →2сч <span class=\"c\">3</span>перекат <b>ре3→фа3→си♭3</b> →2сч <span class=\"c\">5</span>то же →2сч"},"25":{"r":"<span class=\"c\">1</span><b>ми♭4+соль♭4</b> →2сч <span class=\"c\">3</span>быстро: <b>соль♭4 ми♭4 фа4 соль♭4 ля♭4 си♭4 до5♮ ре5♮ ми♭5 фа5 соль♭5 ля♭5 соль♭5 фа5 соль♭5 ми♭5</b>","l":"<span class=\"c\">1</span><b>ми♭3+соль♭3+си♭3</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч"},"26":{"r":"<span class=\"c\">1</span><b>фа♭4<i>=ми4</i>+ля♭4+до♭5<i>=си4</i>+фа♭5<i>=ми5</i></b> →1½ <span class=\"c\">2и</span>быстро: <b>до♭5<i>=си4</i> си♭♭4<i>=ля4</i></b> <span class=\"c\">3</span><b>ля♭4</b> →1½ <span class=\"c\">4и</span>быстро: <b>си♭♭4<i>=ля4</i> до♭5<i>=си4</i></b> <span class=\"c\">5</span><b>фа♭4<i>=ми4</i></b> →1½ <span class=\"c\">6и</span>быстро: <b>соль♭4 ля♭4</b>","l":"<span class=\"c\">1</span>перекат <b>ля♭2→до♭3<i>=си2</i>→фа♭3<i>=ми3</i>→ля♭3</b> →2сч"},"27":{"r":"<span class=\"c\">1</span><b>ре4♮</b> →1½ <span class=\"c\">2и</span>быстро: <b>фа4♮ ля♭4</b> <span class=\"c\">3</span><b>до♭5<i>=си4</i></b> →1½ <span class=\"c\">4и</span>быстро: <b>си♭4 ля♭4</b> <span class=\"c\">5</span><b>фа5</b> →1½ <span class=\"c\">6и</span>быстро: <b>ми♭5 ре5♮</b>","l":"<span class=\"c\">1</span><b>ля♭2+фа3♮+си♭3</b> →2сч"},"28":{"r":"<span class=\"c\">1</span><b>до♭6<i>=си5</i></b> <span class=\"c\">1и</span><b>ля5♮</b> →1сч <span class=\"c\">2и</span><b>си♭5</b> <span class=\"c\">3</span><b>соль♭4+си♭4+ми♭5</b> →2сч <span class=\"c\">5</span><b>фа4+си♭4</b> →2сч + <b>ре5♮</b> →1½ <span class=\"c\">6и</span><b>ми♭5</b>","l":"<span class=\"c\">3</span><b>си♭2+ми♭3+соль♭3+си♭3</b> →2сч <span class=\"c\">5</span><b>си♭2+фа3+ля♭3+си♭3</b> →2сч"},"29":{"r":"<span class=\"c\">1</span><b>ми♭5</b> →6сч + <b>ми♭4+си♭4</b> →1½ <span class=\"c\">2и</span>быстро: <b>ля♭4 соль4♮ ля♭4</b> <span class=\"c\">3</span><b>ля♭4∿<i>(чередуй с си♭4)</i></b> →2сч <span class=\"c\">5</span><b>ля♭4</b> →1½ <span class=\"c\">6и</span>быстро: <b>соль4♮ ля♭4</b>","l":"<span class=\"c\">1</span><b>до♭3<i>=си2</i>+до♭4<i>=си3</i></b> →2сч <span class=\"c\">3</span><b>до♭4<i>=си3</i>+ми♭4</b> →2сч <span class=\"c\">5</span>то же →2сч"},"30":{"r":"<span class=\"c\">1</span><b>си♭4</b> →6сч + <b>ми♭5</b> →2сч <span class=\"c\">3</span><b>ми♭5</b> →1сч <span class=\"c\">4</span>быстро: <b>ми♭5 ми♭5 ре♭5 до♭5<i>=си4</i></b> <span class=\"c\">5</span><b>ре♭5</b> →1½ <span class=\"c\">6и</span><b>си♭4</b>","l":"<span class=\"c\">1</span><b>соль3♮+си♭3+ми♭4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч"},"31":{"r":"<span class=\"c\">1</span><b>ми♭4+ля♭4+до♭5<i>=си4</i></b> →2сч <span class=\"c\">3</span><b>ми♭4+до♭5<i>=си4</i></b> →1сч <span class=\"c\">4</span>то же <span class=\"c\">4</span>то же <span class=\"c\">4и</span><b>ре♭4+си♭4</b> <span class=\"c\">4</span><b>до♭4<i>=си3</i>+ля♭4</b> <span class=\"c\">5</span><b>ре♭4+си♭4</b> →1½ <span class=\"c\">6и</span><b>си♭3+соль4♮</b>","l":"<span class=\"c\">1</span><b>ля♭3+до♭4<i>=си3</i></b> →2сч <span class=\"c\">3</span><b>фа♭3<i>=ми3</i></b> →2сч <span class=\"c\">5</span><b>фа♭3<i>=ми3</i></b> →2сч"},"32":{"r":"<span class=\"c\">1</span><b>до♭4<i>=си3</i>+ре4♮+ля♭4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч","l":"<span class=\"c\">1</span><b>фа3♮</b> →2сч <span class=\"c\">3</span><b>фа3</b> →1сч <span class=\"c\">4</span>быстро: <b>фа3 соль♭3 фа3 ми♭3</b> <span class=\"c\">5</span><b>фа3</b> →¾ <span class=\"c\">5</span>быстро: <b>соль♭3 ля♭3 фа3 соль♭3 ля♭3</b>"},"33":{"r":"<span class=\"c\">1</span><b>до♭4<i>=си3</i>+фа4+ля♭4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч","l":"<span class=\"c\">1</span><b>ре3♮</b> →2сч <span class=\"c\">3</span><b>ре3</b> →1сч <span class=\"c\">4</span>быстро: <b>ре3 ми♭3 ре3 до3♮</b> <span class=\"c\">5</span><b>ре3</b> →¾ <span class=\"c\">5</span>быстро: <b>ми♭3 фа3 ре3 ми♭3 фа3</b>"},"34":{"r":"<span class=\"c\">1</span><b>ре4♮+фа4+ля♭4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч","l":"<span class=\"c\">1</span><b>до♭3<i>=си2</i></b> →2сч <span class=\"c\">3</span><b>до♭3<i>=си2</i></b> →1сч <span class=\"c\">4</span>быстро: <b>до♭3<i>=си2</i> ре♭3 до♭3<i>=си2</i> си♭2 до♭3<i>=си2</i> си♭2 ля♭2 си♭2 до♭3<i>=си2</i> ля♭2 си♭2 до♭3<i>=си2</i></b>"},"35":{"r":"<span class=\"c\">1</span><b>ре4♮+фа4+ля♭4+до♭5<i>=си4</i></b> →2сч <span class=\"c\">3</span>быстро: <b>до♭5<i>=си4</i> си♭4 ля♭4 соль♭4 фа4 ми♭4 ре4♮ фа4 ля♭4 до♭5<i>=си4</i> ре5♮ фа5 ля♭5 до♭6<i>=си5</i> си♭5 ре5</b>","l":"<span class=\"c\">1</span><b>ре2♮</b> →2сч"},"36":{"r":"<span class=\"c\">1</span><b>ми♭5</b> →1½ <span class=\"c\">2и</span><b>соль♭4+си♭4</b> <span class=\"c\">3</span>форшлаг <b>ля♭4</b>, <b>ми♭4+соль♭4</b> →2сч <span class=\"c\">5</span><b>ре4♮</b> →2сч + <b>фа4∿<i>(чередуй с соль♭4)</i></b> <span class=\"c\">5и</span><b>ми♭4</b> <span class=\"c\">6</span><b>фа4</b> →1сч","l":"<span class=\"c\">2и</span><b>ми♭2+ми♭3</b> <span class=\"c\">3</span><b>си♭2+ми♭3+соль♭3</b> →2сч <span class=\"c\">5</span><b>си♭2+фа3+ля♭3</b> →2сч"},"37":{"r":"<span class=\"c\">1</span><b>ми♭4</b> →2сч <span class=\"c\">3</span><b>ми♭4</b> →1сч <span class=\"c\">4</span>быстро: <b>ми♭4 фа4 соль4♮ ля♭4</b> <span class=\"c\">5</span><b>си♭4</b> →1сч <span class=\"c\">6</span>быстро: <b>си♭4 фа♭4<i>=ми4</i> ми♭4 ре♭4</b>","l":"<span class=\"c\">1</span>перекат <b>ми♭3→соль3♮→си♭3→ре♭4</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч"},"38":{"r":"<span class=\"c\">1</span><b>до♭4<i>=си3</i></b> →2сч <span class=\"c\">3</span><b>до♭4<i>=си3</i></b> →¾ <span class=\"c\">3</span>быстро: <b>ми♭4 фа4♮ соль4♮ ля♭4 си♭4</b> <span class=\"c\">5</span><b>до♭5<i>=си4</i></b> <span class=\"c\">5и</span>быстро: <b>до♭5<i>=си4</i> си♭4 ля♭4 соль♭4 фа4 соль♭4 ля♭4 фа4</b>","l":"<span class=\"c\">1</span><b>ми♭3+ля♭3</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">5</span>то же →2сч"},"39":{"r":"<span class=\"c\">1</span><b>ре4♮</b> →4сч <span class=\"c\">2и</span>быстро: <b>до♭4<i>=си3</i> си♭3</b> <span class=\"c\">3</span><b>до♭4<i>=си3</i></b> →1½ <span class=\"c\">5</span><b>ре4</b> →1½ <span class=\"c\">6и</span><b>ре4</b>","l":"<span class=\"c\">1</span><b>ми♭3+фа3</b> →2сч <span class=\"c\">3</span>то же →2сч <span class=\"c\">4и</span><b>ля♭3</b> <span class=\"c\">5</span>то же →2сч"},"40":{"r":"<span class=\"c\">1</span><b>ми♭4𝄐<i>(держи дольше)</i></b> →6сч","l":"<span class=\"c\">1</span><b>ми♭2𝄐<i>(держи дольше)</i>+си♭2+ми♭3+соль3♮+си♭3</b> →6сч"}};
+const HINT_LEGEND = 'серая цифра — счёт (в такте шесть, между ними «и») · '
+  + '→2сч держи два счёта, →1½ полтора, без пометки коротко · ∿ и tr — трель · '
+  + 'перекат — ноты аккорда снизу вверх, не разом · =си2 — какую белую клавишу жать';
+
+const PART_EDGES = [
+  { from: 1,  to: 3,  why: "вступление, левая молчит" },
+  { from: 4,  to: 8,  why: "вступает левая рука" },
+  { from: 9,  to: 10, why: "правая одна, длинные пробежки" },
+  { from: 11, to: 15, why: "самый плотный кусок" },
+  { from: 16, to: 21, why: "после передышки" },
+  { from: 22, to: 28, why: "спокойнее" },
+  { from: 29, to: 35, why: "перед финалом" },
+  { from: 36, to: 40, why: "финал" },
+];
 const REST_AT = 20, STOP_AT = 60, ASK_AGAIN = 12;
 const REVIEW_N = 2;
 const HAND = { left: "левая рука", right: "правая рука", both: "две руки" };
 const bothOnly = (size) => size >= 4;  // с четырёх тактов руки уже соединены
 
-const PARTS = (() => {
-  const out = [];
-  for (let from = 1; from <= PIECE.bars; from += PART)
-    out.push({ i: out.length, from, to: Math.min(PIECE.bars, from + PART - 1) });
-  return out;
-})();
+const PARTS = PART_EDGES.map((p, i) => ({ i, ...p }));
 
 /* Ступени внутри части: 1, 2, 4 такта и часть целиком. */
 function stepsOf(p) {
   const len = p.to - p.from + 1;
-  const sizes = [1, 2, 4, len].filter((s, i, a) => s <= len && a.indexOf(s) === i);
-  return sizes;
+  return [1, 2, 4, len].filter((s, i, a) => s <= len && a.indexOf(s) === i);
 }
 /* Ступени сборки: части сращиваются попарно, пока не выйдет вся пьеса. */
+/* Сборка: части сращиваются попарно, пока не выйдет вся пьеса. */
 const ASSEMBLY = (() => {
+  let cur = PARTS.map((p) => ({ from: p.from, to: p.to }));
   const out = [];
-  for (let s = PART * 2; s < PIECE.bars; s *= 2) out.push(s);
-  if (PIECE.bars > PART) out.push(PIECE.bars);
-  return out;
+  while (cur.length > 1) {
+    const next = [];
+    for (let i = 0; i < cur.length; i += 2)
+      next.push(cur[i + 1] ? { from: cur[i].from, to: cur[i + 1].to } : cur[i]);
+    out.push(next);
+    cur = next;
+  }
+  return out;                      // [[пары], [четвёрки], …, [вся пьеса]]
 })();
 
 const sizeName = (s) =>
@@ -190,7 +237,7 @@ const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch
 
 const fresh = () => ({
   session: 1, screen: "start",
-  done: {}, reps: 0, cur: null, queue: [], closed: [],
+  done: {}, cur: null, queue: [], closed: [], hintOpen: false, reviewed: [],
   startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, backTo: "",
 });
 let st = loadSt() || fresh();
@@ -204,40 +251,65 @@ function plural(n, a, b, c) {
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
 const key = (u, hand) => u.size + ":" + u.from + "-" + u.to + ":" + hand;
-const handsFor = (size) => bothOnly(size) ? ["both"] : ["left", "right", "both"];
+
+/* Какие руки вообще звучат на этом отрезке. В начале прелюдии левая молчит
+   три такта, и предлагать «такт 1, левая рука» было бы бессмыслицей.
+   А если звучит одна рука, то и соединять нечего — проход «две руки» лишний. */
+function handsFor(u) {
+  let r = false, l = false;
+  for (let b = u.from; b <= u.to; b++) {
+    const h = HINTS[b];
+    if (!h) { r = l = true; break; }        // нет данных — не гадаем, даём всё
+    if (h.r) r = true;
+    if (h.l) l = true;
+  }
+  if (r && !l) return ["right"];
+  if (l && !r) return ["left"];
+  if (!r && !l) return [];
+  return bothOnly(u.size) ? ["both"] : ["left", "right", "both"];
+}
 const isDone = (u, hand) => !!st.done[key(u, hand)];
-const unitDone = (u) => handsFor(u.size).every((h) => isDone(u, h));
+const unitDone = (u) => handsFor(u).every((h) => isDone(u, h));
 const stepDone = (p, size) => unitsIn(p.from, p.to, size).every(unitDone);
 const partDone = (p) => stepsOf(p).every((s) => stepDone(p, s));
 
 /* Где мы сейчас: первая недоделанная часть, а в ней — первая недоделанная
    ступень. Части идут по очереди: следующая не начинается, пока предыдущая
    не зазвучит целиком. */
+const asUnit = (sp) => ({ from: sp.from, to: sp.to, size: sp.to - sp.from + 1 });
+
 function where() {
   for (const p of PARTS) {
     if (partDone(p)) continue;
     for (const size of stepsOf(p)) if (!stepDone(p, size)) return { part: p, size };
   }
-  for (const size of ASSEMBLY) {
-    const us = unitsIn(1, PIECE.bars, size);
-    if (!us.every(unitDone)) return { part: null, size, assembly: true };
-  }
-  return { part: null, size: PIECE.bars, assembly: true, finished: true };
+  for (let li = 0; li < ASSEMBLY.length; li++)
+    if (!ASSEMBLY[li].map(asUnit).every(unitDone)) return { part: null, assembly: li };
+  return { part: null, assembly: ASSEMBLY.length - 1, finished: true };
 }
 
 function buildQueue() {
   const w = where();
   const q = [];
 
-  Object.entries(st.done).sort((a, b) => a[1] - b[1]).slice(0, REVIEW_N).forEach(([k]) => {
-    const [size, span, hand] = k.split(":");
-    const [from, to] = span.split("-").map(Number);
-    q.push({ from, to, size: +size, hand, review: true });
-  });
+  /* Освежённое за это занятие в очередь больше не возвращается: оно нигде
+     не помечается «пройденным», и без этого списка очередь пересобиралась бы
+     на те же два отрезка бесконечно. */
+  /* Освежаем только в начале занятия: очередь пересобирается на каждой
+     ступени, и без этого предела разминка лезла бы через раз до конца дня. */
+  (st.reviewed.length >= REVIEW_N ? [] : Object.entries(st.done))
+    .filter(([k]) => !st.reviewed.includes(k))
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, REVIEW_N)
+    .forEach(([k]) => {
+      const [size, span, hand] = k.split(":");
+      const [from, to] = span.split("-").map(Number);
+      q.push({ from, to, size: +size, hand, review: true, k });
+    });
 
-  const us = w.assembly ? unitsIn(1, PIECE.bars, w.size) : unitsIn(w.part.from, w.part.to, w.size);
+  const us = w.part ? unitsIn(w.part.from, w.part.to, w.size) : ASSEMBLY[w.assembly].map(asUnit);
   for (const u of us)
-    for (const h of handsFor(u.size))
+    for (const h of handsFor(u))
       if (!isDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
 
   return q;
@@ -285,19 +357,21 @@ function partsHTML() {
 
 function ladderHTML() {
   const w = where();
-  if (w.assembly) {
+  if (!w.part) {
     return `<p class="ladder-cap">Все части зазвучали — <b>собираем пьесу</b></p>`
-      + '<div class="ladder">' + ASSEMBLY.map((size) => {
-        const us = unitsIn(1, PIECE.bars, size);
+      + '<div class="ladder">' + ASSEMBLY.map((level, li) => {
+        const us = level.map(asUnit);
         const d = us.filter(unitDone).length;
-        return `<div class="lvl ${size === w.size ? "now" : d === us.length ? "done" : ""}">
-          <b>${sizeName(size)}</b>
+        const name = us.length === 1 ? "вся пьеса" : "по " + us.length + " " + plural(us.length, "куску", "куска", "кусков");
+        return `<div class="lvl ${li === w.assembly ? "now" : d === us.length ? "done" : ""}">
+          <b>${name}</b>
           <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
           <span>${d}/${us.length}</span></div>`;
       }).join("") + "</div>";
   }
   const p = w.part;
-  return `<p class="ladder-cap">Часть ${p.i + 1} из ${PARTS.length} — <b>такты ${p.from}–${p.to}</b></p>`
+  return `<p class="ladder-cap">Часть ${p.i + 1} из ${PARTS.length} — <b>такты ${p.from}–${p.to}</b><br>
+      <span style="color:var(--dim)">${p.why}</span></p>`
     + '<div class="ladder">' + stepsOf(p).map((size) => {
       const us = unitsIn(p.from, p.to, size);
       const d = us.filter(unitDone).length;
@@ -311,6 +385,24 @@ function ladderHTML() {
 }
 
 const spanText = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
+
+/* Показываем только ту руку, которой сейчас занимаемся: на разборе левой
+   правая строка — лишний шум. */
+function hintHTML(u) {
+  const rows = [];
+  for (let b = u.from; b <= u.to; b++) {
+    const h = HINTS[b];
+    if (!h) continue;
+    const want = u.hand === "both" ? ["r", "l"] : u.hand === "left" ? ["l"] : ["r"];
+    const parts = want
+      .filter((k) => h[k])
+      .map((k) => `<span class="hh">${k === "r" ? "пр." : "лев."}</span> ${h[k]}`);
+    rows.push(`<div class="hb"><span class="hn">Т${b}</span>${parts.length
+      ? parts.join("<br>")
+      : '<span class="hh">молчит</span>'}</div>`);
+  }
+  return `<div class="hint-box">${rows.join("")}<p class="hint-leg">${HINT_LEGEND}</p></div>`;
+}
 
 function render() {
   $("#pieceName").textContent = PIECE.name;
@@ -333,9 +425,9 @@ const SCREENS = {
         ${st.session === 1
           ? `<p class="lead">Начинаем с нуля: <b>такт первый, левая рука</b>.</p>
              <p class="lead dim">Пьеса разрезана на ${PARTS.length} ${plural(PARTS.length, "часть", "части", "частей")}
-               по ${PART} тактов. Первая часть доводится до того, чтобы зазвучать целиком,
-               и только потом начинается вторая. Так мелодия появляется уже сегодня,
-               а не через сорок тактов.</p>`
+               по тому, как она устроена: границы там, где меняется фактура. Первая часть
+               доводится до того, чтобы зазвучать целиком, и только потом начинается вторая —
+               так мелодия появляется уже сегодня, а не через сорок тактов.</p>`
           : `<p class="lead">Продолжаем.</p>
              <p class="lead dim">Сначала освежим давнее, потом дальше по плану.</p>`}
         ${partsHTML()}
@@ -347,7 +439,8 @@ const SCREENS = {
   work: () => {
     const u = st.cur;
     const next = u.to < PIECE.bars ? u.to + 1 : 0;
-    const whole = u.size >= PART && !u.review;
+    const part = PARTS.find((p) => p.from === u.from && p.to === u.to);
+    const whole = !!part && !u.review;
     return el(`
       <div>
         <p class="step-of">${u.review ? "Освежаем" : "Разбираем"}</p>
@@ -355,15 +448,11 @@ const SCREENS = {
         <p class="say">${next
           ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
           : "Доиграй до конца."}</p>
-        <p class="say">Три чистых подряд. Сбился — счёт сначала.</p>
-        <div class="pips">
-          ${Array.from({ length: REPS }, (_, i) =>
-            `<i class="${i < st.reps ? "on" : ""}">${i < st.reps ? "✓" : i + 1}</i>`).join("")}
-        </div>
-        <div class="two">
-          <button class="clean" id="clean">Чисто</button>
-          <button class="miss" id="miss">Сбился</button>
-        </div>
+        <p class="say dim2">Играй, пока не пойдёт <b>три раза подряд без запинки</b>.
+          Сбился — считай сначала.</p>
+        <button class="big-btn go" id="clean">Получилось, дальше</button>
+        <button class="ghost hint-btn" id="hint">${st.hintOpen ? "Спрятать подсказку" : "Подсказка: как читаются ноты"}</button>
+        ${st.hintOpen ? hintHTML(u) : ""}
         <div class="two-ghost">
           <button class="ghost" id="skip">Отложить этот отрезок</button>
           <button class="ghost" id="finish">Завершить занятие</button>
@@ -433,8 +522,7 @@ const SCREENS = {
    собираем следующую и идём дальше; занятие кончается по часам или по кнопке,
    а не потому, что доделали восемь тактов. */
 function takeNext() {
-  st.reps = 0;
-  if (!st.queue.length) st.queue = buildQueue().filter((u) => !u.review);
+  if (!st.queue.length) st.queue = buildQueue();
   st.cur = st.queue.shift() || null;
   st.screen = st.cur ? "work" : "end";
   render();
@@ -452,10 +540,9 @@ document.addEventListener("click", (e) => {
   }
 
   if (t.id === "clean") {
-    st.reps++;
-    if (st.reps < REPS) return render();
     const u = st.cur;
-    if (!u.review) {
+    if (u.review) st.reviewed.push(u.k);
+    else {
       st.done[key(u, u.hand)] = st.session;
       st.closed.push(spanText(u) + " · " + HAND[u.hand]);
     }
@@ -467,8 +554,12 @@ document.addEventListener("click", (e) => {
     return takeNext();
   }
 
-  if (t.id === "miss") { st.reps = 0; return render(); }
-  if (t.id === "skip") { st.queue.push(st.cur); return takeNext(); }
+  if (t.id === "hint") { st.hintOpen = !st.hintOpen; return render(); }
+  if (t.id === "skip") {
+    if (st.cur.review) st.reviewed.push(st.cur.k);   // отложенное освежение не крутим по кругу
+    else st.queue.push(st.cur);
+    return takeNext();
+  }
 
   if (t.dataset.rest !== undefined) {
     const min = +t.dataset.rest;
