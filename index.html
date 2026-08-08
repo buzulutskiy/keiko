@@ -1357,12 +1357,24 @@
     .pr-pick button em { font-style: normal; color: var(--dim); font-size: 0.76rem; display: block; margin-top: 1px; }
     .pr-pick button.good { border-color: rgba(110, 231, 168, 0.4); }
 
-    .pr-parts { display: flex; gap: 4px; margin: 14px 0 6px; }
-    .pr-parts .p { flex: 1; text-align: center; }
-    .pr-parts .p i { display: block; height: 7px; border-radius: 3px; background: var(--track); margin-bottom: 4px; }
-    .pr-parts .p.done i { background: #6ee7a8; }
-    .pr-parts .p.now i { background: var(--gold); }
-    .pr-parts .p span { font-size: 0.62rem; color: var(--dim); }
+    /* Части: каждая — отдельная строка со своим именем и полосой.
+       Раньше это были равные столбики: групп в них не читалось. */
+    .pr-plist { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+    .pr-p { opacity: 0.55; }
+    .pr-p.now, .pr-p.done { opacity: 1; }
+    .pr-p-top { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; margin-bottom: 5px; }
+    .pr-p-top b { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 44px; }
+    .pr-p-top em {
+      flex: 1; min-width: 0; font-style: normal; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pr-p-top span { flex: 0 0 auto; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .pr-p.now .pr-p-top b { color: var(--gold); }
+    .pr-p.now .pr-p-top em { color: var(--ink); }
+    .pr-p-bar { display: block; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+    .pr-p-bar i { display: block; height: 100%; background: var(--violet); }
+    .pr-p.done .pr-p-bar i { background: #6ee7a8; }
+    .pr-p.now .pr-p-bar i { background: var(--gold); }
 
     .pr-ladder { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
     .pr-lvl { display: flex; align-items: center; gap: 9px; font-size: 0.78rem; }

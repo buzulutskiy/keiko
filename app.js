@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 54";
+const APP_VERSION = "Кэйко 55";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4678,10 +4678,29 @@ function pracHintHTML(u) {
   return `<div class="pr-hint">${rows.join("")}<p class="pr-leg">${esc(doc.legend || "")}</p></div>`;
 }
 
+/* Части списком, а не равными столбиками: столбики читались как сплошная
+   размазанная полоса — не видно ни границ групп, ни того, что это за куски. */
 function pracPartsHTML(w) {
-  return '<div class="pr-parts">' + w.parts.map((p) =>
-    `<div class="p ${pracPartDone(p) ? "done" : w.part && w.part.i === p.i ? "now" : ""}">
-       <i></i><span>${p.from}–${p.to}</span></div>`).join("") + "</div>";
+  return '<div class="pr-plist">' + w.parts.map((p) => {
+    const steps = pracSteps(p);
+    let all = 0, ok = 0;
+    for (const size of steps)
+      for (const u of pracUnits(p.from, p.to, size)) {
+        const hs = pracHands(u);
+        all += hs.length;
+        ok += hs.filter((h) => pracIsDone(u, h)).length;
+      }
+    const pct = all ? Math.round(ok / all * 100) : 0;
+    const done = pracPartDone(p), now = w.part && w.part.i === p.i;
+    return `<div class="pr-p ${done ? "done" : now ? "now" : ""}">
+      <div class="pr-p-top">
+        <b>${p.from}–${p.to}</b>
+        <em>${esc(p.why || "часть " + (p.i + 1))}</em>
+        <span>${done ? "готово" : pct ? pct + "%" : ""}</span>
+      </div>
+      <span class="pr-p-bar"><i style="width:${pct}%"></i></span>
+    </div>`;
+  }).join("") + "</div>";
 }
 
 function pracLadderHTML(w) {
@@ -4816,7 +4835,8 @@ function pracRender() {
   const whole = w.parts.some((p) => p.from === u.from && p.to === u.to) && !u.review;
   box.innerHTML = `
     <div class="pr-card">
-      <p class="pr-cap">${u.review ? "Освежаем" : "Разбираем"}</p>
+      <p class="pr-cap">${u.review ? "Освежаем" : "Разбираем"}${
+        w.part ? " · " + esc(w.part.why || "часть " + (w.part.i + 1)) : " · сборка"}</p>
       <div class="pr-unit"><b>${pracSpan(u)}</b><i>${PRAC_HAND[u.hand]}</i></div>
       <p class="pr-say">${next
         ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
