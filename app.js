@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 48";
+const APP_VERSION = "Кэйко 49";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -112,6 +112,7 @@ function emptyData() {
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
     pastel: { course: null, entries: [] },
+    watch:  { course: null, entries: [] },
     shop: { theme: "dusk", purchases: [] },
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
@@ -152,6 +153,11 @@ function migrate(obj) {
   if (obj.pastel) {
     base.pastel.entries = Array.isArray(obj.pastel.entries) ? obj.pastel.entries : [];
     if (obj.pastel.course) base.pastel.course = obj.pastel.course;
+  }
+
+  if (obj.watch) {
+    base.watch.entries = Array.isArray(obj.watch.entries) ? obj.watch.entries : [];
+    if (obj.watch.course) base.watch.course = obj.watch.course;
   }
 
   if (obj.shop) {
@@ -195,11 +201,15 @@ const saveCfg = () => localStorage.setItem(LS.cfg, JSON.stringify(cfg));
 /* ── Выборки ── */
 const isBook = () => data.active === "book";
 const isPastel = () => data.active === "pastel";
+const isWatch  = () => data.active === "watch";
+// пастель и «Смотрю» устроены одинаково: список пунктов, отмечаешь любые, прогресс = сколько из скольких
+const isCourse = () => isPastel() || isWatch();
+const courseTrack = () => isWatch() ? data.watch : data.pastel;
 const isPiano = () => data.active === "piano";
 const trackOf = () => data[data.active];
 const EMPTY_PIECE = { id: "", name: "", author: "", bars: 0, tone: "violet" };
 const piece = () => data.piano.pieces.find(p => p.id === data.piano.activePiece) || data.piano.pieces[0] || EMPTY_PIECE;
-const course = () => data.pastel.course || { id: "", name: "", author: "", lessons: [] };
+const course = () => courseTrack().course || { id: "", name: "", author: "", lessons: [] };
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
@@ -224,7 +234,7 @@ const entries = () => isPiano()
   ? data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === piece().id)
   : isBook()
     ? bookEntriesOf(book().id)
-    : data.pastel.entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
+    : courseTrack().entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
 const entryFor = d => entries().find(e => e.date === d);
 
 // день попадает в паузу (отпуск) — такие дни серию не рвут
@@ -240,7 +250,7 @@ function activeFreeze() {
 // дни, когда было занятие любым материалом — серия общая для всех хобби
 function activeDays() {
   const out = new Set();
-  for (const e of [...data.piano.entries, ...data.book.entries, ...data.pastel.entries])
+  for (const e of [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()])
     if (!e.deleted) out.add(e.date);
   return out;
 }
@@ -407,9 +417,71 @@ function bookStats() {
 }
 
 /* ── Пастель ── */
+/* Ссылка на YouTube в любом из привычных видов: watch, youtu.be, shorts, embed, live. */
+const ytId = (url) => {
+  const m = String(url || "").match(
+    /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{6,})/);
+  return m ? m[1] : "";
+};
+const watchThumbKey = (vid) => "yt:" + vid;
+// пока обложка не легла в кэш — показываем прямо с ютуба, чтобы не ждать
+const watchThumb = (l) => coverCache.get(watchThumbKey(l.videoId)) || l.thumb || "";
+
+let watchBusy = false;
+
+async function watchAdd(url) {
+  const vid = ytId(url);
+  if (!vid) { toast("Это не похоже на ссылку с YouTube"); return false; }
+  if (!data.watch.course) data.watch.course = { id: "watch", name: "Смотрю", author: "", lessons: [], updatedAt: now() };
+  const list = data.watch.course.lessons;
+  const was = list.findIndex(l => l.videoId === vid);
+  if (was >= 0 && !list[was].hidden) { toast("Такой ролик уже в списке"); return false; }
+
+  watchBusy = true; render();
+  try {
+    const r = await withTimeout(fetch("https://www.youtube.com/oembed?format=json&url=" +
+      encodeURIComponent("https://www.youtube.com/watch?v=" + vid)), 15000);
+    if (!r.ok) { toast(r.status === 404 ? "Ролик не найден или закрыт" : "YouTube не ответил"); return false; }
+    const j = await r.json();
+
+    if (was >= 0) { list[was].hidden = false; }          // вернули ранее убранный — прошлые отметки на месте
+    else list.push({
+      title: j.title || "Ролик", author: j.author_name || "", videoId: vid,
+      url: "https://www.youtube.com/watch?v=" + vid,
+      thumb: j.thumbnail_url || "", dur: 0, addedAt: now()
+    });
+    data.watch.course.updatedAt = now();
+    saveData(); schedulePush();
+    pullWatchThumb(vid);                                  // обложку кладём в кэш, чтобы работала офлайн
+    toast("Добавлено: " + (j.title || "ролик"));
+    return true;
+  } catch (e) {
+    toast("Не получилось достать данные ролика");
+    return false;
+  } finally { watchBusy = false; render(); }
+}
+
+// картинку берём в лучшем доступном размере: maxres есть не у всех роликов
+async function pullWatchThumb(vid) {
+  for (const name of ["maxresdefault", "hqdefault"]) {
+    try {
+      const r = await withTimeout(fetch(`https://i.ytimg.com/vi/${vid}/${name}.jpg`), 15000);
+      if (!r.ok) continue;
+      const b = await r.blob();
+      if (b.size < 2000) continue;                        // заглушка «нет картинки» весит копейки
+      await coverSaveBlob(watchThumbKey(vid), b);
+      coversArrived();
+      return;
+    } catch {}
+  }
+}
+
+const watchCourse = () => (data.watch && data.watch.course) || { id: "watch", name: "Смотрю", author: "", lessons: [] };
+const watchEntries = () => (data.watch && data.watch.entries) || [];
+
 function doneLessons() {
   const set = new Set();
-  for (const e of data.pastel.entries.filter(e => !e.deleted))
+  for (const e of courseTrack().entries.filter(e => !e.deleted))
     for (const i of e.lessons || []) set.add(i);
   return set;
 }
@@ -417,9 +489,9 @@ function doneLessons() {
 function pastelStats() {
   const c = course();
   const done = doneLessons();
-  const list = data.pastel.entries.filter(e => !e.deleted).slice().sort((a, b) => a.date < b.date ? -1 : 1);
-  const totalSec = c.lessons.reduce((a, l) => a + l.dur, 0);
-  const doneSec = c.lessons.reduce((a, l, i) => a + (done.has(i) ? l.dur : 0), 0);
+  const list = courseTrack().entries.filter(e => !e.deleted).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  const totalSec = c.lessons.reduce((a, l) => a + (l.hidden ? 0 : l.dur), 0);
+  const doneSec = c.lessons.reduce((a, l, i) => a + (!l.hidden && done.has(i) ? l.dur : 0), 0);
 
   let weekend = false, comeback = false, notes = 0, maxAtOnce = 0, prev = null;
   for (const e of list) {
@@ -431,10 +503,12 @@ function pastelStats() {
     prev = e.date;
   }
 
-  const next = c.lessons.findIndex((_, i) => !done.has(i));
+  const next = c.lessons.findIndex((l, i) => !l.hidden && !done.has(i));
+  const shown = c.lessons.reduce((n, l) => n + (l.hidden ? 0 : 1), 0);
+  const doneShown = c.lessons.reduce((n, l, i) => n + (!l.hidden && done.has(i) ? 1 : 0), 0);
   return {
-    lessons: c.lessons.length, done: done.size, doneSet: done,
-    pct: c.lessons.length ? done.size / c.lessons.length * 100 : 0,
+    lessons: shown, done: doneShown, doneSet: done,
+    pct: shown ? doneShown / shown * 100 : 0,
     totalSec, doneSec, minutes: Math.round(doneSec / 60),
     days: list.length, streak: streak(), streakAll: streakAll(),
     weekend, comeback, notes, maxAtOnce,
@@ -442,7 +516,7 @@ function pastelStats() {
   };
 }
 
-const curStats = () => isBook() ? bookStats() : isPastel() ? pastelStats() : pianoStats();
+const curStats = () => isBook() ? bookStats() : isCourse() ? pastelStats() : pianoStats();
 // на экране — процент выученности; для пианино он строже, чем «такт задет»
 const shownPct = (s) => isPiano() && typeof s.pctLearn === "number" ? s.pctLearn : s.pct;
 
@@ -520,7 +594,7 @@ const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
   return OPS[op] ? OPS[op](Number(s[m]) || 0, Number(v)) : false;
 });
 
-const curKey = () => isBook() ? book().id : isPastel() ? "pastel" : (piece() ? piece().id : "");
+const curKey = () => isBook() ? book().id : isCourse() ? data.active : (piece() ? piece().id : "");
 const catOf = (id) => CATALOG[id] || null;
 
 const achCache = new Map();
@@ -532,10 +606,10 @@ function achFromCatalog(id) {
 }
 
 const achList = () => achFromCatalog(curKey()) ||
-  (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isPastel() ? ACH_PASTEL : ACH_PIANO);
+  (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isCourse() ? ACH_PASTEL : ACH_PIANO);
 const achWords = () => (catOf(curKey()) || {}).words ||
-  (isBook() ? (BOOK_WORDS[book().id] || WORDS_BOOK) : isPastel() ? WORDS_PASTEL : WORDS_PIANO);
-const flavor = () => (!isBook() && !isPastel() && PIECE_FLAVOR[piece().id]) || {};
+  (isBook() ? (BOOK_WORDS[book().id] || WORDS_BOOK) : isCourse() ? WORDS_PASTEL : WORDS_PIANO);
+const flavor = () => (!isBook() && !isCourse() && PIECE_FLAVOR[piece().id]) || {};
 const lastName = (author) => String(author || "").trim().split(/\s+/).pop();
 
 function achState() {
@@ -579,12 +653,12 @@ const FACTS = {};
    У курса занятий мало (уроки), поэтому там за раз открывается несколько.
    Когда материал пройден до конца — открывается всё, что осталось. */
 function factsState() {
-  const key = isBook() ? book().id : isPastel() ? "pastel" : piece().id;
+  const key = isBook() ? book().id : isCourse() ? data.active : piece().id;
   const list = (catOf(key) || {}).facts || FACTS[key] || [];
   if (!list.length) return [];
   // у курса шагом служат пройденные уроки: их мало, поэтому за раз открывается несколько карточек
-  const step = isPastel() ? doneLessons().size : new Set(entries().map(e => e.date)).size;
-  const span = isPastel() ? Math.max(1, course().lessons.length) : list.length;
+  const step = isCourse() ? doneLessons().size : new Set(entries().map(e => e.date)).size;
+  const span = isCourse() ? Math.max(1, course().lessons.length) : list.length;
   const finished = curStats().pct >= 100;
   const page = isBook() ? bookProgress() : 0;
 
@@ -592,7 +666,7 @@ function factsState() {
     // карточка с привязкой к странице открывается, когда до неё дочитал
     if (f.page) return { ...f, id: key + ":" + i, need: f.page, unit: "page", open: page >= f.page };
     const need = Math.max(1, Math.ceil((i + 1) * span / list.length));
-    return { ...f, id: key + ":" + i, need, unit: isPastel() ? "lesson" : "day", open: finished || step >= need };
+    return { ...f, id: key + ":" + i, need, unit: isCourse() ? "lesson" : "day", open: finished || step >= need };
   });
 
   return out;
@@ -606,7 +680,7 @@ function fmtRange(from, to) {
 function goalProgress() {
   const from = dateStr(mondayOf(new Date()));
   const days = new Set(
-    [...data.piano.entries, ...data.book.entries, ...data.pastel.entries]
+    [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
       .filter(e => !e.deleted && e.date >= from).map(e => e.date)
   ).size;
   const goal = data.weekGoal || 4;
@@ -654,8 +728,12 @@ function weekSummary(offset = 0) {
   let lessons = 0;
   for (const e of pastelEntries) lessons += (e.lessons || []).length;
 
-  const allDays = new Set([...pianoEntries, ...bookEntries, ...pastelEntries].map(e => e.date));
-  return { from, to, days: allDays.size, bars, pages, lessons };
+  const watchList = watchEntries().filter(inWeek);
+  let watched = 0;
+  for (const e of watchList) watched += (e.lessons || []).length;
+
+  const allDays = new Set([...pianoEntries, ...bookEntries, ...pastelEntries, ...watchList].map(e => e.date));
+  return { from, to, days: allDays.size, bars, pages, lessons, watched };
 }
 
 function currentMaterial() {
@@ -664,9 +742,10 @@ function currentMaterial() {
     const b = book(), s = bookStats();
     return { icon: "📖", title: b.title, sub: `${s.page} из ${s.pages} стр.`, pct: s.pct };
   }
-  if (isPastel()) {
+  if (isCourse()) {
     const c = course(), s = pastelStats();
-    return { icon: "🎨", title: c.name, sub: `${s.done} из ${s.lessons} уроков`, pct: s.pct };
+    return { icon: isWatch() ? "🎬" : "🎨", title: c.name,
+      sub: `${s.done} из ${s.lessons} ${isWatch() ? "посмотрено" : "уроков"}`, pct: s.pct };
   }
   const p = piece(), s = pianoStats();
   return { icon: "🎹", title: p.name,
@@ -681,7 +760,7 @@ function archiveCurrent() {
   if (!confirm(`Отправить «${m.title}» в архив?\n\nПройдено: ${Math.round(m.pct)}%, ${days} ${plural(days, "день", "дня", "дней")} занятий.\nЗаписи и вклад в баланс останутся.`)) return;
 
   const dates = entries().map(e => e.date).sort();
-  const look = isBook() ? book() : isPastel() ? { art: "smears", tone: "pastel" } : piece();
+  const look = isBook() ? book() : isCourse() ? { art: "smears", tone: "pastel" } : piece();
   const rec = {
     id: uid(), srcId: curKey(), track: data.active, icon: m.icon, title: m.title,
     sub: m.sub, pct: Math.round(m.pct), days,
@@ -710,7 +789,7 @@ function archiveCurrent() {
     };
     data.book.books.push(fresh);
     data.book.activeBook = fresh.id;
-  } else if (isPastel()) {
+  } else if (isCourse()) {
     const name = prompt("Какой курс проходишь теперь?", "");
     if (name === null || !name.trim()) { data.archive.pop(); return; }
     const cnt = Math.round(Number((prompt("Сколько в нём уроков?", "10") || "").replace(",", ".")));
@@ -857,7 +936,7 @@ function saveEntry() {
     if (isBook() && bookMode(book()) === "parts") {
       existing.spans = mergeSpans((existing.spans || []).concat(pickSpans));
     } else if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
-    else if (isPastel()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
+    else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
     if (note) existing.note = existing.note ? existing.note + "; " + note : note;
     existing.updatedAt = now();
@@ -865,7 +944,7 @@ function saveEntry() {
     trackOf().entries.push(Object.assign(
       { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
       isBook() ? Object.assign({ bookId: book().id },
-        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage }) : isPastel() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
+        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage }) : isCourse() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
     ));
   }
 
@@ -944,7 +1023,12 @@ function showDone(before, after, wasExisting) {
   if (isBook()) {
     const g = after.page - before.page;
     text = g > 0 ? `Дочитал до ${after.page}-й страницы (+${stranic(g)}), это ${Math.round(after.pct)}% книги. ` : "Перечитывал уже пройденное — тоже дело. ";
-  } else if (isPastel()) {
+  } else if (isWatch()) {
+    const g = after.done - before.done;
+    text = g > 0
+      ? `+${g} ${plural(g, "ролик", "ролика", "роликов")}, посмотрено ${after.done} из ${after.lessons}. `
+      : "Пересматривал — тоже дело. ";
+  } else if (isCourse()) {
     const g = after.done - before.done;
     text = g > 0
       ? `+${g} ${plural(g, "урок", "урока", "уроков")}, пройдено ${after.done} из ${after.lessons}. `
@@ -1098,7 +1182,7 @@ function crashScreen(e) {
 
 // снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
 const dataStamp = () => [
-  data.piano.entries, data.book.entries, data.pastel.entries,
+  data.piano.entries, data.book.entries, data.pastel.entries, watchEntries(),
   data.thoughts || [], data.archive || [], data.freezes || [], data.takes || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
   + "|" + (data.shop.theme || "");
@@ -1273,7 +1357,8 @@ function railItems() {
   const out = data.piano.pieces.filter(p => !p.archived)
     .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
-  if (course().lessons.length) out.push({ track: "pastel" });
+  if ((data.pastel.course || { lessons: [] }).lessons.length) out.push({ track: "pastel" });
+  if (watchCourse().lessons.length) out.push({ track: "watch" });
   return out;
 }
 const hasMaterials = () => railItems().length > 0;
@@ -2049,6 +2134,12 @@ async function coverSave(id, dataUri) {
   coverCache.set(id, URL.createObjectURL(blob));
 }
 
+async function coverSaveBlob(id, blob) {
+  const box = await coversBox();
+  await box.put(coverKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
+  coverCache.set(id, URL.createObjectURL(blob));
+}
+
 async function coverLoadAll() {
   if (!window.caches) return;
   try {
@@ -2100,6 +2191,25 @@ function coverOf(item) {
           <div class="cv-title">${esc(b.title)}</div>
           <div class="cv-sub">${esc(b.volume || "")}</div>
         </div>
+      </div>`;
+  }
+  if (item.track === "watch") {
+    const list = watchCourse().lessons.filter(l => !l.hidden);
+    const top = list[list.length - 1];
+    const src = top ? watchThumb(top) : "";
+    if (src) return `
+      <div class="cover photo titled" style="aspect-ratio:16 / 9">
+        <img src="${esc(src)}" alt="${esc(top.title)}" loading="lazy" decoding="async">
+        <div class="cv-over">
+          <div class="cv-author">${esc(top.author || "видео")}</div>
+          <div class="cv-title">${esc(top.title)}</div>
+        </div>
+      </div>`;
+    return `
+      <div class="cover watch">
+        <div><div class="cv-author">видео</div></div>
+        <div class="cv-mark">🎬</div>
+        <div><div class="cv-title">Смотрю</div></div>
       </div>`;
   }
   if (item.track === "pastel") {
@@ -2317,7 +2427,8 @@ const subLine = (...parts) => parts.filter(Boolean)
 
 function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
-  if (isPastel()) return subLine(`${s.done} из ${s.lessons} уроков`, `${s.minutes} мин пройдено`);
+  if (isWatch()) return subLine(`${s.done} из ${s.lessons} посмотрено`, s.lessons > s.done ? `осталось ${s.lessons - s.done}` : "всё посмотрено");
+  if (isCourse()) return subLine(`${s.done} из ${s.lessons} уроков`, `${s.minutes} мин пройдено`);
   return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
 }
 
@@ -2342,7 +2453,7 @@ function renderHome() {
       ${coverRailHTML()}
       ${ringHTML(shownPct(s))}
       <div class="hero-title">
-        <h2>${isBook() ? esc(book().title) : isPastel() ? esc(course().name) : esc(piece().name)}</h2>
+        <h2>${isBook() ? esc(book().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
         ${paceHTML()}
       </div>
@@ -2352,7 +2463,7 @@ function renderHome() {
           ? "🔒 Подключить синхронизацию"
           : doneToday
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
-            : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"))}
+            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
       </div>
       <div class="nudge">${nudge}</div>
@@ -2616,7 +2727,7 @@ function updateHeroInfo() {
 
   const title = $(".hero-title");
   if (title) title.innerHTML = `
-    <h2>${isBook() ? esc(book().title) : isPastel() ? esc(course().name) : esc(piece().name)}</h2>
+    <h2>${isBook() ? esc(book().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
     <p>${heroSub(s)}</p>
     ${paceHTML()}`;
 
@@ -2628,7 +2739,7 @@ function updateHeroInfo() {
       ? "🔒 Подключить синхронизацию"
       : doneToday
         ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
-        : (isBook() ? T("ctaBook") : isPastel() ? T("ctaPastel") : T("ctaPiano"));
+        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
   const nudge = $(".nudge");
@@ -2653,7 +2764,7 @@ function barMap(arr, cls) {
 // активность по дням недели: сколько занятий в каждый день (все хобби)
 function weekDots() {
   const monday = mondayOf(new Date());
-  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries].filter(e => !e.deleted);
+  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()].filter(e => !e.deleted);
   const out = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday); d.setDate(d.getDate() + i);
@@ -2682,13 +2793,19 @@ function rangeStats(from, to) {
   let lessons = 0;
   for (const e of pastel) lessons += (e.lessons || []).length;
 
-  const days = new Set([...piano, ...bookList, ...pastel].map(e => e.date)).size;
+  const watchList = watchEntries().filter(inRange);
+  let watched = 0;
+  for (const e of watchList) watched += (e.lessons || []).length;
+
+  const days = new Set([...piano, ...bookList, ...pastel, ...watchList].map(e => e.date)).size;
   const tracks = new Set([
     ...(piano.length ? ["piano"] : []),
     ...(bookList.length ? ["book"] : []),
-    ...(pastel.length ? ["pastel"] : [])
+    ...(pastel.length ? ["pastel"] : []),
+    ...(watchList.length ? ["watch"] : [])
   ]);
-  return { days, bars, pages, lessons, tracks, entries: piano.length + bookList.length + pastel.length };
+  return { days, bars, pages, lessons, watched, tracks,
+           entries: piano.length + bookList.length + pastel.length + watchList.length };
 }
 
 /* ── Сколько ещё занятий до конца материала ──
@@ -2708,7 +2825,7 @@ function paceForecast() {
     let page = b.startPage || 0;
     for (const e of list) { page = Math.max(page, e.page || 0); marks.push(page); }
     marks.unshift(b.startPage || 0);
-  } else if (isPastel()) {
+  } else if (isCourse()) {
     total = course().lessons.length;
     unit = "lesson";
     const seen = new Set();
@@ -2925,6 +3042,7 @@ function summaryHTML() {
         <div class="sc"><b>${st.bars}</b><span>${plural(st.bars, "такт", "такта", "тактов")}</span></div>
         <div class="sc"><b>${st.pages}</b><span>страниц</span></div>
         <div class="sc"><b>${st.lessons}</b><span>${plural(st.lessons, "урок", "урока", "уроков")}</span></div>
+        ${st.watched ? `<div class="sc"><b>${st.watched}</b><span>${plural(st.watched, "ролик", "ролика", "роликов")}</span></div>` : ""}
       </div>
 
       ${lineChartHTML(periodSeries())}
@@ -2952,7 +3070,8 @@ function dayCycleHTML() {
   const rows = [
     ["p", (data.piano.entries || [])],
     ["b", (data.book.entries || [])],
-    ["c", (data.pastel.entries || [])]
+    ["c", (data.pastel.entries || [])],
+    ["w", watchEntries()]
   ];
   const hours = Array.from({ length: 24 }, () => ({ p: 0, b: 0, c: 0, all: 0 }));
   let total = 0;
@@ -3063,8 +3182,14 @@ function allEntriesOn(ds) {
       what: e.page ? `до ${e.page}-й стр.` : "читал" });
   }
   for (const e of data.pastel.entries.filter(e => !e.deleted && e.date === ds)) {
-    out.push({ track: "pastel", icon: "🎨", title: course().name, entry: e,
+    out.push({ track: "pastel", icon: "🎨", title: (data.pastel.course || {}).name || "Курс", entry: e,
       what: (e.lessons || []).length ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}` : "занимался" });
+  }
+  for (const e of watchEntries().filter(e => !e.deleted && e.date === ds)) {
+    const wc = (data.watch && data.watch.course) || { lessons: [] };
+    const names = (e.lessons || []).map(i => (wc.lessons[i] || {}).title).filter(Boolean);
+    out.push({ track: "watch", icon: "🎬", title: "Смотрю", entry: e,
+      what: names.length ? names.join(" · ") : "смотрел" });
   }
   return out;
 }
@@ -3201,6 +3326,7 @@ function viewMaterialExists(v) {
   if (!v || !v.track) return false;
   if (v.track === "book") return (data.book.books || []).some(b => b.id === v.bookId);
   if (v.track === "pastel") return !!(data.pastel && data.pastel.course);
+  if (v.track === "watch") return watchCourse().lessons.length > 0;
   return (data.piano.pieces || []).some(p => p.id === v.pieceId);
 }
 
@@ -3438,7 +3564,7 @@ function factsBlockHTML(view) {
 function renderAchMaterial(view) {
   const ach = withMaterial(view, () => achState());
   const words = withMaterial(view, () => achWords());
-  const title = withMaterial(view, () => isBook() ? book().title : isPastel() ? course().name : piece().name);
+  const title = withMaterial(view, () => isBook() ? book().title : isCourse() ? course().name : piece().name);
   const icon = view.track === "book" ? "📖" : view.track === "pastel" ? "🎨" : "🎹";
   const open = ach.filter(a => a.done).length;
   const facts = withMaterial(view, () => factsState());
@@ -3672,7 +3798,7 @@ function keyOf(m) {
   if (m.track === "pastel") return "pastel";
   return m.pieceId || "";
 }
-const currentKey = () => isBook() ? book().id : isPastel() ? "pastel" : (piece() ? piece().id : "");
+const currentKey = () => isBook() ? book().id : isCourse() ? data.active : (piece() ? piece().id : "");
 
 /* Строка над лентой появляется, только когда лента чем-то сужена:
    фильтром любимых или случайной мыслью — и даёт путь обратно ко всей ленте. */
@@ -4297,6 +4423,7 @@ const THEMES = [
 const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabShop: "Магазин",
   ctaPiano: "🎹 Отметить занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
+  ctaWatch: "🎬 Отметить просмотр",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить",
   coins: "монет", coin: "🪙", streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания",
@@ -4370,6 +4497,10 @@ function shelfCoverHTML(a) {
   const own = [...data.book.books, ...(data.piano.pieces || [])].find(x => "bk_" + x.id === a.id || x.id === a.id);
   let ownSrc = own ? coverSrc(own.id, own.cover || "") : "";
   if (!ownSrc && a.track === "pastel") ownSrc = coverSrc("pastel", "");   // курс тоже с обложкой
+  if (!ownSrc && a.track === "watch") {
+    const list = watchCourse().lessons.filter(l => !l.hidden);
+    ownSrc = list.length ? watchThumb(list[list.length - 1]) : "";
+  }
   if (ownSrc) return `
     <div class="cover photo shelf-cover" style="aspect-ratio:${esc(own.ratio || "3 / 4.4")}">
       <img src="${esc(ownSrc)}" alt="${esc(a.title)}" loading="lazy" decoding="async">
@@ -4676,7 +4807,7 @@ function openLogSheet() {
   pickSpans = []; partOpen = null; partUpto = {};
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isPastel() ? "Какие уроки прошёл?" : "Что разбирал?");
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? "Что посмотрел?" : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
   const sub = fmtDay(selectedDate) + (existing ? " · запись уже есть" : "");
 
   openSheet(`
@@ -4697,10 +4828,10 @@ function openLogSheet() {
 function renderSheetBody() {
   const parts = isBook() && bookMode(book()) === "parts";
   $("#sheetBody").innerHTML = parts ? bookPartsUI()
-    : isBook() ? bookSheetUI() : isPastel() ? pastelSheetUI() : pianoSheetUI();
+    : isBook() ? bookSheetUI() : isCourse() ? pastelSheetUI() : pianoSheetUI();
   if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
-  else if (isPastel()) bindPastelSheet();
+  else if (isCourse()) bindPastelSheet();
   else bindPianoSheet();
 }
 
@@ -4714,19 +4845,22 @@ function pastelSheetUI() {
   return `
     <div class="lessons">
       ${course().lessons.map((l, i) => {
+        if (l.hidden) return "";
         const already = done.has(i);
         const picked = pickLessons.includes(i);
         return `
           <button class="lesson ${already ? "was" : picked ? "pick" : ""}" data-i="${i}" type="button" ${already ? "disabled" : ""}>
             <span class="ln">${i + 1}</span>
-            <span class="lt">${esc(l.title)}<i>${fmtDur(l.dur)}</i></span>
+            <span class="lt">${esc(l.title)}<i>${l.dur ? fmtDur(l.dur) : esc(l.author || "")}</i></span>
             <span class="lc">${already ? "✓" : picked ? "●" : "○"}</span>
           </button>`;
       }).join("")}
     </div>
     <div class="lesson-hint">${pickLessons.length
-      ? `Выбрано: ${pickLessons.length} ${plural(pickLessons.length, "урок", "урока", "уроков")}`
-      : "Отметь уроки, которые прошёл"}</div>`;
+      ? `Выбрано: ${pickLessons.length} ${isWatch()
+          ? plural(pickLessons.length, "ролик", "ролика", "роликов")
+          : plural(pickLessons.length, "урок", "урока", "уроков")}`
+      : isWatch() ? "Отметь, что посмотрел" : "Отметь уроки, которые прошёл"}</div>`;
 }
 
 function bindPastelSheet() {
@@ -5193,6 +5327,8 @@ function restoreBackup(file) {
     data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
     data.book.entries = mergeLists(data.book.entries, (d.book && d.book.entries) || []);
     data.pastel.entries = mergeLists(data.pastel.entries, (d.pastel && d.pastel.entries) || []);
+    data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
+    if (d.watch && d.watch.course) data.watch.course = d.watch.course;
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
     data.freezes = mergeLists(data.freezes || [], d.freezes || []);
@@ -5358,9 +5494,6 @@ function libraryUI() {
   const books  = (data.book.books || []).filter(b => !b.archived);
   const pieces = (data.piano.pieces || []).filter(p => !p.archived);
   const hasPastel = course().lessons.length > 0;
-  if (!books.length && !pieces.length && !hasPastel)
-    return `<div class="empty-note">Материалов пока нет.<br>Они появятся вместе с каталогом.</div>`;
-
   if (libBook) {
     const [kind, id] = libBook.split(":");
     if (kind === "bk") {
@@ -5372,12 +5505,13 @@ function libraryUI() {
       if (pc) return piecePageUI(pc);
     }
     if (kind === "ps" && hasPastel) return pastelPageUI();
+    if (kind === "wt") return watchPageUI();
     libBook = null;
   }
 
-  const row = (key, cover, fallback, title, sub, pct, meta) => `
+  const row = (key, cover, fallback, title, sub, pct, meta, wide) => `
     <button class="lib-row" data-lib="${esc(key)}" type="button">
-      <span class="lib-cover">${cover ? `<img src="${esc(cover)}" alt="" loading="lazy">` : `<i>${fallback}</i>`}</span>
+      <span class="lib-cover ${wide ? "wide" : ""}">${cover ? `<img src="${esc(cover)}" alt="" loading="lazy">` : `<i>${fallback}</i>`}</span>
       <span class="lib-body">
         <b>${esc(title)}</b>
         <em>${esc(sub || "")}</em>
@@ -5406,6 +5540,17 @@ function libraryUI() {
       `${pct}% · ${pc.bars} ${plural(pc.bars, "такт", "такта", "тактов")} · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`);
   });
 
+  const watchList = watchCourse().lessons.filter(l => !l.hidden);
+  const watchRows = (() => {
+    const st = withMaterial({ track: "watch" }, pastelStats);
+    const pct = watchList.length ? Math.round(st.pct) : 0;
+    const top = watchList[watchList.length - 1];
+    return [row("wt:watch", top ? watchThumb(top) : "", "🎬", "Смотрю", "ролики и кино", pct,
+      watchList.length
+        ? `${pct}% · ${st.done} из ${st.lessons} посмотрено`
+        : "пусто — добавь ссылку", true)];
+  })();
+
   const pastelRows = hasPastel ? (() => {
     const st = withMaterial({ track: "pastel" }, pastelStats);
     const pct = Math.round(st.pct);
@@ -5413,7 +5558,7 @@ function libraryUI() {
       `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`)];
   })() : [];
 
-  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows);
+  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows) + group("Смотрю", watchRows);
 }
 
 function bookPageUI(b) {
@@ -5494,6 +5639,67 @@ function bookPageUI(b) {
         }).join("")}
       </div>
     </div>`;
+}
+
+/* «Смотрю» — единственный материал, который заводится руками.
+   Убранное не вырезаем из списка: отметки прошлых дней ссылаются на позиции. */
+function watchPageUI() {
+  const c = watchCourse();
+  const st = withMaterial({ track: "watch" }, pastelStats);
+  const vis = c.lessons.map((l, i) => ({ l, i })).filter(x => !x.l.hidden).reverse();
+  const ent = watchEntries().filter(e => !e.deleted);
+  const days = new Set(ent.map(e => e.date)).size;
+
+  return `
+    <button class="back" id="libBack" type="button">‹ Все материалы</button>
+
+    <div class="panel lib-head">
+      <div class="lib-cover big wide">${vis.length && watchThumb(vis[0].l)
+        ? `<img src="${esc(watchThumb(vis[0].l))}" alt="">` : `<i>🎬</i>`}</div>
+      <div class="lib-title"><b>Смотрю</b><em>ролики и кино</em></div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">🔗 <b>Добавить</b> — вставь ссылку на ролик с YouTube</div>
+      <div class="wt-add">
+        <input id="wtUrl" type="url" inputmode="url" autocomplete="off"
+               placeholder="https://youtu.be/…" ${watchBusy ? "disabled" : ""}>
+        <button class="btn" id="wtAdd" type="button" ${watchBusy ? "disabled" : ""}>${watchBusy ? "Гружу…" : "Добавить"}</button>
+      </div>
+      <div class="wt-hint">Название, автора и обложку возьмём с самого ютуба.</div>
+    </div>
+
+    ${vis.length ? `
+    <div class="panel">
+      <div class="lib-num">
+        <div><b>${Math.round(st.pct)}%</b><span>посмотрено</span></div>
+        <div><b>${st.done}</b><span>из ${st.lessons}</span></div>
+        <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
+        <div><b>${st.lessons - st.done}</b><span>в очереди</span></div>
+      </div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">🎬 <b>Список</b> — новое сверху</div>
+      <div class="wt-list">
+        ${vis.map(({ l, i }) => {
+          const seen = st.doneSet.has(i);
+          return `
+            <div class="wt-item ${seen ? "seen" : ""}">
+              <a class="wt-thumb" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
+                ${watchThumb(l) ? `<img src="${esc(watchThumb(l))}" alt="" loading="lazy">` : `<i>🎬</i>`}
+                <span class="wt-play">▶</span>
+              </a>
+              <div class="wt-body">
+                <b>${esc(l.title)}</b>
+                <em>${esc(l.author || "")}</em>
+                <span class="wt-state">${seen ? "✓ посмотрено" : "в очереди"}</span>
+              </div>
+              ${seen ? "" : `<button class="wt-del" data-wtdel="${i}" type="button" aria-label="Убрать">✕</button>`}
+            </div>`;
+        }).join("")}
+      </div>
+    </div>` : `<div class="empty-note">Пока пусто.<br>Вставь ссылку — ролик появится на главной.</div>`}`;
 }
 
 // страница композиции — только чтение, всё собранное в одном месте
@@ -5596,6 +5802,24 @@ function bindLibraryUI() {
     btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
   const back = $("#libBack");
   if (back) back.addEventListener("click", () => { libBook = null; render(); $("#view").scrollTop = 0; });
+  const wtAdd = $("#wtAdd"), wtUrl = $("#wtUrl");
+  if (wtAdd && wtUrl) {
+    const go = async () => {
+      const v = wtUrl.value.trim();
+      if (!v) { toast("Вставь ссылку"); return; }
+      if (await watchAdd(v)) { wtUrl.value = ""; render(); }
+    };
+    wtAdd.addEventListener("click", go);
+    wtUrl.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+  }
+  document.querySelectorAll("[data-wtdel]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const i = Number(btn.dataset.wtdel);
+      const l = watchCourse().lessons[i];
+      if (!l || !confirm(`Убрать «${l.title}» из списка?`)) return;
+      l.hidden = true; data.watch.course.updatedAt = now();
+      saveData(); schedulePush(); render(); toast("Убрано");
+    }));
   document.querySelectorAll("[data-bm]").forEach(btn =>
     btn.addEventListener("click", () => {
       const b = (data.book.books || []).find(x => x.id === btn.dataset.bm);
@@ -5748,6 +5972,8 @@ async function restoreArchive(file) {
   data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
   data.book.entries = mergeLists(data.book.entries, d.book.entries || []);
   data.pastel.entries = mergeLists(data.pastel.entries, d.pastel.entries || []);
+  data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
+  if (d.watch && d.watch.course) data.watch.course = d.watch.course;
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.freezes = mergeLists(data.freezes || [], d.freezes || []);
@@ -5826,7 +6052,7 @@ function bindArchiveBackupUI() {
 
 function backupUI() {
   const counts = [
-    [data.piano.entries.length + data.book.entries.length + data.pastel.entries.length, "занятие", "занятия", "занятий"],
+    [data.piano.entries.length + data.book.entries.length + data.pastel.entries.length + watchEntries().length, "занятие", "занятия", "занятий"],
     [(data.thoughts || []).filter(t => !t.deleted).length, "мысль", "мысли", "мыслей"],
     [(data.archive || []).filter(a => !a.deleted).length, "книга на полке", "книги на полке", "книг на полке"]
   ].map(([n, a, b, c]) => `${n} ${plural(n, a, b, c)}`).join(" · ");
@@ -6030,7 +6256,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -6080,6 +6306,12 @@ async function syncNow(manual) {
     data.piano.entries = mergeLists(data.piano.entries, remote.piano.entries);
     data.book.entries = mergeLists(data.book.entries, remote.book.entries);
     data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
+
+    if (remote.watch.course && (!data.watch.course ||
+        (remote.watch.course.updatedAt || 0) >= (data.watch.course.updatedAt || 0))) {
+      data.watch.course = remote.watch.course;
+    }
+    data.watch.entries = mergeLists(data.watch.entries, remote.watch.entries);
     if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
     data.freezes = mergeLists(data.freezes, remote.freezes);
     data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
