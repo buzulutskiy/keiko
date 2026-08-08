@@ -1256,6 +1256,16 @@
     .tk-row audio { width: 100%; height: 34px; }
     .tk-wait { color: var(--dim); font-size: 0.8rem; padding: 6px 0; }
 
+    /* «2 из 3» — счётчик, когда за раз открылось несколько наград */
+    .cheer-step {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      opacity: .5;
+      margin-bottom: 10px;
+      font-variant-numeric: tabular-nums;
+    }
     .cheer-dig {
       display: block; margin-top: 12px;
       font-size: 0.84rem; color: var(--gold); line-height: 1.4;
@@ -2267,6 +2277,7 @@
 
   <div class="cheer" id="cheer">
     <div class="cheer-card">
+      <div class="cheer-step" id="cheerStep" hidden></div>
       <div class="cheer-ic" id="cheerIc">🎉</div>
       <h2 id="cheerTitle"></h2>
       <p id="cheerText"></p>

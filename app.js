@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 46";
+const APP_VERSION = "Кэйко 47";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -881,7 +881,9 @@ function saveEntry() {
   render();
 
   overlayQueue = [];
-  if (fresh.length) overlayQueue.push({ type: "ach", a: fresh[fresh.length - 1], count: fresh.length });
+  // каждая награда — свой экран: раньше показывалась только последняя,
+  // а промежуточные пропадали, хотя открылись честно
+  fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
   if (overlayQueue.length) { showNextOverlay(); return; }
@@ -893,12 +895,13 @@ let overlayQueue = [];
 function showNextOverlay() {
   const item = overlayQueue.shift();
   if (!item) return;
-  if (item.type === "ach") showCheer(item.a, item.count);
+  if (item.type === "ach") showCheer(item.a, item.i, item.n);
   else showFacts(item.list);
 }
 
 // все новые карточки знаний — одним экраном, листаются прокруткой
 function showFacts(list) {
+  $("#cheerStep").hidden = true;
   $("#cheerIc").textContent = "💡";
   $("#cheerTitle").textContent = list.length > 1
     ? `${list.length} ${plural(list.length, "новая карточка", "новые карточки", "новых карточек")}`
@@ -917,11 +920,13 @@ function showFacts(list) {
   $("#cheer").classList.add("show", "fact");
 }
 
-function showCheer(a, count) {
+function showCheer(a, i, n) {
+  const step = $("#cheerStep");
+  step.hidden = !(n > 1);
+  step.textContent = n > 1 ? `Награда ${i} из ${n}` : "";
   $("#cheerIc").textContent = a.icon;
   $("#cheerTitle").textContent = a.name;
-  $("#cheerText").textContent = wordOf(a) +
-    (count > 1 ? ` · и ещё ${count - 1} ${plural(count - 1, "достижение", "достижения", "достижений")} открыто!` : "");
+  $("#cheerText").textContent = wordOf(a);
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Красота!";
   $("#cheer").classList.remove("fact");
   $("#cheer").classList.add("show");
@@ -931,6 +936,7 @@ function showDone(before, after, wasExisting) {
   if (selectedDate !== todayStr()) { toast(fmtDay(selectedDate) + " отмечено"); return; }
   if (wasExisting) { toast("Запись дополнена"); return; }
 
+  $("#cheerStep").hidden = true;
   $("#cheerIc").textContent = after.streakAll >= 2 ? "🔥" : "🎉";
   $("#cheerTitle").textContent = rnd(DONE_TITLES);
   let text;
@@ -4070,6 +4076,7 @@ function showDailyThought(t) {
   const cover = src && src.cover ? src.cover : "";
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
 
+  $("#cheerStep").hidden = true;
   $("#cheerIc").textContent = "💭";
   $("#cheerTitle").textContent = "Мысль дня";
   $("#cheerText").innerHTML = `
@@ -6088,7 +6095,9 @@ function boot() {
     if (overlayQueue.length) setTimeout(showNextOverlay, 220);
   });
   $("#cheer").addEventListener("click", e => {
-    if (e.target === e.currentTarget) $("#cheer").classList.remove("show", "daily");
+    if (e.target !== e.currentTarget) return;
+    $("#cheer").classList.remove("show", "daily");
+    if (overlayQueue.length) setTimeout(showNextOverlay, 220);
   });
 
   window.addEventListener("resize", syncTabHeight);
