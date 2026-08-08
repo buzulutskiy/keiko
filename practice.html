@@ -80,16 +80,26 @@
   .choices button em { font-style: normal; color: var(--dim); font-size: 0.78rem; display: block; margin-top: 1px; }
   .choices button.good { border-color: rgba(110, 231, 168, 0.42); }
 
+  /* части пьесы */
+  .parts { display: flex; gap: 5px; margin: 14px 0 6px; }
+  .parts .p { flex: 1; text-align: center; }
+  .parts .p i { display: block; height: 8px; border-radius: 3px; background: var(--track); margin-bottom: 5px; }
+  .parts .p.done i { background: var(--ok); }
+  .parts .p.now i { background: var(--gold); }
+  .parts .p span { font-size: 0.65rem; color: var(--dim); }
+  .parts .p.now span { color: var(--gold); }
+
   .ladder-cap { font-size: 0.82rem; color: var(--muted); margin: 16px 0 8px; }
   .ladder-cap b { color: var(--ink); font-weight: 600; }
   .ladder-note { font-size: 0.76rem; color: var(--dim); margin: 8px 0 0; }
   .ladder { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
   .lvl { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
-  .lvl b { min-width: 78px; font-weight: 600; }
+  .lvl b { min-width: 96px; font-weight: 600; }
   .lvl .track { flex: 1; height: 7px; border-radius: 4px; background: var(--track); overflow: hidden; }
   .lvl .track i { display: block; height: 100%; background: var(--violet); }
-  .lvl > span { color: var(--dim); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  .lvl > span { color: var(--dim); min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
   .lvl.now b { color: var(--gold); }
+  .lvl.done b { color: var(--muted); }
 
   .list { margin: 14px 0 0; padding: 0; list-style: none; }
   .list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--glass-line); font-size: 0.9rem; }
@@ -117,100 +127,118 @@
 const PIECE = { name: "Бах — Прелюдия es-moll", bars: 40 };
 
 /* ══════════ Система ══════════
-   Собрана по сходящимся источникам, а не выдумана.
+   Пьеса режется на ЧАСТИ по восемь тактов, и каждая доводится до целого,
+   прежде чем начнётся следующая. Это главное: сорок тактов, разобранных
+   вширь по одному, не складываются ни во что — к тридцатому забудешь
+   первый, и мелодии не услышишь ни разу. А часть из восьми тактов звучит
+   уже на первом занятии.
 
-   Единица разбора — ОДИН такт. Chang: чем короче отрезок, тем больше раз
-   его можно пройти за минуты. Fitch: «один такт плюс одна нота, не меньше
-   трёх повторов».
+   Внутри части — лесенка: по 1 такту → по 2 → по 4 → часть целиком.
+   Единица разбора один такт (Chang: короткий отрезок можно пройти десятки
+   раз за минуты; Fitch: «такт плюс одна нота»). Сращивание по 1-2-4 —
+   у Fitch прямым текстом.
 
-   Такты не копятся поштучно, а сращиваются лесенкой 1 → 2 → 4 → 8 → целиком
-   (Fitch: начинать с отдельных тактов, потом по два, потом по четыре).
-   Это и есть ответ на «когда же все двадцать вместе»: когда сойдутся пары,
-   они станут четвёрками, четвёрки — восьмёрками.
+   Шов держится перекрытием: отрезок доигрывается до ПЕРВОЙ ноты
+   следующего. У Chang это правило непрерывности, у Fitch — «такт плюс
+   одна нота»; двое пришли к одному независимо.
 
-   Шов держится перекрытием: отрезок доигрывается до ПЕРВОЙ ноты следующего.
-   У Chang это правило непрерывности, у Fitch — «такт плюс одна нота»; двое
-   пришли к одному независимо. Без перекрытия куски не склеиваются.
-
-   Готовность — три чистых прохода подряд, ошибся — счёт сначала (Fitch).
+   Готовность — три чистых подряд, сбился — счёт сначала (Fitch).
    Честно: исследования за числом «три» нет, это его правило.
 
-   Руки порознь, потом вместе — но в одном занятии, а не месяцами порознь:
-   Chang за долгую изоляцию рук, Fitch против. Взята середина. */
-const LEVELS = [
-  { size: 1,  name: "по 1 такту",  short: "каждый такт отдельно",     hands: ["left", "right", "both"] },
-  { size: 2,  name: "по 2 такта",  short: "два такта подряд",         hands: ["left", "right", "both"] },
-  { size: 4,  name: "по 4 такта",  short: "четыре такта подряд",      hands: ["both"] },
-  { size: 8,  name: "по 8 тактов", short: "восемь тактов подряд",     hands: ["both"] },
-  { size: 40, name: "вся пьеса",   short: "от начала до конца",       hands: ["both"] },
-];
+   Руки порознь, потом вместе, но в одном занятии: Chang за долгую
+   изоляцию рук, Fitch против. Взята середина. */
+const PART = 8;                       // тактов в части
 const REPS = 3;
 const REST_AT = 20, STOP_AT = 60, ASK_AGAIN = 12;
 const REVIEW_N = 2;
-
 const HAND = { left: "левая рука", right: "правая рука", both: "две руки" };
+const bothOnly = (size) => size >= 4;  // с четырёх тактов руки уже соединены
 
-const LS = "keiko-practice-v5";
+const PARTS = (() => {
+  const out = [];
+  for (let from = 1; from <= PIECE.bars; from += PART)
+    out.push({ i: out.length, from, to: Math.min(PIECE.bars, from + PART - 1) });
+  return out;
+})();
+
+/* Ступени внутри части: 1, 2, 4 такта и часть целиком. */
+function stepsOf(p) {
+  const len = p.to - p.from + 1;
+  const sizes = [1, 2, 4, len].filter((s, i, a) => s <= len && a.indexOf(s) === i);
+  return sizes;
+}
+/* Ступени сборки: части сращиваются попарно, пока не выйдет вся пьеса. */
+const ASSEMBLY = (() => {
+  const out = [];
+  for (let s = PART * 2; s < PIECE.bars; s *= 2) out.push(s);
+  if (PIECE.bars > PART) out.push(PIECE.bars);
+  return out;
+})();
+
+const sizeName = (s) =>
+  s === 1 ? "по 1 такту" : s === PIECE.bars ? "вся пьеса" : "по " + s + " " + plural(s, "такту", "такта", "тактов");
+
+function unitsIn(from, to, size) {
+  const out = [];
+  for (let f = from; f <= to; f += size) out.push({ from: f, to: Math.min(to, f + size - 1), size });
+  return out;
+}
+
+const LS = "keiko-practice-v6";
 const loadSt = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch { return null; } };
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch {} };
 
 const fresh = () => ({
-  session: 1,
-  screen: "start",
-  done: {},
-  reps: 0,
-  cur: null,
-  queue: [],
-  closed: [],
+  session: 1, screen: "start",
+  done: {}, reps: 0, cur: null, queue: [], closed: [],
   startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, backTo: "",
 });
 let st = loadSt() || fresh();
 
 const $ = (s) => document.querySelector(s);
 const el = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstChild; };
-const plural = (n, a, b, c) => {
+function plural(n, a, b, c) {
   const m = n % 100, k = n % 10;
   return m >= 11 && m <= 14 ? c : k === 1 ? a : k >= 2 && k <= 4 ? b : c;
-};
+}
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
-function unitsOf(li) {
-  const size = Math.min(LEVELS[li].size, PIECE.bars);
-  const out = [];
-  for (let from = 1; from <= PIECE.bars; from += size)
-    out.push({ li, from, to: Math.min(PIECE.bars, from + size - 1) });
-  return out;
-}
-const key = (u, hand) => u.li + ":" + u.from + "-" + u.to + ":" + hand;
+const key = (u, hand) => u.size + ":" + u.from + "-" + u.to + ":" + hand;
+const handsFor = (size) => bothOnly(size) ? ["both"] : ["left", "right", "both"];
 const isDone = (u, hand) => !!st.done[key(u, hand)];
-const unitDone = (u) => LEVELS[u.li].hands.every((h) => isDone(u, h));
+const unitDone = (u) => handsFor(u.size).every((h) => isDone(u, h));
+const stepDone = (p, size) => unitsIn(p.from, p.to, size).every(unitDone);
+const partDone = (p) => stepsOf(p).every((s) => stepDone(p, s));
 
-/* Уровень открывается, только когда пройден предыдущий: четвёрка бессмысленна,
-   пока обе её пары не держатся. */
-const levelDone = (li) => unitsOf(li).every(unitDone);
-function openLevel() {
-  for (let i = 0; i < LEVELS.length; i++) if (!levelDone(i)) return i;
-  return LEVELS.length - 1;
+/* Где мы сейчас: первая недоделанная часть, а в ней — первая недоделанная
+   ступень. Части идут по очереди: следующая не начинается, пока предыдущая
+   не зазвучит целиком. */
+function where() {
+  for (const p of PARTS) {
+    if (partDone(p)) continue;
+    for (const size of stepsOf(p)) if (!stepDone(p, size)) return { part: p, size };
+  }
+  for (const size of ASSEMBLY) {
+    const us = unitsIn(1, PIECE.bars, size);
+    if (!us.every(unitDone)) return { part: null, size, assembly: true };
+  }
+  return { part: null, size: PIECE.bars, assembly: true, finished: true };
 }
 
-/* Сначала освежаем давнее, потом новое: точность растёт после перерыва в сутки,
-   а перемешивание проигрывает на самом занятии, но выигрывает назавтра. */
 function buildQueue() {
-  const li = openLevel();
+  const w = where();
   const q = [];
 
-  Object.entries(st.done)
-    .sort((a, b) => a[1] - b[1])
-    .slice(0, REVIEW_N)
-    .forEach(([k]) => {
-      const [l, span, hand] = k.split(":");
-      const [from, to] = span.split("-").map(Number);
-      q.push({ li: +l, from, to, hand, review: true });
-    });
+  Object.entries(st.done).sort((a, b) => a[1] - b[1]).slice(0, REVIEW_N).forEach(([k]) => {
+    const [size, span, hand] = k.split(":");
+    const [from, to] = span.split("-").map(Number);
+    q.push({ from, to, size: +size, hand, review: true });
+  });
 
-  for (const u of unitsOf(li))
-    for (const h of LEVELS[li].hands)
-      if (!isDone(u, h)) q.push({ li: u.li, from: u.from, to: u.to, hand: h });
+  const us = w.assembly ? unitsIn(1, PIECE.bars, w.size) : unitsIn(w.part.from, w.part.to, w.size);
+  for (const u of us)
+    for (const h of handsFor(u.size))
+      if (!isDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
 
   return q;
 }
@@ -246,19 +274,40 @@ function endRest() {
   render();
 }
 
+/* ══════════ Отрисовка ══════════ */
+function partsHTML() {
+  const w = where();
+  return '<div class="parts">' + PARTS.map((p) => {
+    const cls = partDone(p) ? "done" : (w.part && w.part.i === p.i ? "now" : "");
+    return `<div class="p ${cls}"><i></i><span>${p.from}–${p.to}</span></div>`;
+  }).join("") + "</div>";
+}
+
 function ladderHTML() {
-  const cur = openLevel();
-  return `<p class="ladder-cap">Лесенка разбора — сейчас <b>${LEVELS[cur].short}</b></p>`
-    + '<div class="ladder">' + LEVELS.map((L, i) => {
-    const us = unitsOf(i);
-    const d = us.filter(unitDone).length;
-    return `<div class="lvl ${i === cur ? "now" : ""}">
-      <b>${L.name}</b>
-      <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
-      <span>${d}/${us.length}</span>
-    </div>`;
-  }).join("") + "</div>"
-    + `<p class="ladder-note">Пройдёшь все ${unitsOf(cur).length} — они срастутся в ступень крупнее.</p>`;
+  const w = where();
+  if (w.assembly) {
+    return `<p class="ladder-cap">Все части зазвучали — <b>собираем пьесу</b></p>`
+      + '<div class="ladder">' + ASSEMBLY.map((size) => {
+        const us = unitsIn(1, PIECE.bars, size);
+        const d = us.filter(unitDone).length;
+        return `<div class="lvl ${size === w.size ? "now" : d === us.length ? "done" : ""}">
+          <b>${sizeName(size)}</b>
+          <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
+          <span>${d}/${us.length}</span></div>`;
+      }).join("") + "</div>";
+  }
+  const p = w.part;
+  return `<p class="ladder-cap">Часть ${p.i + 1} из ${PARTS.length} — <b>такты ${p.from}–${p.to}</b></p>`
+    + '<div class="ladder">' + stepsOf(p).map((size) => {
+      const us = unitsIn(p.from, p.to, size);
+      const d = us.filter(unitDone).length;
+      const name = size === p.to - p.from + 1 ? "часть целиком" : sizeName(size);
+      return `<div class="lvl ${size === w.size ? "now" : d === us.length ? "done" : ""}">
+        <b>${name}</b>
+        <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
+        <span>${d}/${us.length}</span></div>`;
+    }).join("") + "</div>"
+    + `<p class="ladder-note">Часть доводится до целого, и только потом начинается следующая.</p>`;
 }
 
 const spanText = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
@@ -276,29 +325,32 @@ function render() {
 
 const SCREENS = {
 
-  start: () => el(`
-    <div>
-      <p class="step-of">Занятие ${st.session}</p>
-      ${st.session === 1
-        ? `<p class="lead">Начинаем с нуля: <b>такт первый, левая рука</b>.</p>
-           <p class="lead dim">Сначала каждый такт разбирается отдельно — левой, правой, потом двумя
-             руками. Когда так пройдены все сорок, они начнут сращиваться: по два такта подряд,
-             потом по четыре, по восемь, и наконец вся пьеса целиком.</p>`
-        : `<p class="lead">Продолжаем. Сейчас разбор <b>${LEVELS[openLevel()].name}</b>.</p>
-           <p class="lead dim">Начнём с того, что стоит освежить, потом новое.</p>`}
-      ${ladderHTML()}
-      <button class="big-btn" id="begin">Начать занятие</button>
-      <p class="why"><b>Почему так.</b> Единица разбора — один такт: короткий отрезок можно
-        пройти десятки раз за минуты. И отрезки сращиваются лесенкой, а не копятся поштучно,
-        иначе сорок отдельных тактов так и не станут пьесой.</p>
-    </div>`),
+  start: () => {
+    const w = where();
+    return el(`
+      <div>
+        <p class="step-of">Занятие ${st.session}</p>
+        ${st.session === 1
+          ? `<p class="lead">Начинаем с нуля: <b>такт первый, левая рука</b>.</p>
+             <p class="lead dim">Пьеса разрезана на ${PARTS.length} ${plural(PARTS.length, "часть", "части", "частей")}
+               по ${PART} тактов. Первая часть доводится до того, чтобы зазвучать целиком,
+               и только потом начинается вторая. Так мелодия появляется уже сегодня,
+               а не через сорок тактов.</p>`
+          : `<p class="lead">Продолжаем.</p>
+             <p class="lead dim">Сначала освежим давнее, потом дальше по плану.</p>`}
+        ${partsHTML()}
+        ${ladderHTML()}
+        <button class="big-btn" id="begin">${st.session === 1 ? "Начать занятие" : "Продолжить занятие"}</button>
+      </div>`);
+  },
 
   work: () => {
     const u = st.cur;
     const next = u.to < PIECE.bars ? u.to + 1 : 0;
+    const whole = u.size >= PART && !u.review;
     return el(`
       <div>
-        <p class="step-of">${u.review ? "Освежаем" : "Разбираем"} · ${LEVELS[u.li].name}</p>
+        <p class="step-of">${u.review ? "Освежаем" : "Разбираем"}</p>
         <div class="unit"><b>${spanText(u)}</b><i>${HAND[u.hand]}</i></div>
         <p class="say">${next
           ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
@@ -316,9 +368,9 @@ const SCREENS = {
           <button class="ghost" id="skip">Отложить этот отрезок</button>
           <button class="ghost" id="finish">Завершить занятие</button>
         </div>
-        <p class="why"><b>Зачем до первой ноты следующего такта.</b> С этой ноты начнётся
-          следующий отрезок — так два соседних куска потом склеятся сами. Без перекрытия
-          они остаются двумя отдельными кусками, и шов между ними слышно.</p>
+        <p class="why">${whole
+          ? "<b>Это целый кусок.</b> Здесь уже слышно мелодию — ради этого и режем пьесу на части."
+          : "<b>Зачем до первой ноты следующего такта.</b> С этой ноты начнётся следующий отрезок — так соседние куски потом склеятся сами."}</p>
       </div>`);
   },
 
@@ -326,8 +378,7 @@ const SCREENS = {
     <div>
       <p class="step-of">Передышка</p>
       <p class="lead">За инструментом <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минута", "минуты", "минут")}</b>.</p>
-      <p class="lead dim">Около двадцати минут держится внимание, дальше занятие идёт вхолостую.
-        Отойди ненадолго.</p>
+      <p class="lead dim">Около двадцати минут держится внимание, дальше занятие идёт вхолостую.</p>
       <div class="choices">
         <button class="good" data-rest="5"><b>Перерыв 5 минут</b></button>
         <button data-rest="10"><b>Перерыв 10 минут</b></button>
@@ -347,35 +398,43 @@ const SCREENS = {
     <div>
       <p class="step-of">Пора закругляться</p>
       <p class="lead">Занятие идёт <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минуту", "минуты", "минут")}</b>.</p>
-      <p class="lead dim">Незакрытое не пропадёт — перенесётся на следующий раз. И это не потеря:
-        точность заметно прибавляет после сна, а не к концу длинного занятия.</p>
+      <p class="lead dim">Незакрытое не пропадёт — перенесётся на следующий раз. Точность прибавляет
+        после сна, а не к концу длинного занятия.</p>
       <div class="choices">
         <button class="good" id="finish"><b>Завершить занятие</b></button>
         <button data-rest="0"><b>Ещё немного</b><em>спрошу снова через ${ASK_AGAIN} минут</em></button>
       </div>
     </div>`),
 
-  end: () => el(`
-    <div>
-      <p class="step-of">Занятие ${st.session} окончено</p>
-      <p class="lead">${st.closed.length
-        ? `Закрыто: <b>${st.closed.length}</b> ${plural(st.closed.length, "отрезок", "отрезка", "отрезков")}.`
-        : "Сегодня ничего не закрылось — бывает."}</p>
-      ${st.queue.length ? `<p class="lead dim">Осталось ${st.queue.length} — перенёс на следующее занятие.</p>` : ""}
-      ${ladderHTML()}
-      <ul class="list">
-        <li>За инструментом<span>${Math.floor(elapsedMin())} мин</span></li>
-        <li>Сейчас разбираем<span>${LEVELS[openLevel()].name}</span></li>
-      </ul>
-      <p class="why"><b>До следующего раза.</b> Лучше вернуться завтра, чем добивать сегодня:
-        точность после ночи прибавляет сама, а к концу длинного занятия падает.</p>
-      <button class="big-btn" id="next">Следующее занятие</button>
-      <button class="ghost" id="reset">Начать пьесу заново</button>
-    </div>`),
+  end: () => {
+    const w = where();
+    return el(`
+      <div>
+        <p class="step-of">Занятие ${st.session} окончено</p>
+        <p class="lead">${st.closed.length
+          ? `Закрыто: <b>${st.closed.length}</b> ${plural(st.closed.length, "отрезок", "отрезка", "отрезков")}.`
+          : "Сегодня ничего не закрылось — бывает."}</p>
+        ${st.queue.length ? `<p class="lead dim">Осталось ${st.queue.length} — перенёс на следующее занятие.</p>` : ""}
+        ${partsHTML()}
+        ${ladderHTML()}
+        <ul class="list">
+          <li>За инструментом<span>${Math.floor(elapsedMin())} мин</span></li>
+          <li>Готовых частей<span>${PARTS.filter(partDone).length} из ${PARTS.length}</span></li>
+        </ul>
+        <p class="why"><b>До следующего раза.</b> Лучше вернуться завтра, чем добивать сегодня:
+          точность после ночи прибавляет сама.</p>
+        <button class="big-btn" id="next">Следующее занятие</button>
+        <button class="ghost" id="reset">Начать пьесу заново</button>
+      </div>`);
+  },
 };
 
+/* Очередь — это план на текущую ступень, а не на всё занятие. Кончилась —
+   собираем следующую и идём дальше; занятие кончается по часам или по кнопке,
+   а не потому, что доделали восемь тактов. */
 function takeNext() {
   st.reps = 0;
+  if (!st.queue.length) st.queue = buildQueue().filter((u) => !u.review);
   st.cur = st.queue.shift() || null;
   st.screen = st.cur ? "work" : "end";
   render();
@@ -394,20 +453,18 @@ document.addEventListener("click", (e) => {
 
   if (t.id === "clean") {
     st.reps++;
-    if (st.reps >= REPS) {
-      const u = st.cur;
-      if (!u.review) {
-        st.done[key(u, u.hand)] = st.session;
-        st.closed.push(spanText(u) + " · " + HAND[u.hand]);
-      }
-      /* Лесенка могла сомкнуться — тогда очередь на сегодня уже про старый
-         уровень, и её надо пересобрать под новый. */
-      const li = openLevel();
-      const nextNew = st.queue.find((x) => !x.review);
-      if (nextNew && nextNew.li !== li) st.queue = buildQueue();
-      return takeNext();
+    if (st.reps < REPS) return render();
+    const u = st.cur;
+    if (!u.review) {
+      st.done[key(u, u.hand)] = st.session;
+      st.closed.push(spanText(u) + " · " + HAND[u.hand]);
     }
-    return render();
+    /* Ступень или часть могли сомкнуться — тогда очередь уже про прошлое,
+       и её надо пересобрать под новое место. */
+    const w = where();
+    const nextNew = st.queue.find((x) => !x.review);
+    if (nextNew && nextNew.size !== w.size) st.queue = buildQueue();
+    return takeNext();
   }
 
   if (t.id === "miss") { st.reps = 0; return render(); }
@@ -426,7 +483,7 @@ document.addEventListener("click", (e) => {
     const n = st.session + 1, done = st.done;
     st = fresh();
     st.session = n;
-    st.done = done;                    // разбор переносится, часы занятия — нет
+    st.done = done;
     return render();
   }
 
