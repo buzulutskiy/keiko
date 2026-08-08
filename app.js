@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 43";
+const APP_VERSION = "Кэйко 44";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -55,6 +55,7 @@ let pickPage = 0;
 let pickLessons = [];
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
+let libBook = null;    // открытая книга в разделе «Библиотека»
 let partUpto = {};     // выбранная страница внутри части             // выбранные уроки курса
 let sheetMode = null;             // log | settings
 let pushTimer = null, syncing = false;
@@ -4739,14 +4740,46 @@ function partCovered(part, spans) {
   return n;
 }
 
-/* Шторка для сборника: тапаешь часть — она раскрывается, и внутри выбираешь,
-   докуда дочитал. Одна кнопка закрывает часть целиком. */
+/* Шторка для сборника — два уровня, чтобы не мешать всё в одном экране:
+   сначала оглавление, потом одна часть с кнопкой назад. */
 function bookPartsUI() {
   const b = book();
   const done = mergeSpans(bookSpans(b));
   const all = mergeSpans(done.concat(pickSpans));
   const parts = bookParts(b);
 
+  // ── уровень 2: одна часть
+  if (partOpen != null && parts[partOpen]) {
+    const i = partOpen, p = parts[i];
+    const total = p.to - p.from + 1;
+    const now2 = partCovered(p, all);
+    const pct = total ? Math.round(now2 / total * 100) : 0;
+    const upto = partUpto[i] != null
+      ? partUpto[i]
+      : Math.max(p.from, Math.min(p.to, p.from + Math.max(0, now2) - 1));
+    return `
+      <div class="pt-one">
+        <button class="back pt-back" id="ptBack" type="button">‹ Всё содержание</button>
+        <div class="pt-title">${esc(p.name)}</div>
+        <div class="pt-sub">страницы ${p.from}–${p.to}${pct ? ` · прочитано ${pct}%` : ""}</div>
+        <div class="page-pick">
+          <span class="pp-label">Дочитал<br><i>до страницы</i></span>
+          <div class="stepper">
+            <button class="st-btn" data-pd="-1" type="button">−</button>
+            <button class="st-val" id="ptVal" type="button">${upto}</button>
+            <button class="st-btn" data-pd="1" type="button">＋</button>
+          </div>
+        </div>
+        <div class="quick">${[1, 5, 10].map(n => `<button class="qbtn" data-padd="${n}" type="button">+${n}</button>`).join("")}
+          <button class="qbtn" data-padd="end" type="button">до конца</button></div>
+        <div class="pt-acts">
+          <button class="btn gold" data-ptok="${i}" type="button">Отметить до ${upto}</button>
+          <button class="btn" data-ptall="${i}" type="button">Прочитан целиком</button>
+        </div>
+      </div>`;
+  }
+
+  // ── уровень 1: оглавление
   return `
     <div class="parts">
       ${parts.map((p, i) => {
@@ -4754,88 +4787,61 @@ function bookPartsUI() {
         const was = partCovered(p, done), now2 = partCovered(p, all);
         const pct = total ? Math.round(now2 / total * 100) : 0;
         const cls = pct >= 100 ? "full" : now2 > was ? "pick" : pct > 0 ? "part" : "";
-        const open = partOpen === i;
-        const upto = partUpto[i] != null ? partUpto[i] : Math.max(p.from, Math.min(p.to, p.from + Math.max(0, now2) - 1));
         return `
-          <div class="part ${cls} ${open ? "open" : ""}">
-            <button class="pt-main" data-part="${i}" type="button">
-              <span class="pt-fill" style="width:${pct}%"></span>
-              <span class="pt-name">${esc(p.name)}</span>
-              <span class="pt-meta">${pct >= 100 ? "прочитан" : pct > 0 ? pct + "%" : `${p.from}–${p.to}`}</span>
-            </button>
-            ${open ? `
-              <div class="pt-edit">
-                <div class="pt-row">
-                  <span class="pt-cap">Дочитал до страницы</span>
-                  <div class="stepper">
-                    <button class="st-btn" data-pd="-1" type="button">−</button>
-                    <button class="st-val" id="ptVal" type="button">${upto}</button>
-                    <button class="st-btn" data-pd="1" type="button">＋</button>
-                  </div>
-                </div>
-                <div class="pt-acts">
-                  <button class="btn gold pt-ok" data-ptok="${i}" type="button">Отметить до ${upto}</button>
-                  <button class="btn pt-whole" data-ptall="${i}" type="button">Целиком</button>
-                </div>
-              </div>` : ""}
-          </div>`;
+          <button class="pt-main ${cls}" data-part="${i}" type="button">
+            <span class="pt-fill" style="width:${pct}%"></span>
+            <span class="pt-name">${esc(p.name)}</span>
+            <span class="pt-meta">${pct >= 100 ? "прочитан" : pct > 0 ? pct + "%" : `${p.from}–${p.to}`}</span>
+            <span class="pt-go">›</span>
+          </button>`;
       }).join("")}
     </div>
-    <div class="pt-hint">Нажми на часть и укажи, докуда дочитал. Или отметь её целиком.</div>`;
+    <div class="pt-hint">Выбери рассказ и укажи, докуда дочитал.</div>`;
 }
 
 function bindBookPartsSheet() {
   const parts = bookParts(book());
 
   document.querySelectorAll("[data-part]").forEach(btn =>
-    btn.addEventListener("click", () => {
-      const i = +btn.dataset.part;
-      partOpen = partOpen === i ? null : i;      // повторный тап закрывает
-      renderSheetBody();
-    }));
+    btn.addEventListener("click", () => { partOpen = +btn.dataset.part; renderSheetBody(); }));
 
-  const setUpto = (i, v) => {
-    const p = parts[i];
-    partUpto[i] = Math.max(p.from, Math.min(p.to, v));
+  const back = $("#ptBack");
+  if (back) back.addEventListener("click", () => { partOpen = null; renderSheetBody(); });
+
+  const p = partOpen != null ? parts[partOpen] : null;
+  const setUpto = (v) => {
+    partUpto[partOpen] = Math.max(p.from, Math.min(p.to, v));
     renderSheetBody();
   };
+  const cur = () => partUpto[partOpen] != null ? partUpto[partOpen] : p.from;
+
   document.querySelectorAll("[data-pd]").forEach(btn =>
+    btn.addEventListener("click", () => setUpto(cur() + Number(btn.dataset.pd))));
+  document.querySelectorAll("[data-padd]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const i = partOpen, p = parts[i];
-      const cur = partUpto[i] != null ? partUpto[i] : p.from;
-      setUpto(i, cur + Number(btn.dataset.pd));
+      setUpto(btn.dataset.padd === "end" ? p.to : cur() + Number(btn.dataset.padd));
     }));
+
   const val = $("#ptVal");
   if (val) val.addEventListener("click", () => {
-    const i = partOpen, p = parts[i];
-    const v = prompt(`«${p.name}» — докуда дочитал?\nСтраницы части: ${p.from}–${p.to}`,
-      String(partUpto[i] != null ? partUpto[i] : p.from));
+    const v = prompt(`«${p.name}» — докуда дочитал?\nСтраницы части: ${p.from}–${p.to}`, String(cur()));
     if (v === null) return;
     const n = Math.round(Number(String(v).replace(",", ".")));
-    if (!n) return;
-    setUpto(i, n);
+    if (n) setUpto(n);
   });
 
-  // отметить до выбранной страницы
   document.querySelectorAll("[data-ptok]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const i = +btn.dataset.ptok, p = parts[i];
-      const upto = partUpto[i] != null ? partUpto[i] : p.from;
       pickSpans = pickSpans.filter(sp => sp.from !== p.from);
-      pickSpans.push({ from: p.from, to: upto });
-      partOpen = null;
-      renderSheetBody();
+      pickSpans.push({ from: p.from, to: cur() });
+      partOpen = null; renderSheetBody();
     }));
-
-  // часть целиком
   document.querySelectorAll("[data-ptall]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const i = +btn.dataset.ptall, p = parts[i];
       pickSpans = pickSpans.filter(sp => sp.from !== p.from);
       pickSpans.push({ from: p.from, to: p.to });
-      partUpto[i] = p.to;
-      partOpen = null;
-      renderSheetBody();
+      partUpto[parts.indexOf(p)] = p.to;
+      partOpen = null; renderSheetBody();
     }));
 }
 
@@ -5326,28 +5332,125 @@ async function catalogUpload(file) {
    там отмечают рассказы, а не «докуда дошёл». */
 const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
 
-function bookModeUI() {
+/* ── Библиотека: список книг, у каждой своя страница со всем, что известно ── */
+function libraryUI() {
   const list = (data.book.books || []).filter(b => !b.archived);
-  if (!list.length) return "";
+  if (!list.length) return `<div class="empty-note">Книг пока нет.<br>Они появятся вместе с каталогом.</div>`;
+
+  if (libBook) {
+    const b = list.find(x => x.id === libBook) || (data.book.books || []).find(x => x.id === libBook);
+    if (b) return bookPageUI(b);
+  }
+
   return `
-    <div class="freeze">
-      <div class="fz-head">📖 <b>Как читается</b> — роман идёт подряд, сборник вразнобой</div>
-      ${list.map(b => `
-        <div class="bm-row">
-          <div class="bm-name">${esc(b.title)}</div>
-          <div class="pick-row">
-            <button class="pick ${bookMode(b) === "linear" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="linear" type="button">
-              <span class="pk-name">Подряд</span></button>
-            <button class="pick ${bookMode(b) === "parts" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="parts" type="button">
-              <span class="pk-name">Вразнобой</span></button>
-          </div>
-        </div>`).join("")}
-      <div class="fz-note">Вразнобой — отмечаешь части из оглавления в любом порядке.
-        Прогресс считается по прочитанным страницам и не падает, когда возвращаешься к пропущенному.</div>
+    <div class="lib-list">
+      ${list.map(b => {
+        const ent = bookEntriesOf(b.id);
+        const cov = Math.min(b.pages || 0, bookCovered(b));
+        const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
+        return `
+          <button class="lib-row" data-lib="${esc(b.id)}" type="button">
+            <span class="lib-cover">${b.cover || coverSrc(b.id, "")
+              ? `<img src="${esc(coverSrc(b.id, b.cover || ""))}" alt="" loading="lazy">`
+              : `<i>📖</i>`}</span>
+            <span class="lib-body">
+              <b>${esc(b.title)}</b>
+              <em>${esc(b.author || "")}</em>
+              <span class="lib-bar"><i style="width:${pct}%"></i></span>
+              <span class="lib-meta">${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}</span>
+            </span>
+            <span class="mc-go">›</span>
+          </button>`;
+      }).join("")}
     </div>`;
 }
 
-function bindBookModeUI() {
+/* Страница книги: всё, что о ней известно, в одном месте. */
+function bookPageUI(b) {
+  const ent = bookEntriesOf(b.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+  const spans = mergeSpans(bookSpans(b));
+  const cov = Math.min(b.pages || 0, bookCovered(b));
+  const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
+  const parts = bookParts(b);
+  const notes = ent.filter(e => e.note).length;
+  const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === b.id).length;
+  const first = ent[0] ? fmtDay(ent[0].date) : "—";
+  const last = ent.length ? fmtDay(ent[ent.length - 1].date) : "—";
+  const days = new Set(ent.map(e => e.date)).size;
+
+  // карта книги: закрашены прочитанные страницы
+  const cells = 60;
+  const per = Math.max(1, (b.pages || cells) / cells);
+  const map = Array.from({ length: cells }, (_, i) => {
+    const from = Math.floor(i * per) + 1, to = Math.floor((i + 1) * per);
+    let n = 0;
+    for (const sp of spans) {
+      const a2 = Math.max(from, sp.from), z = Math.min(to, sp.to);
+      if (z >= a2) n += z - a2 + 1;
+    }
+    const k = Math.min(1, n / Math.max(1, to - from + 1));
+    return `<i style="opacity:${(0.10 + 0.9 * k).toFixed(2)}"></i>`;
+  }).join("");
+
+  return `
+    <button class="back" id="libBack" type="button">‹ Все книги</button>
+
+    <div class="panel lib-head">
+      <div class="lib-cover big">${coverSrc(b.id, b.cover || "")
+        ? `<img src="${esc(coverSrc(b.id, b.cover || ""))}" alt="">` : `<i>📖</i>`}</div>
+      <div class="lib-title"><b>${esc(b.title)}</b><em>${esc(b.author || "")}</em></div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">📐 <b>Формат содержания</b> — как эту книгу читают</div>
+      <div class="pick-row">
+        <button class="pick ${bookMode(b) === "linear" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="linear" type="button">
+          <span class="pk-name">Подряд</span><span class="pk-hint">роман, читается линейно</span></button>
+        <button class="pick ${bookMode(b) === "parts" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="parts" type="button">
+          <span class="pk-name">Вразнобой</span><span class="pk-hint">сборник, части в любом порядке</span></button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="lib-map">${map}</div>
+      <div class="lib-num">
+        <div><b>${pct}%</b><span>прочитано</span></div>
+        <div><b>${cov}</b><span>из ${b.pages} стр</span></div>
+        <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
+        <div><b>${parts.length}</b><span>${plural(parts.length, "часть", "части", "частей")}</span></div>
+      </div>
+      <div class="lib-rows">
+        <div><span>Первая запись</span><b>${esc(first)}</b></div>
+        <div><span>Последняя</span><b>${esc(last)}</b></div>
+        <div><span>Заметок при отметке</span><b>${notes}</b></div>
+        <div><span>Моментов о книге</span><b>${thoughts}</b></div>
+        ${b.startPage ? `<div><span>Начал со страницы</span><b>${b.startPage}</b></div>` : ""}
+      </div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">📑 <b>Содержание</b> — ${parts.length} ${plural(parts.length, "часть", "части", "частей")}</div>
+      <div class="parts">
+        ${parts.map(p => {
+          const total = p.to - p.from + 1;
+          const n = partCovered(p, spans);
+          const k = total ? Math.round(n / total * 100) : 0;
+          return `
+            <div class="pt-main ${k >= 100 ? "full" : k > 0 ? "part" : ""}" style="cursor:default">
+              <span class="pt-fill" style="width:${k}%"></span>
+              <span class="pt-name">${esc(p.name)}</span>
+              <span class="pt-meta">${k >= 100 ? "прочитан" : k > 0 ? k + "%" : `${p.from}–${p.to}`}</span>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function bindLibraryUI() {
+  document.querySelectorAll("[data-lib]").forEach(btn =>
+    btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
+  const back = $("#libBack");
+  if (back) back.addEventListener("click", () => { libBook = null; render(); $("#view").scrollTop = 0; });
   document.querySelectorAll("[data-bm]").forEach(btn =>
     btn.addEventListener("click", () => {
       const b = (data.book.books || []).find(x => x.id === btn.dataset.bm);
@@ -5611,6 +5714,9 @@ const SETTINGS_SECTIONS = [
   { id: "sync",      icon: "🔄", name: "Синхронизация", hint: () => (cfg.token && cfg.gistId) ? "подключена" : "не подключена" },
   { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
   { id: "look",      icon: "🎨", name: "Оформление",    hint: () => themeById(data.shop.theme).name },
+  { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
+      const n = (data.book.books || []).filter(b => !b.archived).length;
+      return n ? `${n} ${plural(n, "книга", "книги", "книг")}` : "пусто"; } },
   { id: "materials", icon: "📦", name: "Материалы",     hint: () => hasMaterials() ? currentMaterial().title : "пусто" },
   { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
       const n = (data.freezes || []).filter(f => !f.deleted).length;
@@ -5678,8 +5784,10 @@ function renderSettingsSection(id) {
     body = goalUI();
   } else if (id === "look") {
     body = themeUI() + soundUI() + dailyUI();
+  } else if (id === "library") {
+    body = libraryUI();
   } else if (id === "materials") {
-    body = bookModeUI() + catalogUI() + (archiveUI() || "");
+    body = catalogUI() + (archiveUI() || "");
   } else if (id === "pause") {
     body = freezeUI();
   } else if (id === "data") {
@@ -5724,7 +5832,7 @@ function renderSettingsSection(id) {
   bindDailyUI();
   bindBackupUI();
   bindArchiveBackupUI();
-  bindBookModeUI();
+  bindLibraryUI();
   bindCatalogUI();
   bindArchiveUI();
 }
