@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 42";
+const APP_VERSION = "Кэйко 43";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -52,7 +52,10 @@ let calYear, calMonth;
 let selectedDate = todayStr();
 let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
 let pickPage = 0;
-let pickLessons = [];             // выбранные уроки курса
+let pickLessons = [];
+let pickSpans = [];    // отмеченные в этой сессии куски книги
+let partOpen = null;   // какая часть сейчас раскрыта
+let partUpto = {};     // выбранная страница внутри части             // выбранные уроки курса
 let sheetMode = null;             // log | settings
 let pushTimer = null, syncing = false;
 let syncError = "";               // текст последней ошибки синхронизации
@@ -316,10 +319,51 @@ function pianoStats() {
   };
 }
 
+/* ── Прочитанное как множество страниц, а не курсор ──
+   Сборник читают вразнобой: прочёл 30–50, потом 10–20. При курсоре второй
+   заход выглядел откатом, будто прогресса нет. Считаем покрытие: оно растёт
+   при любом порядке чтения и никогда не падает.
+   Старые записи хранят только «докуда дочитал» — понимаем их как отрезок
+   от начала книги до этой страницы, поэтому ничего не теряется. */
+function bookSpans(b) {
+  const bk = b || book();
+  const out = [];
+  for (const e of bookEntriesOf(bk.id)) {
+    if (Array.isArray(e.spans) && e.spans.length) {
+      for (const sp of e.spans) {
+        const from = Math.max(1, Math.min(sp.from, sp.to));
+        const to = Math.min(bk.pages || sp.to, Math.max(sp.from, sp.to));
+        if (to >= from) out.push({ from, to });
+      }
+    } else if (e.page) {
+      out.push({ from: Math.max(1, (bk.startPage || 0) + 1), to: Math.min(bk.pages || e.page, e.page) });
+    }
+  }
+  return out;
+}
+
+// сливаем пересекающиеся отрезки — из них считается и процент, и вид оглавления
+function mergeSpans(list) {
+  const a = list.slice().sort((x, y) => x.from - y.from);
+  const out = [];
+  for (const sp of a) {
+    const last = out[out.length - 1];
+    if (last && sp.from <= last.to + 1) last.to = Math.max(last.to, sp.to);
+    else out.push({ from: sp.from, to: sp.to });
+  }
+  return out;
+}
+
+const bookCovered = (b) => mergeSpans(bookSpans(b)).reduce((n, sp) => n + (sp.to - sp.from + 1), 0);
+
+// «докуда дошёл» — для линейных книг и для подписи «осталось столько-то»
 function bookProgress() {
   const b = book();
   let page = b.startPage || 0;
-  for (const e of bookEntriesOf(b.id)) page = Math.max(page, e.page || 0);
+  for (const e of bookEntriesOf(b.id)) {
+    page = Math.max(page, e.page || 0);
+    for (const sp of e.spans || []) page = Math.max(page, sp.to || 0);
+  }
   return Math.min(page, b.pages);
 }
 function chapterAt(page) {
@@ -345,8 +389,12 @@ function bookStats() {
     if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
     prev = e.date;
   }
+  const covered = Math.min(b.pages || 0, bookCovered(b));
   return {
-    pages: b.pages, page, pct: b.pages ? page / b.pages * 100 : 0,
+    pages: b.pages, page, covered,
+    // процент — доля прочитанного, а не «докуда дошёл»: вернулся к пропущенному
+    // месту в начале, и процент вырос, а не откатился
+    pct: b.pages ? covered / b.pages * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapter: chapterAt(page)
   };
@@ -800,7 +848,9 @@ function saveEntry() {
   const note = ($("#noteInput") && $("#noteInput").value.trim()) || "";
 
   if (existing) {
-    if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
+    if (isBook() && bookMode(book()) === "parts") {
+      existing.spans = mergeSpans((existing.spans || []).concat(pickSpans));
+    } else if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
     else if (isPastel()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
     if (note) existing.note = existing.note ? existing.note + "; " + note : note;
@@ -808,12 +858,14 @@ function saveEntry() {
   } else {
     trackOf().entries.push(Object.assign(
       { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
-      isBook() ? { page: pickPage } : isPastel() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
+      isBook() ? Object.assign({ bookId: book().id },
+        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage }) : isPastel() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
     ));
   }
 
   pending = [];
   pickLessons = [];
+  pickSpans = [];
   saveData();
   schedulePush();
   closeSheet();
@@ -920,7 +972,7 @@ function shiftDay(delta) {
 function switchTrack(which) {
   if (data.active === which) return;
   data.active = which;
-  pending = []; pickLessons = []; selectedDate = todayStr();
+  pending = []; pickLessons = []; pickSpans = []; selectedDate = todayStr();
   const t = new Date(); calYear = t.getFullYear(); calMonth = t.getMonth();
   syncPickers(); saveData(); schedulePush(); render();
 }
@@ -2510,7 +2562,7 @@ function setActiveMaterial(item) {
   if (item.pieceId) data.piano.activePiece = item.pieceId;
   if (item.bookId) data.book.activeBook = item.bookId;
   paintBackdrop(item);
-  pending = []; pickLessons = [];
+  pending = []; pickLessons = []; pickSpans = [];
   selectedDate = todayStr();
   syncPickers();
   saveData();
@@ -4599,6 +4651,7 @@ function openLogSheet() {
     return;
   }
   sheetMode = "log";
+  pickSpans = []; partOpen = null; partUpto = {};
   syncPickers();
   const existing = entryFor(selectedDate);
   const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isPastel() ? "Какие уроки прошёл?" : "Что разбирал?");
@@ -4620,8 +4673,13 @@ function openLogSheet() {
 }
 
 function renderSheetBody() {
-  $("#sheetBody").innerHTML = isBook() ? bookSheetUI() : isPastel() ? pastelSheetUI() : pianoSheetUI();
-  if (isBook()) bindBookSheet(); else if (isPastel()) bindPastelSheet(); else bindPianoSheet();
+  const parts = isBook() && bookMode(book()) === "parts";
+  $("#sheetBody").innerHTML = parts ? bookPartsUI()
+    : isBook() ? bookSheetUI() : isPastel() ? pastelSheetUI() : pianoSheetUI();
+  if (parts) bindBookPartsSheet();
+  else if (isBook()) bindBookSheet();
+  else if (isPastel()) bindPastelSheet();
+  else bindPianoSheet();
 }
 
 function fmtDur(sec) {
@@ -4655,6 +4713,128 @@ function bindPastelSheet() {
       const i = Number(b.dataset.i);
       const at = pickLessons.indexOf(i);
       if (at >= 0) pickLessons.splice(at, 1); else pickLessons.push(i);
+      renderSheetBody();
+    }));
+}
+
+/* Части книги с границами страниц: конец каждой — начало следующей минус один. */
+function bookParts(b) {
+  const bk = b || book();
+  const ch = (bk.chapters || []).slice().sort((a, x) => (a.from || 0) - (x.from || 0));
+  if (!ch.length) return [{ name: bk.title || "Книга", from: 1, to: bk.pages || 1 }];
+  return ch.map((c, i) => ({
+    name: c.name || `Часть ${i + 1}`,
+    from: Math.max(1, c.from || 1),
+    to: i + 1 < ch.length ? Math.max(1, (ch[i + 1].from || 1) - 1) : (bk.pages || c.from)
+  }));
+}
+
+// сколько страниц части уже прочитано — по нему рисуется заливка
+function partCovered(part, spans) {
+  let n = 0;
+  for (const sp of spans) {
+    const a = Math.max(part.from, sp.from), z = Math.min(part.to, sp.to);
+    if (z >= a) n += z - a + 1;
+  }
+  return n;
+}
+
+/* Шторка для сборника: тапаешь часть — она раскрывается, и внутри выбираешь,
+   докуда дочитал. Одна кнопка закрывает часть целиком. */
+function bookPartsUI() {
+  const b = book();
+  const done = mergeSpans(bookSpans(b));
+  const all = mergeSpans(done.concat(pickSpans));
+  const parts = bookParts(b);
+
+  return `
+    <div class="parts">
+      ${parts.map((p, i) => {
+        const total = p.to - p.from + 1;
+        const was = partCovered(p, done), now2 = partCovered(p, all);
+        const pct = total ? Math.round(now2 / total * 100) : 0;
+        const cls = pct >= 100 ? "full" : now2 > was ? "pick" : pct > 0 ? "part" : "";
+        const open = partOpen === i;
+        const upto = partUpto[i] != null ? partUpto[i] : Math.max(p.from, Math.min(p.to, p.from + Math.max(0, now2) - 1));
+        return `
+          <div class="part ${cls} ${open ? "open" : ""}">
+            <button class="pt-main" data-part="${i}" type="button">
+              <span class="pt-fill" style="width:${pct}%"></span>
+              <span class="pt-name">${esc(p.name)}</span>
+              <span class="pt-meta">${pct >= 100 ? "прочитан" : pct > 0 ? pct + "%" : `${p.from}–${p.to}`}</span>
+            </button>
+            ${open ? `
+              <div class="pt-edit">
+                <div class="pt-row">
+                  <span class="pt-cap">Дочитал до страницы</span>
+                  <div class="stepper">
+                    <button class="st-btn" data-pd="-1" type="button">−</button>
+                    <button class="st-val" id="ptVal" type="button">${upto}</button>
+                    <button class="st-btn" data-pd="1" type="button">＋</button>
+                  </div>
+                </div>
+                <div class="pt-acts">
+                  <button class="btn gold pt-ok" data-ptok="${i}" type="button">Отметить до ${upto}</button>
+                  <button class="btn pt-whole" data-ptall="${i}" type="button">Целиком</button>
+                </div>
+              </div>` : ""}
+          </div>`;
+      }).join("")}
+    </div>
+    <div class="pt-hint">Нажми на часть и укажи, докуда дочитал. Или отметь её целиком.</div>`;
+}
+
+function bindBookPartsSheet() {
+  const parts = bookParts(book());
+
+  document.querySelectorAll("[data-part]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const i = +btn.dataset.part;
+      partOpen = partOpen === i ? null : i;      // повторный тап закрывает
+      renderSheetBody();
+    }));
+
+  const setUpto = (i, v) => {
+    const p = parts[i];
+    partUpto[i] = Math.max(p.from, Math.min(p.to, v));
+    renderSheetBody();
+  };
+  document.querySelectorAll("[data-pd]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const i = partOpen, p = parts[i];
+      const cur = partUpto[i] != null ? partUpto[i] : p.from;
+      setUpto(i, cur + Number(btn.dataset.pd));
+    }));
+  const val = $("#ptVal");
+  if (val) val.addEventListener("click", () => {
+    const i = partOpen, p = parts[i];
+    const v = prompt(`«${p.name}» — докуда дочитал?\nСтраницы части: ${p.from}–${p.to}`,
+      String(partUpto[i] != null ? partUpto[i] : p.from));
+    if (v === null) return;
+    const n = Math.round(Number(String(v).replace(",", ".")));
+    if (!n) return;
+    setUpto(i, n);
+  });
+
+  // отметить до выбранной страницы
+  document.querySelectorAll("[data-ptok]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const i = +btn.dataset.ptok, p = parts[i];
+      const upto = partUpto[i] != null ? partUpto[i] : p.from;
+      pickSpans = pickSpans.filter(sp => sp.from !== p.from);
+      pickSpans.push({ from: p.from, to: upto });
+      partOpen = null;
+      renderSheetBody();
+    }));
+
+  // часть целиком
+  document.querySelectorAll("[data-ptall]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const i = +btn.dataset.ptall, p = parts[i];
+      pickSpans = pickSpans.filter(sp => sp.from !== p.from);
+      pickSpans.push({ from: p.from, to: p.to });
+      partUpto[i] = p.to;
+      partOpen = null;
       renderSheetBody();
     }));
 }
@@ -5142,6 +5322,42 @@ async function catalogUpload(file) {
   return Object.keys(cat.materials).length;
 }
 
+/* Как читается книга. Роман идёт подряд, сборник — вразнобой:
+   там отмечают рассказы, а не «докуда дошёл». */
+const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
+
+function bookModeUI() {
+  const list = (data.book.books || []).filter(b => !b.archived);
+  if (!list.length) return "";
+  return `
+    <div class="freeze">
+      <div class="fz-head">📖 <b>Как читается</b> — роман идёт подряд, сборник вразнобой</div>
+      ${list.map(b => `
+        <div class="bm-row">
+          <div class="bm-name">${esc(b.title)}</div>
+          <div class="pick-row">
+            <button class="pick ${bookMode(b) === "linear" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="linear" type="button">
+              <span class="pk-name">Подряд</span></button>
+            <button class="pick ${bookMode(b) === "parts" ? "on" : ""}" data-bm="${esc(b.id)}" data-mode="parts" type="button">
+              <span class="pk-name">Вразнобой</span></button>
+          </div>
+        </div>`).join("")}
+      <div class="fz-note">Вразнобой — отмечаешь части из оглавления в любом порядке.
+        Прогресс считается по прочитанным страницам и не падает, когда возвращаешься к пропущенному.</div>
+    </div>`;
+}
+
+function bindBookModeUI() {
+  document.querySelectorAll("[data-bm]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const b = (data.book.books || []).find(x => x.id === btn.dataset.bm);
+      if (!b) return;
+      b.mode = btn.dataset.mode; b.updatedAt = now();
+      saveData(); schedulePush(); render();
+      toast(b.mode === "parts" ? "Читается вразнобой" : "Читается подряд");
+    }));
+}
+
 function catalogUI() {
   if (!cfg.token || !cfg.gistId)
     return `<div class="freeze"><div class="fz-head">📚 <b>Каталог</b> — появится, когда подключишь синхронизацию</div></div>`;
@@ -5463,7 +5679,7 @@ function renderSettingsSection(id) {
   } else if (id === "look") {
     body = themeUI() + soundUI() + dailyUI();
   } else if (id === "materials") {
-    body = catalogUI() + (archiveUI() || "");
+    body = bookModeUI() + catalogUI() + (archiveUI() || "");
   } else if (id === "pause") {
     body = freezeUI();
   } else if (id === "data") {
@@ -5508,6 +5724,7 @@ function renderSettingsSection(id) {
   bindDailyUI();
   bindBackupUI();
   bindArchiveBackupUI();
+  bindBookModeUI();
   bindCatalogUI();
   bindArchiveUI();
 }

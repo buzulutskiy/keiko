@@ -1065,6 +1065,42 @@
     }
     .cta-row.joined.done .cta-mic:active { background: rgba(255, 255, 255, 0.05); }
 
+    /* ── Части книги: отметка вразнобой ── */
+    .bm-row { margin-top: 10px; }
+    .bm-name { font-size: 0.86rem; margin-bottom: 6px; color: var(--ink); }
+    .parts { display: flex; flex-direction: column; gap: 7px; max-height: 46vh; overflow-y: auto; }
+    .part { display: flex; flex-direction: column; gap: 0; }
+    .pt-main {
+      position: relative; flex: 1; overflow: hidden; text-align: left;
+      border: 1px solid var(--line); background: var(--card);
+      border-radius: 12px; padding: 10px 12px; color: var(--ink);
+      font: inherit; font-size: 0.86rem; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pt-fill {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      background: linear-gradient(90deg, rgba(255,201,77,0.22), rgba(255,201,77,0.10));
+      transition: width 0.3s ease;
+    }
+    .pt-name, .pt-meta { position: relative; }
+    .pt-name { flex: 1; }
+    .pt-meta { color: var(--dim); font-size: 0.74rem; font-variant-numeric: tabular-nums; }
+    .part.full .pt-main { border-color: rgba(255, 201, 77, 0.45); }
+    .part.full .pt-meta { color: var(--gold); }
+    .part.pick .pt-main { border-color: var(--green); }
+    .part.open .pt-main { border-radius: 12px 12px 0 0; border-bottom-color: transparent; }
+    .pt-edit {
+      border: 1px solid var(--line); border-top: 0;
+      border-radius: 0 0 12px 12px; background: var(--card);
+      padding: 10px 12px 12px;
+    }
+    .pt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .pt-cap { color: var(--muted); font-size: 0.8rem; }
+    .pt-acts { display: flex; gap: 7px; margin-top: 10px; }
+    .pt-acts .btn { min-height: 40px; font-size: 0.82rem; flex: 1; }
+    .pt-ok { flex: 1.6 !important; }
+    .pt-hint { margin-top: 10px; color: var(--dim); font-size: 0.76rem; line-height: 1.4; }
+
     /* ── Вложения в моментах ── */
     .th-attach { display: flex; gap: 6px; }
     .th-send { width: 100%; margin-top: 10px; }
