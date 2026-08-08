@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 55";
+const APP_VERSION = "Кэйко 56";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4548,7 +4548,17 @@ const pracDoc = () => PRACTICE_DATA[piece().id] || null;
 function pracParts() {
   const doc = pracDoc();
   const bars = piece().bars;
-  if (doc && doc.parts) return doc.parts.map((p, i) => ({ i, ...p }));
+  if (doc && doc.parts && doc.parts.length) {
+    /* Разбор мог делаться по другому изданию: подрезаем под то число тактов,
+       которое стоит у пьесы, а хвост дописываем к последней части. */
+    const out = [];
+    for (const p of doc.parts) {
+      if (p.from > bars) break;
+      out.push({ i: out.length, from: p.from, to: Math.min(p.to, bars), why: p.why || "" });
+    }
+    if (out.length && out[out.length - 1].to < bars) out[out.length - 1].to = bars;
+    if (out.length) return out;
+  }
   const out = [];
   for (let f = 1; f <= bars; f += 4)
     out.push({ i: out.length, from: f, to: Math.min(bars, f + 3), why: "" });
@@ -4717,9 +4727,7 @@ function pracLadderHTML(w) {
       }).join("") + "</div>";
   }
   const p = w.part;
-  return `<p class="pr-cap-line">Часть ${p.i + 1} из ${w.parts.length} — <b>такты ${p.from}–${p.to}</b>${
-      p.why ? `<br><span style="color:var(--dim)">${esc(p.why)}</span>` : ""}</p>`
-    + '<div class="pr-ladder">' + pracSteps(p).map((size) => {
+  return '<div class="pr-ladder">' + pracSteps(p).map((size) => {
       const us = pracUnits(p.from, p.to, size);
       const d = us.filter(pracUnitDone).length;
       const name = size === p.to - p.from + 1 ? "часть целиком"
@@ -4770,18 +4778,23 @@ function pracRender() {
   if (prac.screen !== "work") { const pl = $("#pracPlayer"); if (pl) pl.hidden = true; }
 
   if (prac.screen === "start") {
+    const p = w.part;
+    const named = w.parts.some((x) => x.why);
     box.innerHTML = `
       <div class="pr-card">
         <p class="pr-cap">Занятие ${pracStore().session + 1}</p>
-        ${pracStore().session === 0
-          ? `<p class="pr-lead">Начинаем с нуля: <b>${pracSpan({ from: w.part.from, to: w.part.from })}</b>.</p>
-             <p class="pr-lead dim">Пьеса разрезана на ${w.parts.length} ${plural(w.parts.length, "часть", "части", "частей")}
-               по тому, как устроена. Часть доводится до того, чтобы зазвучать целиком,
-               и только потом начинается следующая.</p>`
-          : `<p class="pr-lead">Продолжаем с того места, где остановился.</p>`}
-        ${pracPartsHTML(w)}
-        ${pracLadderHTML(w)}
+        ${p ? `
+          <div class="pr-here">
+            <span class="pr-here-n">Часть ${p.i + 1} из ${w.parts.length}</span>
+            <b>${esc(p.why || "такты " + p.from + "–" + p.to)}</b>
+            <em>такты ${p.from}–${p.to}</em>
+          </div>
+          ${pracLadderHTML(w)}`
+          : `<p class="pr-lead">Все части готовы — <b>собираем пьесу</b>.</p>${pracLadderHTML(w)}`}
         <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить занятие" : "Начать занятие"}</button>
+        <p class="pr-cap" style="margin:20px 0 8px">Вся пьеса</p>
+        ${pracPartsHTML(w)}
+        ${named ? "" : '<p class="pr-why">Разбор этой пьесы ещё не приехал — части поделены механически, по четыре такта.</p>'}
       </div>`;
     return;
   }
@@ -4863,6 +4876,9 @@ function pracNext() {
 
 function openPractice() {
   if (!isPiano() || !piece().bars) { toast("Практика пока только для пьес"); return; }
+  // разбора может не быть на этом устройстве — просим каталог сразу
+  if (!pracDoc() && cfg.token && cfg.catalogId)
+    catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
   prac = {
     screen: "start", cur: null, queue: [], closed: [], reviewed: [],
     startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,

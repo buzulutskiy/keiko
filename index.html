@@ -1357,6 +1357,19 @@
     .pr-pick button em { font-style: normal; color: var(--dim); font-size: 0.76rem; display: block; margin-top: 1px; }
     .pr-pick button.good { border-color: rgba(110, 231, 168, 0.4); }
 
+    /* Где я сейчас — крупно и первым делом; список частей ниже как контекст. */
+    .pr-here {
+      background: rgba(255, 201, 77, 0.09);
+      border: 1px solid rgba(255, 201, 77, 0.26);
+      border-radius: 14px; padding: 14px 15px; margin-bottom: 14px;
+    }
+    .pr-here-n {
+      display: block; font-size: 0.72rem; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gold); margin-bottom: 5px;
+    }
+    .pr-here b { display: block; font-size: 1.05rem; font-weight: 600; line-height: 1.35; }
+    .pr-here em { display: block; font-style: normal; font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+
     /* Части: каждая — отдельная строка со своим именем и полосой.
        Раньше это были равные столбики: групп в них не читалось. */
     .pr-plist { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
