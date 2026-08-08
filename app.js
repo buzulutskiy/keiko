@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 58";
+const APP_VERSION = "Кэйко 59";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1129,12 +1129,32 @@ function showDone(before, after, wasExisting, ctx) {
   $("#cheer").classList.add("show");
 }
 
+/* Удалили запись за день — из разбора уходит и то, что в этот день закрылось.
+   Иначе выходило вранье: в прогрессе пусто, а практика уверена, что такты
+   пройдены, и предлагает следующие. */
+function pracForgetDay(pieceId, ds) {
+  const st = data.practice && data.practice[pieceId];
+  if (!st || !st.done) return 0;
+  let n = 0;
+  for (const [k, v] of Object.entries(st.done))
+    if (v === ds) { delete st.done[k]; n++; }
+  return n;
+}
+
+function dropEntry(e, track) {
+  e.deleted = true;
+  e.updatedAt = now();
+  if (track === "piano") pracForgetDay(e.pieceId || "bwv853", e.date);
+  saveData();
+  schedulePush();
+}
+
 function deleteEntry(id) {
   const e = trackOf().entries.find(x => x.id === id);
   if (!e) return;
   if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
-  e.deleted = true; e.updatedAt = now();
-  saveData(); schedulePush(); syncPickers(); render();
+  dropEntry(e, data.active);
+  syncPickers(); render();
   toast("Запись удалена");
 }
 
@@ -3464,8 +3484,8 @@ function renderDayBox() {
       const e = data[track].entries.find(x => x.id === b.dataset.del);
       if (!e) return;
       if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
-      e.deleted = true; e.updatedAt = now();
-      saveData(); schedulePush(); render();
+      dropEntry(e, track);
+      render();
       toast("Запись удалена");
     }));
 
