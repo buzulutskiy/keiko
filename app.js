@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 51";
+const APP_VERSION = "Кэйко 52";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1587,25 +1587,100 @@ function howlFor(id, url) {
   return h;
 }
 
+/* iOS не даёт менять громкость у <audio> программно: присваивание молча
+   игнорируется. Потоковый режим howler управляет звуком именно так — поэтому
+   на телефоне затухания не было вовсе: музыка шла на полной и обрывалась
+   в момент паузы. Проверяем это один раз и, если громкость неподатлива,
+   ведём звук через регулятор Web Audio: он на iOS слушается, а поток не ломает. */
+let volCtl = null;
+function volumeControllable() {
+  if (volCtl !== null) return volCtl;
+  try {
+    const a = new Audio();
+    a.volume = 0.5;
+    volCtl = Math.abs(a.volume - 0.5) < 0.01;
+  } catch { volCtl = false; }
+  return volCtl;
+}
+
+/* Регулятор привязан к самому <audio>, а не к материалу: howler держит пул
+   элементов и переиспользует их между треками, а подключить один элемент
+   к звуковому графу можно ровно один раз — второй вызов бросает исключение.
+   Ключ по материалу давал здесь то молчание навсегда (элемент остался висеть
+   на старом регуляторе, выкрученном в ноль), то отказ от затухания. */
+const nodeGain = new WeakMap();
+const nodeOf = (h) => (h && h._sounds && h._sounds[0] && h._sounds[0]._node) || null;
+
+function gainOf(h) {
+  const node = nodeOf(h);
+  return node ? (nodeGain.get(node) || null) : null;
+}
+
+function gainFor(h) {
+  const node = nodeOf(h);
+  if (!node) return null;
+  const have = nodeGain.get(node);
+  if (have) return have;
+  try {
+    // ctx у howler создаётся лениво; обращение к громкости его поднимает
+    if (window.Howler && !Howler.ctx) { try { Howler.volume(Howler.volume()); } catch {} }
+    const ctx = window.Howler && Howler.ctx;
+    if (!ctx || !ctx.createMediaElementSource) return null;
+    /* Не перенаправляем, пока движок не запущен: элемент, подключённый
+       к спящему графу, замолчит совсем — а это хуже, чем резкая остановка. */
+    if (ctx.state !== "running") { try { ctx.resume(); } catch {} return null; }
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    ctx.createMediaElementSource(node).connect(g);
+    g.connect(ctx.destination);
+    nodeGain.set(node, g);
+    return g;
+  } catch { return null; }
+}
+
+/* Ведём громкость от from к to за ms. Возвращает false, если платформа
+   не даёт этого сделать ни одним способом — тогда зовущий гасит резко,
+   но сразу: лучше чистая тишина, чем хвост на полной громкости. */
+function fadeVol(h, from, to, ms) {
+  h.volume(to);                        // внутренний учёт howler держим в согласии
+  if (volumeControllable()) { h.volume(from); h.fade(from, to, ms); return true; }
+  const g = gainFor(h);
+  if (!g) return false;
+  const ctx = Howler.ctx;
+  try { if (ctx.state === "suspended") ctx.resume(); } catch {}
+  const t = ctx.currentTime;
+  try {
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(from, t);
+    g.gain.linearRampToValueAtTime(to, t + ms / 1000);
+  } catch { return false; }
+  return true;
+}
+const volNow = (h) => volumeControllable() ? h.volume() : ((gainOf(h) || { gain: { value: 0 } }).gain.value);
+
 /* Раньше остановка висела на событии "fade" от библиотеки. В потоковом режиме
    это событие приходит не всегда, и прошлая композиция продолжала звучать
    поверх новой. Теперь гасим по таймеру — событие лишь ускоряет развязку. */
 const stopTimers = new Map();
-function hardStop(h, id) {
+function hardStop(h, id, ms) {
   clearTimeout(stopTimers.get(id));
   stopTimers.set(id, setTimeout(() => {
     try { h.volume(0); h.pause(); } catch {}
+    const g = gainOf(h);
+    if (g) { try { g.gain.cancelScheduledValues(Howler.ctx.currentTime); g.gain.value = 0; } catch {} }
     stopTimers.delete(id);
-  }, FADE_OUT + 120));
+  }, (ms || FADE_OUT) + 120));
 }
 const anyPlaying = () => { let n = false; howls.forEach(h => { if (h.playing()) n = true; }); return n; };
 
-function stopAllExcept(keepId) {
+function stopAllExcept(keepId, ms) {
+  const dur = ms || FADE_OUT;
   howls.forEach((h, id) => {
     if (id === keepId) { clearTimeout(stopTimers.get(id)); stopTimers.delete(id); return; }
     if (!h.playing()) { try { h.volume(0); h.pause(); } catch {} return; }
-    try { h.fade(h.volume(), 0, FADE_OUT); } catch {}
-    hardStop(h, id);                    // страховка: замолчит в любом случае
+    const faded = fadeVol(h, volNow(h), 0, dur);
+    if (!faded) { try { h.pause(); } catch {} clearTimeout(stopTimers.get(id)); stopTimers.delete(id); return; }
+    hardStop(h, id, dur);               // страховка: замолчит в любом случае
   });
 }
 
@@ -1628,9 +1703,9 @@ function audioSync() {
     if (h && h.playing()) {
       // вернулись на обложку, пока трек гас: начинаем мелодию сначала —
       // возвращение к материалу должно звучать как начало, а не как середина
-      if (h.volume() < AUDIO_VOL * 0.9) {
+      if (volNow(h) < AUDIO_VOL * 0.9) {
         try { h.seek(0); } catch {}
-        h.fade(0, AUDIO_VOL, FADE_IN);
+        fadeVol(h, 0, AUDIO_VOL, FADE_IN);
       }
       if (window.waveStart) waveStart();
       return;
@@ -1660,7 +1735,8 @@ function audioSync() {
     const h = howlFor(want, url);
     // пауза в howler запоминает место, поэтому перематываем в начало сами
     if (!h.playing()) { h.volume(0); try { h.seek(0); } catch {} h.play(); }
-    h.fade(h.volume(), AUDIO_VOL, FADE_IN);
+    gainFor(h);                        // подключаем регулятор до первого звука
+    fadeVol(h, volNow(h), AUDIO_VOL, FADE_IN);
     if (window.waveStart) waveStart();
     zenArm(true);
     paintSndBtn();
@@ -1981,6 +2057,18 @@ const sheetOpen = () => !!document.querySelector(".sheet.show, .sheet-bg.show")
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
+  /* Звуковой движок поднимаем и будим ИМЕННО здесь — внутри первого касания.
+     Музыка вступает по таймеру бездействия, а это уже не жест: разбудить
+     движок тогда iOS не даст, и весь звук ушёл бы в тишину. */
+  try {
+    if (window.Howler) {
+      // сама библиотека умеет усыплять движок для экономии — но мы теперь
+      // ведём через него звук, и уснувший граф означал бы тишину
+      Howler.autoSuspend = false;
+      if (!Howler.ctx) Howler.volume(Howler.volume());
+      if (Howler.ctx && Howler.ctx.state === "suspended") Howler.ctx.resume();
+    }
+  } catch {}
   audioSync();
 }
 
