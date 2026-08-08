@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 60";
+const APP_VERSION = "Кэйко 61";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4641,6 +4641,14 @@ const pracStepDone = (p, size) => pracUnits(p.from, p.to, size).every(pracUnitDo
 const pracPartDone = (p) => pracSteps(p).every((size) => pracStepDone(p, size));
 const pracAsUnit = (sp) => ({ from: sp.from, to: sp.to, size: sp.to - sp.from + 1 });
 
+/* Имя этапа словами. Кружки «1 · 2 · 4 · всё» читались как шифр: цифры
+   не говорят, что от тебя хотят и почему именно так. */
+function pracStepName(size, part) {
+  if (part && size === part.to - part.from + 1) return "Часть целиком";
+  if (size === 1) return "Каждый такт по отдельности";
+  return "По " + size + " " + plural(size, "такту", "такта", "тактов") + " подряд";
+}
+
 const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 });
 
 /* Шов сращивается сразу, как только готовы обе соседние части, а не в конце
@@ -4839,7 +4847,8 @@ function pracRender() {
           <p class="pr-tail">обе части уже звучат порознь</p>`
           : p ? `
           <div class="pr-big sm">${esc(p.why || "такты " + p.from + "–" + p.to)}</div>
-          <p class="pr-hand">часть ${p.i + 1} из ${w.parts.length} · такты ${p.from}–${p.to}</p>`
+          <p class="pr-hand">часть ${p.i + 1} из ${w.parts.length} · такты ${p.from}–${p.to}</p>
+          <p class="pr-next">сейчас: ${esc(pracStepName(w.size, p).toLowerCase())}</p>`
           : `<div class="pr-big sm">Собираем пьесу</div><p class="pr-hand">все части готовы</p>`}
         ${pracPartsHTML(w)}
         ${named ? "" : '<p class="pr-tail">разбор ещё не приехал — части поделены по четыре такта</p>'}
@@ -4899,30 +4908,39 @@ function pracRender() {
   pracPlayer();
   const u = prac.cur;
   if (!u) { pracFinish(); return; }
-  const next = u.to < piece().bars ? u.to + 1 : 0;
 
-  /* Ступени части точками: где мы в лесенке, видно без слов. */
-  let dots = "";
-  if (!u.review && w.part) {
-    dots = '<div class="pr-dots">' + pracSteps(w.part).map((size) => {
-      const us = pracUnits(w.part.from, w.part.to, size);
-      const cls = size === w.size ? "on" : us.every(pracUnitDone) ? "was" : "";
-      const label = size === w.part.to - w.part.from + 1 ? "всё" : size;
-      return `<i class="${cls}">${label}</i>`;
-    }).join("") + "</div>";
+  /* Что за этап, который сейчас, и что будет следующим. */
+  let top = "", stage = "", after = "";
+  if (u.review) {
+    top = "повторяем пройденное";
+    stage = "Освежаем то, что делали раньше";
+  } else if (w.seam) {
+    top = `часть ${w.a.i + 1} из ${w.parts.length} и часть ${w.b.i + 1}`;
+    stage = "Стык двух частей";
+    after = "обе части уже звучат порознь — важно только место склейки";
+  } else if (w.part) {
+    const steps = pracSteps(w.part);
+    const at = steps.indexOf(w.size);
+    const us = pracUnits(w.part.from, w.part.to, w.size);
+    const done = us.filter(pracUnitDone).length;
+    top = `этап ${at + 1} из ${steps.length} · часть ${w.part.i + 1} из ${w.parts.length}`;
+    stage = pracStepName(w.size, w.part);
+    after = at + 1 < steps.length
+      ? "дальше: " + pracStepName(steps[at + 1], w.part).toLowerCase()
+      : (w.part.i + 1 < w.parts.length ? "дальше: стык с частью " + (w.part.i + 2) : "дальше: сборка пьесы");
+    if (us.length > 1) top += ` · ${done} из ${us.length}`;
+  } else {
+    top = "все части готовы";
+    stage = "Собираем пьесу целиком";
   }
-
-  const kind = u.review ? "освежаем" : w.seam ? "сращиваем" : "разбираем";
-  const where = w.seam ? `части ${w.a.i + 1} и ${w.b.i + 1}`
-    : w.part ? `часть ${w.part.i + 1} из ${w.parts.length}` : "вся пьеса";
 
   box.innerHTML = `
     <div class="pr-mid">
-      <p class="pr-kind">${kind} · ${esc(where)}</p>
-      ${dots}
+      <p class="pr-kind">${esc(top)}</p>
+      <p class="pr-stage">${esc(stage)}</p>
       <div class="pr-big">${pracSpan(u)}</div>
       <p class="pr-hand">${PRAC_HAND[u.hand]}</p>
-      ${next ? `<p class="pr-tail">до первой ноты такта ${next}</p>` : ""}
+      ${after ? `<p class="pr-next">${esc(after)}</p>` : ""}
       ${prac.hintOpen ? pracHintHTML(u) : ""}
     </div>
     <div class="pr-bot">
