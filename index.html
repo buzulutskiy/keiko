@@ -1298,6 +1298,102 @@
     .wt-page-acts { display: flex; gap: 8px; margin-top: 10px; }
     .wt-page-acts .btn { flex: 1; text-align: center; text-decoration: none; }
 
+    /* ── Практика: занятие по плану ── */
+    #prac {
+      position: fixed; inset: 0; z-index: 60;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      padding: max(14px, env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+      overflow-y: auto;
+    }
+    #prac[hidden] { display: none; }
+    #pracTop { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    #pracWhere { flex: 1; min-width: 0; font-size: 0.78rem; color: var(--dim); }
+    #pracClose {
+      flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--ink); font-size: 0.9rem; line-height: 1;
+    }
+    #pracStage { max-width: 520px; width: 100%; margin: 0 auto; }
+
+    .pr-card {
+      background: var(--panel); border: 1px solid var(--glass-line);
+      border-radius: 18px; padding: 20px 18px;
+    }
+    .pr-cap { color: var(--dim); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 12px; }
+    .pr-unit { text-align: center; margin: 4px 0 2px; }
+    .pr-unit b { display: block; font-size: 2.5rem; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .pr-unit i { font-style: normal; display: block; color: var(--gold); font-size: 0.92rem; margin-top: 6px; }
+    .pr-say { text-align: center; font-size: 0.92rem; color: var(--muted); margin: 15px 0 0; line-height: 1.55; }
+    .pr-say b { color: var(--ink); font-weight: 600; }
+    .pr-lead { font-size: 0.98rem; line-height: 1.55; margin: 0 0 8px; }
+    .pr-lead b { font-weight: 600; }
+    .pr-lead.dim { color: var(--muted); font-size: 0.88rem; }
+
+    .pr-go {
+      width: 100%; border: 0; border-radius: 16px; padding: 17px; margin-top: 15px;
+      font: inherit; font-size: 1rem; font-weight: 600;
+      background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021;
+    }
+    .pr-main {
+      width: 100%; border: 0; border-radius: 16px; padding: 17px; margin-top: 8px;
+      font: inherit; font-size: 1rem; font-weight: 600; color: #241a05;
+      background: linear-gradient(160deg, var(--gold), var(--gold-2));
+    }
+    .pr-ghost {
+      width: 100%; border: 1px solid var(--glass-line); background: transparent;
+      color: var(--muted); font: inherit; font-size: 0.84rem;
+      border-radius: 13px; padding: 11px; margin-top: 9px;
+    }
+    .pr-two { display: flex; gap: 8px; }
+    .pr-two .pr-ghost { flex: 1; }
+    .pr-pick { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .pr-pick button {
+      width: 100%; text-align: left; border: 1px solid var(--glass-line);
+      background: var(--glass); color: var(--ink); font: inherit;
+      font-size: 0.95rem; border-radius: 13px; padding: 13px 15px;
+    }
+    .pr-pick button b { font-weight: 600; }
+    .pr-pick button em { font-style: normal; color: var(--dim); font-size: 0.76rem; display: block; margin-top: 1px; }
+    .pr-pick button.good { border-color: rgba(110, 231, 168, 0.4); }
+
+    .pr-parts { display: flex; gap: 4px; margin: 14px 0 6px; }
+    .pr-parts .p { flex: 1; text-align: center; }
+    .pr-parts .p i { display: block; height: 7px; border-radius: 3px; background: var(--track); margin-bottom: 4px; }
+    .pr-parts .p.done i { background: #6ee7a8; }
+    .pr-parts .p.now i { background: var(--gold); }
+    .pr-parts .p span { font-size: 0.62rem; color: var(--dim); }
+
+    .pr-ladder { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+    .pr-lvl { display: flex; align-items: center; gap: 9px; font-size: 0.78rem; }
+    .pr-lvl b { min-width: 92px; font-weight: 600; }
+    .pr-lvl .tr { flex: 1; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+    .pr-lvl .tr i { display: block; height: 100%; background: var(--violet); }
+    .pr-lvl > span { color: var(--dim); min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+    .pr-lvl.now b { color: var(--gold); }
+    .pr-cap-line { font-size: 0.8rem; color: var(--muted); margin: 15px 0 8px; }
+    .pr-cap-line b { color: var(--ink); font-weight: 600; }
+
+    .pr-hint {
+      margin-top: 9px; border-radius: 13px; padding: 13px 14px;
+      background: rgba(139, 124, 246, 0.09); border: 1px solid rgba(139, 124, 246, 0.24);
+      font-size: 0.88rem; line-height: 1.65;
+    }
+    .pr-hb { padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+    .pr-hb:first-child { border-top: 0; padding-top: 0; }
+    .pr-hn { display: inline-block; min-width: 28px; font-weight: 700; color: var(--gold); font-size: 0.8rem; }
+    .pr-hh { color: var(--dim); font-size: 0.76rem; font-weight: 600; }
+    .pr-hint b { font-weight: 600; color: var(--ink); }
+    .pr-hint i { font-style: normal; color: var(--gold-2); font-size: 0.78rem; }
+    .pr-hint .c {
+      display: inline-block; background: rgba(255, 255, 255, 0.1); border-radius: 3px;
+      padding: 0 5px; margin: 0 3px 0 5px; font-weight: 700; font-size: 0.72rem; color: var(--muted);
+    }
+    .pr-leg { margin: 11px 0 0; padding-top: 9px; font-size: 0.7rem; color: var(--dim); line-height: 1.5;
+      border-top: 1px solid rgba(255, 255, 255, 0.07); }
+    .pr-why { margin-top: 14px; font-size: 0.76rem; color: var(--dim); line-height: 1.6; }
+    .pr-why b { color: var(--muted); font-weight: 600; }
+
     /* «Смотрю»: добавление ссылки и список роликов */
     .wt-add { display: flex; gap: 8px; margin-top: 10px; }
     .wt-add input {
@@ -2377,6 +2473,14 @@
 
   <nav class="tabbar" id="tabbar"></nav>
 
+  <div id="prac" hidden aria-hidden="true">
+    <div id="pracTop">
+      <div id="pracWhere"></div>
+      <button id="pracClose" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="pracStage"></div>
+  </div>
+
   <div id="kmap" hidden aria-hidden="true">
     <div id="kmTop">
       <div id="kmCrumbs"></div>
@@ -2443,9 +2547,13 @@
       var v = new URLSearchParams(location.search).get("v") || "";
       var h = document.createElement("script");
       h.src = "howler.min.js" + (v ? "?v=" + encodeURIComponent(v) : "");
+      // разбор пьес для «Практики» — отдельным файлом, чтобы app.js не распухал
+      var d = document.createElement("script");
+      d.src = "practice-data.js" + (v ? "?v=" + encodeURIComponent(v) : "");
       var s = document.createElement("script");
       s.src = "app.js" + (v ? "?v=" + encodeURIComponent(v) : "");
-      h.onload = h.onerror = function () { document.body.appendChild(s); };
+      d.onload = d.onerror = function () { document.body.appendChild(s); };
+      h.onload = h.onerror = function () { document.body.appendChild(d); };
       document.body.appendChild(h);
     })();
   </script>
