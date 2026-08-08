@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 56";
+const APP_VERSION = "Кэйко 57";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4621,13 +4621,26 @@ const pracStepDone = (p, size) => pracUnits(p.from, p.to, size).every(pracUnitDo
 const pracPartDone = (p) => pracSteps(p).every((size) => pracStepDone(p, size));
 const pracAsUnit = (sp) => ({ from: sp.from, to: sp.to, size: sp.to - sp.from + 1 });
 
+const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 });
+
+/* Шов сращивается сразу, как только готовы обе соседние части, а не в конце
+   пьесы. Иначе выходило бы странно: первая часть звучит, вторая звучит,
+   а вместе они впервые встречаются только когда выучено всё. */
 function pracWhere() {
   const parts = pracParts();
-  for (const p of parts) {
-    if (pracPartDone(p)) continue;
-    for (const size of pracSteps(p)) if (!pracStepDone(p, size)) return { parts, part: p, size };
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (!pracPartDone(p)) {
+      for (const size of pracSteps(p)) if (!pracStepDone(p, size)) return { parts, part: p, size };
+    }
+    if (i > 0 && pracPartDone(parts[i - 1]) && pracPartDone(p)) {
+      const seam = seamUnit(parts[i - 1], p);
+      if (!pracUnitDone(seam)) return { parts, seam, a: parts[i - 1], b: p };
+    }
   }
-  const asm = pracAssembly(parts);
+  /* Крупная сборка идёт дальше швов: пары соседних частей уже пройдены,
+     поэтому первый уровень пропускаем. */
+  const asm = pracAssembly(parts).slice(1);
   for (let i = 0; i < asm.length; i++)
     if (!asm[i].map(pracAsUnit).every(pracUnitDone)) return { parts, asm, assembly: i };
   return { parts, asm, assembly: Math.max(0, asm.length - 1), finished: true };
@@ -4647,8 +4660,9 @@ function pracQueue() {
       const [from, to] = span.split("-").map(Number);
       q.push({ from, to, size: +size, hand, review: true, k });
     });
-  const us = w.part ? pracUnits(w.part.from, w.part.to, w.size)
-                    : (w.asm[w.assembly] || []).map(pracAsUnit);
+  const us = w.seam ? [w.seam]
+    : w.part ? pracUnits(w.part.from, w.part.to, w.size)
+    : (w.asm[w.assembly] || []).map(pracAsUnit);
   for (const u of us)
     for (const h of pracHands(u))
       if (!pracIsDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
@@ -4714,6 +4728,10 @@ function pracPartsHTML(w) {
 }
 
 function pracLadderHTML(w) {
+  if (w.seam) {
+    return `<div class="pr-ladder"><div class="pr-lvl now"><b>шов</b>
+      <span class="tr"><i style="width:0%"></i></span><span>0/1</span></div></div>`;
+  }
   if (!w.part) {
     return `<p class="pr-cap-line">Все части зазвучали — <b>собираем пьесу</b></p>`
       + '<div class="pr-ladder">' + w.asm.map((level, li) => {
@@ -4783,7 +4801,13 @@ function pracRender() {
     box.innerHTML = `
       <div class="pr-card">
         <p class="pr-cap">Занятие ${pracStore().session + 1}</p>
-        ${p ? `
+        ${w.seam ? `
+          <div class="pr-here seam">
+            <span class="pr-here-n">Шов · части ${w.a.i + 1} и ${w.b.i + 1}</span>
+            <b>Сыграть подряд</b>
+            <em>такты ${w.seam.from}–${w.seam.to} · обе части уже звучат порознь</em>
+          </div>`
+          : p ? `
           <div class="pr-here">
             <span class="pr-here-n">Часть ${p.i + 1} из ${w.parts.length}</span>
             <b>${esc(p.why || "такты " + p.from + "–" + p.to)}</b>
@@ -4848,8 +4872,9 @@ function pracRender() {
   const whole = w.parts.some((p) => p.from === u.from && p.to === u.to) && !u.review;
   box.innerHTML = `
     <div class="pr-card">
-      <p class="pr-cap">${u.review ? "Освежаем" : "Разбираем"}${
-        w.part ? " · " + esc(w.part.why || "часть " + (w.part.i + 1)) : " · сборка"}</p>
+      <p class="pr-cap">${u.review ? "Освежаем" : w.seam ? "Сращиваем" : "Разбираем"}${
+        w.seam ? ` · части ${w.a.i + 1} и ${w.b.i + 1}`
+        : w.part ? " · " + esc(w.part.why || "часть " + (w.part.i + 1)) : " · вся пьеса"}</p>
       <div class="pr-unit"><b>${pracSpan(u)}</b><i>${PRAC_HAND[u.hand]}</i></div>
       <p class="pr-say">${next
         ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
@@ -4860,7 +4885,9 @@ function pracRender() {
         prac.hintOpen ? "Спрятать подсказку" : "Подсказка: как читаются ноты"}</button>` : ""}
       ${prac.hintOpen ? pracHintHTML(u) : ""}
       <button class="pr-ghost" data-prac="finish">Завершить занятие</button>
-      <p class="pr-why">${whole
+      <p class="pr-why">${w.seam
+        ? "<b>Это шов.</b> Обе части по отдельности уже идут — здесь важно только место их стыка: именно там игра обычно и рвётся."
+        : whole
         ? "<b>Это целый кусок.</b> Здесь уже слышно мелодию — ради этого пьеса и режется на части."
         : "<b>Зачем до первой ноты следующего такта.</b> С неё начнётся следующий отрезок — так соседние куски склеятся сами."}</p>
     </div>`;
