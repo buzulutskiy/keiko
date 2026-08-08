@@ -1391,6 +1391,25 @@
     }
     .pr-leg { margin: 11px 0 0; padding-top: 9px; font-size: 0.7rem; color: var(--dim); line-height: 1.5;
       border-top: 1px solid rgba(255, 255, 255, 0.07); }
+    /* Плеер живёт отдельно от карточки: карточка перерисовывается на каждом
+       шаге, и внутри неё запись начиналась бы заново. */
+    #pracPlayer {
+      max-width: 520px; width: 100%; margin: 12px auto 0;
+      background: var(--panel); border: 1px solid var(--glass-line);
+      border-radius: 16px; padding: 13px 15px;
+    }
+    #pracPlayer[hidden] { display: none; }
+    .pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .pl-top b { font-size: 0.82rem; font-weight: 600; }
+    .pl-top span { font-size: 0.72rem; color: var(--dim); }
+    #pracPlayer audio { width: 100%; height: 34px; display: block; }
+    .pl-jump { display: flex; gap: 8px; margin-top: 9px; }
+    .pl-jump button {
+      flex: 1; border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--ink); font: inherit; font-size: 0.82rem; border-radius: 11px; padding: 9px;
+    }
+    .pl-wait { font-size: 0.78rem; color: var(--dim); text-align: center; padding: 4px 0; }
+
     .pr-why { margin-top: 14px; font-size: 0.76rem; color: var(--dim); line-height: 1.6; }
     .pr-why b { color: var(--muted); font-weight: 600; }
 
@@ -2479,6 +2498,7 @@
       <button id="pracClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     <div id="pracStage"></div>
+    <div id="pracPlayer" hidden></div>
   </div>
 
   <div id="kmap" hidden aria-hidden="true">
@@ -2547,13 +2567,9 @@
       var v = new URLSearchParams(location.search).get("v") || "";
       var h = document.createElement("script");
       h.src = "howler.min.js" + (v ? "?v=" + encodeURIComponent(v) : "");
-      // разбор пьес для «Практики» — отдельным файлом, чтобы app.js не распухал
-      var d = document.createElement("script");
-      d.src = "practice-data.js" + (v ? "?v=" + encodeURIComponent(v) : "");
       var s = document.createElement("script");
       s.src = "app.js" + (v ? "?v=" + encodeURIComponent(v) : "");
-      d.onload = d.onerror = function () { document.body.appendChild(s); };
-      h.onload = h.onerror = function () { document.body.appendChild(d); };
+      h.onload = h.onerror = function () { document.body.appendChild(s); };
       document.body.appendChild(h);
     })();
   </script>

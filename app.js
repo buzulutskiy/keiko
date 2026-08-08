@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 53";
+const APP_VERSION = "Кэйко 54";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -641,8 +641,15 @@ try {
 // живут в том же каталожном гисте отдельными файлами, читаются вместе с каталогом.
 const LS_TAX = "keiko-taxonomy-v1";
 const TAX_FILE = "keiko-taxonomy.json";
+const PRAC_FILE = "keiko-practice.json";
+const LS_PRAC = "keiko-practice-data-v1";
 const CATS_FILE = "keiko-categories.json";
 let TAXONOMY = null, CATEGORIES = {};
+/* Разбор пьес для «Практики» — данные, а не код: лежит в приватном гисте
+   рядом с наградами и карточками. В репозитории его нет намеренно —
+   это по-нотный разбор чужих произведений, и публиковать его незачем. */
+let PRACTICE_DATA = {};
+try { PRACTICE_DATA = JSON.parse(localStorage.getItem(LS_PRAC)) || {}; } catch {}
 try {
   const t = JSON.parse(localStorage.getItem(LS_TAX) || "{}") || {};
   if (t.taxonomy) TAXONOMY = t.taxonomy;
@@ -2637,7 +2644,7 @@ function renderHome() {
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
           : doneToday
-            ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
+            ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
       </div>
@@ -2649,7 +2656,10 @@ function renderHome() {
     selectedDate = todayStr();
     /* У пьесы кнопка открывает занятие по плану: оно само поставит отметку
        в конце. Ручной путь остаётся на «дополнить», когда день уже отмечен. */
-    if (isPiano() && piece().bars && !entryFor(todayStr())) { openPractice(); return; }
+    /* У пьесы кнопка всегда ведёт в занятие — и когда день ещё не отмечен,
+       и когда уже отмечен: второе занятие за день это нормально, отрезки
+       допишутся в ту же запись. Ручная шторка остаётся у остальных треков. */
+    if (isPiano() && piece().bars) { openPractice(); return; }
     openLogSheet();
   });
 
@@ -2923,7 +2933,7 @@ function updateHeroInfo() {
     cta.innerHTML = !gistReady()
       ? "🔒 Подключить синхронизацию"
       : doneToday
-        ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${T("ctaAdd")}</span>`
+        ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
         : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
@@ -4701,12 +4711,44 @@ function pracLadderHTML(w) {
     }).join("") + "</div>";
 }
 
+/* Плеер с записью материала: та же запись, что играет фоном в погружении,
+   только здесь ею управляешь сам — перемотка, пауза, шаги по десять секунд.
+   Собирается один раз и переживает перерисовку карточки. */
+let pracAudioEl = null;
+function pracPlayer() {
+  const box = $("#pracPlayer");
+  if (!box) return;
+  const id = piece().id;
+  const url = audioUrls.get(id);
+
+  if (!url) {
+    if (!audioUrls.has(id)) { pullAudio(id); box.hidden = false; box.innerHTML = '<p class="pl-wait">Запись загружается…</p>'; }
+    else box.hidden = true;                      // записи у пьесы нет — не мозолим глаза
+    return;
+  }
+  if (pracAudioEl && pracAudioEl.dataset.for === id) { box.hidden = false; return; }
+
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="pl-top"><b>Как это звучит</b><span>мотай к своему месту</span></div>
+    <audio controls preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>
+    <div class="pl-jump">
+      <button data-seek="-10">−10 с</button>
+      <button data-seek="-3">−3 с</button>
+      <button data-seek="3">+3 с</button>
+      <button data-seek="10">+10 с</button>
+    </div>`;
+  pracAudioEl = box.querySelector("audio");
+}
+
 function pracRender() {
   if (!prac) return;
   const w = pracWhere();
   const m = Math.floor(pracMin());
   $("#pracWhere").textContent = piece().name + (prac.startedAt ? " · " + m + " мин" : "");
   const box = $("#pracStage");
+
+  if (prac.screen !== "work") { const pl = $("#pracPlayer"); if (pl) pl.hidden = true; }
 
   if (prac.screen === "start") {
     box.innerHTML = `
@@ -4767,6 +4809,7 @@ function pracRender() {
     return;
   }
 
+  pracPlayer();
   const u = prac.cur;
   if (!u) { pracFinish(); return; }
   const next = u.to < piece().bars ? u.to + 1 : 0;
@@ -4783,10 +4826,7 @@ function pracRender() {
       ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${
         prac.hintOpen ? "Спрятать подсказку" : "Подсказка: как читаются ноты"}</button>` : ""}
       ${prac.hintOpen ? pracHintHTML(u) : ""}
-      <div class="pr-two">
-        <button class="pr-ghost" data-prac="skip">Отложить отрезок</button>
-        <button class="pr-ghost" data-prac="finish">Завершить занятие</button>
-      </div>
+      <button class="pr-ghost" data-prac="finish">Завершить занятие</button>
       <p class="pr-why">${whole
         ? "<b>Это целый кусок.</b> Здесь уже слышно мелодию — ради этого пьеса и режется на части."
         : "<b>Зачем до первой ноты следующего такта.</b> С неё начнётся следующий отрезок — так соседние куски склеятся сами."}</p>
@@ -4822,6 +4862,10 @@ function openPractice() {
 
 function closePractice() {
   clearInterval(pracTimer);
+  if (pracAudioEl) { try { pracAudioEl.pause(); } catch {} }
+  pracAudioEl = null;
+  const pl = $("#pracPlayer");
+  if (pl) { pl.innerHTML = ""; pl.hidden = true; }
   prac = null;
   $("#prac").hidden = true;
   $("#prac").setAttribute("aria-hidden", "true");
@@ -4844,14 +4888,15 @@ function pracFinish() {
   const closed = prac ? prac.closed.slice() : [];
   const mins = Math.round(pracMin());
   if (closed.length) {
-    const byHand = { right: [], left: [] };
-    for (const c of closed) {
-      const hands = c.hand === "both" ? ["right", "left"] : [c.hand];
-      for (const h of hands) byHand[h].push({ from: c.from, to: c.to });
-    }
+    /* Каждый закрытый отрезок пишется отдельным проходом и НЕ склеивается
+       с соседними. Склейка была ошибкой: приложение считает выученность
+       по числу проходов над тактом, а лесенка проходит такт трижды —
+       сам по себе, в паре и в целой части. Склеенные в один диапазон,
+       эти три прохода превращались в один, и прогресс отставал от правды. */
     const spans = [];
-    for (const h of ["right", "left"])
-      for (const sp of mergeSpans(byHand[h])) spans.push({ hand: h, from: sp.from, to: sp.to });
+    for (const c of closed)
+      for (const h of (c.hand === "both" ? ["right", "left"] : [c.hand]))
+        spans.push({ hand: h, from: c.from, to: c.to });
 
     if (spans.length) {
       const ds = todayStr();
@@ -4877,6 +4922,12 @@ function pracFinish() {
 
 function bindPractice() {
   $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
+  $("#pracPlayer").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-seek]");
+    if (!b || !pracAudioEl) return;
+    pracAudioEl.currentTime = Math.max(0, pracAudioEl.currentTime + +b.dataset.seek);
+  });
+
   $("#prac").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b || !prac) return;
@@ -4908,10 +4959,6 @@ function bindPractice() {
         return pracNext();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
-      case "skip":
-        if (prac.cur.review) prac.reviewed.push(prac.cur.k);
-        else prac.queue.push(prac.cur);
-        return pracNext();
       case "restDone": return pracEndRest();
       case "finish": return pracFinish();
     }
@@ -5034,7 +5081,7 @@ const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabShop: "Магазин",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр",
-  ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить",
+  ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
   coins: "монет", coin: "🪙", streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания",
   shopThemes: "Темы оформления", shopNote: "Монеты капают сами: за каждое отмеченное занятие, за непрерывность, за открытые награды и карточки знаний. Тратить их не обязательно — но приятно."
@@ -6054,6 +6101,12 @@ async function applyTaxonomy(files) {
     if (tax) TAXONOMY = tax;
     if (cats && cats.byId) CATEGORIES = cats.byId;
     if (tax || cats) localStorage.setItem(LS_TAX, JSON.stringify({ taxonomy: TAXONOMY, categories: CATEGORIES }));
+
+    const prac = await readFile(PRAC_FILE);
+    if (prac && typeof prac === "object") {
+      PRACTICE_DATA = prac;
+      localStorage.setItem(LS_PRAC, JSON.stringify(prac));
+    }
   } catch {}
 }
 
