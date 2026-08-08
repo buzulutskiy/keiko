@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 50";
+const APP_VERSION = "Кэйко 51";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1330,7 +1330,7 @@ function renderInner() {
   }
   syncNotesFabs();
   audioSync();
-  zenArm();
+  zenArm(true);
   paintSndBtn();
 
   if (quietRender && box && keepScroll) box.scrollTop = keepScroll;   // не сбрасываем место, где человек читал
@@ -1662,7 +1662,7 @@ function audioSync() {
     if (!h.playing()) { h.volume(0); try { h.seek(0); } catch {} h.play(); }
     h.fade(h.volume(), AUDIO_VOL, FADE_IN);
     if (window.waveStart) waveStart();
-    zenArm();
+    zenArm(true);
     paintSndBtn();
   }, anyPlaying() ? SETTLE_MS + FADE_OUT * 0.6 : 120);   // гасить нечего — стартуем почти сразу
 }
@@ -1872,9 +1872,10 @@ async function pullEnvelopes() {
    Если человек просто слушает и ничего не трогает — интерфейс уходит, остаётся
    обложка и цвет. Любое касание возвращает всё обратно. Экран при этом держим
    включённым, но не блокируем: музыка играет и в фоне. */
-const ZEN_AFTER = 13000;
+const ZEN_AFTER = 10000;
 let zenTimer = 0, zenOn = false, wakeLock = null;
 let zenHold = 0;   // до этого времени в погружение не входим: человек вышел сам
+let zenAt = 0;     // когда должен сработать текущий отсчёт
 
 /* Не давать экрану гаснуть. Штатный Wake Lock есть не везде — на iOS он
    появился поздно и в приложении с домашнего экрана срабатывает не всегда.
@@ -1948,19 +1949,29 @@ function zenExit(manual) {
     document.body.classList.remove("zen");
     keepAwake(false);
     /* Тапнул — значит музыка надоела. Гасим сразу и не возвращаемся сами:
-       иначе через тринадцать секунд она заиграла бы снова, поверх нежелания. */
+       иначе через десять секунд она заиграла бы снова, поверх нежелания. */
     if (manual) zenHold = now() + 3 * 60 * 1000;
     audioSync();
   }
   zenArm();
 }
 // условия: главная, звук играет, ничего не открыто
-function zenArm() {
+/* keep = «не сбрасывай отсчёт, если он уже идёт». Отсчитываем бездействие
+   человека, а догрузка музыки к этому отношения не имеет: раньше она
+   перезапускала таймер, и вместо десяти секунд выходило под двадцать. */
+function zenArm(keep) {
+  const pending = !!zenTimer;
   clearTimeout(zenTimer);
   zenTimer = 0;                       // не только гасим таймер, но и признаём это состоянием
   const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
     && !document.hidden && hasMaterials() && !sheetOpen() && now() > zenHold;
   if (!can) { if (zenOn) zenExit(); return; }
+  if (keep && pending && zenAt) {
+    const left = Math.max(0, zenAt - now());
+    zenTimer = setTimeout(zenEnter, left);
+    return;
+  }
+  zenAt = now() + ZEN_AFTER;
   zenTimer = setTimeout(zenEnter, ZEN_AFTER);
 }
 const sheetOpen = () => !!document.querySelector(".sheet.show, .sheet-bg.show")
