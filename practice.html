@@ -123,12 +123,16 @@ const ENTRIES = [
   { date: "2026-08-08", spans: [{ hand: "right", from: 4, to: 10 }] },
 ];
 
-/* Докуда разобрано — по записям приложения. Проверять есть смысл только это:
-   дальше человек и не играл. */
-const LEARNED = ENTRIES.reduce((m, e) =>
-  e.spans.reduce((k, s) => Math.max(k, s.to), m), 0);
+/* Докуда разобрано — по записям приложения, отдельно на каждую руку.
+   Проверять есть смысл только это: дальше человек и не играл. */
+const learnedBy = (hand) => ENTRIES.reduce((m, e) =>
+  e.spans.reduce((k, s) => s.hand === hand ? Math.max(k, s.to) : k, m), 0);
+const LEARNED_R = learnedBy("right"), LEARNED_L = learnedBy("left");
+const learned = () => st.hand === "left" ? LEARNED_L : LEARNED_R;
+const handWord = () => st.hand === "left" ? "левая" : "правая";
 
-const WITH_NOTES = 3;      // столько раз по нотам, прежде чем пробовать по памяти
+const WITH_NOTES = 3;      // столько раз по подсказке, прежде чем закрыть её
+const BLIND_TIMES = 3;     // столько раз по памяти, прежде чем оценивать
 const MAX_ROUNDS = 2;      // столько подходов к одному такту за занятие — и дальше
 
 const LS = "keiko-practice-v4";
@@ -143,6 +147,8 @@ const fresh = () => ({
   focus: [],           // такты на сегодня
   fi: 0,               // который из них сейчас
   played: 0,           // сколько раз сыграл по нотам
+  blindPlayed: 0,      // сколько раз сыграл без подсказки
+  hand: "right",       // какой рукой занимаемся сегодня
   blind: false,        // дошли до игры без нот
   rounds: 0,           // подходов к текущему такту
   fixed: [],           // что стало уверенным за занятие
@@ -159,6 +165,7 @@ const fresh = () => ({
 let st = loadSt() || fresh();
 
 const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const el = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; };
 const plural = (n, a, b, c) => {
   const m = n % 100, k = n % 10;
@@ -187,15 +194,16 @@ const medianOf = (a) => {
   const v = a.slice().sort((x, y) => x - y);
   return v[Math.floor(v.length / 2)];
 };
-const avg = (o) => {
-  const v = Object.values(o);
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
-};
+const avgOf = (pairs) => pairs.length
+  ? pairs.reduce((a, [, t]) => a + t, 0) / pairs.length : 0;
+
+const key = (b) => st.hand + ":" + b;
 
 function stripHTML(active) {
-  let out = '<div class="strip" style="grid-template-columns:repeat(' + LEARNED + ',1fr)">';
-  for (let b = 1; b <= LEARNED; b++) {
-    const m = st.marks[b];
+  const n = learned();
+  let out = '<div class="strip" style="grid-template-columns:repeat(' + n + ',1fr)">';
+  for (let b = 1; b <= n; b++) {
+    const m = st.marks[key(b)];
     const cls = b === active ? "at" : m === "sure" ? "ok" : m ? "weak" : "";
     out += '<i class="' + cls + '"></i>';
   }
@@ -257,16 +265,22 @@ const SCREENS = {
   start: () => el(`
     <div>
       <p class="step-of">Начало</p>
-      <p class="lead">У тебя разобрано <b>до ${LEARNED}-го такта</b>.</p>
-      <p class="lead dim">Сначала проверим, что из этого живо. Играй по памяти, в ноты не подглядывай —
-        нам нужна честная картина, а не красивая.</p>
-      <button class="big-btn" id="go">Начать проверку</button>
+      <p class="lead">Разобрано: правой — <b>${LEARNED_R ? "до " + LEARNED_R + "-го такта" : "ничего"}</b>,
+        левой — <b>${LEARNED_L ? "до " + LEARNED_L + "-го такта" : "ничего"}</b>.</p>
+      <p class="lead dim">Руки учатся порознь и забываются порознь, поэтому и занимаемся ими отдельно.
+        С какой сегодня?</p>
+      <div class="choices">
+        <button class="${st.hand === "right" ? "good" : ""}" data-hand="right">
+          <b>Правая</b><em>${LEARNED_R ? LEARNED_R + " тактов разобрано" : "ещё не начата"}</em></button>
+        <button class="${st.hand === "left" ? "good" : ""}" data-hand="left">
+          <b>Левая</b><em>${LEARNED_L ? LEARNED_L + " тактов разобрано" : "ещё не начата"}</em></button>
+      </div>
     </div>`),
 
   test: () => {
     const n = el(`
       <div>
-        <p class="step-of">Проверка · ${st.at} из ${LEARNED}</p>
+        <p class="step-of">Проверка · ${handWord()} · ${st.at} из ${learned()}</p>
         <div class="bar-num"><b>${st.at}</b><i>такт</i></div>
         <p class="tick" id="tick">0.0 с</p>
         <p class="say">Сыграл? Как вышло?</p>
@@ -281,13 +295,13 @@ const SCREENS = {
   },
 
   plan: () => {
-    const sure = Object.values(st.marks).filter((m) => m === "sure").length;
+    const sure = Object.entries(st.marks).filter(([k, m]) => k.startsWith(st.hand + ":") && m === "sure").length;
     const list = st.focus;
     return el(`
       <div>
         <p class="step-of">Что получилось</p>
-        <p class="lead">Уверенно идёт <b>${sure} из ${LEARNED}</b> ${plural(LEARNED, "такта", "тактов", "тактов")}.
-          В среднем <b>${avg(st.times).toFixed(1)} с</b> на такт.</p>
+        <p class="lead">${handWord() === "левая" ? "Левой" : "Правой"} уверенно идёт <b>${sure} из ${learned()}</b> ${plural(learned(), "такта", "тактов", "тактов")}.
+          В среднем <b>${avgOf(Object.entries(st.times).filter(([k]) => k.startsWith(st.hand + ":"))).toFixed(1)} с</b> на такт.</p>
         ${(st.slow || []).length
           ? `<p class="lead dim">Такт${st.slow.length > 1 ? "ы" : ""} <b>${st.slow.join(", ")}</b>
                ты отметил уверенно, но думал над ${st.slow.length > 1 ? "ними" : "ним"} заметно дольше —
@@ -296,7 +310,7 @@ const SCREENS = {
           ? `<p class="lead dim">Сегодня займёмся тактами <b>${list.join(", ")}</b> —
                остальное трогать не будем, оно и так живо.</p>
              <button class="big-btn" id="go">Поехали</button>`
-          : `<p class="lead dim">Слабых мест нет — значит, пора брать такт ${LEARNED + 1}.</p>
+          : `<p class="lead dim">Слабых мест нет — значит, пора брать такт ${learned() + 1}.</p>
              <button class="big-btn" id="done">Закончить занятие</button>`}
       </div>`);
   },
@@ -308,7 +322,7 @@ const SCREENS = {
     if (!st.blind) {
       return el(`
         <div>
-          <p class="step-of">Такт ${bar} · по нотам</p>
+          <p class="step-of">Такт ${bar} · ${handWord()} · по подсказке</p>
           <div class="bar-num"><b>${bar}</b><i>такт</i></div>
           <p class="say">Играй, глядя в ноты. Медленно, ${WITH_NOTES} ${plural(WITH_NOTES, "раз", "раза", "раз")}.</p>
           <div class="pips">
@@ -320,11 +334,25 @@ const SCREENS = {
         </div>`);
     }
 
+    if (st.blindPlayed < BLIND_TIMES) {
+      return el(`
+        <div>
+          <p class="step-of">Такт ${bar} · ${handWord()} · без подсказки</p>
+          <div class="bar-num"><b>${bar}</b><i>такт</i></div>
+          <p class="say">Подсказка закрыта. Сыграй по памяти ${BLIND_TIMES} ${plural(BLIND_TIMES, "раз", "раза", "раз")}.</p>
+          <div class="pips">
+            ${Array.from({ length: BLIND_TIMES }, (_, i) =>
+              `<i class="${i < st.blindPlayed ? "on" : ""}">${i < st.blindPlayed ? "✓" : i + 1}</i>`).join("")}
+          </div>
+          <button class="big-btn" id="blindPlayed">Сыграл</button>
+        </div>`);
+    }
+
     return el(`
       <div>
-        <p class="step-of">Такт ${bar} · без нот</p>
+        <p class="step-of">Такт ${bar} · ${handWord()} · итог</p>
         <div class="bar-num"><b>${bar}</b><i>такт</i></div>
-        <p class="say">Ноты закрой. Как теперь?</p>
+        <p class="say">Как теперь идёт?</p>
         <p class="tick" id="tick">0.0 с</p>
         <div class="choices">
           <button class="good" data-w="sure"><b>Уверенно</b><em>пошло</em></button>
@@ -368,11 +396,13 @@ const SCREENS = {
     </div>`),
 
   end: () => {
-    const sure = Object.entries(st.marks).filter(([, m]) => m === "sure").map(([b]) => +b);
-    const slowest = Object.entries(st.times).sort((a, b) => b[1] - a[1])[0];
-    const gains = Object.entries(st.workTimes)
-      .filter(([b, t]) => st.times[b] && t < st.times[b] - 0.5)
-      .map(([b, t]) => ({ bar: +b, was: st.times[b], now: t }))
+    const mine = (o) => Object.entries(o).filter(([k]) => k.startsWith(st.hand + ":"));
+    const barOf = (k) => +k.split(":")[1];
+    const sure = mine(st.marks).filter(([, m]) => m === "sure").map(([k]) => barOf(k));
+    const slowest = mine(st.times).sort((a, b) => b[1] - a[1])[0];
+    const gains = mine(st.workTimes)
+      .filter(([k, t]) => st.times[k] && t < st.times[k] - 0.5)
+      .map(([k, t]) => ({ bar: barOf(k), was: st.times[k], now: t }))
       .sort((a, b) => a.bar - b.bar);
     return el(`
       <div>
@@ -381,10 +411,11 @@ const SCREENS = {
           ? `Сдвинулось: <b>${st.fixed.join(", ")}</b>.`
           : "Сегодня без сдвигов — бывает."}</p>
         <ul class="list">
-          <li>Уверенно идёт<span>${sure.length} из ${LEARNED} ${plural(LEARNED, "такта", "тактов", "тактов")}</span></li>
-          <li>Среднее время на такт<span>${avg(st.times).toFixed(1)} с</span></li>
-          ${slowest ? `<li>Дольше всего<span>такт ${slowest[0]} · ${(+slowest[1]).toFixed(1)} с</span></li>` : ""}
-          <li>Разобрано<span>до ${LEARNED}-го такта из ${PIECE.bars}</span></li>
+          <li>Рука<span>${handWord()}</span></li>
+          <li>Уверенно идёт<span>${sure.length} из ${learned()} ${plural(learned(), "такта", "тактов", "тактов")}</span></li>
+          <li>Среднее время на такт<span>${avgOf(mine(st.times)).toFixed(1)} с</span></li>
+          ${slowest ? `<li>Дольше всего<span>такт ${barOf(slowest[0])} · ${(+slowest[1]).toFixed(1)} с</span></li>` : ""}
+          <li>Разобрано<span>до ${learned()}-го такта из ${PIECE.bars}</span></li>
           <li>Осталось слабых<span>${st.focus.length - st.fixed.length}</span></li>
         </ul>
         ${gains.length ? `
@@ -418,25 +449,35 @@ document.addEventListener("click", (e) => {
 
   if (t.id === "finish") { st.screen = "end"; return render(); }
 
+  if (t.dataset.hand) {
+    st.hand = t.dataset.hand;
+    if (!learned()) { alert("Этой рукой ещё ничего не разобрано — проверять нечего."); return; }
+    if (!st.startedAt) st.startedAt = Date.now();
+    st.at = 1; st.screen = "test";
+    return render();
+  }
+
   if (t.id === "go") {
     if (!st.startedAt) st.startedAt = Date.now();
     st.screen = st.screen === "start" ? "test" : "work";
-    if (st.screen === "work") { st.fi = 0; st.played = 0; st.blind = false; st.rounds = 0; }
+    if (st.screen === "work") { st.fi = 0; st.played = 0; st.blind = false; st.blindPlayed = 0; st.rounds = 0; }
     return render();
   }
 
   if (t.dataset.m) {                          // ответ на проверке
-    st.times[st.at] = clockStop();
-    st.marks[st.at] = t.dataset.m;
-    if (st.at < LEARNED) { st.at++; return render(); }
+    st.times[key(st.at)] = clockStop();
+    st.marks[key(st.at)] = t.dataset.m;
+    if (st.at < learned()) { st.at++; return render(); }
     /* Фокус — слабое и медленное. «Уверенно, но вдвое дольше остальных» —
        это ещё не выучено: руки помнят, но не сами. Всё остальное сегодня
        не трогаем: перебирать выученное — простейший способ не сдвинуться. */
-    const med = medianOf(Object.values(st.times));
-    st.slow = Object.entries(st.times)
-      .filter(([b, t]) => st.marks[b] === "sure" && med && t > med * 2 && t - med > 3)
-      .map(([b]) => +b);
-    const weak = Object.entries(st.marks).filter(([, m]) => m !== "sure").map(([b]) => +b);
+    const mine = (o) => Object.entries(o).filter(([k]) => k.startsWith(st.hand + ":"));
+    const barOf = (k) => +k.split(":")[1];
+    const med = medianOf(mine(st.times).map(([, t]) => t));
+    st.slow = mine(st.times)
+      .filter(([k, t]) => st.marks[k] === "sure" && med && t > med * 2 && t - med > 3)
+      .map(([k]) => barOf(k));
+    const weak = mine(st.marks).filter(([, m]) => m !== "sure").map(([k]) => barOf(k));
     st.focus = [...new Set([...weak, ...st.slow])].sort((a, b) => a - b);
     st.screen = "plan";
     return render();
@@ -444,15 +485,16 @@ document.addEventListener("click", (e) => {
 
   if (t.id === "played") {
     st.played++;
-    if (st.played >= WITH_NOTES) st.blind = true;
+    if (st.played >= WITH_NOTES) { st.blind = true; st.blindPlayed = 0; }
     return render();
   }
+  if (t.id === "blindPlayed") { st.blindPlayed++; return render(); }
 
   if (t.dataset.w) {                          // как вышло без нот
     const bar = st.focus[st.fi];
-    st.workTimes[bar] = clockStop();
+    st.workTimes[key(bar)] = clockStop();
     if (t.dataset.w === "sure") {
-      st.marks[bar] = "sure";
+      st.marks[key(bar)] = "sure";
       st.fixed.push(bar);
       return nextFocus();
     }
@@ -460,7 +502,7 @@ document.addEventListener("click", (e) => {
     /* Два подхода — и дальше. Один такт может съесть всё занятие,
        а вещь на сорок тактов так не разберёшь. */
     if (st.rounds >= MAX_ROUNDS) return nextFocus();
-    st.played = 0; st.blind = false;
+    st.played = 0; st.blind = false; st.blindPlayed = 0;
     return render();
   }
 
@@ -492,7 +534,7 @@ function endRest() {
 
 function nextFocus() {
   st.fi++;
-  st.played = 0; st.blind = false; st.rounds = 0;
+  st.played = 0; st.blind = false; st.blindPlayed = 0; st.rounds = 0;
   if (st.fi >= st.focus.length) st.screen = "end";
   render();
 }
