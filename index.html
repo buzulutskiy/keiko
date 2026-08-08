@@ -1298,90 +1298,87 @@
     .wt-page-acts { display: flex; gap: 8px; margin-top: 10px; }
     .wt-page-acts .btn { flex: 1; text-align: center; text-decoration: none; }
 
-    /* ── Практика: занятие по плану ── */
+    /* ── Практика: занятие по плану ──
+       Экран во всю высоту: суть по центру, действия прибиты к низу под большой
+       палец. Объяснения убраны — они были нужны, пока механика новая, а на
+       двадцатом такте превращаются в шум. */
     #prac {
       position: fixed; inset: 0; z-index: 60;
       background: var(--bg);
       display: flex; flex-direction: column;
-      padding: max(14px, env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
-      overflow-y: auto;
+      padding: max(14px, env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));
     }
     #prac[hidden] { display: none; }
-    #pracTop { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-    #pracWhere { flex: 1; min-width: 0; font-size: 0.78rem; color: var(--dim); }
+    #pracTop { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    #pracWhere { flex: 1; min-width: 0; font-size: 0.74rem; color: var(--dim);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #pracClose {
       flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
       border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--ink); font-size: 0.9rem; line-height: 1;
     }
-    #pracStage { max-width: 520px; width: 100%; margin: 0 auto; }
-
-    .pr-card {
-      background: var(--panel); border: 1px solid var(--glass-line);
-      border-radius: 18px; padding: 20px 18px;
+    #pracStage {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      max-width: 460px; width: 100%; margin: 0 auto;
+      display: flex; flex-direction: column;
     }
-    .pr-cap { color: var(--dim); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 12px; }
-    .pr-unit { text-align: center; margin: 4px 0 2px; }
-    .pr-unit b { display: block; font-size: 2.5rem; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
-    .pr-unit i { font-style: normal; display: block; color: var(--gold); font-size: 0.92rem; margin-top: 6px; }
-    .pr-say { text-align: center; font-size: 0.92rem; color: var(--muted); margin: 15px 0 0; line-height: 1.55; }
-    .pr-say b { color: var(--ink); font-weight: 600; }
-    .pr-lead { font-size: 0.98rem; line-height: 1.55; margin: 0 0 8px; }
-    .pr-lead b { font-weight: 600; }
-    .pr-lead.dim { color: var(--muted); font-size: 0.88rem; }
+
+    .pr-mid {
+      flex: 1 1 auto; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center;
+      padding: 18px 0;
+    }
+    .pr-bot { flex: 0 0 auto; padding-top: 12px; }
+    .pr-row { display: flex; gap: 8px; margin-top: 9px; }
+    .pr-row .pr-ghost { flex: 1; margin-top: 0; }
+
+    .pr-kind {
+      font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--dim); margin: 0 0 16px;
+    }
+    .pr-big {
+      font-size: 2.7rem; font-weight: 300; line-height: 1.12; margin: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .pr-big.sm { font-size: 1.5rem; font-weight: 600; line-height: 1.3; max-width: 15em; }
+    .pr-hand { margin: 10px 0 0; font-size: 1rem; color: var(--gold); }
+    .pr-tail { margin: 10px 0 0; font-size: 0.85rem; color: var(--muted); }
+
+    /* ступени части точками */
+    .pr-dots { display: flex; gap: 7px; justify-content: center; margin: 0 0 18px; }
+    .pr-dots i {
+      min-width: 30px; height: 30px; padding: 0 7px; border-radius: 15px;
+      border: 1px solid var(--glass-line); display: grid; place-items: center;
+      font-style: normal; font-size: 0.76rem; color: var(--dim);
+    }
+    .pr-dots i.was { background: var(--glass-2); color: var(--muted); border-color: transparent; }
+    .pr-dots i.on { background: var(--gold); color: #241a05; border-color: transparent; font-weight: 600; }
 
     .pr-go {
-      width: 100%; border: 0; border-radius: 16px; padding: 17px; margin-top: 15px;
-      font: inherit; font-size: 1rem; font-weight: 600;
+      width: 100%; border: 0; border-radius: 17px; padding: 19px;
+      font: inherit; font-size: 1.05rem; font-weight: 600;
       background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021;
     }
     .pr-main {
-      width: 100%; border: 0; border-radius: 16px; padding: 17px; margin-top: 8px;
-      font: inherit; font-size: 1rem; font-weight: 600; color: #241a05;
+      width: 100%; border: 0; border-radius: 17px; padding: 19px;
+      font: inherit; font-size: 1.05rem; font-weight: 600; color: #241a05;
       background: linear-gradient(160deg, var(--gold), var(--gold-2));
     }
     .pr-ghost {
       width: 100%; border: 1px solid var(--glass-line); background: transparent;
-      color: var(--muted); font: inherit; font-size: 0.84rem;
-      border-radius: 13px; padding: 11px; margin-top: 9px;
+      color: var(--muted); font: inherit; font-size: 0.86rem;
+      border-radius: 14px; padding: 12px; margin-top: 9px;
     }
-    .pr-two { display: flex; gap: 8px; }
-    .pr-two .pr-ghost { flex: 1; }
-    .pr-pick { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-    .pr-pick button {
-      width: 100%; text-align: left; border: 1px solid var(--glass-line);
-      background: var(--glass); color: var(--ink); font: inherit;
-      font-size: 0.95rem; border-radius: 13px; padding: 13px 15px;
-    }
-    .pr-pick button b { font-weight: 600; }
-    .pr-pick button em { font-style: normal; color: var(--dim); font-size: 0.76rem; display: block; margin-top: 1px; }
-    .pr-pick button.good { border-color: rgba(110, 231, 168, 0.4); }
 
-    /* Где я сейчас — крупно и первым делом; список частей ниже как контекст. */
-    .pr-here {
-      background: rgba(255, 201, 77, 0.09);
-      border: 1px solid rgba(255, 201, 77, 0.26);
-      border-radius: 14px; padding: 14px 15px; margin-bottom: 14px;
-    }
-    .pr-here-n {
-      display: block; font-size: 0.72rem; letter-spacing: 0.06em;
-      text-transform: uppercase; color: var(--gold); margin-bottom: 5px;
-    }
-    .pr-here b { display: block; font-size: 1.05rem; font-weight: 600; line-height: 1.35; }
-    .pr-here.seam { background: rgba(139, 124, 246, 0.11); border-color: rgba(139, 124, 246, 0.3); }
-    .pr-here.seam .pr-here-n { color: var(--violet); }
-    .pr-here em { display: block; font-style: normal; font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
-
-    /* Части: каждая — отдельная строка со своим именем и полосой.
-       Раньше это были равные столбики: групп в них не читалось. */
-    .pr-plist { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+    /* части пьесы: список на экране начала */
+    .pr-plist { display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 22px; }
     .pr-p {
-      opacity: 0.55; display: block; width: 100%; text-align: left;
+      opacity: 0.45; display: block; width: 100%; text-align: left;
       background: transparent; border: 0; padding: 0; color: inherit; font: inherit;
     }
     .pr-p.now, .pr-p.done { opacity: 1; }
-    .pr-p-top { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; margin-bottom: 5px; }
-    .pr-p-top b { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 44px; }
+    .pr-p-top { display: flex; align-items: baseline; gap: 8px; font-size: 0.76rem; margin-bottom: 4px; }
+    .pr-p-top b { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 42px; }
     .pr-p-top em {
       flex: 1; min-width: 0; font-style: normal; color: var(--muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1389,23 +1386,14 @@
     .pr-p-top span { flex: 0 0 auto; color: var(--dim); font-variant-numeric: tabular-nums; }
     .pr-p.now .pr-p-top b { color: var(--gold); }
     .pr-p.now .pr-p-top em { color: var(--ink); }
-    .pr-p-bar { display: block; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+    .pr-p-bar { display: block; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
     .pr-p-bar i { display: block; height: 100%; background: var(--violet); }
     .pr-p.done .pr-p-bar i { background: #6ee7a8; }
     .pr-p.now .pr-p-bar i { background: var(--gold); }
 
-    .pr-ladder { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-    .pr-lvl { display: flex; align-items: center; gap: 9px; font-size: 0.78rem; }
-    .pr-lvl b { min-width: 92px; font-weight: 600; }
-    .pr-lvl .tr { flex: 1; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
-    .pr-lvl .tr i { display: block; height: 100%; background: var(--violet); }
-    .pr-lvl > span { color: var(--dim); min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-    .pr-lvl.now b { color: var(--gold); }
-    .pr-cap-line { font-size: 0.8rem; color: var(--muted); margin: 15px 0 8px; }
-    .pr-cap-line b { color: var(--ink); font-weight: 600; }
-
+    /* ноты текущего отрезка */
     .pr-hint {
-      margin-top: 9px; border-radius: 13px; padding: 13px 14px;
+      margin-top: 20px; width: 100%; border-radius: 14px; padding: 14px 15px; text-align: left;
       background: rgba(139, 124, 246, 0.09); border: 1px solid rgba(139, 124, 246, 0.24);
       font-size: 0.88rem; line-height: 1.65;
     }
@@ -1419,29 +1407,28 @@
       display: inline-block; background: rgba(255, 255, 255, 0.1); border-radius: 3px;
       padding: 0 5px; margin: 0 3px 0 5px; font-weight: 700; font-size: 0.72rem; color: var(--muted);
     }
-    .pr-leg { margin: 11px 0 0; padding-top: 9px; font-size: 0.7rem; color: var(--dim); line-height: 1.5;
-      border-top: 1px solid rgba(255, 255, 255, 0.07); }
-    /* Плеер живёт отдельно от карточки: карточка перерисовывается на каждом
-       шаге, и внутри неё запись начиналась бы заново. */
+    .pr-leg {
+      margin: 11px 0 0; padding-top: 9px; font-size: 0.7rem; color: var(--dim); line-height: 1.5;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    /* плеер живёт отдельно от карточки: она перерисовывается на каждом шаге */
     #pracPlayer {
-      max-width: 520px; width: 100%; margin: 12px auto 0;
+      flex: 0 0 auto; max-width: 460px; width: 100%; margin: 10px auto 0;
       background: var(--panel); border: 1px solid var(--glass-line);
-      border-radius: 16px; padding: 13px 15px;
+      border-radius: 15px; padding: 11px 13px;
     }
     #pracPlayer[hidden] { display: none; }
-    .pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
-    .pl-top b { font-size: 0.82rem; font-weight: 600; }
-    .pl-top span { font-size: 0.72rem; color: var(--dim); }
-    #pracPlayer audio { width: 100%; height: 34px; display: block; }
-    .pl-jump { display: flex; gap: 8px; margin-top: 9px; }
+    .pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+    .pl-top b { font-size: 0.78rem; font-weight: 600; }
+    .pl-top span { font-size: 0.7rem; color: var(--dim); }
+    #pracPlayer audio { width: 100%; height: 32px; display: block; }
+    .pl-jump { display: flex; gap: 7px; margin-top: 8px; }
     .pl-jump button {
       flex: 1; border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--ink); font: inherit; font-size: 0.82rem; border-radius: 11px; padding: 9px;
+      color: var(--ink); font: inherit; font-size: 0.78rem; border-radius: 10px; padding: 8px;
     }
-    .pl-wait { font-size: 0.78rem; color: var(--dim); text-align: center; padding: 4px 0; }
-
-    .pr-why { margin-top: 14px; font-size: 0.76rem; color: var(--dim); line-height: 1.6; }
-    .pr-why b { color: var(--muted); font-weight: 600; }
+    .pl-wait { font-size: 0.76rem; color: var(--dim); text-align: center; padding: 3px 0; margin: 0; }
 
     /* «Смотрю»: добавление ссылки и список роликов */
     .wt-add { display: flex; gap: 8px; margin-top: 10px; }

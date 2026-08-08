@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 59";
+const APP_VERSION = "Кэйко 60";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4831,41 +4831,38 @@ function pracRender() {
     const p = w.part;
     const named = w.parts.some((x) => x.why);
     box.innerHTML = `
-      <div class="pr-card">
-        <p class="pr-cap">Занятие ${pracStore().session + 1}</p>
+      <div class="pr-mid">
+        <p class="pr-kind">занятие ${pracStore().session + 1}</p>
         ${w.seam ? `
-          <div class="pr-here seam">
-            <span class="pr-here-n">Шов · части ${w.a.i + 1} и ${w.b.i + 1}</span>
-            <b>Сыграть подряд</b>
-            <em>такты ${w.seam.from}–${w.seam.to} · обе части уже звучат порознь</em>
-          </div>`
+          <div class="pr-big sm">такты ${w.seam.from}–${w.seam.to}</div>
+          <p class="pr-hand">шов · части ${w.a.i + 1} и ${w.b.i + 1}</p>
+          <p class="pr-tail">обе части уже звучат порознь</p>`
           : p ? `
-          <div class="pr-here">
-            <span class="pr-here-n">Часть ${p.i + 1} из ${w.parts.length}</span>
-            <b>${esc(p.why || "такты " + p.from + "–" + p.to)}</b>
-            <em>такты ${p.from}–${p.to}</em>
-          </div>
-          ${pracLadderHTML(w)}`
-          : `<p class="pr-lead">Все части готовы — <b>собираем пьесу</b>.</p>${pracLadderHTML(w)}`}
-        <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить занятие" : "Начать занятие"}</button>
-        <p class="pr-cap" style="margin:20px 0 8px">Вся пьеса <b>— можно ткнуть в любую часть</b></p>
+          <div class="pr-big sm">${esc(p.why || "такты " + p.from + "–" + p.to)}</div>
+          <p class="pr-hand">часть ${p.i + 1} из ${w.parts.length} · такты ${p.from}–${p.to}</p>`
+          : `<div class="pr-big sm">Собираем пьесу</div><p class="pr-hand">все части готовы</p>`}
         ${pracPartsHTML(w)}
-        <button class="pr-ghost" data-prac="reset">Начать пьесу заново</button>
-        ${named ? "" : '<p class="pr-why">Разбор этой пьесы ещё не приехал — части поделены механически, по четыре такта.</p>'}
+        ${named ? "" : '<p class="pr-tail">разбор ещё не приехал — части поделены по четыре такта</p>'}
+      </div>
+      <div class="pr-bot">
+        <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить" : "Начать занятие"}</button>
+        <div class="pr-row"><button class="pr-ghost" data-prac="reset">Начать пьесу заново</button></div>
       </div>`;
     return;
   }
 
   if (prac.screen === "break") {
     box.innerHTML = `
-      <div class="pr-card">
-        <p class="pr-cap">Передышка</p>
-        <p class="pr-lead">За инструментом <b>${m} ${plural(m, "минута", "минуты", "минут")}</b>.</p>
-        <p class="pr-lead dim">Около двадцати минут держится внимание, дальше занятие идёт вхолостую.</p>
-        <div class="pr-pick">
-          <button class="good" data-rest="5"><b>Перерыв 5 минут</b></button>
-          <button data-rest="10"><b>Перерыв 10 минут</b></button>
-          <button data-rest="0"><b>Ещё поиграю</b><em>напомню через ${PRAC_ASK_AGAIN} минут</em></button>
+      <div class="pr-mid">
+        <p class="pr-kind">передышка</p>
+        <div class="pr-big">${m} мин</div>
+        <p class="pr-tail">дальше занятие идёт вхолостую</p>
+      </div>
+      <div class="pr-bot">
+        <button class="pr-main" data-rest="5">Перерыв 5 минут</button>
+        <div class="pr-row">
+          <button class="pr-ghost" data-rest="10">10 минут</button>
+          <button class="pr-ghost" data-rest="0">Ещё поиграю</button>
         </div>
       </div>`;
     return;
@@ -4874,26 +4871,27 @@ function pracRender() {
   if (prac.screen === "resting") {
     const left = Math.max(0, prac.restUntil - Date.now());
     box.innerHTML = `
-      <div class="pr-card">
-        <p class="pr-cap">Перерыв</p>
-        <div class="pr-unit"><b>${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}</b><i>осталось</i></div>
-        <p class="pr-lead dim" style="text-align:center">Встань, разомни кисти, посмотри в окно.</p>
-        <button class="pr-main" data-prac="restDone">Готов, продолжаем</button>
+      <div class="pr-mid">
+        <p class="pr-kind">перерыв</p>
+        <div class="pr-big">${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}</div>
+        <p class="pr-tail">встань, разомни кисти</p>
+      </div>
+      <div class="pr-bot">
+        <button class="pr-main" data-prac="restDone">Продолжаем</button>
       </div>`;
     return;
   }
 
   if (prac.screen === "wrap") {
     box.innerHTML = `
-      <div class="pr-card">
-        <p class="pr-cap">Пора закругляться</p>
-        <p class="pr-lead">Занятие идёт <b>${m} ${plural(m, "минуту", "минуты", "минут")}</b>.</p>
-        <p class="pr-lead dim">Незакрытое не пропадёт. Точность прибавляет после сна,
-          а не к концу длинного занятия.</p>
-        <div class="pr-pick">
-          <button class="good" data-prac="finish"><b>Завершить занятие</b></button>
-          <button data-rest="0"><b>Ещё немного</b><em>спрошу снова через ${PRAC_ASK_AGAIN} минут</em></button>
-        </div>
+      <div class="pr-mid">
+        <p class="pr-kind">пора закругляться</p>
+        <div class="pr-big">${m} мин</div>
+        <p class="pr-tail">незакрытое не пропадёт</p>
+      </div>
+      <div class="pr-bot">
+        <button class="pr-main" data-prac="finish">Завершить занятие</button>
+        <div class="pr-row"><button class="pr-ghost" data-rest="0">Ещё немного</button></div>
       </div>`;
     return;
   }
@@ -4902,28 +4900,38 @@ function pracRender() {
   const u = prac.cur;
   if (!u) { pracFinish(); return; }
   const next = u.to < piece().bars ? u.to + 1 : 0;
-  const whole = w.parts.some((p) => p.from === u.from && p.to === u.to) && !u.review;
+
+  /* Ступени части точками: где мы в лесенке, видно без слов. */
+  let dots = "";
+  if (!u.review && w.part) {
+    dots = '<div class="pr-dots">' + pracSteps(w.part).map((size) => {
+      const us = pracUnits(w.part.from, w.part.to, size);
+      const cls = size === w.size ? "on" : us.every(pracUnitDone) ? "was" : "";
+      const label = size === w.part.to - w.part.from + 1 ? "всё" : size;
+      return `<i class="${cls}">${label}</i>`;
+    }).join("") + "</div>";
+  }
+
+  const kind = u.review ? "освежаем" : w.seam ? "сращиваем" : "разбираем";
+  const where = w.seam ? `части ${w.a.i + 1} и ${w.b.i + 1}`
+    : w.part ? `часть ${w.part.i + 1} из ${w.parts.length}` : "вся пьеса";
+
   box.innerHTML = `
-    <div class="pr-card">
-      <p class="pr-cap">${u.review ? "Освежаем" : w.seam ? "Сращиваем" : "Разбираем"}${
-        w.seam ? ` · части ${w.a.i + 1} и ${w.b.i + 1}`
-        : w.part ? " · " + esc(w.part.why || "часть " + (w.part.i + 1)) : " · вся пьеса"}</p>
-      <div class="pr-unit"><b>${pracSpan(u)}</b><i>${PRAC_HAND[u.hand]}</i></div>
-      <p class="pr-say">${next
-        ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
-        : "Доиграй до конца."}</p>
-      <p class="pr-say">Играй, пока не пойдёт <b>три раза подряд без запинки</b>.</p>
-      <button class="pr-go" data-prac="ok">Получилось, дальше</button>
-      ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${
-        prac.hintOpen ? "Спрятать подсказку" : "Подсказка: как читаются ноты"}</button>` : ""}
+    <div class="pr-mid">
+      <p class="pr-kind">${kind} · ${esc(where)}</p>
+      ${dots}
+      <div class="pr-big">${pracSpan(u)}</div>
+      <p class="pr-hand">${PRAC_HAND[u.hand]}</p>
+      ${next ? `<p class="pr-tail">до первой ноты такта ${next}</p>` : ""}
       ${prac.hintOpen ? pracHintHTML(u) : ""}
-      ${prac.undo ? `<button class="pr-ghost" data-prac="undo">Отменить: ${esc(pracSpan(prac.undo.u))} · ${PRAC_HAND[prac.undo.u.hand]}</button>` : ""}
-      <button class="pr-ghost" data-prac="finish">Завершить занятие</button>
-      <p class="pr-why">${w.seam
-        ? "<b>Это шов.</b> Обе части по отдельности уже идут — здесь важно только место их стыка: именно там игра обычно и рвётся."
-        : whole
-        ? "<b>Это целый кусок.</b> Здесь уже слышно мелодию — ради этого пьеса и режется на части."
-        : "<b>Зачем до первой ноты следующего такта.</b> С неё начнётся следующий отрезок — так соседние куски склеятся сами."}</p>
+    </div>
+    <div class="pr-bot">
+      <button class="pr-go" data-prac="ok">Получилось</button>
+      <div class="pr-row">
+        ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
+        ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
+        <button class="pr-ghost" data-prac="finish">Закончить</button>
+      </div>
     </div>`;
 }
 
