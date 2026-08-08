@@ -1375,7 +1375,10 @@
     /* Части: каждая — отдельная строка со своим именем и полосой.
        Раньше это были равные столбики: групп в них не читалось. */
     .pr-plist { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
-    .pr-p { opacity: 0.55; }
+    .pr-p {
+      opacity: 0.55; display: block; width: 100%; text-align: left;
+      background: transparent; border: 0; padding: 0; color: inherit; font: inherit;
+    }
     .pr-p.now, .pr-p.done { opacity: 1; }
     .pr-p-top { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; margin-bottom: 5px; }
     .pr-p-top b { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 44px; }

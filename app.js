@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 57";
+const APP_VERSION = "Кэйко 58";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4628,6 +4628,17 @@ const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 })
    а вместе они впервые встречаются только когда выучено всё. */
 function pracWhere() {
   const parts = pracParts();
+
+  /* Выбранная руками часть идёт вперёд очереди: иногда нужно вернуться
+     к старому куску, не дожидаясь, пока до него дойдёт порядок. */
+  if (prac && prac.pick != null && parts[prac.pick]) {
+    const p = parts[prac.pick];
+    for (const size of pracSteps(p))
+      if (!pracStepDone(p, size)) return { parts, part: p, size, picked: true };
+    const whole = { from: p.from, to: p.to, size: p.to - p.from + 1 };
+    return { parts, part: p, size: whole.size, picked: true, refresh: true };
+  }
+
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
     if (!pracPartDone(p)) {
@@ -4653,7 +4664,7 @@ function pracQueue() {
   // освежаем давнее только в начале занятия
   (prac.reviewed.length >= PRAC_REVIEW_N ? [] : Object.entries(store.done))
     .filter(([k]) => !prac.reviewed.includes(k))
-    .sort((a, b) => a[1] - b[1])
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
     .slice(0, PRAC_REVIEW_N)
     .forEach(([k]) => {
       const [size, span, hand] = k.split(":");
@@ -4665,7 +4676,8 @@ function pracQueue() {
     : (w.asm[w.assembly] || []).map(pracAsUnit);
   for (const u of us)
     for (const h of pracHands(u))
-      if (!pracIsDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
+      if (w.refresh) q.push({ from: u.from, to: u.to, size: u.size, hand: h, review: true, k: pracKey(u, h) });
+      else if (!pracIsDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
   return q;
 }
 
@@ -4692,7 +4704,7 @@ function pracHintHTML(u) {
   const rows = [];
   for (let b = u.from; b <= u.to; b++) {
     const h = doc.hints[b];
-    if (!h) continue;
+    if (!h) { rows.push(`<div class="pr-hb"><span class="pr-hn">Т${b}</span><span class="pr-hh">подсказки нет</span></div>`); continue; }
     const parts = want.filter((k) => h[k]).map((k) =>
       `<span class="pr-hh">${k === "r" ? "пр." : "лев."}</span> ${h[k]}`);
     rows.push(`<div class="pr-hb"><span class="pr-hn">Т${b}</span>${
@@ -4716,14 +4728,14 @@ function pracPartsHTML(w) {
       }
     const pct = all ? Math.round(ok / all * 100) : 0;
     const done = pracPartDone(p), now = w.part && w.part.i === p.i;
-    return `<div class="pr-p ${done ? "done" : now ? "now" : ""}">
+    return `<button class="pr-p ${done ? "done" : now ? "now" : ""}" data-part="${p.i}" type="button">
       <div class="pr-p-top">
         <b>${p.from}–${p.to}</b>
         <em>${esc(p.why || "часть " + (p.i + 1))}</em>
         <span>${done ? "готово" : pct ? pct + "%" : ""}</span>
       </div>
       <span class="pr-p-bar"><i style="width:${pct}%"></i></span>
-    </div>`;
+    </button>`;
   }).join("") + "</div>";
 }
 
@@ -4816,8 +4828,9 @@ function pracRender() {
           ${pracLadderHTML(w)}`
           : `<p class="pr-lead">Все части готовы — <b>собираем пьесу</b>.</p>${pracLadderHTML(w)}`}
         <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить занятие" : "Начать занятие"}</button>
-        <p class="pr-cap" style="margin:20px 0 8px">Вся пьеса</p>
+        <p class="pr-cap" style="margin:20px 0 8px">Вся пьеса <b>— можно ткнуть в любую часть</b></p>
         ${pracPartsHTML(w)}
+        <button class="pr-ghost" data-prac="reset">Начать пьесу заново</button>
         ${named ? "" : '<p class="pr-why">Разбор этой пьесы ещё не приехал — части поделены механически, по четыре такта.</p>'}
       </div>`;
     return;
@@ -4884,6 +4897,7 @@ function pracRender() {
       ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${
         prac.hintOpen ? "Спрятать подсказку" : "Подсказка: как читаются ноты"}</button>` : ""}
       ${prac.hintOpen ? pracHintHTML(u) : ""}
+      ${prac.undo ? `<button class="pr-ghost" data-prac="undo">Отменить: ${esc(pracSpan(prac.undo.u))} · ${PRAC_HAND[prac.undo.u.hand]}</button>` : ""}
       <button class="pr-ghost" data-prac="finish">Завершить занятие</button>
       <p class="pr-why">${w.seam
         ? "<b>Это шов.</b> Обе части по отдельности уже идут — здесь важно только место их стыка: именно там игра обычно и рвётся."
@@ -4907,7 +4921,7 @@ function openPractice() {
   if (!pracDoc() && cfg.token && cfg.catalogId)
     catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
   prac = {
-    screen: "start", cur: null, queue: [], closed: [], reviewed: [],
+    screen: "start", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null,
     startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
   };
   $("#prac").hidden = false;
@@ -4945,41 +4959,50 @@ function pracEndRest() {
   pracRender();
 }
 
-/* Занятие само пишет обычную отметку: отрезки складываются в диапазоны
-   по рукам, «две руки» засчитываются обеим. */
-function pracFinish() {
-  const closed = prac ? prac.closed.slice() : [];
-  const mins = Math.round(pracMin());
-  if (closed.length) {
-    /* Каждый закрытый отрезок пишется отдельным проходом и НЕ склеивается
-       с соседними. Склейка была ошибкой: приложение считает выученность
-       по числу проходов над тактом, а лесенка проходит такт трижды —
-       сам по себе, в паре и в целой части. Склеенные в один диапазон,
-       эти три прохода превращались в один, и прогресс отставал от правды. */
-    const spans = [];
-    for (const c of closed)
-      for (const h of (c.hand === "both" ? ["right", "left"] : [c.hand]))
-        spans.push({ hand: h, from: c.from, to: c.to });
+/* Сегодняшняя запись занятия: одна на день, как и при ручной отметке. */
+function pracEntry(make) {
+  const ds = todayStr();
+  let e = data.piano.entries.find((x) => !x.deleted && x.date === ds && (x.pieceId || "bwv853") === piece().id);
+  if (!e && make) {
+    e = { id: uid(), date: ds, pieceId: piece().id, spans: [], note: "занятие по плану",
+          createdAt: now(), updatedAt: now() };
+    data.piano.entries.push(e);
+  }
+  return e || null;
+}
 
-    if (spans.length) {
-      const ds = todayStr();
-      const ex = data.piano.entries.find((e) => !e.deleted && e.date === ds && (e.pieceId || "bwv853") === piece().id);
-      if (ex) {
-        ex.spans = (ex.spans || []).concat(spans);
-        ex.updatedAt = now();
-      } else {
-        data.piano.entries.push({
-          id: uid(), date: ds, pieceId: piece().id, spans,
-          note: "занятие по плану · " + mins + " мин",
-          createdAt: now(), updatedAt: now(),
-        });
-      }
-      pracStore().session++;
-      saveData();
-      schedulePush();
-      toast("Занятие записано: " + mins + " мин");
-    }
-  } else toast("Занятие закрыто");
+/* Каждый закрытый отрезок уходит в запись сразу. Раньше запись собиралась
+   только по кнопке «Завершить»: закроешь приложение посреди занятия — и всё,
+   что успел, оставалось в разборе, но в прогресс приложения не попадало. */
+function pracLog(u) {
+  const e = pracEntry(true);
+  const hands = u.hand === "both" ? ["right", "left"] : [u.hand];
+  for (const h of hands) e.spans.push({ hand: h, from: u.from, to: u.to });
+  e.updatedAt = now();
+  saveData();
+  schedulePush();
+  return hands.length;                        // сколько отрезков дописали — на случай отмены
+}
+
+/* Занятие само пишет обычную отметку. */
+function pracFinish() {
+  const mins = Math.round(pracMin());
+  const closed = prac ? prac.closed.length : 0;
+
+  /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
+     за инструментом — это занятие, а не пустое место, и серию оно рвать
+     не должно. */
+  if (prac && prac.startedAt) {
+    const e = pracEntry(true);
+    e.note = "занятие по плану · " + mins + " мин";
+    e.updatedAt = now();
+    pracStore().session++;
+    saveData();
+    schedulePush();
+    toast(closed
+      ? "Занятие записано: " + mins + " мин"
+      : "Занятие записано: " + mins + " мин, без закрытых отрезков");
+  }
   closePractice();
 }
 
@@ -4995,6 +5018,12 @@ function bindPractice() {
     const b = e.target.closest("button");
     if (!b || !prac) return;
 
+    if (b.dataset.part !== undefined) {
+      prac.pick = +b.dataset.part;
+      prac.queue = [];
+      return pracRender();
+    }
+
     if (b.dataset.rest !== undefined) {
       const min = +b.dataset.rest;
       if (min) { prac.restFrom = Date.now(); prac.restUntil = prac.restFrom + min * 60000; prac.screen = "resting"; }
@@ -5009,10 +5038,12 @@ function bindPractice() {
         return pracNext();
       case "ok": {
         const u = prac.cur;
-        if (u.review) prac.reviewed.push(u.k);
+        if (u.review) { prac.reviewed.push(u.k); prac.undo = null; }
         else {
-          pracStore().done[pracKey(u, u.hand)] = pracStore().session + 1;
+          pracStore().done[pracKey(u, u.hand)] = todayStr();
           prac.closed.push({ from: u.from, to: u.to, hand: u.hand });
+          const added = pracLog(u);
+          prac.undo = { u, key: pracKey(u, u.hand), added };   // на случай промаха
         }
         saveData();
         // ступень могла сомкнуться — очередь пересобираем под новое место
@@ -5022,6 +5053,30 @@ function bindPractice() {
         return pracNext();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
+
+      case "undo": {
+        /* Промахнулся по «Получилось» — возвращаем отрезок и убираем его след
+           и из разбора, и из сегодняшней записи. */
+        const un = prac.undo;
+        if (!un) return;
+        delete pracStore().done[un.key];
+        const e = pracEntry(false);
+        if (e && un.added) { e.spans.splice(-un.added, un.added); e.updatedAt = now(); }
+        prac.closed.pop();
+        prac.undo = null;
+        prac.queue.unshift(un.u);
+        saveData();
+        schedulePush();
+        toast("Возвращено");
+        return pracNext();
+      }
+      case "reset":
+        if (!confirm("Забыть весь разбор этой пьесы и начать с первого такта?\n\nЗаписи занятий останутся.")) return;
+        data.practice[piece().id] = { done: {}, session: pracStore().session };
+        prac.pick = null;
+        saveData(); schedulePush();
+        return pracRender();
+
       case "restDone": return pracEndRest();
       case "finish": return pracFinish();
     }
