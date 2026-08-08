@@ -15,13 +15,10 @@
     --gold-2: #ff9d3f;
     --violet: #8b7cf6;
     --glass: rgba(255, 255, 255, 0.055);
-    --glass-2: rgba(255, 255, 255, 0.09);
     --glass-line: rgba(255, 255, 255, 0.09);
     --track: rgba(255, 255, 255, 0.09);
     --panel: rgba(28, 24, 38, 0.55);
     --ok: #6ee7a8;
-    --warn: #ffc94d;
-    --bad: #ff8b8b;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
@@ -29,158 +26,92 @@
     background: var(--bg);
     color: var(--ink);
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    padding: max(16px, env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
-    max-width: 560px;
+    padding: max(18px, env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+    max-width: 520px;
     -webkit-user-select: none;
     user-select: none;
   }
-  h1 { font-size: 1.15rem; margin: 0 0 2px; font-weight: 600; }
-  .sub { color: var(--muted); font-size: 0.82rem; margin: 0 0 16px; }
 
-  .panel {
+  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 22px; }
+  .top h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
+  .top span { color: var(--dim); font-size: 0.76rem; }
+
+  .card {
     background: var(--panel);
     border: 1px solid var(--glass-line);
-    border-radius: 16px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
+    border-radius: 18px;
+    padding: 22px 20px;
   }
-  .cap {
-    font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
-    color: var(--dim); margin: 0 0 10px;
-  }
-  .cap b { color: var(--muted); font-weight: 400; }
+  .step-of { color: var(--dim); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 14px; }
 
-  .round { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  .round h2 { margin: 0; font-size: 1rem; font-weight: 600; }
-  .round em { font-style: normal; color: var(--muted); font-size: 0.8rem; }
-  .prog { height: 8px; border-radius: 5px; background: var(--track); overflow: hidden; }
-  .prog i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--gold)); }
-  .prog-line { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--dim); margin-top: 6px; }
+  .bar-num { text-align: center; margin: 6px 0 4px; }
+  .bar-num b { display: block; font-size: 3.6rem; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
+  .bar-num i { font-style: normal; display: block; color: var(--dim); font-size: 0.82rem; margin-top: 6px; }
 
-  /* карта тактов */
-  /* сеткой, а не переносом строки: при переносе последний ряд растягивался
-     и такты в нём выглядели втрое шире остальных */
-  .map { display: grid; grid-template-columns: repeat(20, 1fr); gap: 3px; }
-  .map i {
-    height: 26px; border-radius: 3px; background: var(--track); position: relative;
-  }
-  .map i.seen { background: rgba(139, 124, 246, 0.4); }
-  .map i.firm { background: var(--violet); }
-  .map i.snag { background: var(--bad); opacity: 0.75; }
-  .map i.at { outline: 2px solid var(--gold); outline-offset: 1px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 11px; font-size: 0.68rem; color: var(--dim); margin-top: 9px; }
-  .legend b { font-weight: 400; }
-  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  .say { text-align: center; font-size: 0.95rem; color: var(--muted); margin: 18px 0 14px; }
+  .lead { font-size: 1rem; line-height: 1.55; margin: 0 0 6px; }
+  .lead + .lead { margin-top: 12px; }
+  .lead b { font-weight: 600; }
+  .dim { color: var(--muted); font-size: 0.88rem; }
 
-  /* прогон */
-  .now-bar { text-align: center; padding: 4px 0 2px; }
-  .now-bar .n { font-size: 3.2rem; font-weight: 300; line-height: 1.05; font-variant-numeric: tabular-nums; }
-  .now-bar .n small { font-size: 0.9rem; color: var(--dim); font-weight: 400; display: block; margin-top: 2px; }
-  .now-bar .why { color: var(--muted); font-size: 0.84rem; margin: 8px 0 0; }
-  .runline { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--dim); margin: 14px 0 10px; }
-
-  .two { display: flex; gap: 10px; margin-top: 4px; }
-  .two button {
-    flex: 1; border: 0; border-radius: 16px; padding: 18px 10px;
-    font: inherit; font-size: 1rem; font-weight: 600;
-  }
-  .two .go { background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021; }
-  .two .snag { background: linear-gradient(160deg, #ffb3b3, #ff8080); color: #3a0d0d; }
-
-  .work { text-align: center; }
-  .work h3 { margin: 0 0 6px; font-size: 1.05rem; }
-  .work p { margin: 0 0 4px; color: var(--muted); font-size: 0.86rem; }
-  .work ul { text-align: left; margin: 12px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.85rem; }
-  .work li { margin-bottom: 5px; }
-  .work li b { color: var(--ink); font-weight: 600; }
-
-  .done-box { text-align: center; padding: 6px 0; }
-  .done-box .big { font-size: 1.6rem; font-weight: 600; margin-bottom: 4px; }
-  .done-box p { color: var(--muted); font-size: 0.86rem; margin: 0 0 14px; }
-
-  .row { display: flex; align-items: center; gap: 10px; }
-  .row label { font-size: 0.85rem; color: var(--muted); flex: 0 0 auto; }
-  input[type=range] { flex: 1; accent-color: var(--gold); }
-  .val { font-variant-numeric: tabular-nums; font-size: 0.85rem; min-width: 52px; text-align: right; }
-
-  .btn {
+  .choices { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
+  .choices button {
+    width: 100%; text-align: left;
     border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink);
-    font: inherit; font-size: 0.85rem; border-radius: 12px; padding: 11px 12px;
+    font: inherit; font-size: 0.98rem; border-radius: 14px; padding: 14px 16px;
   }
-  .btn.on { background: var(--violet); border-color: transparent; color: #17122b; }
-  .btn.wide { width: 100%; }
-  .btns { display: flex; gap: 8px; margin-top: 12px; }
-  .btns .btn { flex: 1; }
+  .choices button b { font-weight: 600; }
+  .choices button em { font-style: normal; color: var(--dim); font-size: 0.78rem; display: block; margin-top: 1px; }
+  .choices button.good { border-color: rgba(110, 231, 168, 0.42); }
 
-  .queue { display: flex; flex-direction: column; gap: 8px; }
-  .queue-row { display: flex; align-items: baseline; gap: 10px; font-size: 0.83rem; }
-  .queue-row b { font-weight: 600; min-width: 60px; }
-  .queue-row span { color: var(--muted); font-size: 0.78rem; }
-  .empty { color: var(--dim); font-size: 0.82rem; margin: 0; }
-  .note { font-size: 0.75rem; color: var(--dim); margin: 14px 2px 0; line-height: 1.55; }
+  .big-btn {
+    width: 100%; border: 0; border-radius: 16px; padding: 18px;
+    font: inherit; font-size: 1.02rem; font-weight: 600; color: #241a05;
+    background: linear-gradient(160deg, var(--gold), var(--gold-2));
+    margin-top: 6px;
+  }
+  .ghost {
+    width: 100%; border: 1px solid var(--glass-line); background: transparent; color: var(--muted);
+    font: inherit; font-size: 0.86rem; border-radius: 14px; padding: 12px; margin-top: 10px;
+  }
+
+  .pips { display: flex; gap: 8px; justify-content: center; margin: 18px 0 4px; }
+  .pips i {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid var(--glass-line);
+    display: grid; place-items: center;
+    font-style: normal; font-size: 0.9rem; color: var(--dim);
+  }
+  .pips i.on { background: var(--violet); border-color: transparent; color: #17122b; font-weight: 600; }
+
+  .strip { display: grid; gap: 3px; margin: 16px 0 0; }
+  .strip i { height: 8px; border-radius: 2px; background: var(--track); }
+  .strip i.ok { background: var(--ok); }
+  .strip i.weak { background: var(--gold); }
+  .strip i.at { background: var(--ink); }
+
+  .list { margin: 14px 0 0; padding: 0; list-style: none; }
+  .list li { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--glass-line); font-size: 0.9rem; }
+  .list li:first-child { border-top: 0; }
+  .list li span { color: var(--muted); font-size: 0.84rem; }
+
+  .note { font-size: 0.74rem; color: var(--dim); margin: 18px 2px 0; line-height: 1.55; text-align: center; }
 </style>
 </head>
 <body>
 
-<h1>Практика</h1>
-<p class="sub" id="pieceLine">—</p>
-
-<div class="panel">
-  <div class="round">
-    <h2 id="roundName">—</h2>
-    <em id="roundWhat">—</em>
-  </div>
-  <div class="prog"><i id="roundBar" style="width:0"></i></div>
-  <div class="prog-line"><span id="roundLeft">—</span><span id="roundTempo">—</span></div>
+<div class="top">
+  <h1 id="pieceName">—</h1>
+  <span id="sessionLine">—</span>
 </div>
 
-<div class="panel">
-  <p class="cap">Такты</p>
-  <div class="map" id="map"></div>
-  <div class="legend">
-    <b><span class="sw" style="background:var(--violet)"></span>идёт</b>
-    <b><span class="sw" style="background:var(--bad);opacity:.75"></span>затык</b>
-    <b><span class="sw" style="background:rgba(139,124,246,.4)"></span>тронут раньше</b>
-    <b><span class="sw" style="background:var(--track)"></span>не дошли</b>
-  </div>
-</div>
+<div class="card" id="stage"></div>
 
-<div class="panel" id="stage"></div>
-
-<div class="panel">
-  <p class="cap">Метроном</p>
-  <div class="row">
-    <label>Темп</label>
-    <input type="range" id="bpm" min="30" max="132" step="1" value="46">
-    <span class="val" id="bpmVal">46</span>
-  </div>
-  <div class="btns">
-    <button class="btn" id="metroBtn">Включить</button>
-  </div>
-</div>
-
-<div class="panel">
-  <p class="cap">Вернуться к этим тактам</p>
-  <div class="queue" id="queue"></div>
-</div>
-
-<div class="panel">
-  <p class="cap">Прототип</p>
-  <div class="btns">
-    <button class="btn" id="resetBtn">Начать заново</button>
-    <button class="btn" id="fromTopBtn">Прогон с начала</button>
-  </div>
-  <p class="note" id="stateNote"></p>
-</div>
-
-<p class="note">
-  Прототип. Разбор взят из твоего гиста на 8 августа, дальше живёт только
-  в этом браузере и в приложение не попадает.
-</p>
+<p class="note">Прототип. Разбор взят из гиста на 8 августа; ход занятия хранится только в этом браузере.</p>
 
 <script>
 /* ══════════ Данные ══════════ */
-const PIECE = { name: "Бах — Прелюдия es-moll, BWV 853", bars: 40, beats: 4 };
+const PIECE = { name: "Бах — Прелюдия es-moll", bars: 40 };
 const ENTRIES = [
   { date: "2026-08-02", spans: [{ hand: "right", from: 1, to: 3 }] },
   { date: "2026-08-04", spans: [{ hand: "right", from: 1, to: 4 }] },
@@ -188,269 +119,221 @@ const ENTRIES = [
   { date: "2026-08-08", spans: [{ hand: "right", from: 4, to: 10 }] },
 ];
 
-/* Круги по всей пьесе: не доводить один такт до блеска, а пройти пьесу
-   целиком на своём уровне и вернуться к ней быстрее. */
-const ROUNDS = [
-  { name: "Круг 1 — разбор", what: "пройти всю пьесу, темп любой", tempo: 46 },
-  { name: "Круг 2 — темп",   what: "то же самое, но живее",        tempo: 66 },
-  { name: "Круг 3 — связки", what: "длинными кусками, без швов",   tempo: 80 },
-];
+/* Докуда разобрано — по записям приложения. Проверять есть смысл только это:
+   дальше человек и не играл. */
+const LEARNED = ENTRIES.reduce((m, e) =>
+  e.spans.reduce((k, s) => Math.max(k, s.to), m), 0);
 
-/* Столько раз подряд затык на одном такте — и идём дальше. Такт не пропадает,
-   он уходит в очередь возврата. Пьеса на сорок тактов; топтаться на одном
-   месте дороже, чем вернуться к нему следующим кругом. */
-const MAX_SNAGS = 3;
-const BACK_AFTER = 5;     // столько тактов пройти дальше — и отложенное всплывает
+const WITH_NOTES = 3;      // столько раз по нотам, прежде чем пробовать по памяти
+const MAX_ROUNDS = 2;      // столько подходов к одному такту за занятие — и дальше
 
-const LS = "keiko-practice-proto-v3";
-const loadSt = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } };
+const LS = "keiko-practice-v4";
+const loadSt = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch { return null; } };
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch {} };
 
-let st = Object.assign({
-  round: 0,
-  ok: {},          // такт → круг, на котором он пошёл
-  back: {},        // такт → { why, till }
-  at: 1,           // где сейчас прогон
-  snags: 0,        // сколько раз подряд затык на этом такте
-  mode: "run",     // run | work | done
-  bpm: ROUNDS[0].tempo,
-  passed: 0,       // тактов пройдено за этот прогон
-}, loadSt());
-
-const TOUCH = (() => {
-  const n = new Array(PIECE.bars + 1).fill(0);
-  for (const e of ENTRIES)
-    for (const s of e.spans)
-      for (let b = Math.max(1, s.from); b <= Math.min(PIECE.bars, s.to); b++) n[b]++;
-  return n;
-})();
-
-const round = () => ROUNDS[Math.min(st.round, ROUNDS.length - 1)];
-const isOk = (b) => (st.ok[b] || 0) > st.round;
-const okCount = () => { let n = 0; for (let b = 1; b <= PIECE.bars; b++) if (isOk(b)) n++; return n; };
-
-/* Отложенное возвращается не сразу, а когда по пьесе есть движение: иначе
-   «идём дальше» превращается в обман — такт отпустили и тут же подсунули. */
-const backDue = (b) => {
-  const r = st.back[b];
-  if (!r || isOk(b)) return false;
-  return r.till == null || okCount() >= r.till;
-};
-
-/* ── следующий такт прогона ── */
-function nextBar(from) {
-  for (let b = from; b <= PIECE.bars; b++) if (!isOk(b)) return b;
-  // дошли до конца — подбираем отложенное
-  const back = Object.keys(st.back).map(Number).filter(backDue).sort((a, b) => a - b);
-  return back.length ? back[0] : 0;
-}
+const fresh = () => ({
+  session: 1,
+  screen: "start",     // start | test | plan | work | end
+  at: 1,               // такт проверки
+  marks: {},           // такт → "sure" | "shaky" | "no"
+  focus: [],           // такты на сегодня
+  fi: 0,               // который из них сейчас
+  played: 0,           // сколько раз сыграл по нотам
+  blind: false,        // дошли до игры без нот
+  rounds: 0,           // подходов к текущему такту
+  fixed: [],           // что стало уверенным за занятие
+});
+let st = loadSt() || fresh();
 
 const $ = (s) => document.querySelector(s);
+const el = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; };
 const plural = (n, a, b, c) => {
   const m = n % 100, k = n % 10;
   return m >= 11 && m <= 14 ? c : k === 1 ? a : k >= 2 && k <= 4 ? b : c;
 };
+const today = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
-/* ══════════ Отрисовка ══════════ */
-function drawRound() {
-  const r = round(), done = okCount();
-  $("#pieceLine").textContent = PIECE.name + " · " + PIECE.bars + " тактов · правая рука";
-  $("#roundName").textContent = r.name;
-  $("#roundWhat").textContent = r.what;
-  $("#roundBar").style.width = Math.round(done / PIECE.bars * 100) + "%";
-  $("#roundLeft").textContent = done + " из " + PIECE.bars + " тактов идут";
-  $("#roundTempo").textContent = "ориентир ♩=" + r.tempo;
-}
-
-function drawMap() {
-  const box = $("#map");
-  box.innerHTML = "";
-  for (let b = 1; b <= PIECE.bars; b++) {
-    const i = document.createElement("i");
-    i.className = isOk(b) ? "firm" : st.back[b] ? "snag" : TOUCH[b] ? "seen" : "";
-    if (b === st.at && st.mode !== "done") i.className += " at";
-    i.title = "Такт " + b;
-    box.appendChild(i);
+function stripHTML(active) {
+  let out = '<div class="strip" style="grid-template-columns:repeat(' + LEARNED + ',1fr)">';
+  for (let b = 1; b <= LEARNED; b++) {
+    const m = st.marks[b];
+    const cls = b === active ? "at" : m === "sure" ? "ok" : m ? "weak" : "";
+    out += '<i class="' + cls + '"></i>';
   }
+  return out + "</div>";
 }
 
-function drawQueue() {
-  const box = $("#queue");
-  const list = Object.keys(st.back).map(Number).filter((b) => !isOk(b)).sort((a, b) => a - b);
-  if (!list.length) { box.innerHTML = '<p class="empty">Пусто — пока всё идёт.</p>'; return; }
-  box.innerHTML = list.map((b) => {
-    const r = st.back[b];
-    const when = backDue(b) ? "вернёмся сейчас"
-      : "через " + Math.max(1, r.till - okCount()) + " " + plural(Math.max(1, r.till - okCount()), "такт", "такта", "тактов");
-    return `<div class="queue-row"><b>такт ${b}</b><span>${r.why} · ${when}</span></div>`;
-  }).join("");
-}
-
-function whyLine(b) {
-  if (st.back[b]) return "Здесь ты застревал — потому и вернулись.";
-  if (TOUCH[b]) return "Этот такт ты уже трогал.";
-  return "Новое место.";
-}
-
-function drawStage() {
+/* ══════════ Экраны ══════════ */
+function render() {
+  $("#pieceName").textContent = PIECE.name;
+  $("#sessionLine").textContent = today() + " · занятие " + st.session;
   const box = $("#stage");
-
-  if (st.mode === "done") {
-    box.innerHTML = `
-      <div class="done-box">
-        <div class="big">Прогон окончен</div>
-        <p>Пройдено ${st.passed} ${plural(st.passed, "такт", "такта", "тактов")}.
-           ${Object.keys(st.back).filter((b) => !isOk(+b)).length
-             ? "Отложенное всплывёт в следующем прогоне."
-             : "Всё идёт ровно."}</p>
-        <button class="btn wide" id="againBtn">Ещё прогон</button>
-      </div>`;
-    $("#againBtn").addEventListener("click", () => {
-      st.at = nextBar(1) || 1; st.passed = 0; st.snags = 0; st.mode = "run";
-      save(); redraw();
-    });
-    return;
-  }
-
-  if (st.mode === "work") {
-    box.innerHTML = `
-      <p class="cap">Работаем над тактом</p>
-      <div class="work">
-        <h3>Такт ${st.at}</h3>
-        <p>Затык ${st.snags} ${plural(st.snags, "раз", "раза", "раз")} подряд</p>
-        <ul>
-          <li>Сыграй <b>очень медленно</b>, глядя в ноты — не по памяти.</li>
-          <li>Потом <b>под метроном</b>, ♩=${Math.max(30, st.bpm - 12)}.</li>
-          <li>Затем <b>с предыдущим тактом</b> вместе: рвётся обычно на стыке.</li>
-        </ul>
-        <div class="btns"><button class="btn wide" id="retryBtn">Пробую снова</button></div>
-      </div>`;
-    $("#retryBtn").addEventListener("click", () => { st.mode = "run"; save(); redraw(); });
-    return;
-  }
-
-  box.innerHTML = `
-    <p class="cap">Прогон</p>
-    <div class="now-bar">
-      <div class="n">${st.at}<small>такт</small></div>
-      <p class="why">${whyLine(st.at)}</p>
-    </div>
-    <div class="runline">
-      <span>за прогон: ${st.passed} ${plural(st.passed, "такт", "такта", "тактов")}</span>
-      <span>${st.snags ? "затыков подряд: " + st.snags : "сыграй и ответь"}</span>
-    </div>
-    <div class="two">
-      <button class="go" id="goBtn">Пошло</button>
-      <button class="snag" id="snagBtn">Затык</button>
-    </div>`;
-  $("#goBtn").addEventListener("click", () => answer(true));
-  $("#snagBtn").addEventListener("click", () => answer(false));
-}
-
-function drawNote() {
-  const back = Object.keys(st.back).filter((b) => !isOk(+b)).length;
-  $("#stateNote").textContent = "Круг " + (st.round + 1) + " · идут: " + okCount()
-    + " из " + PIECE.bars + " · в очереди: " + back;
-}
-
-function redraw() { drawRound(); drawMap(); drawStage(); drawQueue(); drawNote(); }
-
-/* ══════════ Ответ ══════════ */
-function answer(good) {
-  const b = st.at;
-
-  if (good) {
-    st.ok[b] = st.round + 1;
-    if (st.back[b]) delete st.back[b];
-    st.snags = 0;
-    st.passed++;
-    step();
-  } else {
-    st.snags++;
-    st.back[b] = { why: "затык", till: null };
-    if (st.snags >= MAX_SNAGS) {
-      /* Три затыка подряд — дальше. Такт ждёт, пока по пьесе будет движение. */
-      st.back[b].till = okCount() + BACK_AFTER;
-      st.snags = 0;
-      step();
-    } else {
-      st.mode = "work";
-    }
-  }
-  save(); redraw();
-}
-
-function step() {
-  const n = nextBar(st.at + 1);
-  if (!n) {
-    if (okCount() >= PIECE.bars && st.round < ROUNDS.length - 1) {
-      st.round++;
-      st.bpm = round().tempo;
-      $("#bpm").value = st.bpm; $("#bpmVal").textContent = st.bpm;
-    }
-    st.mode = "done";
-    return;
-  }
-  st.at = n;
-  st.mode = "run";
-}
-
-/* ══════════ Метроном ══════════ */
-let ctx = null, metroOn = false, metroTimer = 0, nextTick = 0, beatIdx = 0;
-const audio = () => (ctx = ctx || new (window.AudioContext || window.webkitAudioContext)());
-
-function click(time, strong) {
-  const a = audio();
-  const o = a.createOscillator(), g = a.createGain();
-  o.frequency.value = strong ? 1600 : 1100;
-  g.gain.setValueAtTime(0.0001, time);
-  g.gain.exponentialRampToValueAtTime(strong ? 0.5 : 0.28, time + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
-  o.connect(g); g.connect(a.destination);
-  o.start(time); o.stop(time + 0.09);
-}
-function metroLoop() {
-  const a = audio(), spb = 60 / st.bpm;
-  while (nextTick < a.currentTime + 0.2) { click(nextTick, beatIdx % PIECE.beats === 0); nextTick += spb; beatIdx++; }
-  metroTimer = setTimeout(metroLoop, 60);
-}
-function metroStart() {
-  const a = audio();
-  if (a.state === "suspended") a.resume();
-  metroOn = true; beatIdx = 0; nextTick = a.currentTime + 0.1;
-  metroLoop();
-  $("#metroBtn").classList.add("on");
-  $("#metroBtn").textContent = "Выключить";
-}
-function metroStop() {
-  metroOn = false; clearTimeout(metroTimer);
-  $("#metroBtn").classList.remove("on");
-  $("#metroBtn").textContent = "Включить";
-}
-
-/* ══════════ Связки ══════════ */
-$("#metroBtn").addEventListener("click", () => { metroOn ? metroStop() : metroStart(); });
-$("#bpm").addEventListener("input", (e) => {
-  st.bpm = +e.target.value; save();
-  $("#bpmVal").textContent = st.bpm;
-  if (metroOn) { metroStop(); metroStart(); }
-});
-$("#resetBtn").addEventListener("click", () => {
-  if (!confirm("Начать прототип заново?")) return;
-  st = { round: 0, ok: {}, back: {}, at: 1, snags: 0, mode: "run", bpm: ROUNDS[0].tempo, passed: 0 };
+  box.innerHTML = "";
+  box.appendChild(SCREENS[st.screen]());
   save();
-  $("#bpm").value = st.bpm; $("#bpmVal").textContent = st.bpm;
-  redraw();
-});
-$("#fromTopBtn").addEventListener("click", () => {
-  st.at = 1; st.passed = 0; st.snags = 0; st.mode = "run";
-  save(); redraw();
+}
+
+const SCREENS = {
+
+  start: () => el(`
+    <div>
+      <p class="step-of">Начало</p>
+      <p class="lead">У тебя разобрано <b>до ${LEARNED}-го такта</b>.</p>
+      <p class="lead dim">Сначала проверим, что из этого живо. Играй по памяти, в ноты не подглядывай —
+        нам нужна честная картина, а не красивая.</p>
+      <button class="big-btn" id="go">Начать проверку</button>
+    </div>`),
+
+  test: () => {
+    const n = el(`
+      <div>
+        <p class="step-of">Проверка · ${st.at} из ${LEARNED}</p>
+        <div class="bar-num"><b>${st.at}</b><i>такт</i></div>
+        <p class="say">Сыграл? Как вышло?</p>
+        <div class="choices">
+          <button class="good" data-m="sure"><b>Уверенно</b><em>руки сами помнят</em></button>
+          <button data-m="shaky"><b>С запинкой</b><em>вышло, но думал</em></button>
+          <button data-m="no"><b>Не помню</b><em>без нот не играется</em></button>
+        </div>
+        ${stripHTML(st.at)}
+      </div>`);
+    return n;
+  },
+
+  plan: () => {
+    const sure = Object.values(st.marks).filter((m) => m === "sure").length;
+    const list = st.focus;
+    return el(`
+      <div>
+        <p class="step-of">Что получилось</p>
+        <p class="lead">Уверенно идёт <b>${sure} из ${LEARNED}</b> ${plural(LEARNED, "такта", "тактов", "тактов")}.</p>
+        ${list.length
+          ? `<p class="lead dim">Сегодня займёмся тактами <b>${list.join(", ")}</b> —
+               остальное трогать не будем, оно и так живо.</p>
+             <button class="big-btn" id="go">Поехали</button>`
+          : `<p class="lead dim">Слабых мест нет — значит, пора брать такт ${LEARNED + 1}.</p>
+             <button class="big-btn" id="done">Закончить занятие</button>`}
+      </div>`);
+  },
+
+  work: () => {
+    const bar = st.focus[st.fi];
+    const left = st.focus.length - st.fi - 1;
+
+    if (!st.blind) {
+      return el(`
+        <div>
+          <p class="step-of">Такт ${bar} · по нотам</p>
+          <div class="bar-num"><b>${bar}</b><i>такт</i></div>
+          <p class="say">Играй, глядя в ноты. Медленно, ${WITH_NOTES} ${plural(WITH_NOTES, "раз", "раза", "раз")}.</p>
+          <div class="pips">
+            ${Array.from({ length: WITH_NOTES }, (_, i) =>
+              `<i class="${i < st.played ? "on" : ""}">${i < st.played ? "✓" : i + 1}</i>`).join("")}
+          </div>
+          <button class="big-btn" id="played">Сыграл</button>
+          ${left ? `<p class="note">дальше ещё ${left} ${plural(left, "такт", "такта", "тактов")}</p>` : ""}
+        </div>`);
+    }
+
+    return el(`
+      <div>
+        <p class="step-of">Такт ${bar} · без нот</p>
+        <div class="bar-num"><b>${bar}</b><i>такт</i></div>
+        <p class="say">Ноты закрой. Как теперь?</p>
+        <div class="choices">
+          <button class="good" data-w="sure"><b>Уверенно</b><em>пошло</em></button>
+          <button data-w="shaky"><b>Ещё думаю</b><em>но играется</em></button>
+          <button data-w="no"><b>Не идёт</b><em>вернёмся ещё раз</em></button>
+        </div>
+      </div>`);
+  },
+
+  end: () => {
+    const sure = Object.entries(st.marks).filter(([, m]) => m === "sure").map(([b]) => +b);
+    return el(`
+      <div>
+        <p class="step-of">Занятие окончено</p>
+        <p class="lead">${st.fixed.length
+          ? `Сдвинулось: <b>${st.fixed.join(", ")}</b>.`
+          : "Сегодня без сдвигов — бывает."}</p>
+        <ul class="list">
+          <li>Уверенно идёт<span>${sure.length} из ${LEARNED} ${plural(LEARNED, "такта", "тактов", "тактов")}</span></li>
+          <li>Разобрано<span>до ${LEARNED}-го такта из ${PIECE.bars}</span></li>
+          <li>Осталось слабых<span>${st.focus.length - st.fixed.length}</span></li>
+        </ul>
+        ${stripHTML(0)}
+        <button class="big-btn" id="next">Следующее занятие</button>
+        <button class="ghost" id="reset">Сбросить прототип</button>
+      </div>`);
+  },
+};
+
+/* ══════════ Переходы ══════════ */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+
+  if (t.id === "go") {
+    st.screen = st.screen === "start" ? "test" : "work";
+    if (st.screen === "work") { st.fi = 0; st.played = 0; st.blind = false; st.rounds = 0; }
+    return render();
+  }
+
+  if (t.dataset.m) {                          // ответ на проверке
+    st.marks[st.at] = t.dataset.m;
+    if (st.at < LEARNED) { st.at++; return render(); }
+    /* Фокус — только слабое. Всё, что идёт уверенно, сегодня не трогаем:
+       перебирать выученное — самый простой способ не сдвинуться. */
+    st.focus = Object.entries(st.marks).filter(([, m]) => m !== "sure").map(([b]) => +b).sort((a, b) => a - b);
+    st.screen = "plan";
+    return render();
+  }
+
+  if (t.id === "played") {
+    st.played++;
+    if (st.played >= WITH_NOTES) st.blind = true;
+    return render();
+  }
+
+  if (t.dataset.w) {                          // как вышло без нот
+    const bar = st.focus[st.fi];
+    if (t.dataset.w === "sure") {
+      st.marks[bar] = "sure";
+      st.fixed.push(bar);
+      return nextFocus();
+    }
+    st.rounds++;
+    /* Два подхода — и дальше. Один такт может съесть всё занятие,
+       а вещь на сорок тактов так не разберёшь. */
+    if (st.rounds >= MAX_ROUNDS) return nextFocus();
+    st.played = 0; st.blind = false;
+    return render();
+  }
+
+  if (t.id === "done") { st.screen = "end"; return render(); }
+
+  if (t.id === "next") {
+    const n = st.session + 1;
+    st = fresh();                             // новое занятие — новая честная проверка
+    st.session = n;
+    return render();
+  }
+
+  if (t.id === "reset") {
+    if (!confirm("Начать прототип с чистого листа?")) return;
+    st = fresh();
+    return render();
+  }
 });
 
-if (!st.at || st.at > PIECE.bars) st.at = nextBar(1) || 1;
-$("#bpm").value = st.bpm;
-$("#bpmVal").textContent = st.bpm;
-redraw();
+function nextFocus() {
+  st.fi++;
+  st.played = 0; st.blind = false; st.rounds = 0;
+  if (st.fi >= st.focus.length) st.screen = "end";
+  render();
+}
+
+render();
 </script>
 </body>
 </html>
