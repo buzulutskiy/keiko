@@ -22,83 +22,77 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
-    margin: 0 auto;
-    background: var(--bg);
-    color: var(--ink);
+    margin: 0 auto; background: var(--bg); color: var(--ink);
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     padding: max(18px, env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
-    max-width: 520px;
-    -webkit-user-select: none;
-    user-select: none;
+    max-width: 520px; -webkit-user-select: none; user-select: none;
   }
-
-  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 22px; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 18px; }
   .top h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
   .top span { color: var(--dim); font-size: 0.76rem; }
 
   .card {
-    background: var(--panel);
-    border: 1px solid var(--glass-line);
-    border-radius: 18px;
-    padding: 22px 20px;
+    background: var(--panel); border: 1px solid var(--glass-line);
+    border-radius: 18px; padding: 22px 20px;
   }
   .step-of { color: var(--dim); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 14px; }
 
-  .bar-num { text-align: center; margin: 6px 0 4px; }
-  .bar-num b { display: block; font-size: 3.6rem; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
-  .bar-num i { font-style: normal; display: block; color: var(--dim); font-size: 0.82rem; margin-top: 6px; }
+  .unit { text-align: center; margin: 4px 0 2px; }
+  .unit b { display: block; font-size: 2.6rem; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .unit i { font-style: normal; display: block; color: var(--gold); font-size: 0.95rem; margin-top: 6px; }
 
-  .tick {
-    text-align: center; font-variant-numeric: tabular-nums;
-    color: var(--dim); font-size: 0.86rem; margin: 12px 0 0;
-  }
-  .say { text-align: center; font-size: 0.95rem; color: var(--muted); margin: 18px 0 14px; }
+  .say { text-align: center; font-size: 0.95rem; color: var(--muted); margin: 16px 0 4px; }
+  .say b { color: var(--ink); font-weight: 600; }
   .lead { font-size: 1rem; line-height: 1.55; margin: 0 0 6px; }
   .lead + .lead { margin-top: 12px; }
   .lead b { font-weight: 600; }
   .dim { color: var(--muted); font-size: 0.88rem; }
 
-  .choices { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
-  .choices button {
-    width: 100%; text-align: left;
-    border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink);
-    font: inherit; font-size: 0.98rem; border-radius: 14px; padding: 14px 16px;
+  .pips { display: flex; gap: 10px; justify-content: center; margin: 18px 0 14px; }
+  .pips i {
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--glass-line);
+    display: grid; place-items: center; font-style: normal; font-size: 0.95rem; color: var(--dim);
   }
-  .choices button b { font-weight: 600; }
-  .choices button em { font-style: normal; color: var(--dim); font-size: 0.78rem; display: block; margin-top: 1px; }
-  .choices button.good { border-color: rgba(110, 231, 168, 0.42); }
+  .pips i.on { background: var(--violet); border-color: transparent; color: #17122b; font-weight: 600; }
+
+  .two { display: flex; gap: 10px; }
+  .two button { flex: 1; border: 0; border-radius: 16px; padding: 17px 8px; font: inherit; font-size: 1rem; font-weight: 600; }
+  .two .clean { background: linear-gradient(160deg, #7ff0b6, #4dd08c); color: #093021; }
+  .two .miss { background: var(--glass); color: var(--ink); border: 1px solid var(--glass-line); }
 
   .big-btn {
-    width: 100%; border: 0; border-radius: 16px; padding: 18px;
-    font: inherit; font-size: 1.02rem; font-weight: 600; color: #241a05;
-    background: linear-gradient(160deg, var(--gold), var(--gold-2));
-    margin-top: 6px;
+    width: 100%; border: 0; border-radius: 16px; padding: 18px; font: inherit;
+    font-size: 1.02rem; font-weight: 600; color: #241a05;
+    background: linear-gradient(160deg, var(--gold), var(--gold-2)); margin-top: 6px;
   }
   .ghost {
     width: 100%; border: 1px solid var(--glass-line); background: transparent; color: var(--muted);
     font: inherit; font-size: 0.86rem; border-radius: 14px; padding: 12px; margin-top: 10px;
   }
-
-  .pips { display: flex; gap: 8px; justify-content: center; margin: 18px 0 4px; }
-  .pips i {
-    width: 38px; height: 38px; border-radius: 50%;
-    border: 1px solid var(--glass-line);
-    display: grid; place-items: center;
-    font-style: normal; font-size: 0.9rem; color: var(--dim);
+  .choices { display: flex; flex-direction: column; gap: 9px; }
+  .choices button {
+    width: 100%; text-align: left; border: 1px solid var(--glass-line); background: var(--glass);
+    color: var(--ink); font: inherit; font-size: 0.98rem; border-radius: 14px; padding: 14px 16px;
   }
-  .pips i.on { background: var(--violet); border-color: transparent; color: #17122b; font-weight: 600; }
+  .choices button b { font-weight: 600; }
+  .choices button em { font-style: normal; color: var(--dim); font-size: 0.78rem; display: block; margin-top: 1px; }
+  .choices button.good { border-color: rgba(110, 231, 168, 0.42); }
 
-  .strip { display: grid; gap: 3px; margin: 16px 0 0; }
-  .strip i { height: 8px; border-radius: 2px; background: var(--track); }
-  .strip i.ok { background: var(--ok); }
-  .strip i.weak { background: var(--gold); }
-  .strip i.at { background: var(--ink); }
+  .ladder { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
+  .lvl { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
+  .lvl b { min-width: 78px; font-weight: 600; }
+  .lvl .track { flex: 1; height: 7px; border-radius: 4px; background: var(--track); overflow: hidden; }
+  .lvl .track i { display: block; height: 100%; background: var(--violet); }
+  .lvl > span { color: var(--dim); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  .lvl.now b { color: var(--gold); }
 
   .list { margin: 14px 0 0; padding: 0; list-style: none; }
-  .list li { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--glass-line); font-size: 0.9rem; }
+  .list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--glass-line); font-size: 0.9rem; }
   .list li:first-child { border-top: 0; }
-  .list li span { color: var(--muted); font-size: 0.84rem; }
+  .list li span { color: var(--muted); font-size: 0.84rem; text-align: right; }
 
+  .why { margin-top: 16px; font-size: 0.78rem; color: var(--dim); line-height: 1.6; }
+  .why b { color: var(--muted); font-weight: 600; }
   .note { font-size: 0.74rem; color: var(--dim); margin: 18px 2px 0; line-height: 1.55; text-align: center; }
 </style>
 </head>
@@ -111,112 +105,119 @@
 
 <div class="card" id="stage"></div>
 
-<p class="note">Прототип. Разбор взят из гиста на 8 августа; ход занятия хранится только в этом браузере.</p>
+<p class="note">Прототип. Живёт только в этом браузере, в приложение не попадает.</p>
 
 <script>
-/* ══════════ Данные ══════════ */
+/* ══════════ Пьеса ══════════ */
 const PIECE = { name: "Бах — Прелюдия es-moll", bars: 40 };
-const ENTRIES = [
-  { date: "2026-08-02", spans: [{ hand: "right", from: 1, to: 3 }] },
-  { date: "2026-08-04", spans: [{ hand: "right", from: 1, to: 4 }] },
-  { date: "2026-08-07", spans: [{ hand: "right", from: 1, to: 8 }] },
-  { date: "2026-08-08", spans: [{ hand: "right", from: 4, to: 10 }] },
+
+/* ══════════ Система ══════════
+   Собрана по сходящимся источникам, а не выдумана.
+
+   Единица разбора — ОДИН такт. Chang: чем короче отрезок, тем больше раз
+   его можно пройти за минуты. Fitch: «один такт плюс одна нота, не меньше
+   трёх повторов».
+
+   Такты не копятся поштучно, а сращиваются лесенкой 1 → 2 → 4 → 8 → целиком
+   (Fitch: начинать с отдельных тактов, потом по два, потом по четыре).
+   Это и есть ответ на «когда же все двадцать вместе»: когда сойдутся пары,
+   они станут четвёрками, четвёрки — восьмёрками.
+
+   Шов держится перекрытием: отрезок доигрывается до ПЕРВОЙ ноты следующего.
+   У Chang это правило непрерывности, у Fitch — «такт плюс одна нота»; двое
+   пришли к одному независимо. Без перекрытия куски не склеиваются.
+
+   Готовность — три чистых прохода подряд, ошибся — счёт сначала (Fitch).
+   Честно: исследования за числом «три» нет, это его правило.
+
+   Руки порознь, потом вместе — но в одном занятии, а не месяцами порознь:
+   Chang за долгую изоляцию рук, Fitch против. Взята середина. */
+const LEVELS = [
+  { size: 1,  name: "по одному", hands: ["left", "right", "both"] },
+  { size: 2,  name: "по два",    hands: ["left", "right", "both"] },
+  { size: 4,  name: "по четыре", hands: ["both"] },
+  { size: 8,  name: "по восемь", hands: ["both"] },
+  { size: 40, name: "целиком",   hands: ["both"] },
 ];
+const REPS = 3;
+const REST_AT = 20, STOP_AT = 60, ASK_AGAIN = 12;
+const REVIEW_N = 2;
 
-/* Докуда разобрано — по записям приложения, отдельно на каждую руку.
-   Проверять есть смысл только это: дальше человек и не играл. */
-const learnedBy = (hand) => ENTRIES.reduce((m, e) =>
-  e.spans.reduce((k, s) => s.hand === hand ? Math.max(k, s.to) : k, m), 0);
-const LEARNED_R = learnedBy("right"), LEARNED_L = learnedBy("left");
-const learned = () => st.hand === "left" ? LEARNED_L : LEARNED_R;
-const handWord = () => st.hand === "left" ? "левая" : "правая";
+const HAND = { left: "левая рука", right: "правая рука", both: "две руки" };
 
-const WITH_NOTES = 3;      // столько раз по подсказке, прежде чем закрыть её
-const BLIND_TIMES = 3;     // столько раз по памяти, прежде чем оценивать
-const MAX_ROUNDS = 2;      // столько подходов к одному такту за занятие — и дальше
-
-const LS = "keiko-practice-v4";
+const LS = "keiko-practice-v5";
 const loadSt = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch { return null; } };
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch {} };
 
 const fresh = () => ({
   session: 1,
-  screen: "start",     // start | test | plan | work | end
-  at: 1,               // такт проверки
-  marks: {},           // такт → "sure" | "shaky" | "no"
-  focus: [],           // такты на сегодня
-  fi: 0,               // который из них сейчас
-  played: 0,           // сколько раз сыграл по нотам
-  blindPlayed: 0,      // сколько раз сыграл без подсказки
-  hand: "right",       // какой рукой занимаемся сегодня
-  blind: false,        // дошли до игры без нот
-  rounds: 0,           // подходов к текущему такту
-  fixed: [],           // что стало уверенным за занятие
-  slow: [],            // сыграно уверенно, но заметно дольше прочих
-  startedAt: 0,        // когда сели за инструмент
-  breakMs: 0,          // сколько из этого времени отдыхали
-  restUntil: 0,        // до какого времени идёт перерыв
-  restFrom: 0,         // когда перерыв начался
-  askedAt: 0,          // на какой минуте в последний раз предлагали передышку
-  backTo: "",          // куда вернуться после перерыва
-  times: {},           // такт → сколько секунд ушло на проверке
-  workTimes: {},       // такт → сколько ушло, когда играл без нот
+  screen: "start",
+  done: {},
+  reps: 0,
+  cur: null,
+  queue: [],
+  closed: [],
+  startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, backTo: "",
 });
 let st = loadSt() || fresh();
 
 const $ = (s) => document.querySelector(s);
-const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const el = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; };
+const el = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstChild; };
 const plural = (n, a, b, c) => {
   const m = n % 100, k = n % 10;
   return m >= 11 && m <= 14 ? c : k === 1 ? a : k >= 2 && k <= 4 ? b : c;
 };
 const today = () => new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
-/* Секундомер на такт. Время — единственное, что тут измеряется само,
-   без веры на слово: сколько ты думал над тактом, столько и думал. */
-let clockFrom = 0, clockTimer = 0;
-function clockStart() {
-  clockFrom = performance.now();
-  clearInterval(clockTimer);
-  clockTimer = setInterval(() => {
-    const el = $("#tick");
-    if (el) el.textContent = ((performance.now() - clockFrom) / 1000).toFixed(1) + " с";
-  }, 100);
+function unitsOf(li) {
+  const size = Math.min(LEVELS[li].size, PIECE.bars);
+  const out = [];
+  for (let from = 1; from <= PIECE.bars; from += size)
+    out.push({ li, from, to: Math.min(PIECE.bars, from + size - 1) });
+  return out;
 }
-function clockStop() {
-  clearInterval(clockTimer);
-  clockTimer = 0;
-  return clockFrom ? (performance.now() - clockFrom) / 1000 : 0;
-}
-const medianOf = (a) => {
-  if (!a.length) return 0;
-  const v = a.slice().sort((x, y) => x - y);
-  return v[Math.floor(v.length / 2)];
-};
-const avgOf = (pairs) => pairs.length
-  ? pairs.reduce((a, [, t]) => a + t, 0) / pairs.length : 0;
+const key = (u, hand) => u.li + ":" + u.from + "-" + u.to + ":" + hand;
+const isDone = (u, hand) => !!st.done[key(u, hand)];
+const unitDone = (u) => LEVELS[u.li].hands.every((h) => isDone(u, h));
 
-const key = (b) => st.hand + ":" + b;
-
-function stripHTML(active) {
-  const n = learned();
-  let out = '<div class="strip" style="grid-template-columns:repeat(' + n + ',1fr)">';
-  for (let b = 1; b <= n; b++) {
-    const m = st.marks[key(b)];
-    const cls = b === active ? "at" : m === "sure" ? "ok" : m ? "weak" : "";
-    out += '<i class="' + cls + '"></i>';
-  }
-  return out + "</div>";
+/* Уровень открывается, только когда пройден предыдущий: четвёрка бессмысленна,
+   пока обе её пары не держатся. */
+const levelDone = (li) => unitsOf(li).every(unitDone);
+function openLevel() {
+  for (let i = 0; i < LEVELS.length; i++) if (!levelDone(i)) return i;
+  return LEVELS.length - 1;
 }
 
-/* ══════════ Часы занятия ══════════
-   Полчаса — предлагаем передышку, можно отказаться. Час — говорим прямо,
-   что пора закругляться. За инструментом время исчезает, и лучше пусть
-   об этом напомнит приложение, чем спина. */
-const REST_AT = 30, STOP_AT = 60, ASK_AGAIN = 15;
+/* Сначала освежаем давнее, потом новое: точность растёт после перерыва в сутки,
+   а перемешивание проигрывает на самом занятии, но выигрывает назавтра. */
+function buildQueue() {
+  const li = openLevel();
+  const q = [];
+
+  Object.entries(st.done)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, REVIEW_N)
+    .forEach(([k]) => {
+      const [l, span, hand] = k.split(":");
+      const [from, to] = span.split("-").map(Number);
+      q.push({ li: +l, from, to, hand, review: true });
+    });
+
+  for (const u of unitsOf(li))
+    for (const h of LEVELS[li].hands)
+      if (!isDone(u, h)) q.push({ li: u.li, from: u.from, to: u.to, hand: h });
+
+  return q;
+}
 
 const elapsedMin = () => st.startedAt ? (Date.now() - st.startedAt - st.breakMs) / 60000 : 0;
+function watchClock() {
+  if (!st.startedAt || ["break", "resting", "wrap", "end", "start"].includes(st.screen)) return;
+  const m = elapsedMin();
+  if (m >= STOP_AT && m - st.askedAt >= ASK_AGAIN) { st.askedAt = m; st.backTo = st.screen; st.screen = "wrap"; render(); return; }
+  if (m >= REST_AT && m - st.askedAt >= ASK_AGAIN) { st.askedAt = m; st.backTo = st.screen; st.screen = "break"; render(); }
+}
+setInterval(watchClock, 5000);
 
 let restTimer = 0;
 function paintRest() {
@@ -224,38 +225,44 @@ function paintRest() {
   if (st.screen !== "resting") return;
   const draw = () => {
     const left = Math.max(0, st.restUntil - Date.now());
-    const el = $("#restLeft");
-    if (!el) return;
-    el.textContent = Math.floor(left / 60000) + ":" + String(Math.floor(left / 1000) % 60).padStart(2, "0");
+    const e = $("#restLeft");
+    if (!e) return;
+    e.textContent = Math.floor(left / 60000) + ":" + String(Math.floor(left / 1000) % 60).padStart(2, "0");
     if (left <= 0) { clearInterval(restTimer); endRest(); }
   };
   draw();
   restTimer = setInterval(draw, 250);
 }
-
-function watchClock() {
-  if (!st.startedAt) return;
-  if (["break", "resting", "wrap", "end", "start"].includes(st.screen)) return;
-  const m = elapsedMin();
-  if (m >= STOP_AT && m - st.askedAt >= ASK_AGAIN) {
-    st.askedAt = m; st.backTo = st.screen; st.screen = "wrap"; return render();
-  }
-  if (m >= REST_AT && m - st.askedAt >= ASK_AGAIN) {
-    st.askedAt = m; st.backTo = st.screen; st.screen = "break"; return render();
-  }
+function endRest() {
+  if (st.restFrom) st.breakMs += Date.now() - st.restFrom;
+  st.restFrom = 0; st.restUntil = 0;
+  st.askedAt = elapsedMin();
+  st.screen = st.backTo || "work";
+  render();
 }
-setInterval(watchClock, 5000);
 
-/* ══════════ Экраны ══════════ */
+function ladderHTML() {
+  const cur = openLevel();
+  return '<div class="ladder">' + LEVELS.map((L, i) => {
+    const us = unitsOf(i);
+    const d = us.filter(unitDone).length;
+    return `<div class="lvl ${i === cur ? "now" : ""}">
+      <b>${L.name}</b>
+      <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
+      <span>${d}/${us.length}</span>
+    </div>`;
+  }).join("") + "</div>";
+}
+
+const spanText = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
+
 function render() {
   $("#pieceName").textContent = PIECE.name;
   const m = Math.floor(elapsedMin());
-  $("#sessionLine").textContent = today() + " · занятие " + st.session
-    + (st.startedAt ? " · " + m + " мин" : "");
+  $("#sessionLine").textContent = today() + " · занятие " + st.session + (st.startedAt ? " · " + m + " мин" : "");
   const box = $("#stage");
   box.innerHTML = "";
   box.appendChild(SCREENS[st.screen]());
-  if ($("#tick")) clockStart(); else clockStop();
   paintRest();
   save();
 }
@@ -264,110 +271,53 @@ const SCREENS = {
 
   start: () => el(`
     <div>
-      <p class="step-of">Начало</p>
-      <p class="lead">Разобрано: правой — <b>${LEARNED_R ? "до " + LEARNED_R + "-го такта" : "ничего"}</b>,
-        левой — <b>${LEARNED_L ? "до " + LEARNED_L + "-го такта" : "ничего"}</b>.</p>
-      <p class="lead dim">Руки учатся порознь и забываются порознь, поэтому и занимаемся ими отдельно.
-        С какой сегодня?</p>
-      <div class="choices">
-        <button class="${st.hand === "right" ? "good" : ""}" data-hand="right">
-          <b>Правая</b><em>${LEARNED_R ? LEARNED_R + " тактов разобрано" : "ещё не начата"}</em></button>
-        <button class="${st.hand === "left" ? "good" : ""}" data-hand="left">
-          <b>Левая</b><em>${LEARNED_L ? LEARNED_L + " тактов разобрано" : "ещё не начата"}</em></button>
-      </div>
+      <p class="step-of">Занятие ${st.session}</p>
+      ${st.session === 1
+        ? `<p class="lead">Начинаем с нуля: <b>такт первый, левая рука</b>.</p>
+           <p class="lead dim">Разбираем по одному такту, каждой рукой отдельно, потом двумя.
+             Когда все такты сойдутся поодиночке, начнём сращивать их по два,
+             потом по четыре, по восемь и целиком.</p>`
+        : `<p class="lead">Продолжаем. Сейчас разбор <b>${LEVELS[openLevel()].name}</b>.</p>
+           <p class="lead dim">Начнём с того, что стоит освежить, потом новое.</p>`}
+      ${ladderHTML()}
+      <button class="big-btn" id="begin">Начать занятие</button>
+      <p class="why"><b>Почему так.</b> Единица разбора — один такт: короткий отрезок можно
+        пройти десятки раз за минуты. И отрезки сращиваются лесенкой, а не копятся поштучно,
+        иначе сорок отдельных тактов так и не станут пьесой.</p>
     </div>`),
 
-  test: () => {
-    const n = el(`
-      <div>
-        <p class="step-of">Проверка · ${handWord()} · ${st.at} из ${learned()}</p>
-        <div class="bar-num"><b>${st.at}</b><i>такт</i></div>
-        <p class="tick" id="tick">0.0 с</p>
-        <p class="say">Сыграл? Как вышло?</p>
-        <div class="choices">
-          <button class="good" data-m="sure"><b>Уверенно</b><em>руки сами помнят</em></button>
-          <button data-m="shaky"><b>Тяжеловато</b><em>вышло, но с усилием</em></button>
-          <button data-m="no"><b>Не идёт</b><em>без нот не играется</em></button>
-        </div>
-        ${stripHTML(st.at)}
-      </div>`);
-    return n;
-  },
-
-  plan: () => {
-    const sure = Object.entries(st.marks).filter(([k, m]) => k.startsWith(st.hand + ":") && m === "sure").length;
-    const list = st.focus;
-    return el(`
-      <div>
-        <p class="step-of">Что получилось</p>
-        <p class="lead">${handWord() === "левая" ? "Левой" : "Правой"} уверенно идёт <b>${sure} из ${learned()}</b> ${plural(learned(), "такта", "тактов", "тактов")}.
-          В среднем <b>${avgOf(Object.entries(st.times).filter(([k]) => k.startsWith(st.hand + ":"))).toFixed(1)} с</b> на такт.</p>
-        ${(st.slow || []).length
-          ? `<p class="lead dim">Такт${st.slow.length > 1 ? "ы" : ""} <b>${st.slow.join(", ")}</b>
-               ты отметил уверенно, но думал над ${st.slow.length > 1 ? "ними" : "ним"} заметно дольше —
-               беру ${st.slow.length > 1 ? "их" : "его"} тоже.</p>` : ""}
-        ${list.length
-          ? `<p class="lead dim">Сегодня займёмся тактами <b>${list.join(", ")}</b> —
-               остальное трогать не будем, оно и так живо.</p>
-             <button class="big-btn" id="go">Поехали</button>`
-          : `<p class="lead dim">Слабых мест нет — значит, пора брать такт ${learned() + 1}.</p>
-             <button class="big-btn" id="done">Закончить занятие</button>`}
-      </div>`);
-  },
-
   work: () => {
-    const bar = st.focus[st.fi];
-    const left = st.focus.length - st.fi - 1;
-
-    if (!st.blind) {
-      return el(`
-        <div>
-          <p class="step-of">Такт ${bar} · ${handWord()} · по подсказке</p>
-          <div class="bar-num"><b>${bar}</b><i>такт</i></div>
-          <p class="say">Играй, глядя в ноты. Медленно, ${WITH_NOTES} ${plural(WITH_NOTES, "раз", "раза", "раз")}.</p>
-          <div class="pips">
-            ${Array.from({ length: WITH_NOTES }, (_, i) =>
-              `<i class="${i < st.played ? "on" : ""}">${i < st.played ? "✓" : i + 1}</i>`).join("")}
-          </div>
-          <button class="big-btn" id="played">Сыграл</button>
-          ${left ? `<p class="note">дальше ещё ${left} ${plural(left, "такт", "такта", "тактов")}</p>` : ""}
-        </div>`);
-    }
-
-    if (st.blindPlayed < BLIND_TIMES) {
-      return el(`
-        <div>
-          <p class="step-of">Такт ${bar} · ${handWord()} · без подсказки</p>
-          <div class="bar-num"><b>${bar}</b><i>такт</i></div>
-          <p class="say">Подсказка закрыта. Сыграй по памяти ${BLIND_TIMES} ${plural(BLIND_TIMES, "раз", "раза", "раз")}.</p>
-          <div class="pips">
-            ${Array.from({ length: BLIND_TIMES }, (_, i) =>
-              `<i class="${i < st.blindPlayed ? "on" : ""}">${i < st.blindPlayed ? "✓" : i + 1}</i>`).join("")}
-          </div>
-          <button class="big-btn" id="blindPlayed">Сыграл</button>
-        </div>`);
-    }
-
+    const u = st.cur;
+    const next = u.to < PIECE.bars ? u.to + 1 : 0;
     return el(`
       <div>
-        <p class="step-of">Такт ${bar} · ${handWord()} · итог</p>
-        <div class="bar-num"><b>${bar}</b><i>такт</i></div>
-        <p class="say">Как теперь идёт?</p>
-        <p class="tick" id="tick">0.0 с</p>
-        <div class="choices">
-          <button class="good" data-w="sure"><b>Уверенно</b><em>пошло</em></button>
-          <button data-w="shaky"><b>Тяжеловато</b><em>но играется</em></button>
-          <button data-w="no"><b>Не идёт</b><em>вернёмся ещё раз</em></button>
+        <p class="step-of">${u.review ? "Освежаем" : "Разбираем"} · ${LEVELS[u.li].name}</p>
+        <div class="unit"><b>${spanText(u)}</b><i>${HAND[u.hand]}</i></div>
+        <p class="say">${next
+          ? `Доиграй до <b>первой ноты такта ${next}</b> и остановись.`
+          : "Доиграй до конца."}</p>
+        <p class="say">Три чистых подряд. Сбился — счёт сначала.</p>
+        <div class="pips">
+          ${Array.from({ length: REPS }, (_, i) =>
+            `<i class="${i < st.reps ? "on" : ""}">${i < st.reps ? "✓" : i + 1}</i>`).join("")}
         </div>
+        <div class="two">
+          <button class="clean" id="clean">Чисто</button>
+          <button class="miss" id="miss">Сбился</button>
+        </div>
+        <button class="ghost" id="skip">Отложить на следующий раз</button>
+        <p class="why"><b>Зачем до первой ноты следующего такта.</b> С этой ноты начнётся
+          следующий отрезок — так два соседних куска потом склеятся сами. Без перекрытия
+          они остаются двумя отдельными кусками, и шов между ними слышно.</p>
       </div>`);
   },
 
   break: () => el(`
     <div>
       <p class="step-of">Передышка</p>
-      <p class="lead">За инструментом уже <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минута", "минуты", "минут")}</b>.</p>
-      <p class="lead dim">Руки устают раньше, чем это чувствуется, и дальше занятие идёт вхолостую.
-        Отойди ненадолго — вернёшься, и пойдёт легче.</p>
+      <p class="lead">За инструментом <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минута", "минуты", "минут")}</b>.</p>
+      <p class="lead dim">Около двадцати минут держится внимание, дальше занятие идёт вхолостую.
+        Отойди ненадолго.</p>
       <div class="choices">
         <button class="good" data-rest="5"><b>Перерыв 5 минут</b></button>
         <button data-rest="10"><b>Перерыв 10 минут</b></button>
@@ -378,166 +328,104 @@ const SCREENS = {
   resting: () => el(`
     <div>
       <p class="step-of">Перерыв</p>
-      <div class="bar-num"><b id="restLeft">—</b><i>осталось</i></div>
+      <div class="unit"><b id="restLeft">—</b><i>осталось</i></div>
       <p class="lead dim" style="text-align:center">Встань, разомни кисти, посмотри в окно.</p>
-      <button class="big-btn" id="restDone">Я готов, продолжаем</button>
+      <button class="big-btn" id="restDone">Готов, продолжаем</button>
     </div>`),
 
   wrap: () => el(`
     <div>
       <p class="step-of">Пора закругляться</p>
       <p class="lead">Занятие идёт <b>${Math.floor(elapsedMin())} ${plural(Math.floor(elapsedMin()), "минуту", "минуты", "минут")}</b>.</p>
-      <p class="lead dim">Дальше запоминается хуже, чем портится. Лучше закончить сейчас
-        и вернуться завтра — так вещь учится быстрее, чем одним длинным заходом.</p>
+      <p class="lead dim">Незакрытое не пропадёт — перенесётся на следующий раз. И это не потеря:
+        точность заметно прибавляет после сна, а не к концу длинного занятия.</p>
       <div class="choices">
         <button class="good" id="finish"><b>Завершить занятие</b></button>
         <button data-rest="0"><b>Ещё немного</b><em>спрошу снова через ${ASK_AGAIN} минут</em></button>
       </div>
     </div>`),
 
-  end: () => {
-    const mine = (o) => Object.entries(o).filter(([k]) => k.startsWith(st.hand + ":"));
-    const barOf = (k) => +k.split(":")[1];
-    const sure = mine(st.marks).filter(([, m]) => m === "sure").map(([k]) => barOf(k));
-    const slowest = mine(st.times).sort((a, b) => b[1] - a[1])[0];
-    const gains = mine(st.workTimes)
-      .filter(([k, t]) => st.times[k] && t < st.times[k] - 0.5)
-      .map(([k, t]) => ({ bar: barOf(k), was: st.times[k], now: t }))
-      .sort((a, b) => a.bar - b.bar);
-    return el(`
-      <div>
-        <p class="step-of">Занятие окончено</p>
-        <p class="lead">${st.fixed.length
-          ? `Сдвинулось: <b>${st.fixed.join(", ")}</b>.`
-          : "Сегодня без сдвигов — бывает."}</p>
-        <ul class="list">
-          <li>Рука<span>${handWord()}</span></li>
-          <li>Уверенно идёт<span>${sure.length} из ${learned()} ${plural(learned(), "такта", "тактов", "тактов")}</span></li>
-          <li>Среднее время на такт<span>${avgOf(mine(st.times)).toFixed(1)} с</span></li>
-          ${slowest ? `<li>Дольше всего<span>такт ${barOf(slowest[0])} · ${(+slowest[1]).toFixed(1)} с</span></li>` : ""}
-          <li>Разобрано<span>до ${learned()}-го такта из ${PIECE.bars}</span></li>
-          <li>Осталось слабых<span>${st.focus.length - st.fixed.length}</span></li>
-        </ul>
-        ${gains.length ? `
-          <p class="step-of" style="margin:18px 0 8px">Стало быстрее</p>
-          <ul class="list">
-            ${gains.map((g) => `<li>Такт ${g.bar}<span>${g.was.toFixed(1)} с → ${g.now.toFixed(1)} с</span></li>`).join("")}
-          </ul>` : ""}
-        ${stripHTML(0)}
-        <button class="big-btn" id="next">Следующее занятие</button>
-        <button class="ghost" id="reset">Сбросить прототип</button>
-      </div>`);
-  },
+  end: () => el(`
+    <div>
+      <p class="step-of">Занятие ${st.session} окончено</p>
+      <p class="lead">${st.closed.length
+        ? `Закрыто: <b>${st.closed.length}</b> ${plural(st.closed.length, "отрезок", "отрезка", "отрезков")}.`
+        : "Сегодня ничего не закрылось — бывает."}</p>
+      ${st.queue.length ? `<p class="lead dim">Осталось ${st.queue.length} — перенёс на следующее занятие.</p>` : ""}
+      ${ladderHTML()}
+      <ul class="list">
+        <li>За инструментом<span>${Math.floor(elapsedMin())} мин</span></li>
+        <li>Сейчас разбираем<span>${LEVELS[openLevel()].name}</span></li>
+      </ul>
+      <p class="why"><b>До следующего раза.</b> Лучше вернуться завтра, чем добивать сегодня:
+        точность после ночи прибавляет сама, а к концу длинного занятия падает.</p>
+      <button class="big-btn" id="next">Следующее занятие</button>
+      <button class="ghost" id="reset">Начать пьесу заново</button>
+    </div>`),
 };
 
-/* ══════════ Переходы ══════════ */
+function takeNext() {
+  st.reps = 0;
+  st.cur = st.queue.shift() || null;
+  st.screen = st.cur ? "work" : "end";
+  render();
+}
+
 document.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (!t) return;
 
+  if (t.id === "begin") {
+    st.startedAt = st.startedAt || Date.now();
+    st.queue = buildQueue();
+    st.closed = [];
+    return takeNext();
+  }
+
+  if (t.id === "clean") {
+    st.reps++;
+    if (st.reps >= REPS) {
+      const u = st.cur;
+      if (!u.review) {
+        st.done[key(u, u.hand)] = st.session;
+        st.closed.push(spanText(u) + " · " + HAND[u.hand]);
+      }
+      /* Лесенка могла сомкнуться — тогда очередь на сегодня уже про старый
+         уровень, и её надо пересобрать под новый. */
+      const li = openLevel();
+      const nextNew = st.queue.find((x) => !x.review);
+      if (nextNew && nextNew.li !== li) st.queue = buildQueue();
+      return takeNext();
+    }
+    return render();
+  }
+
+  if (t.id === "miss") { st.reps = 0; return render(); }
+  if (t.id === "skip") { st.queue.push(st.cur); return takeNext(); }
+
   if (t.dataset.rest !== undefined) {
     const min = +t.dataset.rest;
-    if (min) {
-      st.restFrom = Date.now();
-      st.restUntil = st.restFrom + min * 60000;
-      st.screen = "resting";
-    } else st.screen = st.backTo || "test";
+    if (min) { st.restFrom = Date.now(); st.restUntil = st.restFrom + min * 60000; st.screen = "resting"; }
+    else st.screen = st.backTo || "work";
     return render();
   }
-
   if (t.id === "restDone") return endRest();
-
   if (t.id === "finish") { st.screen = "end"; return render(); }
 
-  if (t.dataset.hand) {
-    st.hand = t.dataset.hand;
-    if (!learned()) { alert("Этой рукой ещё ничего не разобрано — проверять нечего."); return; }
-    if (!st.startedAt) st.startedAt = Date.now();
-    st.at = 1; st.screen = "test";
-    return render();
-  }
-
-  if (t.id === "go") {
-    if (!st.startedAt) st.startedAt = Date.now();
-    st.screen = st.screen === "start" ? "test" : "work";
-    if (st.screen === "work") { st.fi = 0; st.played = 0; st.blind = false; st.blindPlayed = 0; st.rounds = 0; }
-    return render();
-  }
-
-  if (t.dataset.m) {                          // ответ на проверке
-    st.times[key(st.at)] = clockStop();
-    st.marks[key(st.at)] = t.dataset.m;
-    if (st.at < learned()) { st.at++; return render(); }
-    /* Фокус — слабое и медленное. «Уверенно, но вдвое дольше остальных» —
-       это ещё не выучено: руки помнят, но не сами. Всё остальное сегодня
-       не трогаем: перебирать выученное — простейший способ не сдвинуться. */
-    const mine = (o) => Object.entries(o).filter(([k]) => k.startsWith(st.hand + ":"));
-    const barOf = (k) => +k.split(":")[1];
-    const med = medianOf(mine(st.times).map(([, t]) => t));
-    st.slow = mine(st.times)
-      .filter(([k, t]) => st.marks[k] === "sure" && med && t > med * 2 && t - med > 3)
-      .map(([k]) => barOf(k));
-    const weak = mine(st.marks).filter(([, m]) => m !== "sure").map(([k]) => barOf(k));
-    st.focus = [...new Set([...weak, ...st.slow])].sort((a, b) => a - b);
-    st.screen = "plan";
-    return render();
-  }
-
-  if (t.id === "played") {
-    st.played++;
-    if (st.played >= WITH_NOTES) { st.blind = true; st.blindPlayed = 0; }
-    return render();
-  }
-  if (t.id === "blindPlayed") { st.blindPlayed++; return render(); }
-
-  if (t.dataset.w) {                          // как вышло без нот
-    const bar = st.focus[st.fi];
-    st.workTimes[key(bar)] = clockStop();
-    if (t.dataset.w === "sure") {
-      st.marks[key(bar)] = "sure";
-      st.fixed.push(bar);
-      return nextFocus();
-    }
-    st.rounds++;
-    /* Два подхода — и дальше. Один такт может съесть всё занятие,
-       а вещь на сорок тактов так не разберёшь. */
-    if (st.rounds >= MAX_ROUNDS) return nextFocus();
-    st.played = 0; st.blind = false; st.blindPlayed = 0;
-    return render();
-  }
-
-  if (t.id === "done") { st.screen = "end"; return render(); }
-
   if (t.id === "next") {
-    const n = st.session + 1;
-    st = fresh();                             // новое занятие — новая честная проверка
+    const n = st.session + 1, done = st.done;
+    st = fresh();
     st.session = n;
+    st.done = done;                    // разбор переносится, часы занятия — нет
     return render();
   }
 
   if (t.id === "reset") {
-    if (!confirm("Начать прототип с чистого листа?")) return;
+    if (!confirm("Забыть весь разбор и начать пьесу с первого такта?")) return;
     st = fresh();
     return render();
   }
 });
-
-/* Отдых из счётчика занятия вычитаем: полчаса игры и полчаса игры
-   с перерывом посередине — разные вещи. */
-function endRest() {
-  if (st.restFrom) st.breakMs += Date.now() - st.restFrom;
-  st.restFrom = 0; st.restUntil = 0;
-  st.askedAt = elapsedMin();
-  st.screen = st.backTo || "test";
-  render();
-}
-
-function nextFocus() {
-  st.fi++;
-  st.played = 0; st.blind = false; st.blindPlayed = 0; st.rounds = 0;
-  if (st.fi >= st.focus.length) st.screen = "end";
-  render();
-}
 
 render();
 </script>
