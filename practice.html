@@ -65,6 +65,8 @@
     font-size: 1.02rem; font-weight: 600; color: #241a05;
     background: linear-gradient(160deg, var(--gold), var(--gold-2)); margin-top: 6px;
   }
+  .two-ghost { display: flex; gap: 8px; }
+  .two-ghost .ghost { flex: 1; }
   .ghost {
     width: 100%; border: 1px solid var(--glass-line); background: transparent; color: var(--muted);
     font: inherit; font-size: 0.86rem; border-radius: 14px; padding: 12px; margin-top: 10px;
@@ -78,6 +80,9 @@
   .choices button em { font-style: normal; color: var(--dim); font-size: 0.78rem; display: block; margin-top: 1px; }
   .choices button.good { border-color: rgba(110, 231, 168, 0.42); }
 
+  .ladder-cap { font-size: 0.82rem; color: var(--muted); margin: 16px 0 8px; }
+  .ladder-cap b { color: var(--ink); font-weight: 600; }
+  .ladder-note { font-size: 0.76rem; color: var(--dim); margin: 8px 0 0; }
   .ladder { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
   .lvl { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
   .lvl b { min-width: 78px; font-weight: 600; }
@@ -133,11 +138,11 @@ const PIECE = { name: "Бах — Прелюдия es-moll", bars: 40 };
    Руки порознь, потом вместе — но в одном занятии, а не месяцами порознь:
    Chang за долгую изоляцию рук, Fitch против. Взята середина. */
 const LEVELS = [
-  { size: 1,  name: "по одному", hands: ["left", "right", "both"] },
-  { size: 2,  name: "по два",    hands: ["left", "right", "both"] },
-  { size: 4,  name: "по четыре", hands: ["both"] },
-  { size: 8,  name: "по восемь", hands: ["both"] },
-  { size: 40, name: "целиком",   hands: ["both"] },
+  { size: 1,  name: "по 1 такту",  short: "каждый такт отдельно",     hands: ["left", "right", "both"] },
+  { size: 2,  name: "по 2 такта",  short: "два такта подряд",         hands: ["left", "right", "both"] },
+  { size: 4,  name: "по 4 такта",  short: "четыре такта подряд",      hands: ["both"] },
+  { size: 8,  name: "по 8 тактов", short: "восемь тактов подряд",     hands: ["both"] },
+  { size: 40, name: "вся пьеса",   short: "от начала до конца",       hands: ["both"] },
 ];
 const REPS = 3;
 const REST_AT = 20, STOP_AT = 60, ASK_AGAIN = 12;
@@ -243,7 +248,8 @@ function endRest() {
 
 function ladderHTML() {
   const cur = openLevel();
-  return '<div class="ladder">' + LEVELS.map((L, i) => {
+  return `<p class="ladder-cap">Лесенка разбора — сейчас <b>${LEVELS[cur].short}</b></p>`
+    + '<div class="ladder">' + LEVELS.map((L, i) => {
     const us = unitsOf(i);
     const d = us.filter(unitDone).length;
     return `<div class="lvl ${i === cur ? "now" : ""}">
@@ -251,7 +257,8 @@ function ladderHTML() {
       <span class="track"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
       <span>${d}/${us.length}</span>
     </div>`;
-  }).join("") + "</div>";
+  }).join("") + "</div>"
+    + `<p class="ladder-note">Пройдёшь все ${unitsOf(cur).length} — они срастутся в ступень крупнее.</p>`;
 }
 
 const spanText = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
@@ -274,9 +281,9 @@ const SCREENS = {
       <p class="step-of">Занятие ${st.session}</p>
       ${st.session === 1
         ? `<p class="lead">Начинаем с нуля: <b>такт первый, левая рука</b>.</p>
-           <p class="lead dim">Разбираем по одному такту, каждой рукой отдельно, потом двумя.
-             Когда все такты сойдутся поодиночке, начнём сращивать их по два,
-             потом по четыре, по восемь и целиком.</p>`
+           <p class="lead dim">Сначала каждый такт разбирается отдельно — левой, правой, потом двумя
+             руками. Когда так пройдены все сорок, они начнут сращиваться: по два такта подряд,
+             потом по четыре, по восемь, и наконец вся пьеса целиком.</p>`
         : `<p class="lead">Продолжаем. Сейчас разбор <b>${LEVELS[openLevel()].name}</b>.</p>
            <p class="lead dim">Начнём с того, что стоит освежить, потом новое.</p>`}
       ${ladderHTML()}
@@ -305,7 +312,10 @@ const SCREENS = {
           <button class="clean" id="clean">Чисто</button>
           <button class="miss" id="miss">Сбился</button>
         </div>
-        <button class="ghost" id="skip">Отложить на следующий раз</button>
+        <div class="two-ghost">
+          <button class="ghost" id="skip">Отложить этот отрезок</button>
+          <button class="ghost" id="finish">Завершить занятие</button>
+        </div>
         <p class="why"><b>Зачем до первой ноты следующего такта.</b> С этой ноты начнётся
           следующий отрезок — так два соседних куска потом склеятся сами. Без перекрытия
           они остаются двумя отдельными кусками, и шов между ними слышно.</p>
