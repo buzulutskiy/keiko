@@ -1587,7 +1587,58 @@
       margin: 18px 2px 8px;
     }
     .lib-group:first-child { margin-top: 4px; }
+    .lib-tools { display: flex; gap: 8px; margin-bottom: 4px; }
+    .lib-tools .btn { flex: 1; min-width: 0; }
+    #libMap { color: var(--gold); border-color: rgba(255, 201, 77, 0.3); }
     .lib-map.bars { margin-bottom: 10px; }
+
+    /* ══════════ «Захотелось» ══════════ */
+    /* Вид записи выбирают до текста, поэтому он и стоит под полем ввода:
+       сначала «куда», потом «что». */
+    .wi-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+    .wi-pick {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--muted); font: inherit; font-size: 0.78rem;
+      border-radius: 999px; padding: 6px 11px 6px 8px; cursor: pointer;
+      transition: border-color .18s ease, color .18s ease, background .18s ease;
+    }
+    .wi-pick i { font-style: normal; font-size: 1.05rem; }
+    /* Названия видов подписаны только у выбранного: шесть подписанных кнопок
+       занимали три строки и съедали половину экрана до первой записи. */
+    .wi-pick span { display: none; }
+    .wi-pick.on span { display: inline; }
+    .wi-pick.on {
+      color: var(--ink); border-color: rgba(255, 201, 77, 0.45); background: rgba(255, 201, 77, 0.1);
+      padding-right: 12px;
+    }
+
+    .wish-list { display: grid; gap: 8px; }
+    .wish {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: var(--panel); border: 1px solid var(--glass-line);
+      border-radius: 14px; padding: 12px 12px 11px;
+    }
+    .wi-check {
+      flex: none; width: 22px; height: 22px; margin-top: 1px;
+      border-radius: 50%; border: 1.5px solid var(--glass-line);
+      background: transparent; color: var(--bg);
+      font-size: 0.78rem; line-height: 1; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .18s ease, border-color .18s ease;
+    }
+    .wish.done .wi-check { background: var(--gold); border-color: var(--gold); }
+    .wi-body { flex: 1; min-width: 0; }
+    .wi-text { margin: 0; font-size: 0.95rem; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+    .wish.done .wi-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--dim); }
+    .wi-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+      margin-top: 6px; font-size: 0.72rem; color: var(--dim);
+    }
+    .wi-kind { color: var(--muted); }
+    .wi-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .wi-acts { flex: none; display: flex; gap: 2px; }
+    .wi-edit-row { display: flex; gap: 8px; margin-top: 8px; }
     .lib-hand {
       font-size: 11px;
       letter-spacing: .06em;

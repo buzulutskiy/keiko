@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 72";
+const APP_VERSION = "Кэйко 73";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -142,6 +142,7 @@ function emptyData() {
     practice: {},   // ход разбора по пьесам: { pieceId: { done, session } }
     shop: { theme: "dusk", purchases: [] },
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
+    wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
@@ -224,6 +225,7 @@ function migrate(obj) {
      что лежит в телефоне, и то, что приезжает из гиста. Иначе достаточно
      одной синхронизации со старым устройством, чтобы они вернулись. */
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
+  if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
@@ -1316,7 +1318,8 @@ function crashScreen(e) {
 // снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
 const dataStamp = () => [
   data.piano.entries, data.book.entries, data.pastel.entries, watchEntries(),
-  data.thoughts || [], data.archive || [], data.freezes || [], data.takes || []
+  data.thoughts || [], data.archive || [], data.freezes || [], data.takes || [],
+  data.wishes || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
   + "|" + (data.shop.theme || "");
 // выбранный материал в снимок не входит: он меняется от свайпа и уже показан на экране —
@@ -1370,6 +1373,7 @@ function renderInner() {
     else if (tab === "home") renderHome();
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
+    else if (tab === "wish") renderWishes();
     else renderAch();
   } catch (e) {
     console.error("вкладка " + (settingsOpen ? "настройки" : tab) + ":", e);
@@ -1412,12 +1416,15 @@ function syncTabHeight() {
 }
 
 function renderTabbar() {
-  const openCount = achMaterials().reduce((n, m) => n + m.open, 0);
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
     ["notes", ICON("notes", "✎"), T("tabNotes")],
-    ["ach", ICON("ach", "✦"), `${T("tabAch")} ${openCount}`]
+    /* «Достижения» с нижней панели убраны: награды и карточки знаний теперь
+       видно в «Моментах», внутри той сессии, где они открылись, а полку
+       и карту знаний перенесли в Библиотеку. Экран остался — просто без
+       постоянной кнопки. */
+    ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}`]
   ].map(([id, ic, nm]) =>
     `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
   syncTabHeight();
@@ -4234,6 +4241,175 @@ function mediaHTML(t) {
     : `<audio class="th-audio" controls preload="none" src="${esc(url)}"></audio>`;
 }
 
+/* ══════════ «Захотелось» ══════════
+   Книга или ролик почти всегда что-нибудь подкидывают: съездить туда,
+   прочитать вот это, попробовать сделать так. В ленте моментов такое тонет —
+   там мысли, их перечитывают, а не выполняют. Здесь у желания есть вид
+   и одно-единственное состояние: пока хочется — или уже сбылось. */
+
+const WISH_KINDS = [
+  { id: "place",  icon: "🗺", name: "Съездить" },
+  { id: "read",   icon: "📚", name: "Прочитать" },
+  { id: "watch",  icon: "🎬", name: "Посмотреть" },
+  { id: "listen", icon: "🎧", name: "Послушать" },
+  { id: "buy",    icon: "🛒", name: "Купить" },
+  { id: "make",   icon: "✍️", name: "Сделать" }
+];
+const wishKind = (id) => WISH_KINDS.find(k => k.id === id) || WISH_KINDS[WISH_KINDS.length - 1];
+const wishes = () => (data.wishes || []).filter(w => !w.deleted);
+const wishOpenCount = () => wishes().filter(w => !w.done).length;
+
+let wishKindPick = "place";      // вид у нового желания
+let wishFilter = "open";         // «хочется» | «сбылось»
+let wishEditing = null;
+
+function wishAdd(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  data.wishes = data.wishes || [];
+  data.wishes.push({
+    id: uid(), text: t, kind: wishKindPick,
+    /* Откуда прилетело: почти всегда — из того, что сейчас в работе.
+       Через полгода «съездить на косу» без источника не расшифровать. */
+    key: currentKey(), track: data.active,
+    done: false, doneAt: 0, date: todayStr(), createdAt: now(), updatedAt: now()
+  });
+  saveData();
+  schedulePush();
+  return true;
+}
+
+function wishToggle(id) {
+  const w = (data.wishes || []).find(x => x.id === id);
+  if (!w) return;
+  w.done = !w.done;
+  w.doneAt = w.done ? now() : 0;
+  w.updatedAt = now();
+  saveData(); schedulePush(); renderWishes();
+  if (w.done) toast("Сбылось");
+}
+
+function wishDrop(id) {
+  const w = (data.wishes || []).find(x => x.id === id);
+  if (!w) return;
+  w.deleted = true; w.updatedAt = now();
+  saveData(); schedulePush(); renderWishes();
+}
+
+function renderWishes() {
+  const list = wishes().filter(w => (wishFilter === "done" ? w.done : !w.done))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const openN = wishOpenCount();
+  const doneN = wishes().length - openN;
+
+  const mats = achMaterials();
+  const arch = (data.archive || []).filter(a => !a.deleted);
+  const sourceOf = (w) => {
+    const m = mats.find(x => keyOf(x) === w.key);
+    if (m) return m.icon + " " + m.title;
+    const a = arch.find(x => x.id === w.key);
+    return a ? "📎 " + a.title : "";
+  };
+
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
+  const when = (w) => fmt.format(fromStr(w.date));
+
+  const rowHTML = (w) => {
+    const k = wishKind(w.kind);
+    const src = sourceOf(w);
+    return `
+      <article class="wish${w.done ? " done" : ""}">
+        <button class="wi-check" data-wdone="${w.id}" type="button"
+          aria-label="${w.done ? "Вернуть в список" : "Отметить сбывшимся"}">${w.done ? "✓" : ""}</button>
+        <div class="wi-body">
+          ${wishEditing === w.id
+            ? `<textarea class="note-input wi-edit" id="wiEdit" rows="3">${esc(w.text)}</textarea>
+               <div class="wi-edit-row">
+                 <button class="btn gold" data-wsave="${w.id}" type="button">Сохранить</button>
+                 <button class="btn" data-wcancel="1" type="button">Отмена</button>
+               </div>`
+            : `<p class="wi-text">${esc(w.text)}</p>
+               <div class="wi-meta">
+                 ${/* в списке «хочется» вид уже написан заголовком группы —
+                       второй раз он только загромождает строку */
+                   wishFilter === "done" ? `<span class="wi-kind">${k.icon} ${esc(k.name)}</span>` : ""}
+                 ${src ? `<span class="wi-src">${esc(src)}</span>` : ""}
+                 <span class="wi-when">${esc(w.done ? "сбылось " + fmt.format(new Date(w.doneAt || now())) : when(w))}</span>
+               </div>`}
+        </div>
+        ${wishEditing === w.id ? "" : `
+        <span class="wi-acts">
+          <button class="th-act" data-wedit="${w.id}" type="button" aria-label="Изменить">✎</button>
+          <button class="th-act" data-wdrop="${w.id}" type="button" aria-label="Удалить">✕</button>
+        </span>`}
+      </article>`;
+  };
+
+  /* Внутри «хочется» раскладываем по видам: глазами ищут не «что я записал
+     третьего числа», а «куда бы съездить» — то есть сразу вид. */
+  const body = wishFilter === "done"
+    ? (list.length ? `<div class="wish-list">${list.map(rowHTML).join("")}</div>`
+        : `<div class="empty-note">Сбывшегося пока нет.<br>Отмечай галочкой — здесь будет видно, что из задуманного дошло до дела.</div>`)
+    : (list.length ? WISH_KINDS.map(k => {
+        const rows = list.filter(w => w.kind === k.id);
+        return rows.length
+          ? `<div class="lib-group">${k.icon} ${esc(k.name)}</div><div class="wish-list">${rows.map(rowHTML).join("")}</div>`
+          : "";
+      }).join("")
+      : `<div class="empty-note">Пока пусто.<br>Сюда — то, что подкинул материал: куда съездить, что прочитать, что попробовать сделать.</div>`);
+
+  $("#view").innerHTML = `
+    <div class="panel th-panel">
+      <textarea class="note-input th-text" id="wiText" rows="2" placeholder="Чего захотелось?"></textarea>
+      <div class="wi-kinds">
+        ${WISH_KINDS.map(k => `
+          <button class="wi-pick ${wishKindPick === k.id ? "on" : ""}" data-wkind="${k.id}" type="button">
+            <i>${k.icon}</i><span>${esc(k.name)}</span>
+          </button>`).join("")}
+      </div>
+      <button class="btn gold th-send" id="wiSave" type="button">Записать</button>
+    </div>
+
+    <div class="seg" id="wishSeg">
+      <button data-wf="open" class="${wishFilter === "open" ? "on" : ""}" type="button">Хочется ${openN || ""}</button>
+      <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
+    </div>
+
+    ${body}`;
+
+  const area = $("#wiText");
+  const save = () => { if (wishAdd(area.value)) { area.value = ""; renderWishes(); } };
+  $("#wiSave").addEventListener("click", save);
+  area.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); }
+  });
+
+  document.querySelectorAll("[data-wkind]").forEach(b =>
+    b.addEventListener("click", () => {
+      wishKindPick = b.dataset.wkind;
+      document.querySelectorAll("[data-wkind]").forEach(x => x.classList.toggle("on", x === b));
+    }));
+  document.querySelectorAll("#wishSeg button").forEach(b =>
+    b.addEventListener("click", () => { wishFilter = b.dataset.wf; wishEditing = null; renderWishes(); }));
+  document.querySelectorAll("[data-wdone]").forEach(b =>
+    b.addEventListener("click", () => wishToggle(b.dataset.wdone)));
+  document.querySelectorAll("[data-wedit]").forEach(b =>
+    b.addEventListener("click", () => { wishEditing = b.dataset.wedit; renderWishes(); }));
+  document.querySelectorAll("[data-wcancel]").forEach(b =>
+    b.addEventListener("click", () => { wishEditing = null; renderWishes(); }));
+  document.querySelectorAll("[data-wsave]").forEach(b =>
+    b.addEventListener("click", () => {
+      const w = (data.wishes || []).find(x => x.id === b.dataset.wsave);
+      const t = ($("#wiEdit").value || "").trim();
+      if (w && t) { w.text = t; w.updatedAt = now(); saveData(); schedulePush(); }
+      wishEditing = null; renderWishes();
+    }));
+  document.querySelectorAll("[data-wdrop]").forEach(b =>
+    b.addEventListener("click", () => {
+      if (confirm("Убрать из списка?")) wishDrop(b.dataset.wdrop);
+    }));
+}
+
 function renderNotes() {
   /* У событий, записанных до появления поля, метки награды нет — достаём
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
@@ -5910,8 +6086,8 @@ const THEMES = [
             "--glass-line": "rgba(255, 138, 61, 0.22)", "--glass-hi": "rgba(255, 255, 255, 0.05)",
             "--panel": "rgba(10, 14, 22, 0.62)", "--bar": "rgba(6, 9, 15, 0.78)",
             "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
-    icons: { home: "◎", progress: "≣", ach: "◆", shop: "◍" },
-    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabShop: "Снабжение",
+    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", shop: "◍" },
+    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки", tabShop: "Снабжение",
              ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок",
              ctaDone: "Сеанс записан", ctaAdd: "дополнить", coins: "кредитов", coin: "◍", streak: "цикл",
              segAch: "◆ Допуски", segFacts: "◇ Данные", shopThemes: "Режимы отображения",
@@ -5943,8 +6119,8 @@ const THEMES = [
             "--glass-line": "rgba(61, 255, 136, 0.28)", "--glass-hi": "rgba(61, 255, 136, 0.12)",
             "--panel": "rgba(2, 20, 10, 0.68)", "--bar": "rgba(1, 14, 7, 0.82)",
             "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
-    icons: { home: "▮", progress: "▤", ach: "✚", shop: "◈" },
-    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabShop: "Обмен",
+    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", shop: "◈" },
+    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь", tabShop: "Обмен",
              ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок",
              ctaDone: "> запись принята", ctaAdd: "дополнить", coins: "жетонов", coin: "◈", streak: "цепочка",
              segAch: "[ метки ]", segFacts: "[ архив ]", shopThemes: "Оболочки",
@@ -5968,7 +6144,7 @@ const THEMES = [
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabShop: "Магазин",
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabWish: "Захотелось", tabShop: "Магазин",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
@@ -6896,6 +7072,7 @@ function restoreBackup(file) {
     data.watch.videos = mergeLists(data.watch.videos, (d.watch && d.watch.videos) || []);
     data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
+    data.wishes = mergeLists(data.wishes || [], d.wishes || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
     data.freezes = mergeLists(data.freezes || [], d.freezes || []);
 
@@ -7126,9 +7303,43 @@ function libraryUI() {
       `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`)];
   })() : [];
 
-  return group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows)
+  /* Полка переехала сюда из «Достижений»: прочитанное — такая же часть
+     библиотеки, как то, что сейчас в работе, и искать его на другом экране
+     было незачем. */
+  const shelf = shelfItems();
+  const fmtY = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
+  const shelfThumb = (a) => {
+    const own = [...data.book.books, ...(data.piano.pieces || [])].find(x => "bk_" + x.id === a.id || x.id === a.id);
+    let src = own ? coverSrc(own.id, own.cover || "") : "";
+    if (!src && a.track === "pastel") src = coverSrc("pastel", "");
+    if (!src && a.track === "watch") src = watchThumb(videos().find(v => v.id === a.videoId) || {});
+    return src;
+  };
+  const shelfRows = shelf.map(a => `
+    <button class="lib-row" data-shelf="${esc(a.id)}" type="button">
+      <span class="lib-cover">${shelfThumb(a)
+        ? `<img src="${esc(shelfThumb(a))}" alt="" loading="lazy">` : `<i>${esc(a.icon || "📖")}</i>`}</span>
+      <span class="lib-body">
+        <b>${esc(a.title)}</b>
+        <em>${esc(a.sub || "")}</em>
+        <span class="lib-meta">${esc(fmtY.format(fromStr(a.finishedAt)).replace(" г.", ""))}
+          ${a.rating ? " · " + "★".repeat(a.rating) : ""}${a.review ? "" : " · без отзыва"}</span>
+      </span>
+      <span class="mc-go">›</span>
+    </button>`);
+
+  return `
+    <div class="lib-tools">
+      <button class="btn" id="libMap" type="button">◍ Карта знаний</button>
+      <button class="btn" id="libAch" type="button">✦ Награды</button>
+    </div>`
+    + group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows)
     + `<div class="lib-group">Видео</div>` + watchAddUI()
-    + (watchRows.length ? `<div class="lib-list">${watchRows.join("")}</div>` : "");
+    + (watchRows.length ? `<div class="lib-list">${watchRows.join("")}</div>` : "")
+    + `<div class="lib-group">Прочитано · ${shelf.length}</div>`
+    + (shelfRows.length ? `<div class="lib-list">${shelfRows.join("")}</div>`
+        : `<div class="empty-note">Полка пока пуста.<br>Сюда попадает всё, что доведено до конца, — с оценкой и отзывом.</div>`)
+    + `<button class="btn add-book" id="libAddBook" type="button">＋ Добавить прочитанную книгу</button>`;
 }
 
 function bookPageUI(b) {
@@ -7406,6 +7617,20 @@ function pastelPageUI() {
 function bindLibraryUI() {
   document.querySelectorAll("[data-lib]").forEach(btn =>
     btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
+  const map = $("#libMap");
+  if (map) map.addEventListener("click", openKnowledgeMap);
+  const addBook = $("#libAddBook");
+  if (addBook) addBook.addEventListener("click", openAddBookSheet);
+  document.querySelectorAll("[data-shelf]").forEach(btn =>
+    btn.addEventListener("click", () => openShelfSheet(btn.dataset.shelf)));
+  /* Экран наград никуда не делся — просто перестал занимать место в нижней
+     панели. Вход в него теперь отсюда, обратно — любой вкладкой. */
+  const ach = $("#libAch");
+  if (ach) ach.addEventListener("click", () => {
+    settingsOpen = false; settingsView = null;
+    tab = "ach"; cfg.tab = "ach"; saveCfg();
+    render(); $("#view").scrollTop = 0;
+  });
   const back = $("#libBack");
   if (back) back.addEventListener("click", () => { libBook = null; render(); $("#view").scrollTop = 0; });
   const wtAdd = $("#wtAdd"), wtUrl = $("#wtUrl");
@@ -7603,6 +7828,7 @@ async function restoreArchive(file) {
   data.watch.videos = mergeLists(data.watch.videos, (d.watch && d.watch.videos) || []);
   data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
+  data.wishes = mergeLists(data.wishes || [], d.wishes || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.freezes = mergeLists(data.freezes || [], d.freezes || []);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -7713,10 +7939,13 @@ const SETTINGS_SECTIONS = [
   { id: "sync",      icon: "🔄", name: "Синхронизация", hint: () => (cfg.token && cfg.gistId) ? "подключена" : "не подключена" },
   { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
   { id: "look",      icon: "🎨", name: "Оформление",    hint: () => themeById(data.shop.theme).name },
+  /* Материалы, полка и карта знаний собраны в одном месте: раньше они были
+     раскиданы по трём экранам, и «где посмотреть прочитанное» каждый раз
+     приходилось вспоминать. */
   { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
-      const n = railItems().length;
-      return n ? `${n} ${plural(n, "материал", "материала", "материалов")}` : "пусто"; } },
-  { id: "materials", icon: "📦", name: "Материалы",     hint: () => hasMaterials() ? currentMaterial().title : "пусто" },
+      const n = railItems().length, sh = shelfItems().length;
+      return (n ? `${n} ${plural(n, "материал", "материала", "материалов")}` : "пусто")
+        + (sh ? ` · ${sh} на полке` : ""); } },
   { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
       const n = (data.freezes || []).filter(f => !f.deleted).length;
       return n ? `${n} ${plural(n, "период", "периода", "периодов")}` : "нет"; } },
@@ -7784,9 +8013,7 @@ function renderSettingsSection(id) {
   } else if (id === "look") {
     body = themeUI() + soundUI() + dailyUI();
   } else if (id === "library") {
-    body = libraryUI();
-  } else if (id === "materials") {
-    body = catalogUI() + (archiveUI() || "");
+    body = libraryUI() + (libBook ? "" : catalogUI() + (archiveUI() || ""));
   } else if (id === "pause") {
     body = freezeUI();
   } else if (id === "data") {
@@ -7884,7 +8111,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -7941,6 +8168,7 @@ async function syncNow(manual) {
     if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
     data.freezes = mergeLists(data.freezes, remote.freezes);
     data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
+    data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
     if (remote.shop) {
       data.shop.purchases = mergeLists(data.shop.purchases, remote.shop.purchases || []);
       if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
@@ -8013,7 +8241,7 @@ function boot() {
   load();
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
-  if (["home", "progress", "ach", "notes"].includes(cfg.tab)) tab = cfg.tab;
+  if (["home", "progress", "ach", "notes", "wish"].includes(cfg.tab)) tab = cfg.tab;
   applyTheme(data.shop.theme);
   if (["week", "month"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
