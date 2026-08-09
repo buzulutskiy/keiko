@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 77";
+const APP_VERSION = "Кэйко 78";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4515,6 +4515,11 @@ function dayProgress(track, key, day) {
   };
 }
 
+/* «Без материала»: мысль не обязана быть о книге или пьесе. Метка отдельная,
+   а не пустая строка, — иначе её не отличить от «ещё не выбрано». */
+const NO_MAT = "-";
+const NO_MAT_ITEM = { icon: "✎", title: "Без материала", cover: "", ratio: "" };
+
 function renderNotes() {
   /* У событий, записанных до появления поля, метки награды нет — достаём
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
@@ -4536,9 +4541,16 @@ function renderNotes() {
 
   if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
 
-  const mats = achMaterials();
-  const key = (cfg.thoughtKey && mats.some(m => keyOf(m) === cfg.thoughtKey)) ? cfg.thoughtKey : currentKey();
-  const cur = mats.find(m => keyOf(m) === key) || mats[0];
+  /* Завершённое из выбора убрано: по досмотренному ролику новых мыслей уже
+     не пишут, а список он засорял. Старые записи по нему остаются на месте —
+     здесь речь только о том, к чему привязать новую.
+     И первым пунктом — ничего: мысль не обязана быть о материале. */
+  const allMats = achMaterials();
+  const mats = allMats.filter(m => !m.done);
+  const key = cfg.thoughtKey === NO_MAT ? NO_MAT
+    : (cfg.thoughtKey && mats.some(m => keyOf(m) === cfg.thoughtKey)) ? cfg.thoughtKey
+    : (mats.some(m => keyOf(m) === currentKey()) ? currentKey() : NO_MAT);
+  const cur = key === NO_MAT ? NO_MAT_ITEM : (mats.find(m => keyOf(m) === key) || mats[0] || NO_MAT_ITEM);
 
   const all = thoughts().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const liked = all.filter(t => t.liked);
@@ -4561,7 +4573,8 @@ function renderNotes() {
   const arch = (data.archive || []).filter(a => !a.deleted);
   // у мысли своя обложка — по ней видно, откуда она, ещё до чтения текста
   const sourceOf = (t) => {
-    const m = mats.find(x => keyOf(x) === t.key);
+    if (!t.key) return NO_MAT_ITEM;            // мысль сама по себе
+    const m = allMats.find(x => keyOf(x) === t.key);
     if (m) return { icon: m.icon, title: m.title, cover: m.cover, ratio: m.ratio };
     const a = arch.find(x => x.id === t.key);
     return a
@@ -4587,6 +4600,7 @@ function renderNotes() {
           <span class="ts-label">${cur.icon} ${esc(cur.title)}</span>
           <span class="ts-arrow">▾</span>
           <select id="thMat" aria-label="Материал">
+            <option value="${NO_MAT}" ${key === NO_MAT ? "selected" : ""}>${NO_MAT_ITEM.icon} ${esc(NO_MAT_ITEM.title)}</option>
             ${mats.map(m => `<option value="${esc(keyOf(m))}" ${keyOf(m) === key ? "selected" : ""}>${m.icon} ${esc(m.title)}</option>`).join("")}
           </select>
         </span>
@@ -4703,7 +4717,9 @@ function renderNotes() {
     const text = fixHyphenBreaks($("#thText").value || "").trim();
     if (!text && !pendingMedia) { toast("Напиши пару слов или приложи что-нибудь"); return; }
     const rec = {
-      id: uid(), key, track: cur.track,
+      id: uid(),
+      key: key === NO_MAT ? "" : key,          // пусто — мысль сама по себе
+      track: key === NO_MAT ? "" : cur.track,
       text: text.slice(0, 2000), date: todayStr(),
       createdAt: now(), updatedAt: now()
     };
@@ -7463,18 +7479,21 @@ function libraryUI() {
       <span class="mc-go">›</span>
     </button>`);
 
+  /* Две секции вместо шести: что в работе и что пройдено. Деление по трекам
+     ничего не давало — книга, пьеса и ролик и так различимы по обложке,
+     а шесть заголовков превращали список в лестницу. */
+  const work = [...bookRows, ...pieceRows, ...pastelRows, ...watchRows];
+
   return `
-    <div class="lib-tools">
-      <button class="btn" id="libMap" type="button">◍ Карта знаний</button>
-      <button class="btn" id="libAch" type="button">✦ Награды</button>
-    </div>`
-    + group("Книги", bookRows) + group("Музыка", pieceRows) + group("Курсы", pastelRows)
-    + `<div class="lib-group">Видео</div>` + watchAddUI()
-    + (watchRows.length ? `<div class="lib-list">${watchRows.join("")}</div>` : "")
-    + `<div class="lib-group">Прочитано · ${shelf.length}</div>`
+    <div class="lib-group">В работе · ${work.length}</div>`
+    + (work.length ? `<div class="lib-list">${work.join("")}</div>`
+        : `<div class="empty-note">Пока ничего не добавлено.</div>`)
+    + `<div class="lib-group">Архив · ${shelf.length}</div>`
     + (shelfRows.length ? `<div class="lib-list">${shelfRows.join("")}</div>`
-        : `<div class="empty-note">Полка пока пуста.<br>Сюда попадает всё, что доведено до конца, — с оценкой и отзывом.</div>`)
-    + `<button class="btn add-book" id="libAddBook" type="button">＋ Добавить прочитанную книгу</button>`;
+        : `<div class="empty-note">Здесь будет пройденное — с оценкой и отзывом.</div>`)
+    + `<div class="lib-group">Добавить</div>`
+    + watchAddUI()
+    + `<button class="btn add-book" id="libAddBook" type="button">＋ Прочитанную книгу</button>`;
 }
 
 function bookPageUI(b) {
@@ -7554,7 +7573,9 @@ function bookPageUI(b) {
             </div>`;
         }).join("")}
       </div>
-    </div>`;
+    </div>
+
+    <button class="btn lib-arch" data-libarch="bk:${esc(b.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
 /* Видео — единственный материал, который заводится руками. */
@@ -7698,7 +7719,9 @@ function piecePageUI(pc) {
 
     ${pracStuckHTML(pc.id)}
 
-    <div class="freeze"><div class="fz-head">🎹 <b>Как считается</b> — такт считается выученным после ${FIRM_AT} проходов, поэтому процент строже, чем «задет»</div></div>`;
+    <div class="freeze"><div class="fz-head">🎹 <b>Как считается</b> — такт считается выученным после ${FIRM_AT} проходов, поэтому процент строже, чем «задет»</div></div>
+
+    <button class="btn lib-arch" data-libarch="pf:${esc(pc.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
 // страница курса — тоже только чтение
@@ -7746,26 +7769,33 @@ function pastelPageUI() {
             <span class="pt-meta">${st.doneSet.has(i) ? "пройден" : Math.round(l.dur / 60) + " мин"}</span>
           </div>`).join("")}
       </div>
-    </div>`;
+    </div>
+
+    <button class="btn lib-arch" data-libarch="ps:pastel" type="button">Завершить и убрать в архив</button>`;
 }
 
 function bindLibraryUI() {
   document.querySelectorAll("[data-lib]").forEach(btn =>
     btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
-  const map = $("#libMap");
-  if (map) map.addEventListener("click", openKnowledgeMap);
   const addBook = $("#libAddBook");
   if (addBook) addBook.addEventListener("click", openAddBookSheet);
   document.querySelectorAll("[data-shelf]").forEach(btn =>
     btn.addEventListener("click", () => openShelfSheet(btn.dataset.shelf)));
-  /* Экран наград никуда не делся — просто перестал занимать место в нижней
-     панели. Вход в него теперь отсюда, обратно — любой вкладкой. */
-  const ach = $("#libAch");
-  if (ach) ach.addEventListener("click", () => {
-    settingsOpen = false; settingsView = null;
-    tab = "ach"; cfg.tab = "ach"; saveCfg();
-    render(); $("#view").scrollTop = 0;
-  });
+  /* Карта знаний уехала отдельным разделом настроек, экран наград скрыт:
+     награды и карточки видны в «Моментах», внутри своей сессии. Код обоих
+     цел — вернуть их значит вернуть строку в список разделов. */
+  /* Кнопка «в архив» переехала со страницы настроек на страницу самого
+     материала: там понятно, что именно завершаешь. Раньше она стояла в общем
+     блоке и завершала «текущий», а какой текущий — приходилось помнить. */
+  document.querySelectorAll("[data-libarch]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const [kind, id] = btn.dataset.libarch.split(":");
+      if (kind === "bk") { data.active = "book"; data.book.activeBook = id; }
+      else if (kind === "pf") { data.active = "piano"; data.piano.activePiece = id; }
+      else if (kind === "ps") data.active = "pastel";
+      libBook = null;
+      archiveCurrent();
+    }));
   const back = $("#libBack");
   if (back) back.addEventListener("click", () => { libBook = null; render(); $("#view").scrollTop = 0; });
   const wtAdd = $("#wtAdd"), wtUrl = $("#wtUrl");
@@ -8079,8 +8109,8 @@ const SETTINGS_SECTIONS = [
      приходилось вспоминать. */
   { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
       const n = railItems().length, sh = shelfItems().length;
-      return (n ? `${n} ${plural(n, "материал", "материала", "материалов")}` : "пусто")
-        + (sh ? ` · ${sh} на полке` : ""); } },
+      return (n ? `${n} в работе` : "пусто") + (sh ? ` · ${sh} в архиве` : ""); } },
+  { id: "kmap",      icon: "◍", name: "Карта знаний", hint: () => "что уже узнал" },
   { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
       const n = (data.freezes || []).filter(f => !f.deleted).length;
       return n ? `${n} ${plural(n, "период", "периода", "периодов")}` : "нет"; } },
@@ -8111,6 +8141,8 @@ function renderSettings() {
 
   document.querySelectorAll("[data-sec]").forEach(b =>
     b.addEventListener("click", () => {
+      // карта знаний — оверлей, отдельный экран ей не нужен
+      if (b.dataset.sec === "kmap") { openKnowledgeMap(); return; }
       settingsView = b.dataset.sec;
       render();
       $("#view").scrollTop = 0;
@@ -8148,11 +8180,14 @@ function renderSettingsSection(id) {
   } else if (id === "look") {
     body = themeUI() + soundUI() + dailyUI();
   } else if (id === "library") {
-    body = libraryUI() + (libBook ? "" : catalogUI() + (archiveUI() || ""));
+    /* Каталог уехал в «Данные»: он про обмен файлами, а не про материалы,
+       и сверяется сам при каждой синхронизации. Блок «отправить в архив
+       и начать новое» убран — теперь это кнопка на странице материала. */
+    body = libraryUI();
   } else if (id === "pause") {
     body = freezeUI();
   } else if (id === "data") {
-    body = archiveBackupUI() + backupUI();
+    body = archiveBackupUI() + backupUI() + catalogUI();
   } else {
     body = `
       <div class="info-note">Кэйко · версия ${APP_VERSION}</div>

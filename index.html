@@ -1629,9 +1629,9 @@
     @media (prefers-reduced-motion: reduce) {
       .img-wait::after, .th-shot:not(.img-on) { animation: none; }
     }
-    .lib-tools { display: flex; gap: 8px; margin-bottom: 4px; }
-    .lib-tools .btn { flex: 1; min-width: 0; }
-    #libMap { color: var(--gold); border-color: rgba(255, 201, 77, 0.3); }
+    /* Завершение — последнее действие на странице материала, поэтому и стоит
+       последним, и голоса не повышает. */
+    .lib-arch { width: 100%; margin-top: 18px; color: var(--muted); }
     .lib-map.bars { margin-bottom: 10px; }
 
     /* ══════════ «Захотелось» ══════════ */
