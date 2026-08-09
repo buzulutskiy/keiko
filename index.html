@@ -1506,6 +1506,20 @@
     }
     .wt-del:hover { opacity: .9; }
 
+    /* Длинное слово без пробелов растягивало карточку шире экрана, и страницу
+       можно было утащить вбок. Ломаем слово, а не вёрстку. */
+    .post { max-width: 100%; }
+    .post-text { overflow-wrap: anywhere; word-break: break-word; }
+    .th-head { min-width: 0; }
+    .th-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* События в ленте: не мысли, а след того, что случилось. */
+    .post.ev { border-left: 2px solid var(--glass-line); }
+    .post.ev .post-text { color: var(--muted); font-size: 0.92rem; }
+    .post.ev-ach { border-left-color: var(--gold); }
+    .post.ev-done { border-left-color: #6ee7a8; }
+    .post.ev-session { border-left-color: var(--violet); }
+
     /* дни недели */
     .wk-prof { display: flex; align-items: flex-end; gap: 6px; height: 96px; margin: 4px 0 10px; }
     .wk-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
