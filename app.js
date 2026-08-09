@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 76";
+const APP_VERSION = "Кэйко 77";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -140,7 +140,7 @@ function emptyData() {
     pastel: { course: null, entries: [] },
     watch:  { videos: [], activeVideo: "", entries: [] },
     practice: {},   // ход разбора по пьесам: { pieceId: { done, session } }
-    shop: { theme: "dusk", purchases: [] },
+    shop: { theme: "dusk" },   // только оформление: покупать давно нечего
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
@@ -216,7 +216,6 @@ function migrate(obj) {
   }
 
   if (obj.shop) {
-    if (Array.isArray(obj.shop.purchases)) base.shop.purchases = obj.shop.purchases;
     if (typeof obj.shop.theme === "string") base.shop.theme = obj.shop.theme;
   }
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
@@ -6170,12 +6169,12 @@ function bindPractice() {
   });
 }
 
-/* ══════════ Монеты и магазин ══════════
-   Баланс считается из данных: заработано минус потрачено.
-   Ничего не хранится отдельно — значит, ничто не разъедется при синхронизации. */
+/* ══════════ Оформление ══════════
+   Тема-цвет меняет палитру, тема-мир — ещё шрифт, надписи и иконки.
+   Всё открыто сразу: экран магазина и монеты убраны, покупать было нечего. */
 const THEMES = [
-{ id: "dusk", name: "Сумерки", sub: "как было", cost: 0, kind: "color", dots: ["#8b7cf6", "#ffc94d", "#0d0b14"], vars: {} },
-  { id: "rose", name: "Розовый рассвет", sub: "тёплая розовая", cost: 0, kind: "color",
+{ id: "dusk", name: "Сумерки", sub: "как было", kind: "color", dots: ["#8b7cf6", "#ffc94d", "#0d0b14"], vars: {} },
+  { id: "rose", name: "Розовый рассвет", sub: "тёплая розовая", kind: "color",
     dots: ["#ff8fb8", "#ffb37a", "#170d14"],
     vars: { "--bg": "#160c13", "--ink": "#fdeef4", "--muted": "#c095a8", "--dim": "#8a6577",
             "--gold": "#ff8fb8", "--gold-2": "#ffb37a", "--violet": "#d98fe0",
@@ -6184,29 +6183,29 @@ const THEMES = [
             "--track": "rgba(255, 255, 255, 0.1)",
             "--panel": "rgba(48, 24, 38, 0.55)", "--bar": "rgba(30, 15, 24, 0.74)",
             "--sheet": "rgba(40, 20, 32, 0.85)", "--sheet-solid": "rgba(40, 20, 32, 0.95)" } },
-  { id: "ink", name: "Тушь и рис", sub: "монохром", cost: 150, kind: "color",
+  { id: "ink", name: "Тушь и рис", sub: "монохром", kind: "color",
     dots: ["#e8e3d8", "#a8a29a", "#101012"],
     vars: { "--bg": "#0e0e10", "--ink": "#f0ede6", "--muted": "#9a958c", "--dim": "#66625c",
             "--gold": "#e8e3d8", "--gold-2": "#b9b3a8", "--violet": "#9a958c" } },
-  { id: "baikal", name: "Байкальский лёд", sub: "холодная синева", cost: 150, kind: "color",
+  { id: "baikal", name: "Байкальский лёд", sub: "холодная синева", kind: "color",
     dots: ["#7fd7e8", "#3f9fc4", "#07131c"],
     vars: { "--bg": "#07131b", "--ink": "#eaf6fb", "--muted": "#84a2b3", "--dim": "#546f7e",
             "--gold": "#8fdcee", "--gold-2": "#41a6c9", "--violet": "#6fb6d8",
             "--panel": "rgba(18, 38, 50, 0.55)", "--bar": "rgba(10, 26, 36, 0.72)",
             "--sheet": "rgba(14, 32, 44, 0.82)", "--sheet-solid": "rgba(14, 32, 44, 0.94)" } },
-  { id: "amber", name: "Тёплый вечер", sub: "лампа и чай", cost: 150, kind: "color",
+  { id: "amber", name: "Тёплый вечер", sub: "лампа и чай", kind: "color",
     dots: ["#ffb168", "#ff7a45", "#150f0b"],
     vars: { "--bg": "#150f0b", "--ink": "#faeee2", "--muted": "#b39a86", "--dim": "#7d6a5a",
             "--gold": "#ffb168", "--gold-2": "#ff7a45", "--violet": "#e08a5c",
             "--panel": "rgba(46, 32, 24, 0.55)", "--bar": "rgba(30, 21, 15, 0.72)",
             "--sheet": "rgba(38, 26, 19, 0.82)", "--sheet-solid": "rgba(38, 26, 19, 0.94)" } },
-  { id: "moss", name: "Мох", sub: "хвоя и тишина", cost: 150, kind: "color",
+  { id: "moss", name: "Мох", sub: "хвоя и тишина", kind: "color",
     dots: ["#9ad9a2", "#4fae7a", "#0b130e"],
     vars: { "--bg": "#0a130d", "--ink": "#eaf6ec", "--muted": "#8aa892", "--dim": "#5a7263",
             "--gold": "#9ad9a2", "--gold-2": "#4fae7a", "--violet": "#78c2a4",
             "--panel": "rgba(20, 42, 30, 0.55)", "--bar": "rgba(12, 28, 19, 0.72)",
             "--sheet": "rgba(16, 34, 24, 0.82)", "--sheet-solid": "rgba(16, 34, 24, 0.94)" } },
-  { id: "paper", name: "Бумага", sub: "светлая", cost: 200, kind: "color", light: true,
+  { id: "paper", name: "Бумага", sub: "светлая", kind: "color", light: true,
     dots: ["#c8862a", "#8a8478", "#f4f1ea"],
     vars: { "--bg": "#f2efe7", "--ink": "#221f1a", "--muted": "#6b6559", "--dim": "#9a9384",
             "--line": "rgba(0, 0, 0, 0.1)", "--track": "rgba(0, 0, 0, 0.14)",
@@ -6217,7 +6216,7 @@ const THEMES = [
             "--sheet": "rgba(250, 247, 240, 0.9)", "--sheet-solid": "rgba(250, 247, 240, 0.96)",
             "--shadow": "rgba(90, 78, 58, 0.16)" } },
 {
-    id: "orbit", name: "Орбита", sub: "бортовой интерфейс, 1968", cost: 700, kind: "world",
+    id: "orbit", name: "Орбита", sub: "бортовой интерфейс, 1968", kind: "world",
     dots: ["#ff7a2f", "#ffc04a", "#05060a"],
     vars: { "--bg": "#05070c", "--ink": "#f2f4f8", "--muted": "#8b93a4", "--dim": "#5a6273",
             "--gold": "#ff8a3d", "--gold-2": "#ffc04a", "--violet": "#5fa8ff",
@@ -6225,12 +6224,11 @@ const THEMES = [
             "--glass-line": "rgba(255, 138, 61, 0.22)", "--glass-hi": "rgba(255, 255, 255, 0.05)",
             "--panel": "rgba(10, 14, 22, 0.62)", "--bar": "rgba(6, 9, 15, 0.78)",
             "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
-    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", shop: "◍" },
-    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки", tabShop: "Снабжение",
+    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", },
+    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки",
              ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок",
-             ctaDone: "Сеанс записан", ctaAdd: "дополнить", coins: "кредитов", coin: "◍", streak: "цикл",
-             segAch: "◆ Допуски", segFacts: "◇ Данные", shopThemes: "Режимы отображения",
-             shopNote: "Кредиты начисляются автоматически: за каждый зафиксированный сеанс, за непрерывность цикла, за допуски и записи данных." },
+             ctaDone: "Сеанс записан", ctaAdd: "дополнить", streak: "цикл",
+             segAch: "◆ Допуски", segFacts: "◇ Данные" },
     css: `
       body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
       .logo em { letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.9em; }
@@ -6250,7 +6248,7 @@ const THEMES = [
     `
   },
 {
-    id: "terminal", name: "Терминал", sub: "зелёный фосфор, ЭЛТ", cost: 750, kind: "world",
+    id: "terminal", name: "Терминал", sub: "зелёный фосфор, ЭЛТ", kind: "world",
     dots: ["#3dff88", "#12b45a", "#011106"],
     vars: { "--bg": "#010c05", "--ink": "#c9ffdc", "--muted": "#5fbf87", "--dim": "#38805a",
             "--gold": "#3dff88", "--gold-2": "#12b45a", "--violet": "#43e0a0",
@@ -6258,12 +6256,11 @@ const THEMES = [
             "--glass-line": "rgba(61, 255, 136, 0.28)", "--glass-hi": "rgba(61, 255, 136, 0.12)",
             "--panel": "rgba(2, 20, 10, 0.68)", "--bar": "rgba(1, 14, 7, 0.82)",
             "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
-    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", shop: "◈" },
-    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь", tabShop: "Обмен",
+    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", },
+    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь",
              ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок",
-             ctaDone: "> запись принята", ctaAdd: "дополнить", coins: "жетонов", coin: "◈", streak: "цепочка",
-             segAch: "[ метки ]", segFacts: "[ архив ]", shopThemes: "Оболочки",
-             shopNote: "Жетоны начисляются за каждую запись в журнале, за непрерывную цепочку дней, за метки и записи архива." },
+             ctaDone: "> запись принята", ctaAdd: "дополнить", streak: "цепочка",
+             segAch: "[ метки ]", segFacts: "[ архив ]" },
     css: `
       body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
       .logo em { letter-spacing: 0.16em; }
@@ -6283,13 +6280,12 @@ const THEMES = [
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabWish: "Захотелось", tabShop: "Магазин",
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabWish: "Захотелось",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
-  coins: "монет", coin: "🪙", streak: "серия",
-  segAch: "✦ Достижения", segFacts: "💡 Знания",
-  shopThemes: "Темы оформления", shopNote: "Монеты капают сами: за каждое отмеченное занятие, за непрерывность, за открытые награды и карточки знаний. Тратить их не обязательно — но приятно."
+  streak: "серия",
+  segAch: "✦ Достижения", segFacts: "💡 Знания"
 };
 const ICON = (k, def) => {
   const t = themeById(data.shop ? data.shop.theme : "dusk");
@@ -8309,7 +8305,6 @@ async function syncNow(manual) {
     data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
     data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
     if (remote.shop) {
-      data.shop.purchases = mergeLists(data.shop.purchases, remote.shop.purchases || []);
       if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
         if (remote.shop.theme) data.shop.theme = remote.shop.theme;
       }
