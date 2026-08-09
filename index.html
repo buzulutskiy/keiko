@@ -136,8 +136,17 @@
 
     /* область контента: главная — без скролла, остальные — со своим скроллом */
     #view { flex: 1; min-height: 0; }
-    #view.scrolls { overflow-y: auto; padding-bottom: 14px; }
-    #view.fixed { overflow: hidden; }
+    /* Заслон от прокрутки вбок вешаем только на прокручиваемые вкладки.
+       На главную его вешать нельзя: там свой режим, и любой overflow
+       на #view ломал вертикальное центрирование. */
+    #view.scrolls { overflow-y: auto; overflow-x: hidden; padding-bottom: 14px; }
+    /* Главная центрируется по вертикали. Раньше высоту брали процентами
+       (.hero { height: 100% }), а проценты требуют, чтобы у родителя высота
+       была определена. На телефоне при выезжающей адресной строке она такой
+       бывает не всегда — и тогда .hero съёживался до содержимого, центрировать
+       становилось нечего, и всё прилипало к верхнему краю. Отдаём высоту
+       флексу: он не зависит от того, разрешились проценты или нет. */
+    #view.fixed { overflow: hidden; display: flex; flex-direction: column; }
 
     /* ── Шапка ─────────────────────────── */
     header {
@@ -521,7 +530,8 @@
 
     /* ══════════ ГЛАВНАЯ ══════════ */
     .hero {
-      height: 100%;
+      flex: 1;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -1531,13 +1541,16 @@
       border: 1px solid rgba(255, 201, 77, 0.3); background: rgba(255, 201, 77, 0.09);
       color: var(--ink); font: inherit; font-size: 0.82rem;
       border-radius: 999px; padding: 6px 12px 6px 9px; cursor: pointer;
+      /* Текст карточки знания длинный, а чип не переносится. Без потолка
+         и без min-width он растягивал ленту и позволял утащить страницу
+         вбок: flex-элемент по умолчанию не ужимается уже своего текста. */
+      max-width: 100%; min-width: 0;
     }
-    .ev-aw i { font-style: normal; font-size: 0.95rem; }
+    .ev-aw i { font-style: normal; font-size: 0.95rem; flex: none; }
     .ev-aw.fact {
       border-color: rgba(139, 124, 246, 0.32); background: rgba(139, 124, 246, 0.1);
-      max-width: 100%;
     }
-    .ev-aw span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ev-aw span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .post.ev { border-left: 2px solid var(--glass-line); }
     .post.ev .post-text { color: var(--muted); font-size: 0.92rem; }
     .post.ev-ach { border-left-color: var(--gold); }

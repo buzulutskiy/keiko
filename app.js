@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 71";
+const APP_VERSION = "Кэйко 72";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -129,6 +129,9 @@ function toast(text) {
 
 /* ── Хранилище ── */
 // пустая заготовка: материалы приезжают из гиста, в приложении их нет
+/* Виды событий, которых в ленте больше не бывает. */
+const EV_GONE = new Set(["ach", "fact"]);
+
 function emptyData() {
   return {
     active: "book",
@@ -216,7 +219,11 @@ function migrate(obj) {
     if (typeof obj.shop.theme === "string") base.shop.theme = obj.shop.theme;
   }
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
-  if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts;
+  /* Одиночные записи о наградах и карточках убраны навсегда: награда живёт
+     внутри сессии, в которую открылась. Отсеиваем их прямо на входе — и то,
+     что лежит в телефоне, и то, что приезжает из гиста. Иначе достаточно
+     одной синхронизации со старым устройством, чтобы они вернулись. */
+  if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
@@ -5196,7 +5203,25 @@ function addEvent(kind, key, track, text, extra) {
   data.thoughts = data.thoughts || [];
   const date = (extra && extra.date) || todayStr();
   const id = "ev:" + kind + ":" + (extra && extra.tag ? extra.tag : key) + ":" + date;
-  if (data.thoughts.some((t) => t.id === id && !t.deleted)) return null;   // один раз в день
+  const fields = (extra && extra.fields) || {};
+
+  /* Карточка дня одна, но заходов за день бывает несколько. Раньше второй
+     заход просто отказывался писать — и всё, что открылось в нём, пропадало
+     бесследно. Теперь он дополняет прежнюю карточку. */
+  const was = data.thoughts.find((t) => t.id === id && !t.deleted);
+  if (was) {
+    const join = (a, b) => {
+      const seen = new Set((a || []).map((x) => x.id));
+      return (a || []).concat((b || []).filter((x) => x && !seen.has(x.id)));
+    };
+    if (fields.awards) was.awards = join(was.awards, fields.awards);
+    if (fields.facts) was.facts = join(was.facts, fields.facts);
+    if (text) was.text = text;                 // «18 мин» превращается в «41 мин»
+    if (fields.mins) was.mins = fields.mins;
+    was.updatedAt = now();
+    return was;
+  }
+
   const rec = Object.assign({
     id, key, track, event: kind, text,
     /* Полдень — только если о настоящем времени ничего не известно: у награды
@@ -5220,8 +5245,14 @@ function addEvent(kind, key, track, text, extra) {
    Ранее полученное при этом не теряется: приложение помечает его как уже
    учтённое, чтобы оно не всплыло «новым» на следующем занятии. */
 function eventsReset() {
-  if (data.eventsV === 3) return;
-  data.thoughts = (data.thoughts || []).filter((t) => !t.event);
+  if (data.eventsV === 4) return;
+  /* Прошлая чистка сносила ВСЕ события разом — вместе с одиночными наградами
+     под нож попал и след досмотренного видео. Возвращаем его: у ролика есть
+     doneAt, настоящее время, когда он был отмечен, — врать не приходится. */
+  for (const v of ((data.watch && data.watch.videos) || []))
+    if (v.done && v.doneAt) addEvent("done", v.id, "watch", "Досмотрел: " + v.title,
+      { tag: v.id, date: dateStr(new Date(v.doneAt)), fields: { createdAt: v.doneAt } });
+
   data.achAt = data.achAt || {};
   data.factAt = data.factAt || {};
 
@@ -5233,7 +5264,7 @@ function eventsReset() {
   for (const b of (data.book.books || [])) mark({ track: "book", bookId: b.id }, b.id);
   if (course().lessons.length) mark({ track: "pastel" }, "pastel");
 
-  data.eventsV = 3;
+  data.eventsV = 4;
   saveData();
   schedulePush();
 }
