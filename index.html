@@ -85,9 +85,10 @@
     /* Холст волн намеренно шире экрана — чтобы не было видно краёв размытия.
        Но торчащие 80 пикселей позволяли оттянуть страницу вбок, поэтому
        по горизонтали всё подрезано жёстко. */
-    html, body { overflow-x: hidden; max-width: 100%; }
-    body { position: relative; }
-    #view { overflow-x: clip; }
+    /* Настоящая причина прокрутки вбок — торчащий холст фона, он обрезан
+       у себя (.bgfx). Прежние заслоны здесь были слепыми и ломали вертикальное
+       центрирование главной, поэтому оставлен только один, безобидный. */
+    html, body { overflow-x: hidden; }
     #bgWave {
       position: absolute; top: -80px; left: -80px;
       width: calc(100% + 160px); height: calc(100% + 160px);
@@ -1532,6 +1533,11 @@
       border-radius: 999px; padding: 6px 12px 6px 9px; cursor: pointer;
     }
     .ev-aw i { font-style: normal; font-size: 0.95rem; }
+    .ev-aw.fact {
+      border-color: rgba(139, 124, 246, 0.32); background: rgba(139, 124, 246, 0.1);
+      max-width: 100%;
+    }
+    .ev-aw span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .post.ev { border-left: 2px solid var(--glass-line); }
     .post.ev .post-text { color: var(--muted); font-size: 0.92rem; }
     .post.ev-ach { border-left-color: var(--gold); }

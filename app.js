@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 70";
+const APP_VERSION = "Кэйко 71";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -180,7 +180,9 @@ function migrate(obj) {
   }
 
   if (obj.practice && typeof obj.practice === "object") base.practice = obj.practice;
-  if (obj.eventsBackfilled) base.eventsBackfilled = true;
+  if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
+  if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
+  if (obj.eventsV) base.eventsV = obj.eventsV;
 
   if (obj.watch) {
     base.watch.videos = Array.isArray(obj.watch.videos) ? obj.watch.videos : [];
@@ -242,7 +244,7 @@ function load() {
     } catch {}
   }
   data = migrate(raw);
-  try { backfillAwards(); } catch {}      // разовая догрузка наград в ленту
+  try { eventsReset(); } catch {}      // разовая чистка выдуманных событий
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
 }
 const saveData = () => localStorage.setItem(LS.data, JSON.stringify(data));
@@ -1031,7 +1033,13 @@ function saveEntry() {
 
   if (isWatch()) {
     const v = video();
-    if (v.id && !v.done) { v.done = true; v.doneAt = now(); v.updatedAt = now(); }
+    if (v.id && !v.done) {
+      v.done = true; v.doneAt = now(); v.updatedAt = now();
+      /* Видео уходит с главной — и это событие: иначе оно просто исчезает,
+         и в ленте не остаётся следа, что ты его досмотрел. */
+      addEvent("done", v.id, "watch", "Досмотрел: " + v.title,
+        { tag: v.id, date: selectedDate, fields: { createdAt: now() } });
+    }
   }
 
   pending = [];
@@ -1054,11 +1062,13 @@ function saveEntry() {
   // каждая награда — свой экран: раньше показывалась только последняя,
   // а промежуточные пропадали, хотя открылись честно
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
-  if (fresh.length) {
+
+  const stamped = stampProgress();
+  if (stamped.ach.length || stamped.facts.length) {
     const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
     addEvent("session", curKey(), data.active, sessionText(data.active, ent || {}), {
       tag: curKey(), date: selectedDate,
-      fields: { createdAt: now(), awards: fresh.map((a) => ({ id: a.id, icon: a.icon, name: a.name })) },
+      fields: { createdAt: now(), awards: stamped.ach, facts: stamped.facts },
     });
   }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
@@ -4318,12 +4328,17 @@ function renderNotes() {
             </span>
           </div>
           ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
-          ${(t.awards || []).length ? `
+          ${(t.awards || []).length || (t.facts || []).length ? `
             <div class="ev-awards">
-              ${t.awards.map((a) => `
+              ${(t.awards || []).map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
                   <i>${esc(a.icon || "✦")}</i><span>${esc(a.name)}</span>
+                </button>`).join("")}
+              ${(t.facts || []).map((f) => `
+                <button class="ev-aw fact" type="button" data-ev-fact="${esc(f.id)}"
+                  data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
+                  <i>💡</i><span>${esc(f.t)}</span>
                 </button>`).join("")}
             </div>` : ""}
           ${mediaHTML(t)}
@@ -4335,6 +4350,15 @@ function renderNotes() {
 
   /* Награда в ленте — не текст, а ссылка на саму награду: жмёшь и видишь,
      за что она и что там написано. */
+  document.querySelectorAll("[data-ev-fact]").forEach(el =>
+    el.addEventListener("click", () => {
+      const view = { track: el.dataset.evTrack,
+        pieceId: el.dataset.evTrack === "piano" ? el.dataset.evKey : null,
+        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null };
+      const f = withMaterial(view, () => factsState().find((x) => x.id === el.dataset.evFact));
+      if (f) openFactSheet(f); else toast("Карточка не нашлась — материал изменился");
+    }));
+
   document.querySelectorAll("[data-ev-ach]").forEach(el =>
     el.addEventListener("click", () => {
       const view = { track: el.dataset.evTrack,
@@ -5188,55 +5212,30 @@ function addEvent(kind, key, track, text, extra) {
    Проигрываем историю заново: подставляем записи по одной в хронологии
    и смотрим, на какой день награда впервые стала полученной. Это настоящая
    дата, а не «сегодня» — иначе таймлайн соврал бы. */
-function backfillAwards() {
-  if (data.eventsV === 2) return 0;
-  let added = 0;
+/* Раньше здесь была догрузка наград задним числом. Она давала неверную
+   картину: награда, заработанная давно, привязывалась к первой попавшейся
+   отметке того дня, когда её заметили. Убрана вместе с тем, что успела
+   насочинять; дальше события пишутся только вживую, со своим временем.
 
-  /* Отдельные карточки наград оказались неудобны: они висели поштучно
-     и без времени. Теперь награда привязана к сессии, в которую открылась,
-     и время у неё — время той самой отметки. Старые одиночные убираем. */
-  data.thoughts = (data.thoughts || []).filter((t) => t.event !== "ach");
+   Ранее полученное при этом не теряется: приложение помечает его как уже
+   учтённое, чтобы оно не всплыло «новым» на следующем занятии. */
+function eventsReset() {
+  if (data.eventsV === 3) return;
+  data.thoughts = (data.thoughts || []).filter((t) => !t.event);
+  data.achAt = data.achAt || {};
+  data.factAt = data.factAt || {};
 
-  const runs = [];
-  for (const pc of (data.piano.pieces || []))
-    runs.push({ view: { track: "piano", pieceId: pc.id }, key: pc.id, track: "piano",
-      all: () => data.piano.entries, put: (v) => { data.piano.entries = v; },
-      mine: (e) => (e.pieceId || "bwv853") === pc.id });
-  for (const b of (data.book.books || []))
-    runs.push({ view: { track: "book", bookId: b.id }, key: b.id, track: "book",
-      all: () => data.book.entries, put: (v) => { data.book.entries = v; },
-      mine: (e) => (e.bookId || "snow-1") === b.id });
-  if (course().lessons.length)
-    runs.push({ view: { track: "pastel" }, key: "pastel", track: "pastel",
-      all: () => data.pastel.entries, put: (v) => { data.pastel.entries = v; },
-      mine: () => true });
+  const mark = (view, key) => withMaterial(view, () => {
+    for (const a of achState()) if (a.done && data.achAt[key + ":" + a.id] === undefined) data.achAt[key + ":" + a.id] = 1;
+    for (const f of factsState()) if (f.open && data.factAt[key + ":" + f.id] === undefined) data.factAt[key + ":" + f.id] = 1;
+  });
+  for (const pc of (data.piano.pieces || [])) mark({ track: "piano", pieceId: pc.id }, pc.id);
+  for (const b of (data.book.books || [])) mark({ track: "book", bookId: b.id }, b.id);
+  if (course().lessons.length) mark({ track: "pastel" }, "pastel");
 
-  for (const r of runs) {
-    const full = r.all();
-    const mine = full.filter((e) => !e.deleted && r.mine(e)).slice().sort((a, b) => a.date < b.date ? -1 : 1);
-    if (!mine.length) continue;
-    const seen = new Set();
-    try {
-      for (let k = 1; k <= mine.length; k++) {
-        r.put(mine.slice(0, k));
-        const done = withMaterial(r.view, () => achState().filter((a) => a.done));
-        const fresh = done.filter((a) => !seen.has(a.id));
-        done.forEach((a) => seen.add(a.id));
-        if (!fresh.length) continue;
-        const e = mine[k - 1];
-        if (addEvent("session", r.key, r.track, sessionText(r.track, e), {
-          tag: r.key, date: e.date,
-          fields: { createdAt: e.createdAt || e.updatedAt || 0,
-                    awards: fresh.map((a) => ({ id: a.id, icon: a.icon, name: a.name })) },
-        })) added++;
-      }
-    } finally { r.put(full); }
-  }
-
-  data.eventsV = 2;
-  data.eventsBackfilled = true;
-  if (added || data.thoughts) { saveData(); schedulePush(); }
-  return added;
+  data.eventsV = 3;
+  saveData();
+  schedulePush();
 }
 
 /* Снимок работы кладём обычным моментом: то же хранилище, тот же вид,
@@ -5504,6 +5503,29 @@ function pracEndRest() {
   pracRender();
 }
 
+/* Время получения записывается в тот момент, когда награда открылась.
+   Восстанавливать его задним числом было ошибкой: у наград, заработанных
+   до появления этой записи, привязка выходила к случайной отметке. */
+function stampProgress() {
+  data.achAt = data.achAt || {};
+  data.factAt = data.factAt || {};
+  const k = curKey();
+  const fresh = { ach: [], facts: [] };
+  /* Проверяем именно отсутствие ключа: ранее полученное помечено единицей
+     как «время неизвестно», и ноль здесь считался бы пустым местом. */
+  for (const a of achState())
+    if (a.done && data.achAt[k + ":" + a.id] === undefined) {
+      data.achAt[k + ":" + a.id] = now();
+      fresh.ach.push({ id: a.id, icon: a.icon, name: a.name });
+    }
+  for (const f of factsState())
+    if (f.open && data.factAt[k + ":" + f.id] === undefined) {
+      data.factAt[k + ":" + f.id] = now();
+      fresh.facts.push({ id: f.id, t: f.t });
+    }
+  return fresh;
+}
+
 const achDoneSet = () => new Set(achState().filter((a) => a.done).map((a) => a.id));
 const factsOpenSet = () => new Set(factsState().filter((f) => f.open).map((f) => f.id));
 
@@ -5516,8 +5538,9 @@ function pracCelebrate() {
   const freshFacts = factsState().filter((f) => f.open && !prac.factsBefore.has(f.id));
   if (!freshAch.length && !freshFacts.length) return;
 
-  if (freshAch.length) prac.wonAwards = (prac.wonAwards || [])
-    .concat(freshAch.map((a) => ({ id: a.id, icon: a.icon, name: a.name })));
+  const stamped = stampProgress();
+  prac.wonAwards = (prac.wonAwards || []).concat(stamped.ach);
+  prac.wonFacts = (prac.wonFacts || []).concat(stamped.facts);
 
   overlayQueue = [];
   freshAch.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: freshAch.length }));
@@ -5595,7 +5618,7 @@ function pracFinish() {
     if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
       "Занимался: " + course().name + " · " + e.mins + " мин, "
       + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"),
-      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [] } });
+      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
     saveData();
     schedulePush();
     toast("Записано: " + e.mins + " мин");
@@ -5616,7 +5639,7 @@ function pracFinish() {
     if (closed) addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин, "
       + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
-      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [] } });
+      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
     toast(closed
       ? "Занятие записано: " + e.mins + " мин за день"
       : "Занятие записано: " + e.mins + " мин, без закрытых отрезков");
@@ -7188,6 +7211,7 @@ function watchPageUI(v) {
     <div class="panel">
       <div class="lib-rows">
         <div><span>Состояние</span><b>${v.done ? "посмотрено" : "в очереди"}</b></div>
+        ${v.done && v.doneAt ? `<div><span>Когда посмотрел</span><b>${esc(fmtDay(dateStr(new Date(v.doneAt))))}</b></div>` : ""}
         <div><span>Добавлено</span><b>${v.addedAt ? esc(fmtDay(dateStr(new Date(v.addedAt)))) : "—"}</b></div>
         <div><span>Просмотров</span><b>${ent.length}</b></div>
         <div><span>Последний</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
@@ -7372,6 +7396,8 @@ function bindLibraryUI() {
       const v = videos().find(x => x.id === btn.dataset.wtdone);
       if (!v) return;
       v.done = true; v.doneAt = now(); v.updatedAt = now();
+      addEvent("done", v.id, "watch", "Досмотрел: " + v.title,
+        { tag: v.id, fields: { createdAt: now() } });
       saveData(); schedulePush(); render();
       toast("Посмотрено");
     }));
@@ -7827,7 +7853,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, eventsBackfilled: data.eventsBackfilled, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
