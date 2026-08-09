@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 73";
+const APP_VERSION = "Кэйко 74";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1646,7 +1646,11 @@ function howlFor(id, url) {
   h = new Howl({
     src: [url], format: ["mp4"],
     html5: true,                      // потоком: длинная запись не разворачивается в память целиком
-    loop: true, volume: 0, preload: true
+    loop: true, volume: 0, preload: true,
+    /* Волны ждут музыку, а не наоборот: пока поток разворачивается, играть
+       ещё нечего. Как зазвучало — будим отрисовку, даже если её успели
+       остановить, пока грузилось. */
+    onplay: () => { if (window.waveStart) waveStart(); }
   });
   howls.set(id, h);
   return h;
@@ -1864,7 +1868,7 @@ async function pullEnvelopes() {
 (function () {
   const PHI = 1.6180339887, SQ2 = 1.4142135624, SQ3 = 1.7320508076;
   const LW = 160, LH = 340;
-  let cv, ctx, layers = [], raf = 0, last = 0, flow = 0, beat = 0;
+  let cv, ctx, layers = [], raf = 0, last = 0, flow = 0, beat = 0, waitFrom = 0;
   let paceSm = 0.5, toneSm = 0.5, hitSm = 0, bytes = null, curId = "";
 
   function build() {
@@ -1968,8 +1972,21 @@ async function pullEnvelopes() {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     const on = cfg.sound && cfg.bgWave !== false && tab === "home" && !settingsOpen
       && !document.hidden && audioNow && ENVEL;
-    const h = on ? howls.get(audioNow) : null;
-    if (!h || !h.playing()) { hide(); return; }
+    if (!on) { hide(); return; }                 // ушли с главной, выключили звук — цикл не нужен
+
+    /* Звук поднимается не мгновенно: howler создаёт поток, iOS его буферизует,
+       да и погружение зовёт волны раньше, чем музыка успевает вступить.
+       Раньше первый же такой кадр убивал цикл насовсем — и волн не было
+       всё погружение. Теперь ждём музыку, не выходя из цикла. */
+    const h = howls.get(audioNow);
+    if (!h || !h.playing()) {
+      if (!waitFrom) waitFrom = Date.now();
+      if (Date.now() - waitFrom > 30000) { hide(); return; }   // не дождались — не крутимся вхолостую
+      if (cv) cv.classList.remove("on");
+      raf = requestAnimationFrame(step);
+      return;
+    }
+    waitFrom = 0;
 
     if (curId !== audioNow) { curId = audioNow; build(); }
     const bands = bandsAt(audioNow, h.seek() || 0);
@@ -1987,6 +2004,7 @@ async function pullEnvelopes() {
   function hide() {
     if (cv) cv.classList.remove("on");
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    waitFrom = 0;
   }
 
   window.waveStart = function () {
@@ -4268,10 +4286,10 @@ function wishAdd(text) {
   if (!t) return false;
   data.wishes = data.wishes || [];
   data.wishes.push({
+    /* Источник не привязываем. Подставлялся активный материал, а желание
+       приходит откуда угодно — и подпись «Бах, BWV 853» под «съездить на косу»
+       не объясняла, а сбивала. Название и вид — всё, что нужно. */
     id: uid(), text: t, kind: wishKindPick,
-    /* Откуда прилетело: почти всегда — из того, что сейчас в работе.
-       Через полгода «съездить на косу» без источника не расшифровать. */
-    key: currentKey(), track: data.active,
     done: false, doneAt: 0, date: todayStr(), createdAt: now(), updatedAt: now()
   });
   saveData();
@@ -4302,21 +4320,11 @@ function renderWishes() {
   const openN = wishOpenCount();
   const doneN = wishes().length - openN;
 
-  const mats = achMaterials();
-  const arch = (data.archive || []).filter(a => !a.deleted);
-  const sourceOf = (w) => {
-    const m = mats.find(x => keyOf(x) === w.key);
-    if (m) return m.icon + " " + m.title;
-    const a = arch.find(x => x.id === w.key);
-    return a ? "📎 " + a.title : "";
-  };
-
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
   const when = (w) => fmt.format(fromStr(w.date));
 
   const rowHTML = (w) => {
     const k = wishKind(w.kind);
-    const src = sourceOf(w);
     return `
       <article class="wish${w.done ? " done" : ""}">
         <button class="wi-check" data-wdone="${w.id}" type="button"
@@ -4330,10 +4338,7 @@ function renderWishes() {
                </div>`
             : `<p class="wi-text">${esc(w.text)}</p>
                <div class="wi-meta">
-                 ${/* в списке «хочется» вид уже написан заголовком группы —
-                       второй раз он только загромождает строку */
-                   wishFilter === "done" ? `<span class="wi-kind">${k.icon} ${esc(k.name)}</span>` : ""}
-                 ${src ? `<span class="wi-src">${esc(src)}</span>` : ""}
+                 <span class="wi-kind">${k.icon} ${esc(k.name)}</span>
                  <span class="wi-when">${esc(w.done ? "сбылось " + fmt.format(new Date(w.doneAt || now())) : when(w))}</span>
                </div>`}
         </div>
@@ -4345,18 +4350,13 @@ function renderWishes() {
       </article>`;
   };
 
-  /* Внутри «хочется» раскладываем по видам: глазами ищут не «что я записал
-     третьего числа», а «куда бы съездить» — то есть сразу вид. */
-  const body = wishFilter === "done"
-    ? (list.length ? `<div class="wish-list">${list.map(rowHTML).join("")}</div>`
-        : `<div class="empty-note">Сбывшегося пока нет.<br>Отмечай галочкой — здесь будет видно, что из задуманного дошло до дела.</div>`)
-    : (list.length ? WISH_KINDS.map(k => {
-        const rows = list.filter(w => w.kind === k.id);
-        return rows.length
-          ? `<div class="lib-group">${k.icon} ${esc(k.name)}</div><div class="wish-list">${rows.map(rowHTML).join("")}</div>`
-          : "";
-      }).join("")
-      : `<div class="empty-note">Пока пусто.<br>Сюда — то, что подкинул материал: куда съездить, что прочитать, что попробовать сделать.</div>`);
+  /* Список сплошной: вид написан на самой карточке, и второй раз — заголовком
+     группы — он только дробил экран на шесть кусков по одной строке. */
+  const body = list.length
+    ? `<div class="wish-list">${list.map(rowHTML).join("")}</div>`
+    : wishFilter === "done"
+      ? `<div class="empty-note">Сбывшегося пока нет.<br>Отмечай галочкой — здесь будет видно, что из задуманного дошло до дела.</div>`
+      : `<div class="empty-note">Пока пусто.<br>Сюда — то, что захотелось по ходу: куда съездить, что прочитать, что попробовать сделать.</div>`;
 
   $("#view").innerHTML = `
     <div class="panel th-panel">
@@ -4410,10 +4410,45 @@ function renderWishes() {
     }));
 }
 
+/* Что открылось в этот день по этому материалу.
+   Карточка сессии несёт список наград и знаний с собой, но полагаться только
+   на него нельзя: запись могла родиться на пути, где список не собрали, или
+   карточка знания открылась во втором заходе того же дня. Достаём по времени
+   получения — оно записано у каждой награды и каждой карточки. Единица
+   означает «получено давно, время неизвестно» и в счёт не идёт. */
+function dayProgress(track, key, day) {
+  const view = { track,
+    pieceId: track === "piano" ? key : null,
+    bookId: track === "book" ? key : null,
+    videoId: track === "watch" ? key : null };
+  if (!viewMaterialExists(view)) return { ach: [], facts: [] };
+  const sameDay = (at) => at > 1 && dateStr(new Date(at)) === day;
+  return withMaterial(view, () => ({
+    ach: achState().filter(a => a.done && sameDay((data.achAt || {})[key + ":" + a.id]))
+      .map(a => ({ id: a.id, icon: a.icon, name: a.name })),
+    facts: factsState().filter(f => f.open && sameDay((data.factAt || {})[key + ":" + f.id]))
+      .map(f => ({ id: f.id, t: f.t }))
+  }));
+}
+
 function renderNotes() {
   /* У событий, записанных до появления поля, метки награды нет — достаём
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
   const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
+
+  // один материал за день считаем один раз: событий в ленте много, а дней мало
+  const dayCache = new Map();
+  const progressOf = (t) => {
+    if (t.event !== "session" || !t.key || !t.track) return { ach: t.awards || [], facts: t.facts || [] };
+    const ck = t.track + "|" + t.key + "|" + t.date;
+    if (!dayCache.has(ck)) dayCache.set(ck, dayProgress(t.track, t.key, t.date));
+    const live = dayCache.get(ck);
+    const join = (a, b) => {
+      const seen = new Set((a || []).map(x => x.id));
+      return (a || []).concat((b || []).filter(x => x && !seen.has(x.id)));
+    };
+    return { ach: join(t.awards, live.ach), facts: join(t.facts, live.facts) };
+  };
 
   if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
 
@@ -4511,19 +4546,19 @@ function renderNotes() {
             </span>
           </div>
           ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
-          ${(t.awards || []).length || (t.facts || []).length ? `
+          ${((p) => p.ach.length || p.facts.length ? `
             <div class="ev-awards">
-              ${(t.awards || []).map((a) => `
+              ${p.ach.map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
                   <i>${esc(a.icon || "✦")}</i><span>${esc(a.name)}</span>
                 </button>`).join("")}
-              ${(t.facts || []).map((f) => `
+              ${p.facts.map((f) => `
                 <button class="ev-aw fact" type="button" data-ev-fact="${esc(f.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
                   <i>💡</i><span>${esc(f.t)}</span>
                 </button>`).join("")}
-            </div>` : ""}
+            </div>` : "")(progressOf(t))}
           ${mediaHTML(t)}
         </article>`).join("")}
     </div>` : `<div class="empty-note">Здесь копятся моменты: мысль, запись, снимок.<br>Первый можно оставить прямо сейчас.</div>`}`;
@@ -4535,18 +4570,22 @@ function renderNotes() {
      за что она и что там написано. */
   document.querySelectorAll("[data-ev-fact]").forEach(el =>
     el.addEventListener("click", () => {
+      // у ролика свой ключ — без него карточка ролика не открывалась
       const view = { track: el.dataset.evTrack,
         pieceId: el.dataset.evTrack === "piano" ? el.dataset.evKey : null,
-        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null };
+        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null,
+        videoId: el.dataset.evTrack === "watch" ? el.dataset.evKey : null };
       const f = withMaterial(view, () => factsState().find((x) => x.id === el.dataset.evFact));
       if (f) openFactSheet(f); else toast("Карточка не нашлась — материал изменился");
     }));
 
   document.querySelectorAll("[data-ev-ach]").forEach(el =>
     el.addEventListener("click", () => {
+      // у ролика свой ключ — без него карточка ролика не открывалась
       const view = { track: el.dataset.evTrack,
         pieceId: el.dataset.evTrack === "piano" ? el.dataset.evKey : null,
-        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null };
+        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null,
+        videoId: el.dataset.evTrack === "watch" ? el.dataset.evKey : null };
       const a = withMaterial(view, () => achState().find((x) => x.id === el.dataset.evAch));
       const words = withMaterial(view, () => achWords());
       if (a) openAchSheet(a, false, words);
