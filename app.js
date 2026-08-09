@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 62";
+const APP_VERSION = "Кэйко 63";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2037,7 +2037,9 @@ function stopWakeVideo() {
 // вернулись в приложение — блокировку экрана надо запросить заново
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
-  if (zenOn) keepAwake(true);
+  /* iOS снимает замок экрана, когда приложение уходит в фон. Вернулись —
+     просим заново, иначе посреди занятия экран начнёт гаснуть. */
+  if (zenOn || prac) keepAwake(true);
   if (window.waveStart) waveStart();          // кадры могли встать, пока нас не было
 });
 
@@ -4808,10 +4810,71 @@ function pracLadderHTML(w) {
     }).join("") + "</div>";
 }
 
-/* Плеер с записью материала: та же запись, что играет фоном в погружении,
-   только здесь ею управляешь сам — перемотка, пауза, шаги по десять секунд.
-   Собирается один раз и переживает перерисовку карточки. */
-let pracAudioEl = null;
+/* Плеер с записью материала. Не стандартный: главное здесь — выделить кусок
+   и гонять его по кругу, а не слушать запись подряд. По умолчанию выделено
+   всё; двигаешь края — остаётся отрезок, который повторяется сам. */
+let pracAudioEl = null, pracRaf = 0;
+const PRAC_LOOP_LS = "keiko-practice-loop-v1";
+const pracLoops = (() => { try { return JSON.parse(localStorage.getItem(PRAC_LOOP_LS)) || {}; } catch { return {}; } })();
+const pracSaveLoops = () => { try { localStorage.setItem(PRAC_LOOP_LS, JSON.stringify(pracLoops)); } catch {} };
+
+const plClock = (t) => {
+  if (!isFinite(t)) return "0:00";
+  const m = Math.floor(t / 60), sec = Math.floor(t % 60);
+  return m + ":" + String(sec).padStart(2, "0");
+};
+
+function plSel(id, dur) {
+  const l = pracLoops[id];
+  if (l && isFinite(l.a) && isFinite(l.b) && l.b > l.a) return { a: l.a, b: Math.min(l.b, dur || l.b) };
+  return { a: 0, b: dur || 0 };
+}
+
+function plPaint() {
+  const el = pracAudioEl, box = $("#pracPlayer");
+  if (!el || !box || box.hidden) return;
+  const dur = el.duration || 0;
+  const sel = plSel(el.dataset.for, dur);
+  const pc = (t) => dur ? Math.max(0, Math.min(100, t / dur * 100)) : 0;
+  const S = box.querySelector(".pl-sel"), A = box.querySelector('[data-h="a"]'),
+        B = box.querySelector('[data-h="b"]'), P = box.querySelector(".pl-head"),
+        T = box.querySelector(".pl-time");
+  if (!S) return;
+  S.style.left = pc(sel.a) + "%";
+  S.style.width = Math.max(0, pc(sel.b) - pc(sel.a)) + "%";
+  A.style.left = pc(sel.a) + "%";
+  B.style.left = pc(sel.b) + "%";
+  P.style.left = pc(el.currentTime) + "%";
+  T.textContent = plClock(el.currentTime) + " · отрезок " + plClock(sel.a) + "–" + plClock(sel.b);
+  const btn = box.querySelector('[data-pl="play"]');
+  if (btn) btn.textContent = el.paused ? "▶︎ Слушать" : "❚❚ Пауза";
+}
+
+/* Петля: дошли до правого края — возвращаемся к левому, кусок повторяется
+   сам. Проверка висит на двух источниках. Кадры анимации точнее, но замирают,
+   когда экран гаснет или приложение уходит в фон, — а звук при этом играет
+   дальше и уезжает за край. Событие самого аудио идёт всегда, просто реже. */
+function plLoopCheck() {
+  const el = pracAudioEl;
+  if (!el || el.paused) return;
+  const dur = el.duration || 0;
+  const sel = plSel(el.dataset.for, dur);
+  if (dur && el.currentTime >= sel.b - 0.03) {
+    try { el.currentTime = sel.a; } catch {}
+  }
+}
+
+function plTick() {
+  cancelAnimationFrame(pracRaf);
+  const step = () => {
+    if (!pracAudioEl) return;
+    plLoopCheck();
+    plPaint();
+    pracRaf = requestAnimationFrame(step);
+  };
+  pracRaf = requestAnimationFrame(step);
+}
+
 function pracPlayer() {
   const box = $("#pracPlayer");
   if (!box) return;
@@ -4820,22 +4883,66 @@ function pracPlayer() {
 
   if (!url) {
     if (!audioUrls.has(id)) { pullAudio(id); box.hidden = false; box.innerHTML = '<p class="pl-wait">Запись загружается…</p>'; }
-    else box.hidden = true;                      // записи у пьесы нет — не мозолим глаза
+    else box.hidden = true;
     return;
   }
   if (pracAudioEl && pracAudioEl.dataset.for === id) { box.hidden = false; return; }
 
   box.hidden = false;
   box.innerHTML = `
-    <div class="pl-top"><b>Как это звучит</b><span>мотай к своему месту</span></div>
-    <audio controls preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>
+    <div class="pl-top"><b>Как это звучит</b><span class="pl-time">0:00</span></div>
+    <div class="pl-bar">
+      <div class="pl-sel"></div>
+      <div class="pl-head"></div>
+      <div class="pl-h" data-h="a"></div>
+      <div class="pl-h" data-h="b"></div>
+    </div>
     <div class="pl-jump">
-      <button data-seek="-10">−10 с</button>
-      <button data-seek="-3">−3 с</button>
-      <button data-seek="3">+3 с</button>
-      <button data-seek="10">+10 с</button>
-    </div>`;
+      <button data-pl="play">▶︎ Слушать</button>
+      <button data-pl="all">Весь трек</button>
+    </div>
+    <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
   pracAudioEl = box.querySelector("audio");
+  pracAudioEl.addEventListener("loadedmetadata", plPaint);
+  pracAudioEl.addEventListener("play", plTick);
+  pracAudioEl.addEventListener("pause", plPaint);
+  pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
+  plPaint();
+}
+
+/* Тянем края выделения. Считаем по ширине дорожки, а не по времени: палец
+   двигается по экрану, а не по секундам. */
+function plDrag(e) {
+  const box = $("#pracPlayer");
+  const h = e.target.closest("[data-h]");
+  const bar = box && box.querySelector(".pl-bar");
+  if (!h || !bar || !pracAudioEl) return;
+  const which = h.dataset.h;
+  const id = pracAudioEl.dataset.for;
+  const dur = pracAudioEl.duration || 0;
+  if (!dur) return;
+  e.preventDefault();
+
+  const move = (ev) => {
+    const r = bar.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+    const t = x * dur;
+    const cur = plSel(id, dur);
+    const next = which === "a"
+      ? { a: Math.min(t, cur.b - 0.5), b: cur.b }
+      : { a: cur.a, b: Math.max(t, cur.a + 0.5) };
+    pracLoops[id] = next;
+    if (pracAudioEl.currentTime < next.a || pracAudioEl.currentTime > next.b)
+      try { pracAudioEl.currentTime = next.a; } catch {}
+    plPaint();
+  };
+  const up = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    pracSaveLoops();
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
 }
 
 function pracRender() {
@@ -4965,6 +5072,7 @@ function pracRender() {
 function pracNext() {
   if (!prac.queue.length) prac.queue = pracQueue();
   prac.cur = prac.queue.shift() || null;
+  prac.unitAt = Date.now();          // с этого мгновения считаем время на отрезок
   prac.screen = prac.cur ? "work" : "done";
   if (!prac.cur) { pracFinish(); return; }
   pracRender();
@@ -4994,6 +5102,7 @@ function openPractice() {
 
 function closePractice() {
   clearInterval(pracTimer);
+  cancelAnimationFrame(pracRaf);
   if (pracAudioEl) { try { pracAudioEl.pause(); } catch {} }
   pracAudioEl = null;
   const pl = $("#pracPlayer");
@@ -5012,6 +5121,18 @@ function pracEndRest() {
   prac.askedAt = pracMin();
   prac.screen = prac.back || "work";
   pracRender();
+}
+
+/* Сколько времени ушло на каждый отрезок. Показывать пока негде, но собирать
+   надо сейчас: без этих чисел «где я застреваю» останется ощущением. Время —
+   единственное, что здесь измеряется само, без веры на слово. */
+const PRAC_LOG_MAX = 1500;
+function pracNote(u, sec) {
+  if (!sec || sec > 3600) return;                 // отошёл от инструмента — не считаем
+  const st = pracStore();
+  st.log = st.log || [];
+  st.log.push({ b: u.from + "-" + u.to, h: u.hand, s: u.size, sec, d: todayStr(), r: u.review ? 1 : 0 });
+  if (st.log.length > PRAC_LOG_MAX) st.log.splice(0, st.log.length - PRAC_LOG_MAX);
 }
 
 /* Сегодняшняя запись занятия: одна на день, как и при ручной отметке. */
@@ -5033,6 +5154,9 @@ function pracLog(u) {
   const e = pracEntry(true);
   const hands = u.hand === "both" ? ["right", "left"] : [u.hand];
   for (const h of hands) e.spans.push({ hand: h, from: u.from, to: u.to });
+  /* Минуты пишем сразу, а не только по кнопке «Завершить»: экран гаснет,
+     приложение уходит в фон, и до кнопки дело может не дойти. */
+  e.note = "занятие по плану · " + Math.round(pracMin()) + " мин";
   e.updatedAt = now();
   saveData();
   schedulePush();
@@ -5063,10 +5187,36 @@ function pracFinish() {
 
 function bindPractice() {
   $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
+  $("#pracPlayer").addEventListener("pointerdown", plDrag);
+
   $("#pracPlayer").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-seek]");
-    if (!b || !pracAudioEl) return;
-    pracAudioEl.currentTime = Math.max(0, pracAudioEl.currentTime + +b.dataset.seek);
+    if (!pracAudioEl) return;
+    const b = e.target.closest("[data-pl]");
+    if (b) {
+      if (b.dataset.pl === "play") {
+        if (pracAudioEl.paused) {
+          const sel = plSel(pracAudioEl.dataset.for, pracAudioEl.duration || 0);
+          if (pracAudioEl.currentTime < sel.a || pracAudioEl.currentTime >= sel.b - 0.05)
+            try { pracAudioEl.currentTime = sel.a; } catch {}
+          pracAudioEl.play().catch(() => {});
+        } else pracAudioEl.pause();
+      } else {
+        delete pracLoops[pracAudioEl.dataset.for];      // снова весь трек
+        pracSaveLoops();
+        plPaint();
+      }
+      return;
+    }
+    // тап по дорожке — перемотка внутри выделения
+    const bar = e.target.closest(".pl-bar");
+    if (!bar || e.target.closest("[data-h]")) return;
+    const r = bar.getBoundingClientRect();
+    const dur = pracAudioEl.duration || 0;
+    if (!dur) return;
+    const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur;
+    const sel = plSel(pracAudioEl.dataset.for, dur);
+    try { pracAudioEl.currentTime = Math.max(sel.a, Math.min(t, sel.b)); } catch {}
+    plPaint();
   });
 
   $("#prac").addEventListener("click", (e) => {
@@ -5093,6 +5243,8 @@ function bindPractice() {
         return pracNext();
       case "ok": {
         const u = prac.cur;
+        const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
+        pracNote(u, sec);            // копим, где сколько провозились
         if (u.review) { prac.reviewed.push(u.k); prac.undo = null; }
         else {
           pracStore().done[pracKey(u, u.hand)] = todayStr();
