@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 66";
+const APP_VERSION = "Кэйко 67";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -180,6 +180,7 @@ function migrate(obj) {
   }
 
   if (obj.practice && typeof obj.practice === "object") base.practice = obj.practice;
+  if (obj.eventsBackfilled) base.eventsBackfilled = true;
 
   if (obj.watch) {
     base.watch.videos = Array.isArray(obj.watch.videos) ? obj.watch.videos : [];
@@ -241,6 +242,7 @@ function load() {
     } catch {}
   }
   data = migrate(raw);
+  try { backfillAwards(); } catch {}      // разовая догрузка наград в ленту
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
 }
 const saveData = () => localStorage.setItem(LS.data, JSON.stringify(data));
@@ -5124,14 +5126,62 @@ function lessonRender(box) {
    «одна наугад» должна вытаскивать твои слова, а не отчёт приложения. */
 function addEvent(kind, key, track, text, extra) {
   data.thoughts = data.thoughts || [];
-  const id = "ev:" + kind + ":" + (extra && extra.tag ? extra.tag : key) + ":" + todayStr();
+  const date = (extra && extra.date) || todayStr();
+  const id = "ev:" + kind + ":" + (extra && extra.tag ? extra.tag : key) + ":" + date;
   if (data.thoughts.some((t) => t.id === id && !t.deleted)) return null;   // один раз в день
   const rec = Object.assign({
     id, key, track, event: kind, text,
-    date: todayStr(), createdAt: now(), updatedAt: now(),
+    date, createdAt: fromStr(date).getTime() + 12 * 3600 * 1000, updatedAt: now(),
   }, extra && extra.fields);
   data.thoughts.push(rec);
   return rec;
+}
+
+/* Награды, полученные до того, как появилась лента, в ней отсутствуют.
+   Проигрываем историю заново: подставляем записи по одной в хронологии
+   и смотрим, на какой день награда впервые стала полученной. Это настоящая
+   дата, а не «сегодня» — иначе таймлайн соврал бы. */
+function backfillAwards() {
+  if (data.eventsBackfilled) return 0;
+  let added = 0;
+
+  const runs = [];
+  for (const pc of (data.piano.pieces || []))
+    runs.push({ view: { track: "piano", pieceId: pc.id }, key: pc.id, track: "piano",
+      all: () => data.piano.entries, put: (v) => { data.piano.entries = v; },
+      mine: (e) => (e.pieceId || "bwv853") === pc.id });
+  for (const b of (data.book.books || []))
+    runs.push({ view: { track: "book", bookId: b.id }, key: b.id, track: "book",
+      all: () => data.book.entries, put: (v) => { data.book.entries = v; },
+      mine: (e) => (e.bookId || "snow-1") === b.id });
+  if (course().lessons.length)
+    runs.push({ view: { track: "pastel" }, key: "pastel", track: "pastel",
+      all: () => data.pastel.entries, put: (v) => { data.pastel.entries = v; },
+      mine: () => true });
+
+  for (const r of runs) {
+    const full = r.all();
+    const mine = full.filter((e) => !e.deleted && r.mine(e)).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+    if (!mine.length) continue;
+    const seen = new Set();
+    try {
+      for (let k = 1; k <= mine.length; k++) {
+        r.put(mine.slice(0, k));
+        const done = withMaterial(r.view, () => achState().filter((a) => a.done));
+        for (const a of done) {
+          if (seen.has(a.id)) continue;
+          seen.add(a.id);
+          if (k === 1 && mine[0].date === todayStr()) continue;      // сегодняшнее событие уже есть
+          if (addEvent("ach", r.key, r.track, a.icon + " " + a.name,
+              { tag: a.id, date: mine[k - 1].date })) added++;
+        }
+      }
+    } finally { r.put(full); }
+  }
+
+  data.eventsBackfilled = true;
+  if (added) { saveData(); schedulePush(); }
+  return added;
 }
 
 /* Снимок работы кладём обычным моментом: то же хранилище, тот же вид,
@@ -5164,6 +5214,7 @@ function lessonEntry(make) {
 
 function lessonCount() {
   const e = lessonEntry(true);
+  if (!prac.sessionCounted) { e.sessions = (e.sessions || 0) + 1; prac.sessionCounted = true; }
   const cur = pracMin();
   e.mins = Math.round((e.mins || 0) + Math.max(0, cur - (prac.counted || 0)));
   prac.counted = cur;
@@ -5336,9 +5387,9 @@ function openLesson() {
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
     cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false,
   };
-  const e = lessonEntry(true);
-  e.sessions = (e.sessions || 0) + 1;
-  saveData();
+  /* Запись не заводим на открытии: нажал «Начать урок», передумал и вышел —
+     занятия не было, и в истории его быть не должно. Подход засчитается
+     на первом настоящем действии. */
   $("#prac").hidden = false;
   $("#prac").setAttribute("aria-hidden", "false");
   clearInterval(pracTimer);
@@ -5425,6 +5476,7 @@ function pracEntry(make) {
    от последнего. Дописываем только прирост с прошлой записи. */
 function pracCount() {
   const e = pracEntry(true);
+  if (!prac.sessionCounted) { e.sessions = (e.sessions || 0) + 1; prac.sessionCounted = true; }
   const cur = pracMin();
   const add = Math.max(0, cur - (prac.counted || 0));
   prac.counted = cur;
@@ -5453,7 +5505,9 @@ function pracLog(u) {
 /* Занятие само пишет обычную отметку. */
 function pracFinish() {
   if (prac && prac.kind === "lesson") {
-    if (prac.taskAt) lessonNote(prac.at.i, "task", Math.round((Date.now() - prac.taskAt) / 1000));
+    const nothing = !lessonEntry(false) && !prac.taskAt;
+    if (nothing) { toast("Занятие не записано — ничего не отметил"); closePractice(); return; }
+    if (prac.taskAt) lessonNote(prac.at.i, prac.at.phase, Math.round((Date.now() - prac.taskAt) / 1000));
     const e = lessonCount();
     lessonStore().session++;
     if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
@@ -5471,7 +5525,7 @@ function pracFinish() {
   /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
      за инструментом — это занятие, а не пустое место, и серию оно рвать
      не должно. */
-  if (prac && prac.startedAt) {
+  if (prac && prac.startedAt && (prac.closed.length || pracEntry(false))) {
     const e = pracCount();
     pracStore().session++;
     saveData();
@@ -5608,12 +5662,11 @@ function bindPractice() {
 
     switch (b.dataset.prac) {
       case "begin": {
+        /* Запись заведётся на первом закрытом отрезке. Нажал «Начать» и вышел —
+           занятия не было. */
         prac.startedAt = prac.startedAt || Date.now();
-        const e = pracEntry(true);
-        e.sessions = (e.sessions || 0) + 1;     // сколько раз садился за инструмент в этот день
         prac.counted = 0;
         prac.queue = pracQueue();
-        saveData();
         return pracNext();
       }
       case "ok": {
@@ -7679,7 +7732,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, eventsBackfilled: data.eventsBackfilled, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
