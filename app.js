@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 68";
+const APP_VERSION = "Кэйко 69";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4214,6 +4214,10 @@ function mediaHTML(t) {
 }
 
 function renderNotes() {
+  /* У событий, записанных до появления поля, метки награды нет — достаём
+     её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
+  const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
+
   if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
 
   const mats = achMaterials();
@@ -4299,7 +4303,7 @@ function renderNotes() {
         </article>` : `
         <article class="post thought${t.event ? " ev ev-" + t.event : ""}${
             t.event === "ach" ? " ev-open" : ""}"${
-            t.event === "ach" && t.tag ? ` data-ev-ach="${esc(t.tag)}" data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}"` : ""}>
+            t.event === "ach" && evTag(t) ? ` data-ev-ach="${esc(evTag(t))}" data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}"` : ""}>
           <div class="th-head">
             ${sourceHTML(t)}
             <span class="th-when">${esc(when(t))}${t.editedAt ? " · изменено" : ""}</span>
@@ -5146,8 +5150,11 @@ function addEvent(kind, key, track, text, extra) {
   if (data.thoughts.some((t) => t.id === id && !t.deleted)) return null;   // один раз в день
   const rec = Object.assign({
     id, key, track, event: kind, text,
+    /* Полдень — только если о настоящем времени ничего не известно: у награды
+       за прошлое его взять неоткуда, а врать точным часом хуже, чем округлить. */
     date, createdAt: fromStr(date).getTime() + 12 * 3600 * 1000, updatedAt: now(),
   }, extra && extra.fields);
+  if (!rec.createdAt) rec.createdAt = fromStr(date).getTime() + 12 * 3600 * 1000;
   data.thoughts.push(rec);
   return rec;
 }
@@ -5187,11 +5194,24 @@ function backfillAwards() {
           if (seen.has(a.id)) continue;
           seen.add(a.id);
           if (k === 1 && mine[0].date === todayStr()) continue;      // сегодняшнее событие уже есть
+          const src = mine[k - 1];
           if (addEvent("ach", r.key, r.track, a.icon + " " + a.name,
-              { tag: a.id, date: mine[k - 1].date, fields: { tag: a.id } })) added++;
+              { tag: a.id, date: src.date,
+                fields: { tag: a.id, createdAt: src.createdAt || src.updatedAt || 0 } })) added++;
         }
       }
     } finally { r.put(full); }
+  }
+
+  /* Разовая починка: у наград, записанных прошлой версией, время стояло
+     ровно полднем. Если запись того дня известна — берём её время. */
+  for (const t of data.thoughts || []) {
+    if (t.event !== "ach" || !t.date) continue;
+    const noon = fromStr(t.date).getTime() + 12 * 3600 * 1000;
+    if (t.createdAt !== noon) continue;
+    const src = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries]
+      .find((e) => !e.deleted && e.date === t.date && (e.createdAt || 0));
+    if (src) { t.createdAt = src.createdAt; added++; }
   }
 
   data.eventsBackfilled = true;

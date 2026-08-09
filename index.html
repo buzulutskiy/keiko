@@ -84,6 +84,8 @@
        Но торчащие 80 пикселей позволяли оттянуть страницу вбок, поэтому
        по горизонтали всё подрезано жёстко. */
     html, body { overflow-x: hidden; max-width: 100%; }
+    body { position: relative; }
+    #view { overflow-x: clip; }
     #bgWave {
       position: absolute; top: -80px; left: -80px;
       width: calc(100% + 160px); height: calc(100% + 160px);
