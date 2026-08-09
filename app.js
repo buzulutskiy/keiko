@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 67";
+const APP_VERSION = "Кэйко 68";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1055,7 +1055,7 @@ function saveEntry() {
   // а промежуточные пропадали, хотя открылись честно
   fresh.forEach((a, i) => {
     overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length });
-    addEvent("ach", curKey(), data.active, a.icon + " " + a.name, { tag: a.id });
+    addEvent("ach", curKey(), data.active, a.icon + " " + a.name, { tag: a.id, fields: { tag: a.id } });
   });
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
@@ -4297,16 +4297,18 @@ function renderNotes() {
             <button class="btn" data-cancel="1" type="button">Отмена</button>
           </div>
         </article>` : `
-        <article class="post thought${t.event ? " ev ev-" + t.event : ""}">
+        <article class="post thought${t.event ? " ev ev-" + t.event : ""}${
+            t.event === "ach" ? " ev-open" : ""}"${
+            t.event === "ach" && t.tag ? ` data-ev-ach="${esc(t.tag)}" data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}"` : ""}>
           <div class="th-head">
             ${sourceHTML(t)}
             <span class="th-when">${esc(when(t))}${t.editedAt ? " · изменено" : ""}</span>
             <span class="th-acts">
-              ${t.event ? "" : `
+              ${t.event ? (t.event === "ach" ? '<span class="th-go">›</span>' : "") : `
               <button class="th-act like ${t.liked ? "on" : ""}" data-like="${t.id}" type="button"
                 aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
-              <button class="th-act" data-edit="${t.id}" type="button" aria-label="Изменить">✎</button>`}
-              <button class="th-act" data-th="${t.id}" type="button" aria-label="Удалить">✕</button>
+              <button class="th-act" data-edit="${t.id}" type="button" aria-label="Изменить">✎</button>
+              <button class="th-act" data-th="${t.id}" type="button" aria-label="Удалить">✕</button>`}
             </span>
           </div>
           ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
@@ -4316,6 +4318,19 @@ function renderNotes() {
 
   document.querySelectorAll("[data-shot-src]").forEach(el =>
     el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen)));
+
+  /* Награда в ленте — не текст, а ссылка на саму награду: жмёшь и видишь,
+     за что она и что там написано. */
+  document.querySelectorAll("[data-ev-ach]").forEach(el =>
+    el.addEventListener("click", () => {
+      const view = { track: el.dataset.evTrack,
+        pieceId: el.dataset.evTrack === "piano" ? el.dataset.evKey : null,
+        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null };
+      const a = withMaterial(view, () => achState().find((x) => x.id === el.dataset.evAch));
+      const words = withMaterial(view, () => achWords());
+      if (a) openAchSheet(a, false, words);
+      else toast("Награда не нашлась — материал изменился");
+    }));
 
   const area = $("#thText");
   bindPasteCleanup(area);
@@ -5173,7 +5188,7 @@ function backfillAwards() {
           seen.add(a.id);
           if (k === 1 && mine[0].date === todayStr()) continue;      // сегодняшнее событие уже есть
           if (addEvent("ach", r.key, r.track, a.icon + " " + a.name,
-              { tag: a.id, date: mine[k - 1].date })) added++;
+              { tag: a.id, date: mine[k - 1].date, fields: { tag: a.id } })) added++;
         }
       }
     } finally { r.put(full); }
@@ -5384,6 +5399,7 @@ function openLesson() {
   const at = lessonNext();
   prac = {
     kind: "lesson", screen: "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
     cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false,
   };
@@ -5409,6 +5425,7 @@ function openPractice() {
     catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
   prac = {
     screen: "start", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null,
+    achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
   };
   $("#prac").hidden = false;
@@ -5445,6 +5462,30 @@ function pracEndRest() {
   prac.askedAt = pracMin();
   prac.screen = prac.back || "work";
   pracRender();
+}
+
+const achDoneSet = () => new Set(achState().filter((a) => a.done).map((a) => a.id));
+const factsOpenSet = () => new Set(factsState().filter((f) => f.open).map((f) => f.id));
+
+/* Занятие пишет записи мимо обычной отметки, а награды показывались только
+   в ней. Поэтому за практику они открывались молча: в списке появлялись,
+   а торжества не было. Собираем их сами и показываем теми же экранами. */
+function pracCelebrate() {
+  if (!prac) return;
+  const freshAch = achState().filter((a) => a.done && !prac.achBefore.has(a.id));
+  const freshFacts = factsState().filter((f) => f.open && !prac.factsBefore.has(f.id));
+  if (!freshAch.length && !freshFacts.length) return;
+
+  for (const a of freshAch)
+    addEvent("ach", curKey(), data.active, a.icon + " " + a.name, { tag: a.id, fields: { tag: a.id } });
+
+  overlayQueue = [];
+  freshAch.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: freshAch.length }));
+  if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
+  prac.achBefore = achDoneSet();
+  prac.factsBefore = factsOpenSet();
+  saveData();
+  setTimeout(showNextOverlay, 260);          // после закрытия занятия
 }
 
 /* Сколько времени ушло на каждый отрезок. Показывать пока негде, но собирать
@@ -5510,6 +5551,7 @@ function pracFinish() {
     if (prac.taskAt) lessonNote(prac.at.i, prac.at.phase, Math.round((Date.now() - prac.taskAt) / 1000));
     const e = lessonCount();
     lessonStore().session++;
+    pracCelebrate();
     if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
       "Занимался: " + course().name + " · " + e.mins + " мин, "
       + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"),
@@ -5530,6 +5572,7 @@ function pracFinish() {
     pracStore().session++;
     saveData();
     schedulePush();
+    pracCelebrate();
     if (closed) addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин, "
       + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
