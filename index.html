@@ -1596,9 +1596,29 @@
       from { background-position: 190% 0; }
       to   { background-position: -90% 0; }
     }
-    /* Без #view в основании: иначе снять полосу классом уже не выйдет —
-       идентификатор перевесит и она останется крутиться на приехавшей. */
-    .app img, .sheet img {
+    /* Полоса живёт на рамке обложки, а не на самой картинке: у неприехавшей
+       картинки размера ещё нет, и рисовать полосу было бы негде. */
+    .img-wait, .img-fail { position: relative; }
+    .img-wait::after, .img-fail::after {
+      content: ""; position: absolute; inset: 0;
+      border-radius: inherit; pointer-events: none; z-index: 1;
+      background-color: var(--glass);
+    }
+    .img-wait::after {
+      background-image: linear-gradient(100deg,
+        transparent 26%, var(--glass-2) 44%, var(--glass-hi) 50%, var(--glass-2) 56%, transparent 74%);
+      background-size: 220% 100%;
+      background-repeat: no-repeat;
+      animation: imgWait 1.2s linear infinite;
+    }
+    /* Не приехала — ровная подложка, без дёргающейся полосы. */
+    .img-fail::after { background-image: none; }
+    /* Саму картинку прячем: iOS иначе рисует поверх свой значок с вопросом,
+       и пустой alt его не убирает. */
+    .app img.img-off, .sheet img.img-off { visibility: hidden; }
+    /* Снимки в «Моментах» лежат не в рамке обложки — им полоса на себе. */
+    .th-shot:not(.img-on) {
+      min-height: 120px;
       background-color: var(--glass);
       background-image: linear-gradient(100deg,
         transparent 26%, var(--glass-2) 44%, var(--glass-hi) 50%, var(--glass-2) 56%, transparent 74%);
@@ -1606,12 +1626,8 @@
       background-repeat: no-repeat;
       animation: imgWait 1.2s linear infinite;
     }
-    .app img.img-on, .sheet img.img-on { background: none; animation: none; }
-    /* Не приехала — остаётся ровная подложка, без дёргающейся полосы
-       и без значка: alt у обложек пустой, рисовать нечего. */
-    .app img.img-off, .sheet img.img-off { background-image: none; animation: none; }
     @media (prefers-reduced-motion: reduce) {
-      .app img, .sheet img { animation: none; }
+      .img-wait::after, .th-shot:not(.img-on) { animation: none; }
     }
     .lib-tools { display: flex; gap: 8px; margin-bottom: 4px; }
     .lib-tools .btn { flex: 1; min-width: 0; }

@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 75";
+const APP_VERSION = "Кэйко 76";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1390,6 +1390,7 @@ function renderInner() {
     renderHome();
     toast("Экран не открылся — вернул на главную");
   }
+  markImages();          // разметить, какие обложки ещё едут
   syncNotesFabs();
   audioSync();
   zenArm(true);
@@ -1678,6 +1679,10 @@ function volumeControllable() {
    Ключ по материалу давал здесь то молчание навсегда (элемент остался висеть
    на старом регуляторе, выкрученном в ноль), то отказ от затухания. */
 const nodeGain = new WeakMap();
+/* Элементы <audio> у howler ходят по кругу: остановленный трек отдаёт свой
+   обратно, и следующий может получить тот же самый — вместе с регулятором
+   громкости. Поэтому регулятор помнит, чей он сейчас: гасить чужой нельзя. */
+const gainOwner = new WeakMap();
 const nodeOf = (h) => (h && h._sounds && h._sounds[0] && h._sounds[0]._node) || null;
 
 function gainOf(h) {
@@ -1689,7 +1694,7 @@ function gainFor(h) {
   const node = nodeOf(h);
   if (!node) return null;
   const have = nodeGain.get(node);
-  if (have) return have;
+  if (have) { gainOwner.set(have, h); return have; }   // забрали элемент — забрали и регулятор
   try {
     // ctx у howler создаётся лениво; обращение к громкости его поднимает
     if (window.Howler && !Howler.ctx) { try { Howler.volume(Howler.volume()); } catch {} }
@@ -1703,6 +1708,7 @@ function gainFor(h) {
     ctx.createMediaElementSource(node).connect(g);
     g.connect(ctx.destination);
     nodeGain.set(node, g);
+    gainOwner.set(g, h);
     return g;
   } catch { return null; }
 }
@@ -1734,10 +1740,17 @@ const stopTimers = new Map();
 function hardStop(h, id, ms) {
   clearTimeout(stopTimers.get(id));
   stopTimers.set(id, setTimeout(() => {
-    try { h.volume(0); h.pause(); } catch {}
-    const g = gainOf(h);
-    if (g) { try { g.gain.cancelScheduledValues(Howler.ctx.currentTime); g.gain.value = 0; } catch {} }
     stopTimers.delete(id);
+    if (id === audioNow) return;         // за это время вернулись к нему — глушить нечего
+    /* Регулятор берём ДО паузы: после неё элемент уже может уйти в общий котёл.
+       И обнуляем, только если он всё ещё наш — иначе этот отложенный удар
+       приходился по музыке следующего материала, и она молчала при играющих
+       волнах: элемент-то звучал, просто в ноль. */
+    const g = gainOf(h);
+    try { h.volume(0); h.pause(); } catch {}
+    if (g && gainOwner.get(g) === h) {
+      try { g.gain.cancelScheduledValues(Howler.ctx.currentTime); g.gain.value = 0; } catch {}
+    }
   }, (ms || FADE_OUT) + 120));
 }
 const anyPlaying = () => { let n = false; howls.forEach(h => { if (h.playing()) n = true; }); return n; };
@@ -1753,9 +1766,23 @@ function stopAllExcept(keepId, ms) {
   });
 }
 
+/* Сторож на случай, если музыка идёт вхолостую: элемент играет, волны бегут,
+   а громкость осталась в нуле. Так бывает, когда регулятор достался от
+   прошлого трека или граф успел заснуть. Молча возвращаем звук. */
+let audioGuardTimer = 0;
+function audioGuard() {
+  if (!audioNow || audioStarting || stopTimers.has(audioNow)) return;
+  if (!(cfg.sound && zenOn && tab === "home" && !settingsOpen && !document.hidden)) return;
+  const h = howls.get(audioNow);
+  if (!h || !h.playing()) return;
+  if (volNow(h) >= AUDIO_VOL * 0.5) return;
+  fadeVol(h, volNow(h), AUDIO_VOL, 500);
+}
+
 /* Что должно звучать прямо сейчас: только главная, только активный материал,
    только если человек включил звук и уже коснулся экрана. */
 function audioSync() {
+  if (!audioGuardTimer) audioGuardTimer = setInterval(audioGuard, 900);
   if (typeof Howl !== "function") return;          // библиотека не догрузилась — просто тишина
   /* Музыка не начинается сразу при входе на главную: она вступает, когда
      человек задержался и интерфейс ушёл. Иначе звук догоняет тебя на бегу. */
@@ -2087,15 +2114,36 @@ function stopWakeVideo() {
   } catch {}
 }
 
-/* Пока картинка едет, на её месте была дыра, а если не доезжала — значок
-   «не загрузилось». Вместо этого показываем тихую бегущую полосу и снимаем
-   её, как только картинка пришла или окончательно не пришла.
+/* Пока обложка едет, на её месте была дыра, а у неприехавшей iOS рисует
+   свой значок с вопросом — пустой alt его не убирает. Поэтому саму картинку
+   прячем, а ожидание показываем на рамке: у неприехавшей картинки размера
+   ещё нет, и полосе просто негде было бы рисоваться.
    Слушаем на перехвате: load и error у картинок не всплывают. */
+const COVER_BOX = ".cover, .lib-cover, .th-cover, .shelf-cover, .km-cover";
+function imgBox(el) {
+  const box = el.parentElement;
+  return box && box.matches && box.matches(COVER_BOX) ? box : null;
+}
+function imgSettle(el, ok) {
+  el.classList.remove("img-off", "img-on");
+  el.classList.add(ok ? "img-on" : "img-off");
+  const box = imgBox(el);
+  if (!box) return;
+  box.classList.remove("img-wait", "img-ready", "img-fail");
+  box.classList.add(ok ? "img-ready" : "img-fail");
+}
+function markImages() {
+  document.querySelectorAll(".app img, .sheet img").forEach((el) => {
+    if (el.complete) { imgSettle(el, !!el.naturalWidth); return; }
+    const box = imgBox(el);
+    if (box) { box.classList.remove("img-ready", "img-fail"); box.classList.add("img-wait"); }
+  });
+}
 document.addEventListener("load", (e) => {
-  if (e.target && e.target.tagName === "IMG") e.target.classList.add("img-on");
+  if (e.target && e.target.tagName === "IMG") imgSettle(e.target, true);
 }, true);
 document.addEventListener("error", (e) => {
-  if (e.target && e.target.tagName === "IMG") e.target.classList.add("img-off");
+  if (e.target && e.target.tagName === "IMG") imgSettle(e.target, false);
 }, true);
 
 // вернулись в приложение — блокировку экрана надо запросить заново
@@ -5815,23 +5863,33 @@ const factsOpenSet = () => new Set(factsState().filter((f) => f.open).map((f) =>
 /* Занятие пишет записи мимо обычной отметки, а награды показывались только
    в ней. Поэтому за практику они открывались молча: в списке появлялись,
    а торжества не было. Собираем их сами и показываем теми же экранами. */
+/* Считаем, что открылось за занятие, — но НЕ показываем. Показ раньше стоял
+   прямо здесь, по таймеру: экран занятия в это время ещё закрывался, и
+   торжество приходилось на смену экранов — иногда его просто не было видно.
+   Теперь возвращаем добычу наверх, а показывает её тот, кто уже всё закрыл. */
 function pracCelebrate() {
-  if (!prac) return;
+  if (!prac) return null;
   const freshAch = achState().filter((a) => a.done && !prac.achBefore.has(a.id));
   const freshFacts = factsState().filter((f) => f.open && !prac.factsBefore.has(f.id));
-  if (!freshAch.length && !freshFacts.length) return;
+  if (!freshAch.length && !freshFacts.length) return null;
 
   const stamped = stampProgress();
   prac.wonAwards = (prac.wonAwards || []).concat(stamped.ach);
   prac.wonFacts = (prac.wonFacts || []).concat(stamped.facts);
 
-  overlayQueue = [];
-  freshAch.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: freshAch.length }));
-  if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
   prac.achBefore = achDoneSet();
   prac.factsBefore = factsOpenSet();
   saveData();
-  setTimeout(showNextOverlay, 260);          // после закрытия занятия
+  return { ach: freshAch, facts: freshFacts };
+}
+
+/* Торжество: сначала награды по одной, потом карточки знаний одним экраном. */
+function showWon(won) {
+  if (!won || (!won.ach.length && !won.facts.length)) return;
+  overlayQueue = [];
+  won.ach.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: won.ach.length }));
+  if (won.facts.length) overlayQueue.push({ type: "facts", list: won.facts });
+  showNextOverlay();
 }
 
 /* Сколько времени ушло на каждый отрезок. Показывать пока негде, но собирать
@@ -5897,7 +5955,7 @@ function pracFinish() {
     if (prac.taskAt) lessonNote(prac.at.i, prac.at.phase, Math.round((Date.now() - prac.taskAt) / 1000));
     const e = lessonCount();
     lessonStore().session++;
-    pracCelebrate();
+    const won = pracCelebrate();
     if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
       "Занимался: " + course().name + " · " + e.mins + " мин, "
       + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"),
@@ -5906,9 +5964,13 @@ function pracFinish() {
     schedulePush();
     toast("Записано: " + e.mins + " мин");
     closePractice();
+    /* Показываем ПОСЛЕ закрытия: экран занятия лежит выше торжества, и пока
+       он не убран, награду было не видно. */
+    if (won) setTimeout(() => showWon(won), 380);
     return;
   }
   const closed = prac ? prac.closed.length : 0;
+  let won = null;
 
   /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
      за инструментом — это занятие, а не пустое место, и серию оно рвать
@@ -5918,7 +5980,7 @@ function pracFinish() {
     pracStore().session++;
     saveData();
     schedulePush();
-    pracCelebrate();
+    won = pracCelebrate();
     if (closed) addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин, "
       + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
@@ -5928,6 +5990,7 @@ function pracFinish() {
       : "Занятие записано: " + e.mins + " мин, без закрытых отрезков");
   }
   closePractice();
+  if (won) setTimeout(() => showWon(won), 380);
 }
 
 function bindPractice() {
