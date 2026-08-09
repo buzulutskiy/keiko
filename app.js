@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 64";
+const APP_VERSION = "Кэйко 65";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2668,7 +2668,7 @@ function renderHome() {
           ? "🔒 Подключить синхронизацию"
           : doneToday
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
+            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
       </div>
       <div class="nudge">${nudge}</div>
@@ -2683,6 +2683,7 @@ function renderHome() {
        и когда уже отмечен: второе занятие за день это нормально, отрезки
        допишутся в ту же запись. Ручная шторка остаётся у остальных треков. */
     if (isPiano() && piece().bars) { openPractice(); return; }
+    if (isPastel() && lessons().length) { openLesson(); return; }
     openLogSheet();
   });
 
@@ -2957,7 +2958,7 @@ function updateHeroInfo() {
       ? "🔒 Подключить синхронизацию"
       : doneToday
         ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
+        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
   const nudge = $(".nudge");
@@ -3282,24 +3283,29 @@ function renderEmpty(title, text) {
 }
 
 
-/* ── Дни недели: в какие дни занятия случаются чаще ──
-   Считаем РАЗНЫЕ дни, а не записи: два хобби в один вторник — это один
-   вторник, а не два. */
+/* ── Дни недели: сколько дел приходится на каждый день ──
+   Считаем ЗАПИСИ, а не разные даты. Считать даты было ошибкой: суббота,
+   в которую ты играл, читал и смотрел, давала единицу — ровно столько же,
+   сколько два разных воскресенья с одним делом. Выходило, что суббота
+   «слабее», хотя в ней было втрое больше. */
 function weekProfileHTML() {
   const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
     .filter((e) => !e.deleted);
   if (all.length < 4) return "";
 
-  const days = Array.from({ length: 7 }, () => new Set());
+  const counts = new Array(7).fill(0);
+  const dates = new Set();
   for (const e of all) {
-    const dw = (fromStr(e.date).getDay() + 6) % 7;      // понедельник первый
-    days[dw].add(e.date);
+    counts[(fromStr(e.date).getDay() + 6) % 7]++;
+    dates.add(e.date);
   }
-  const counts = days.map((s) => s.size);
   const max = Math.max(...counts);
   if (!max) return "";
   const best = counts.indexOf(max);
-  const worst = counts.indexOf(Math.min(...counts));
+
+  // за сколько недель картинка: без этого числа профиль легко переоценить
+  const all_d = [...dates].sort();
+  const weeks = Math.max(1, Math.round((daysBetween(all_d[0], all_d[all_d.length - 1]) + 1) / 7));
 
   return `
     <div class="panel">
@@ -3312,8 +3318,9 @@ function weekProfileHTML() {
             <em>${DOW[i]}</em>
           </div>`).join("")}
       </div>
-      <p class="wk-note">Чаще всего — <b>${DOW_FULL[best]}</b>${
-        counts[worst] === 0 ? `, ни разу — ${DOW_FULL[worst].toLowerCase()}` : ""}</p>
+      <p class="wk-note">Чаще всего — <b>${DOW_FULL[best]}</b>.
+        <span style="color:var(--dim)">Считаются дела: три хобби в один день — три.
+        Картинка за ${weeks} ${plural(weeks, "неделю", "недели", "недель")}.</span></p>
     </div>`;
 }
 
@@ -4982,8 +4989,142 @@ function plDrag(e) {
   document.addEventListener("pointerup", up);
 }
 
+/* ══════════ Курс: урок = видео плюс задание ══════════
+   У пьесы единица — такт, у курса — урок. Внутри урока два шага: посмотреть
+   и сделать задание. Задание есть не всегда, поэтому про него спрашивают,
+   а не заставляют. Час, проведённый над десятиминутным уроком, — это
+   не провал, а честное число, и оно записывается как есть. */
+const lessons = () => (course().lessons || []);
+const lessonStore = () => {
+  data.practice = data.practice || {};
+  data.practice.pastel = data.practice.pastel || { done: {}, session: 0, log: [] };
+  return data.practice.pastel;
+};
+const lessonDone = (i, step) => !!lessonStore().done["L" + i + ":" + step];
+
+/* Первый урок, который ещё не закрыт. Закрыт — когда просмотрен и по нему
+   решён вопрос с заданием. */
+function lessonNext() {
+  const ls = lessons();
+  for (let i = 0; i < ls.length; i++) {
+    if (!lessonDone(i, "watch")) return { i, phase: "watch" };
+    if (!lessonDone(i, "task")) return { i, phase: "task" };
+  }
+  return null;
+}
+
+function lessonRender(box) {
+  const ls = lessons();
+  const at = prac.at;
+  if (!at) {
+    box.innerHTML = `
+      <div class="pr-mid">
+        <p class="pr-kind">курс пройден</p>
+        <div class="pr-big sm">Все уроки закрыты</div>
+      </div>
+      <div class="pr-bot"><button class="pr-main" data-prac="finish">Завершить</button></div>`;
+    return;
+  }
+  const l = ls[at.i] || {};
+  const mins = Math.round((l.dur || 0) / 60);
+
+  if (at.phase === "watch") {
+    box.innerHTML = `
+      <div class="pr-mid">
+        <p class="pr-kind">урок ${at.i + 1} из ${ls.length} · смотрим</p>
+        <div class="pr-big sm">${esc(l.title || "Урок " + (at.i + 1))}</div>
+        <p class="pr-hand">${mins ? mins + " " + plural(mins, "минута", "минуты", "минут") : "видео"}</p>
+        <p class="pr-next">смотри у себя, здесь только отмечаешь</p>
+      </div>
+      <div class="pr-bot">
+        <button class="pr-go" data-les="watched">Посмотрел</button>
+        <div class="pr-row"><button class="pr-ghost" data-prac="finish">Закончить</button></div>
+      </div>`;
+    return;
+  }
+
+  if (prac.taskAt) {
+    const sec = Math.round((Date.now() - prac.taskAt) / 1000);
+    const m = Math.floor(sec / 60);
+    box.innerHTML = `
+      <div class="pr-mid">
+        <p class="pr-kind">урок ${at.i + 1} из ${ls.length} · задание</p>
+        <div class="pr-big">${m}:${String(sec % 60).padStart(2, "0")}</div>
+        <p class="pr-hand">${esc(l.title || "Урок " + (at.i + 1))}</p>
+        <p class="pr-next">залипнуть тут надолго — нормально, время считается</p>
+      </div>
+      <div class="pr-bot">
+        <button class="pr-go" data-les="taskDone">Сделал</button>
+        <div class="pr-row">
+          <button class="pr-ghost" data-les="taskLater">Не доделал</button>
+          <button class="pr-ghost" data-prac="finish">Закончить</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="pr-mid">
+      <p class="pr-kind">урок ${at.i + 1} из ${ls.length}</p>
+      <div class="pr-big sm">Было практическое задание?</div>
+      <p class="pr-hand">${esc(l.title || "Урок " + (at.i + 1))}</p>
+    </div>
+    <div class="pr-bot">
+      <button class="pr-go" data-les="taskStart">Делаю задание</button>
+      <div class="pr-row">
+        <button class="pr-ghost" data-les="noTask">Задания не было</button>
+        <button class="pr-ghost" data-prac="finish">Закончить</button>
+      </div>
+    </div>`;
+}
+
+/* Запись занятия по курсу — обычная отметка урока, как при ручной. */
+function lessonEntry(make) {
+  const ds = todayStr();
+  let e = data.pastel.entries.find((x) => !x.deleted && x.date === ds);
+  if (!e && make) {
+    e = { id: uid(), date: ds, courseId: course().id, lessons: [], mins: 0, sessions: 0,
+          note: "урок по плану", createdAt: now(), updatedAt: now() };
+    data.pastel.entries.push(e);
+  }
+  return e || null;
+}
+
+function lessonCount() {
+  const e = lessonEntry(true);
+  const cur = pracMin();
+  e.mins = Math.round((e.mins || 0) + Math.max(0, cur - (prac.counted || 0)));
+  prac.counted = cur;
+  e.note = "урок по плану · " + e.mins + " мин"
+    + (e.sessions > 1 ? " · " + e.sessions + " " + plural(e.sessions, "подход", "подхода", "подходов") : "");
+  e.updatedAt = now();
+  return e;
+}
+
+function lessonMark(i) {
+  const e = lessonEntry(true);
+  if (!e.lessons.includes(i)) e.lessons.push(i);
+  lessonCount();
+  saveData();
+  schedulePush();
+}
+
+function lessonNote(i, step, sec) {
+  if (!sec || sec > 6 * 3600) return;
+  const st = lessonStore();
+  st.log = st.log || [];
+  st.log.push({ i, step, sec, d: todayStr() });
+  if (st.log.length > 800) st.log.splice(0, st.log.length - 800);
+}
+
 function pracRender() {
   if (!prac) return;
+  if (prac.kind === "lesson") {
+    $("#pracWhere").textContent = course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
+    const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
+    if (["break", "resting", "wrap"].includes(prac.screen)) { /* общие экраны ниже */ }
+    else { lessonRender($("#pracStage")); return; }
+  }
   const w = pracWhere();
   const m = Math.floor(pracMin());
   $("#pracWhere").textContent = piece().name + (prac.startedAt ? " · " + m + " мин" : "");
@@ -5115,6 +5256,29 @@ function pracNext() {
   pracRender();
 }
 
+function openLesson() {
+  if (!isCourse() || !lessons().length) { toast("Уроков пока нет"); return; }
+  const at = lessonNext();
+  prac = {
+    kind: "lesson", screen: "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
+    cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false,
+  };
+  const e = lessonEntry(true);
+  e.sessions = (e.sessions || 0) + 1;
+  saveData();
+  $("#prac").hidden = false;
+  $("#prac").setAttribute("aria-hidden", "false");
+  clearInterval(pracTimer);
+  pracTimer = setInterval(() => {
+    if (!prac) return;
+    if (prac.screen === "resting") { pracRender(); if (Date.now() >= prac.restUntil) pracEndRest(); }
+    else { if (prac.taskAt) pracRender(); pracWatch(); }
+  }, 1000);
+  keepAwake(true);
+  pracRender();
+}
+
 function openPractice() {
   if (!isPiano() || !piece().bars) { toast("Практика пока только для пьес"); return; }
   // разбора может не быть на этом устройстве — просим каталог сразу
@@ -5216,6 +5380,16 @@ function pracLog(u) {
 
 /* Занятие само пишет обычную отметку. */
 function pracFinish() {
+  if (prac && prac.kind === "lesson") {
+    if (prac.taskAt) lessonNote(prac.at.i, "task", Math.round((Date.now() - prac.taskAt) / 1000));
+    const e = lessonCount();
+    lessonStore().session++;
+    saveData();
+    schedulePush();
+    toast("Записано: " + e.mins + " мин");
+    closePractice();
+    return;
+  }
   const closed = prac ? prac.closed.length : 0;
 
   /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
@@ -5281,6 +5455,50 @@ function bindPractice() {
       const min = +b.dataset.rest;
       if (min) { prac.restFrom = Date.now(); prac.restUntil = prac.restFrom + min * 60000; prac.screen = "resting"; }
       else prac.screen = prac.back || "work";
+      return pracRender();
+    }
+
+    if (b.dataset.les) {
+      const at = prac.at;
+      const st = lessonStore();
+      const sec = prac.stepAt ? Math.round((Date.now() - prac.stepAt) / 1000) : 0;
+
+      switch (b.dataset.les) {
+        case "watched":
+          st.done["L" + at.i + ":watch"] = todayStr();
+          lessonNote(at.i, "watch", sec);
+          lessonMark(at.i);
+          prac.at = { i: at.i, phase: "task" };
+          prac.stepAt = Date.now();
+          break;
+        case "taskStart":
+          prac.taskAt = Date.now();
+          break;
+        case "taskDone":
+          lessonNote(at.i, "task", Math.round((Date.now() - prac.taskAt) / 1000));
+          st.done["L" + at.i + ":task"] = todayStr();
+          lessonMark(at.i);
+          prac.taskAt = 0;
+          prac.at = lessonNext();
+          prac.stepAt = Date.now();
+          break;
+        case "taskLater":
+          /* Не доделал — урок остаётся открытым, но время уже записано:
+             час над заданием это час, доделал ты его или нет. */
+          lessonNote(at.i, "task", Math.round((Date.now() - prac.taskAt) / 1000));
+          lessonCount();
+          prac.taskAt = 0;
+          prac.at = lessonNext();
+          prac.stepAt = Date.now();
+          break;
+        case "noTask":
+          st.done["L" + at.i + ":task"] = "нет";
+          prac.at = lessonNext();
+          prac.stepAt = Date.now();
+          break;
+      }
+      saveData();
+      schedulePush();
       return pracRender();
     }
 
@@ -5458,7 +5676,7 @@ const THEMES = [
 const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabShop: "Магазин",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
-  ctaWatch: "🎬 Отметить просмотр",
+  ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
   coins: "монет", coin: "🪙", streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания",
