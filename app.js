@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 69";
+const APP_VERSION = "Кэйко 70";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1053,10 +1053,14 @@ function saveEntry() {
   overlayQueue = [];
   // каждая награда — свой экран: раньше показывалась только последняя,
   // а промежуточные пропадали, хотя открылись честно
-  fresh.forEach((a, i) => {
-    overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length });
-    addEvent("ach", curKey(), data.active, a.icon + " " + a.name, { tag: a.id, fields: { tag: a.id } });
-  });
+  fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
+  if (fresh.length) {
+    const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
+    addEvent("session", curKey(), data.active, sessionText(data.active, ent || {}), {
+      tag: curKey(), date: selectedDate,
+      fields: { createdAt: now(), awards: fresh.map((a) => ({ id: a.id, icon: a.icon, name: a.name })) },
+    });
+  }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
   if (overlayQueue.length) { showNextOverlay(); return; }
@@ -4301,14 +4305,12 @@ function renderNotes() {
             <button class="btn" data-cancel="1" type="button">Отмена</button>
           </div>
         </article>` : `
-        <article class="post thought${t.event ? " ev ev-" + t.event : ""}${
-            t.event === "ach" ? " ev-open" : ""}"${
-            t.event === "ach" && evTag(t) ? ` data-ev-ach="${esc(evTag(t))}" data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}"` : ""}>
+        <article class="post thought${t.event ? " ev ev-" + t.event : ""}">
           <div class="th-head">
             ${sourceHTML(t)}
             <span class="th-when">${esc(when(t))}${t.editedAt ? " · изменено" : ""}</span>
             <span class="th-acts">
-              ${t.event ? (t.event === "ach" ? '<span class="th-go">›</span>' : "") : `
+              ${t.event ? "" : `
               <button class="th-act like ${t.liked ? "on" : ""}" data-like="${t.id}" type="button"
                 aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
               <button class="th-act" data-edit="${t.id}" type="button" aria-label="Изменить">✎</button>
@@ -4316,6 +4318,14 @@ function renderNotes() {
             </span>
           </div>
           ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
+          ${(t.awards || []).length ? `
+            <div class="ev-awards">
+              ${t.awards.map((a) => `
+                <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
+                  data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
+                  <i>${esc(a.icon || "✦")}</i><span>${esc(a.name)}</span>
+                </button>`).join("")}
+            </div>` : ""}
           ${mediaHTML(t)}
         </article>`).join("")}
     </div>` : `<div class="empty-note">Здесь копятся моменты: мысль, запись, снимок.<br>Первый можно оставить прямо сейчас.</div>`}`;
@@ -5143,6 +5153,21 @@ function lessonRender(box) {
    не пишут руками. Но в ленте они на месте: получается таймлайн, по которому
    видно, что и когда случилось. В случайную выборку они не попадают —
    «одна наугад» должна вытаскивать твои слова, а не отчёт приложения. */
+/* Что сделано в этот день — коротко, для карточки события. */
+function sessionText(track, e) {
+  if (track === "book") {
+    const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
+    return "Читал: " + ((b && b.title) || "книга") + (e.page ? " · до " + e.page + "-й стр." : "");
+  }
+  if (track === "piano") {
+    const p = (data.piano.pieces || []).find((x) => x.id === (e.pieceId || "bwv853"));
+    return "Занимался: " + ((p && p.name) || "пьеса") + (e.mins ? " · " + e.mins + " мин" : "");
+  }
+  if (track === "pastel") return "Урок: " + (course().name || "курс")
+    + (e.lessons && e.lessons.length ? " · " + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков") : "");
+  return "Занимался";
+}
+
 function addEvent(kind, key, track, text, extra) {
   data.thoughts = data.thoughts || [];
   const date = (extra && extra.date) || todayStr();
@@ -5164,8 +5189,13 @@ function addEvent(kind, key, track, text, extra) {
    и смотрим, на какой день награда впервые стала полученной. Это настоящая
    дата, а не «сегодня» — иначе таймлайн соврал бы. */
 function backfillAwards() {
-  if (data.eventsBackfilled) return 0;
+  if (data.eventsV === 2) return 0;
   let added = 0;
+
+  /* Отдельные карточки наград оказались неудобны: они висели поштучно
+     и без времени. Теперь награда привязана к сессии, в которую открылась,
+     и время у неё — время той самой отметки. Старые одиночные убираем. */
+  data.thoughts = (data.thoughts || []).filter((t) => t.event !== "ach");
 
   const runs = [];
   for (const pc of (data.piano.pieces || []))
@@ -5190,32 +5220,22 @@ function backfillAwards() {
       for (let k = 1; k <= mine.length; k++) {
         r.put(mine.slice(0, k));
         const done = withMaterial(r.view, () => achState().filter((a) => a.done));
-        for (const a of done) {
-          if (seen.has(a.id)) continue;
-          seen.add(a.id);
-          if (k === 1 && mine[0].date === todayStr()) continue;      // сегодняшнее событие уже есть
-          const src = mine[k - 1];
-          if (addEvent("ach", r.key, r.track, a.icon + " " + a.name,
-              { tag: a.id, date: src.date,
-                fields: { tag: a.id, createdAt: src.createdAt || src.updatedAt || 0 } })) added++;
-        }
+        const fresh = done.filter((a) => !seen.has(a.id));
+        done.forEach((a) => seen.add(a.id));
+        if (!fresh.length) continue;
+        const e = mine[k - 1];
+        if (addEvent("session", r.key, r.track, sessionText(r.track, e), {
+          tag: r.key, date: e.date,
+          fields: { createdAt: e.createdAt || e.updatedAt || 0,
+                    awards: fresh.map((a) => ({ id: a.id, icon: a.icon, name: a.name })) },
+        })) added++;
       }
     } finally { r.put(full); }
   }
 
-  /* Разовая починка: у наград, записанных прошлой версией, время стояло
-     ровно полднем. Если запись того дня известна — берём её время. */
-  for (const t of data.thoughts || []) {
-    if (t.event !== "ach" || !t.date) continue;
-    const noon = fromStr(t.date).getTime() + 12 * 3600 * 1000;
-    if (t.createdAt !== noon) continue;
-    const src = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries]
-      .find((e) => !e.deleted && e.date === t.date && (e.createdAt || 0));
-    if (src) { t.createdAt = src.createdAt; added++; }
-  }
-
+  data.eventsV = 2;
   data.eventsBackfilled = true;
-  if (added) { saveData(); schedulePush(); }
+  if (added || data.thoughts) { saveData(); schedulePush(); }
   return added;
 }
 
@@ -5496,8 +5516,8 @@ function pracCelebrate() {
   const freshFacts = factsState().filter((f) => f.open && !prac.factsBefore.has(f.id));
   if (!freshAch.length && !freshFacts.length) return;
 
-  for (const a of freshAch)
-    addEvent("ach", curKey(), data.active, a.icon + " " + a.name, { tag: a.id, fields: { tag: a.id } });
+  if (freshAch.length) prac.wonAwards = (prac.wonAwards || [])
+    .concat(freshAch.map((a) => ({ id: a.id, icon: a.icon, name: a.name })));
 
   overlayQueue = [];
   freshAch.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: freshAch.length }));
@@ -5575,7 +5595,7 @@ function pracFinish() {
     if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
       "Занимался: " + course().name + " · " + e.mins + " мин, "
       + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"),
-      { fields: { mins: e.mins } });
+      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [] } });
     saveData();
     schedulePush();
     toast("Записано: " + e.mins + " мин");
@@ -5596,7 +5616,7 @@ function pracFinish() {
     if (closed) addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин, "
       + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
-      { fields: { mins: e.mins } });
+      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [] } });
     toast(closed
       ? "Занятие записано: " + e.mins + " мин за день"
       : "Занятие записано: " + e.mins + " мин, без закрытых отрезков");
@@ -7182,7 +7202,9 @@ function watchPageUI(v) {
         <a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">Открыть на YouTube</a>
         <button class="btn" data-wtcopy="${esc(v.title)}" type="button">Скопировать название</button>
       </div>
-      ${v.done ? `<button class="btn" data-wtback="${esc(v.id)}" type="button" style="margin-top:10px">Вернуть на главную</button>` : ""}
+      ${v.done
+        ? `<button class="btn" data-wtback="${esc(v.id)}" type="button" style="margin-top:10px">Вернуть на главную</button>`
+        : `<button class="btn" data-wtdone="${esc(v.id)}" type="button" style="margin-top:10px">Отметить посмотренным</button>`}
       <button class="btn" data-wtdel="${esc(v.id)}" type="button" style="margin-top:10px">Убрать из библиотеки</button>
     </div>`;
 }
@@ -7343,6 +7365,16 @@ function bindLibraryUI() {
   }
   document.querySelectorAll("[data-wtcopy]").forEach(btn =>
     btn.addEventListener("click", () => copyText(btn.dataset.wtcopy)));
+  document.querySelectorAll("[data-wtdone]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      /* Прямой путь на случай, если отметка с главной почему-то не прошла:
+         видео уходит с ленты и остаётся в библиотеке. */
+      const v = videos().find(x => x.id === btn.dataset.wtdone);
+      if (!v) return;
+      v.done = true; v.doneAt = now(); v.updatedAt = now();
+      saveData(); schedulePush(); render();
+      toast("Посмотрено");
+    }));
   document.querySelectorAll("[data-wtback]").forEach(btn =>
     btn.addEventListener("click", () => {
       const v = videos().find(x => x.id === btn.dataset.wtback);

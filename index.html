@@ -69,7 +69,9 @@
     }
 
     /* подложка перекрашивается под обложку активного материала */
-    .bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+    /* Холст внутри нарочно шире экрана — обрезаем его здесь, иначе
+       торчащие 80 пикселей позволяли утащить страницу вбок. */
+    .bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
     .bgfx i {
       position: absolute; inset: 0;
       opacity: 0;
@@ -1520,8 +1522,16 @@
     .th-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* События в ленте: не мысли, а след того, что случилось. */
-    .post.ev-open { cursor: pointer; }
-    .th-go { color: var(--dim); font-size: 1.1rem; line-height: 1; padding: 0 4px; }
+    /* Награды внутри карточки сессии: не отдельные записи, а то, что
+       открылось в этот заход. */
+    .ev-awards { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .ev-aw {
+      display: inline-flex; align-items: center; gap: 7px;
+      border: 1px solid rgba(255, 201, 77, 0.3); background: rgba(255, 201, 77, 0.09);
+      color: var(--ink); font: inherit; font-size: 0.82rem;
+      border-radius: 999px; padding: 6px 12px 6px 9px; cursor: pointer;
+    }
+    .ev-aw i { font-style: normal; font-size: 0.95rem; }
     .post.ev { border-left: 2px solid var(--glass-line); }
     .post.ev .post-text { color: var(--muted); font-size: 0.92rem; }
     .post.ev-ach { border-left-color: var(--gold); }
