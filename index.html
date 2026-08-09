@@ -1506,6 +1506,26 @@
     }
     .wt-del:hover { opacity: .9; }
 
+    /* дни недели */
+    .wk-prof { display: flex; align-items: flex-end; gap: 6px; height: 96px; margin: 4px 0 10px; }
+    .wk-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+    .wk-bar { width: 100%; border-radius: 4px 4px 2px 2px; background: var(--glass-2); }
+    .wk-col.top .wk-bar { background: var(--gold); }
+    .wk-col b { font-size: 0.72rem; margin-top: 5px; font-variant-numeric: tabular-nums; }
+    .wk-col em { font-style: normal; font-size: 0.66rem; color: var(--dim); }
+    .wk-col.top em, .wk-col.top b { color: var(--gold); }
+    .wk-note { font-size: 0.78rem; color: var(--muted); margin: 0; }
+    .wk-note b { color: var(--ink); font-weight: 600; }
+
+    /* где застреваешь */
+    .stuck { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+    .stuck-row { display: flex; align-items: center; gap: 9px; font-size: 0.8rem; }
+    .stuck-row > b { min-width: 62px; font-weight: 600; }
+    .stuck-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+    .stuck-bar i { display: block; height: 100%; background: var(--gold-2); }
+    .stuck-v { min-width: 48px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .stuck-note { font-size: 0.72rem; color: var(--dim); margin: 10px 0 0; line-height: 1.5; }
+
     /* заголовок группы в Библиотеке: Книги / Музыка / Курсы */
     .lib-group {
       font-size: 12px;

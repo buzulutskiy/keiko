@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 63";
+const APP_VERSION = "Кэйко 64";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -32,6 +32,7 @@ const DIANA_BOOKS = [];
 const FIRM_AT = 3;
 const DONE_TITLES = ["Молодец!", "Красавчик!", "Есть!", "Сделано!"];
 const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+const DOW_FULL = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
 
 /* ── Состояние ── */
 let data = null;
@@ -3281,6 +3282,41 @@ function renderEmpty(title, text) {
 }
 
 
+/* ── Дни недели: в какие дни занятия случаются чаще ──
+   Считаем РАЗНЫЕ дни, а не записи: два хобби в один вторник — это один
+   вторник, а не два. */
+function weekProfileHTML() {
+  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
+    .filter((e) => !e.deleted);
+  if (all.length < 4) return "";
+
+  const days = Array.from({ length: 7 }, () => new Set());
+  for (const e of all) {
+    const dw = (fromStr(e.date).getDay() + 6) % 7;      // понедельник первый
+    days[dw].add(e.date);
+  }
+  const counts = days.map((s) => s.size);
+  const max = Math.max(...counts);
+  if (!max) return "";
+  const best = counts.indexOf(max);
+  const worst = counts.indexOf(Math.min(...counts));
+
+  return `
+    <div class="panel">
+      <div class="sum-head">Дни недели</div>
+      <div class="wk-prof">
+        ${counts.map((n, i) => `
+          <div class="wk-col ${i === best ? "top" : ""}">
+            <span class="wk-bar" style="height:${Math.max(6, Math.round(n / max * 100))}%"></span>
+            <b>${n}</b>
+            <em>${DOW[i]}</em>
+          </div>`).join("")}
+      </div>
+      <p class="wk-note">Чаще всего — <b>${DOW_FULL[best]}</b>${
+        counts[worst] === 0 ? `, ни разу — ${DOW_FULL[worst].toLowerCase()}` : ""}</p>
+    </div>`;
+}
+
 /* ── Суточные циклы: когда в течение дня ты обычно занимаешься ──
    Берём время создания записи: отмечаешь обычно сразу после занятия,
    так что это лучший доступный слепок реального ритма. */
@@ -3339,6 +3375,7 @@ function renderProgress() {
       ${summaryHTML()}
     </div>
 
+    ${weekProfileHTML()}
     ${dayCycleHTML()}
 
     <div class="panel">
@@ -5140,11 +5177,26 @@ function pracEntry(make) {
   const ds = todayStr();
   let e = data.piano.entries.find((x) => !x.deleted && x.date === ds && (x.pieceId || "bwv853") === piece().id);
   if (!e && make) {
-    e = { id: uid(), date: ds, pieceId: piece().id, spans: [], note: "занятие по плану",
-          createdAt: now(), updatedAt: now() };
+    e = { id: uid(), date: ds, pieceId: piece().id, spans: [], mins: 0, sessions: 0,
+          note: "занятие по плану", createdAt: now(), updatedAt: now() };
     data.piano.entries.push(e);
   }
   return e || null;
+}
+
+/* Минуты за день КОПЯТСЯ. Раньше запись перезаписывалась временем последнего
+   захода: позанимался час в три подхода — в истории осталось двадцать минут
+   от последнего. Дописываем только прирост с прошлой записи. */
+function pracCount() {
+  const e = pracEntry(true);
+  const cur = pracMin();
+  const add = Math.max(0, cur - (prac.counted || 0));
+  prac.counted = cur;
+  e.mins = Math.round((e.mins || 0) + add);
+  e.note = "занятие по плану · " + e.mins + " мин"
+    + (e.sessions > 1 ? " · " + e.sessions + " " + plural(e.sessions, "подход", "подхода", "подходов") : "");
+  e.updatedAt = now();
+  return e;
 }
 
 /* Каждый закрытый отрезок уходит в запись сразу. Раньше запись собиралась
@@ -5156,8 +5208,7 @@ function pracLog(u) {
   for (const h of hands) e.spans.push({ hand: h, from: u.from, to: u.to });
   /* Минуты пишем сразу, а не только по кнопке «Завершить»: экран гаснет,
      приложение уходит в фон, и до кнопки дело может не дойти. */
-  e.note = "занятие по плану · " + Math.round(pracMin()) + " мин";
-  e.updatedAt = now();
+  pracCount();
   saveData();
   schedulePush();
   return hands.length;                        // сколько отрезков дописали — на случай отмены
@@ -5165,22 +5216,19 @@ function pracLog(u) {
 
 /* Занятие само пишет обычную отметку. */
 function pracFinish() {
-  const mins = Math.round(pracMin());
   const closed = prac ? prac.closed.length : 0;
 
   /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
      за инструментом — это занятие, а не пустое место, и серию оно рвать
      не должно. */
   if (prac && prac.startedAt) {
-    const e = pracEntry(true);
-    e.note = "занятие по плану · " + mins + " мин";
-    e.updatedAt = now();
+    const e = pracCount();
     pracStore().session++;
     saveData();
     schedulePush();
     toast(closed
-      ? "Занятие записано: " + mins + " мин"
-      : "Занятие записано: " + mins + " мин, без закрытых отрезков");
+      ? "Занятие записано: " + e.mins + " мин за день"
+      : "Занятие записано: " + e.mins + " мин, без закрытых отрезков");
   }
   closePractice();
 }
@@ -5237,10 +5285,15 @@ function bindPractice() {
     }
 
     switch (b.dataset.prac) {
-      case "begin":
+      case "begin": {
         prac.startedAt = prac.startedAt || Date.now();
+        const e = pracEntry(true);
+        e.sessions = (e.sessions || 0) + 1;     // сколько раз садился за инструмент в этот день
+        prac.counted = 0;
         prac.queue = pracQueue();
+        saveData();
         return pracNext();
+      }
       case "ok": {
         const u = prac.cur;
         const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
@@ -6694,6 +6747,49 @@ function watchPageUI(v) {
       <button class="btn" data-wtdel="${esc(v.id)}" type="button" style="margin-top:10px">Убрать из библиотеки</button>
     </div>`;
 }
+/* Где застреваешь: сколько времени уходило на отрезки. Это единственное,
+   что измеряется само, без веры на слово, — потому по нему и судим. */
+function pracStuckHTML(pieceId) {
+  const st = (data.practice || {})[pieceId];
+  const log = (st && st.log) || [];
+  if (log.length < 5) return "";
+
+  const byBar = new Map();
+  for (const r of log) {
+    const [from, to] = String(r.b).split("-").map(Number);
+    for (let b = from; b <= to; b++) {
+      const cur = byBar.get(b) || { sec: 0, n: 0 };
+      cur.sec += r.sec / (to - from + 1);        // время делим на такты отрезка
+      cur.n++;
+      byBar.set(b, cur);
+    }
+  }
+  const rows = [...byBar.entries()]
+    .map(([bar, v]) => ({ bar, sec: Math.round(v.sec), n: v.n }))
+    .sort((a, b) => b.sec - a.sec)
+    .slice(0, 8);
+  if (!rows.length) return "";
+
+  const max = rows[0].sec || 1;
+  const total = Math.round([...byBar.values()].reduce((a, v) => a + v.sec, 0) / 60);
+  const mm = (sec) => sec >= 60 ? Math.round(sec / 60) + " мин" : sec + " с";
+
+  return `
+    <div class="freeze">
+      <div class="fz-head">⏱ <b>Где застреваешь</b> — сколько времени ушло на такт</div>
+      <div class="stuck">
+        ${rows.map((r) => `
+          <div class="stuck-row">
+            <b>такт ${r.bar}</b>
+            <span class="stuck-bar"><i style="width:${Math.round(r.sec / max * 100)}%"></i></span>
+            <span class="stuck-v">${mm(r.sec)}</span>
+          </div>`).join("")}
+      </div>
+      <p class="stuck-note">Всего за разбором — ${total} ${plural(total, "минута", "минуты", "минут")}.
+        Считается время от появления отрезка до «Получилось».</p>
+    </div>`;
+}
+
 // страница композиции — только чтение, всё собранное в одном месте
 function piecePageUI(pc) {
   const st  = withMaterial({ track: "piano", pieceId: pc.id }, pianoStats);
@@ -6737,6 +6833,8 @@ function piecePageUI(pc) {
         <div><span>Моментов о композиции</span><b>${thoughts}</b></div>
       </div>
     </div>
+
+    ${pracStuckHTML(pc.id)}
 
     <div class="freeze"><div class="fz-head">🎹 <b>Как считается</b> — такт считается выученным после ${FIRM_AT} проходов, поэтому процент строже, чем «задет»</div></div>`;
 }
