@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 74";
+const APP_VERSION = "Кэйко 75";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2087,6 +2087,17 @@ function stopWakeVideo() {
   } catch {}
 }
 
+/* Пока картинка едет, на её месте была дыра, а если не доезжала — значок
+   «не загрузилось». Вместо этого показываем тихую бегущую полосу и снимаем
+   её, как только картинка пришла или окончательно не пришла.
+   Слушаем на перехвате: load и error у картинок не всплывают. */
+document.addEventListener("load", (e) => {
+  if (e.target && e.target.tagName === "IMG") e.target.classList.add("img-on");
+}, true);
+document.addEventListener("error", (e) => {
+  if (e.target && e.target.tagName === "IMG") e.target.classList.add("img-off");
+}, true);
+
 // вернулись в приложение — блокировку экрана надо запросить заново
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
@@ -2444,7 +2455,7 @@ function coverOf(item) {
     const src = coverSrc(b.id, b.cover);
     if (src) return `
       <div class="cover photo" style="aspect-ratio:${esc(b.ratio || "3 / 4.4")}">
-        <img src="${esc(src)}" alt="${esc(b.title)}" width="465" height="720" decoding="async" fetchpriority="high">
+        <img src="${esc(src)}" alt="" width="465" height="720" decoding="async" fetchpriority="high">
       </div>`;
     return `
       <div class="cover book ${esc(b.tone || "sea")}">
@@ -2465,7 +2476,7 @@ function coverOf(item) {
     return `
       <div class="cover-fit">
         <div class="cover clip ${src ? "photo" : "watch"}">
-          ${src ? `<img src="${esc(src)}" alt="${esc(v.title)}" loading="lazy" decoding="async">` : `<div class="cv-mark">🎬</div>`}
+          ${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="cv-mark">🎬</div>`}
         </div>
       </div>`;
   }
@@ -2475,7 +2486,7 @@ function coverOf(item) {
     const csrc = coverSrc("pastel", c.cover || "");
     if (csrc) return `
       <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
-        <img src="${esc(csrc)}" alt="${esc(c.name)}" loading="lazy" decoding="async">
+        <img src="${esc(csrc)}" alt="" loading="lazy" decoding="async">
         <div class="cv-over">
           <div class="cv-author">${esc(c.author || "курс")}</div>
           <div class="cv-title">${esc(c.name)}</div>
@@ -2495,7 +2506,7 @@ function coverOf(item) {
   const psrc = coverSrc(p.id, p.cover);
   if (psrc) return `
     <div class="cover photo" style="aspect-ratio:${esc(p.ratio || "3 / 4.4")}">
-      <img src="${esc(psrc)}" alt="${esc(p.name)}" width="509" height="720" decoding="async" fetchpriority="high">
+      <img src="${esc(psrc)}" alt="" width="509" height="720" decoding="async" fetchpriority="high">
     </div>`;
   return `
     <div class="cover piano ${esc(p.tone || "violet")}">
@@ -3729,7 +3740,7 @@ function takesBlockHTML(view) {
       if (!url) takePull(t.id);
       return `
         <figure class="tk-shot" ${url ? `data-shot="${esc(t.id)}"` : ""}>
-          ${url ? `<img src="${esc(url)}" alt="${esc(fmt.format(new Date(t.at)))}" loading="lazy" decoding="async">`
+          ${url ? `<img src="${esc(url)}" alt="" loading="lazy" decoding="async">`
                 : `<div class="tk-wait">качается…</div>`}
           <figcaption>${esc(fmt.format(new Date(t.at)).replace(" г.", ""))}</figcaption>
         </figure>`;
@@ -4416,19 +4427,45 @@ function renderWishes() {
    карточка знания открылась во втором заходе того же дня. Достаём по времени
    получения — оно записано у каждой награды и каждой карточки. Единица
    означает «получено давно, время неизвестно» и в счёт не идёт. */
+/* Времени получения у старого нет: его начали записывать поздно, и всё, что
+   открылось раньше, помечено единицей — «когда-то». По одному времени карточки
+   в ленте так и не появлялись. Поэтому день считаем ещё и разницей: подставляем
+   записи по этот день и по предыдущий и смотрим, что прибавилось. Это не
+   выдумка — условие открытия у награды и карточки жёсткое и целиком считается
+   из записей, так что день выходит настоящий. */
 function dayProgress(track, key, day) {
   const view = { track,
     pieceId: track === "piano" ? key : null,
     bookId: track === "book" ? key : null,
     videoId: track === "watch" ? key : null };
   if (!viewMaterialExists(view)) return { ach: [], facts: [] };
+
+  /* Урезаем все треки сразу: серия и часть наград считаются по занятиям
+     вообще, а не только по этому материалу. */
+  const stores = [data.piano, data.book, data.pastel, data.watch];
+  const snapshot = (upto) => {
+    const save = stores.map(s => s.entries);
+    stores.forEach(s => { s.entries = s.entries.filter(e => e.date <= upto); });
+    try {
+      return withMaterial(view, () => ({
+        ach: achState().filter(a => a.done),
+        facts: factsState().filter(f => f.open)
+      }));
+    } finally { stores.forEach((s, i) => { s.entries = save[i]; }); }
+  };
+
+  const after = snapshot(day);
+  const before = snapshot(dateStr(new Date(fromStr(day).getTime() - 864e5)));
+  const hadAch = new Set(before.ach.map(a => a.id));
+  const hadFacts = new Set(before.facts.map(f => f.id));
   const sameDay = (at) => at > 1 && dateStr(new Date(at)) === day;
-  return withMaterial(view, () => ({
-    ach: achState().filter(a => a.done && sameDay((data.achAt || {})[key + ":" + a.id]))
+
+  return {
+    ach: after.ach.filter(a => !hadAch.has(a.id) || sameDay((data.achAt || {})[key + ":" + a.id]))
       .map(a => ({ id: a.id, icon: a.icon, name: a.name })),
-    facts: factsState().filter(f => f.open && sameDay((data.factAt || {})[key + ":" + f.id]))
+    facts: after.facts.filter(f => !hadFacts.has(f.id) || sameDay((data.factAt || {})[key + ":" + f.id]))
       .map(f => ({ id: f.id, t: f.t }))
-  }));
+  };
 }
 
 function renderNotes() {
@@ -6262,7 +6299,7 @@ function shelfCoverHTML(a) {
   if (!ownSrc && a.track === "watch") ownSrc = watchThumb(videos().find(v => v.id === a.videoId) || {});
   if (ownSrc) return `
     <div class="cover photo shelf-cover" style="aspect-ratio:${esc(own.ratio || "3 / 4.4")}">
-      <img src="${esc(ownSrc)}" alt="${esc(a.title)}" loading="lazy" decoding="async">
+      <img src="${esc(ownSrc)}" alt="" loading="lazy" decoding="async">
     </div>`;
   const cls = a.track === "book" ? `book ${a.tone || "sea"}`
     : a.track === "pastel" ? "pastel"

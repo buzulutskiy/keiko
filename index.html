@@ -1587,6 +1587,32 @@
       margin: 18px 2px 8px;
     }
     .lib-group:first-child { margin-top: 4px; }
+
+    /* ── Пока картинка едет ──
+       Обложки приезжают из гиста по одной, и на медленной связи это заметно.
+       Раньше на их месте была дыра, а у недоехавших — значок «не загрузилось».
+       Теперь по месту картинки идёт тихая полоса; приехала — полоса гаснет. */
+    @keyframes imgWait {
+      from { background-position: 190% 0; }
+      to   { background-position: -90% 0; }
+    }
+    /* Без #view в основании: иначе снять полосу классом уже не выйдет —
+       идентификатор перевесит и она останется крутиться на приехавшей. */
+    .app img, .sheet img {
+      background-color: var(--glass);
+      background-image: linear-gradient(100deg,
+        transparent 26%, var(--glass-2) 44%, var(--glass-hi) 50%, var(--glass-2) 56%, transparent 74%);
+      background-size: 220% 100%;
+      background-repeat: no-repeat;
+      animation: imgWait 1.2s linear infinite;
+    }
+    .app img.img-on, .sheet img.img-on { background: none; animation: none; }
+    /* Не приехала — остаётся ровная подложка, без дёргающейся полосы
+       и без значка: alt у обложек пустой, рисовать нечего. */
+    .app img.img-off, .sheet img.img-off { background-image: none; animation: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .app img, .sheet img { animation: none; }
+    }
     .lib-tools { display: flex; gap: 8px; margin-bottom: 4px; }
     .lib-tools .btn { flex: 1; min-width: 0; }
     #libMap { color: var(--gold); border-color: rgba(255, 201, 77, 0.3); }
