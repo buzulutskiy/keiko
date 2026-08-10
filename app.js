@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 86";
+const APP_VERSION = "Кэйко 87";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3358,13 +3358,81 @@ function lineChartHTML(points) {
 }
 
 // шапка «Прогресс»: неделя или месяц целиком
+/* ── Сколько уже накопилось ──
+   Всё остальное на этом экране отвечает про период: неделя, месяц, темп.
+   Здесь — итог за всё время. Единственные числа в приложении, которые не
+   могут уменьшиться: плохой месяц их не отнимет, отпуск не обнулит. Смотреть
+   на них можно в любом настроении. */
+function totalHTML() {
+  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
+    .filter((e) => !e.deleted);
+  if (!all.length) return "";
+
+  const dates = [...new Set(all.map((e) => e.date))].sort();
+  const days = dates.length;
+  const since = dates[0];
+
+  // страницы: и то, что читается сейчас, и то, что уже уехало на полку
+  let pages = 0;
+  for (const b of (data.book.books || [])) pages += Math.min(b.pages || 0, bookCovered(b));
+  for (const a of (data.archive || []).filter((x) => !x.deleted && x.track === "book")) pages += a.pages || 0;
+
+  const mins = data.piano.entries.filter((e) => !e.deleted).reduce((n, e) => n + (e.mins || 0), 0)
+    + data.pastel.entries.filter((e) => !e.deleted).reduce((n, e) => n + (e.mins || 0), 0);
+  const hours = Math.floor(mins / 60);
+
+  let bars = 0;
+  for (const pc of (data.piano.pieces || [])) {
+    const set = new Set();
+    for (const e of pieceEntriesOf(pc.id))
+      for (const sp of e.spans || []) for (let i = sp.from; i <= sp.to; i++) set.add(i);
+    bars += set.size;
+  }
+
+  const lessons = new Set(data.pastel.entries.filter((e) => !e.deleted)
+    .flatMap((e) => (e.lessons || []).map((i) => (e.courseId || "c") + ":" + i))).size;
+  const shelf = (data.archive || []).filter((x) => !x.deleted).length;
+  const awards = Object.keys(data.achAt || {}).length;
+  const facts = Object.keys(data.factAt || {}).length;
+  const thoughts = (data.thoughts || []).filter((t) => !t.deleted && !t.event).length;
+  const watched = (data.watch.videos || []).filter((v) => v.done).length;
+
+  const tiles = [
+    [pages, "страниц прочитано", pages],
+    [hours ? hours : mins, hours ? plural(hours, "час занятий", "часа занятий", "часов занятий") : "минут занятий", mins],
+    [bars, plural(bars, "такт разобран", "такта разобрано", "тактов разобрано"), bars],
+    [lessons, plural(lessons, "урок пройден", "урока пройдено", "уроков пройдено"), lessons],
+    [watched, plural(watched, "ролик досмотрен", "ролика досмотрено", "роликов досмотрено"), watched],
+    [shelf, plural(shelf, "материал завершён", "материала завершено", "материалов завершено"), shelf],
+    [awards, plural(awards, "награда", "награды", "наград"), awards],
+    [facts, plural(facts, "карточка знаний", "карточки знаний", "карточек знаний"), facts],
+    [thoughts, plural(thoughts, "момент записан", "момента записано", "моментов записано"), thoughts]
+  ].filter((t) => t[2] > 0);
+
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
+  const nice = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
+  return `
+    <div class="panel tot-panel">
+      <h3 class="blk-head">Сколько уже накопилось</h3>
+      <div class="tot-top">
+        <b>${nice(days)}</b>
+        <span>${plural(days, "день занятий", "дня занятий", "дней занятий")}<em>с ${esc(fmt.format(fromStr(since)).replace(" г.", ""))}</em></span>
+      </div>
+      <div class="tot-grid">
+        ${tiles.map(([v, name]) => `
+          <div class="tot-cell"><b>${nice(v)}</b><span>${esc(name)}</span></div>`).join("")}
+      </div>
+    </div>`;
+}
+
 /* ── Когда закончу ──
    Процент говорит, где ты сейчас, но не говорит, дойдёшь ли вообще. Темп
    берём за последние четыре недели — по нему и считаем, сколько осталось.
    Ничего не обещаем: если за месяц не сдвинулось, так и пишем. */
 const FORECAST_WINDOW = 28;
 
-function forecastOf(view, done, total) {
+function forecastOf(view, done, total, started) {
   if (!total || done >= total) return null;
   const from = dateStr(new Date(now() - FORECAST_WINDOW * 864e5));
   const before = withMaterial(view, () => progressAt(from));
@@ -3374,7 +3442,13 @@ function forecastOf(view, done, total) {
   const daysLeft = Math.ceil((total - done) / perDay);
   if (daysLeft > 900) return { stuck: true };
   const when = new Date(now() + daysLeft * 864e5);
-  return { daysLeft, when, perWeek: perDay * 7 };
+
+  /* Полоса считает дни, а не материал. Процент пройденного обманывает: первые
+     такты даются быстро, последние тянутся, и полоска врёт про то, много ли
+     осталось. Дни не врут — от первой отметки до предполагаемого конца. */
+  const gone = started ? daysBetween(started, todayStr()) + 1 : 0;
+  const span = gone + daysLeft;
+  return { daysLeft, when, gone, span, pct: span ? Math.round(gone / span * 100) : 0 };
 }
 
 /* Сколько было пройдено к этой дате — по тем же правилам, что и «сейчас». */
@@ -3404,23 +3478,31 @@ function forecastHTML() {
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
   const rows = [];
 
+  const startOf = (list) => {
+    const ds = list.filter((e) => !e.deleted).map((e) => e.date).sort();
+    return ds[0] || "";
+  };
+
   for (const b of (data.book.books || []).filter((x) => !x.archived)) {
     const view = { track: "book", bookId: b.id };
     const done = withMaterial(view, bookProgress);
-    rows.push({ icon: "📖", title: b.title, unit: "стр.", done, total: b.pages,
-                f: forecastOf(view, done, b.pages) });
+    const from = startOf(bookEntriesOf(b.id));
+    rows.push({ icon: "📖", title: b.title, unit: "стр.", done, total: b.pages, from,
+                f: forecastOf(view, done, b.pages, from) });
   }
   for (const pc of (data.piano.pieces || []).filter((x) => !x.archived)) {
     const view = { track: "piano", pieceId: pc.id };
     const done = withMaterial(view, () => progressAt(todayStr()));
-    rows.push({ icon: "🎹", title: pc.name, unit: "тактов-рук", done, total: pc.bars * 2,
-                f: forecastOf(view, done, pc.bars * 2) });
+    const from = startOf(pieceEntriesOf(pc.id));
+    rows.push({ icon: "🎹", title: pc.name, unit: "тактов-рук", done, total: pc.bars * 2, from,
+                f: forecastOf(view, done, pc.bars * 2, from) });
   }
   if (course().lessons.length) {
     const view = { track: "pastel" };
     const done = withMaterial(view, () => progressAt(todayStr()));
-    rows.push({ icon: "🎨", title: course().name, unit: "уроков", done, total: course().lessons.length,
-                f: forecastOf(view, done, course().lessons.length) });
+    const from = startOf(courseTrack().entries);
+    rows.push({ icon: "🎨", title: course().name, unit: "уроков", done, total: course().lessons.length, from,
+                f: forecastOf(view, done, course().lessons.length, from) });
   }
 
   const live = rows.filter((x) => x.f);
@@ -3431,24 +3513,29 @@ function forecastHTML() {
       <h3 class="blk-head">Когда закончу</h3>
       <div class="fc-list">
         ${live.map((x) => {
-          const pct = Math.round(x.done / x.total * 100);
-          const line = x.f.stuck
+          const stuck = x.f.stuck;
+          // застряло — дней до конца нет, показываем то единственное, что известно
+          const pct = stuck ? Math.round(x.done / x.total * 100) : x.f.pct;
+          const line = stuck
             ? "за месяц не сдвинулось"
             : x.f.daysLeft <= 1 ? "остался последний рывок"
             : `${fmt.format(x.f.when)} · через ${x.f.daysLeft} ${plural(x.f.daysLeft, "день", "дня", "дней")}`;
+          const meta = stuck
+            ? `${x.done} из ${x.total} ${esc(x.unit)}`
+            : `${x.done} из ${x.total} ${esc(x.unit)} · идёт ${x.f.gone}-й день из ${x.f.span}`;
           return `
-            <div class="fc-row${x.f.stuck ? " cold" : ""}">
+            <div class="fc-row${stuck ? " cold" : ""}">
               <span class="fc-ic">${x.icon}</span>
               <span class="fc-body">
                 <b>${esc(x.title)}</b>
                 <span class="fc-when">${esc(line)}</span>
                 <span class="fc-bar"><i style="width:${pct}%"></i></span>
-                <span class="fc-meta">${x.done} из ${x.total} ${esc(x.unit)} · ${pct}%</span>
+                <span class="fc-meta">${meta}</span>
               </span>
             </div>`;
         }).join("")}
       </div>
-      <p class="fc-note">Считается по темпу последних четырёх недель. Ускоришься — срок сам поедет назад.</p>
+      <p class="fc-note">Полоса — это дни: от первой отметки до предполагаемого конца. Срок считается по темпу последних четырёх недель, ускоришься — он поедет назад.</p>
     </div>`;
 }
 
@@ -3703,6 +3790,7 @@ function renderProgress() {
       ${summaryHTML()}
     </div>
 
+    ${totalHTML()}
     ${forecastHTML()}
     ${splitHTML()}
     ${weekProfileHTML()}
@@ -4664,6 +4752,141 @@ function gutCheer() {
   requestAnimationFrame(step);
 }
 
+/* ── Спрятанная игра ──
+   Зажал большую кнопку — полетел. Ни на что в приложении не влияет и никуда
+   не записывается, кроме собственного рекорда: это шутка, а не ещё один
+   повод себя мерить. */
+const GUT_BEST = () => "keiko-gut-best" + suffix();
+
+function gutGame() {
+  if (document.getElementById("gutGame")) return;
+  try { if (navigator.vibrate) navigator.vibrate(12); } catch {}
+
+  const box = document.createElement("div");
+  box.id = "gutGame";
+  box.innerHTML = `
+    <canvas></canvas>
+    <button class="gg-close" type="button" aria-label="Закрыть">✕</button>`;
+  document.body.appendChild(box);
+  document.body.classList.add("gg-on");
+
+  const cv = box.querySelector("canvas");
+  const ctx = cv.getContext("2d");
+  let W = 0, H = 0, dpr = Math.min(2, devicePixelRatio || 1);
+  const size = () => {
+    W = box.clientWidth; H = box.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  size();
+  addEventListener("resize", size);
+
+  let best = 0;
+  try { best = Number(localStorage.getItem(GUT_BEST())) || 0; } catch {}
+
+  const GAP = () => Math.max(140, H * 0.26);
+  const PIPE_W = 62, SPEED = 2.4, GRAV = 0.42, FLAP = -7.4;
+  let y, vy, pipes, score, state, tick;
+
+  const reset = () => {
+    y = H * 0.4; vy = 0; pipes = []; score = 0; state = "ready"; tick = 0;
+  };
+  reset();
+
+  const addPipe = () => {
+    const gap = GAP();
+    const top = 60 + Math.random() * Math.max(30, H - gap - 170);
+    pipes.push({ x: W + PIPE_W, top, gap, passed: false });
+  };
+
+  const flap = () => {
+    if (state === "over") { reset(); return; }
+    if (state === "ready") { state = "play"; addPipe(); }
+    vy = FLAP;
+  };
+
+  const die = () => {
+    state = "over";
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem(GUT_BEST(), String(best)); } catch {}
+    }
+    try { if (navigator.vibrate) navigator.vibrate([40, 60, 40]); } catch {}
+  };
+
+  const draw = () => {
+    ctx.clearRect(0, 0, W, H);
+
+    // трубы
+    for (const p of pipes) {
+      ctx.fillStyle = "rgba(139, 124, 246, 0.75)";
+      const r = 10;
+      const bar = (x, yy, w, h) => {
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(x, yy, w, h, r) : ctx.rect(x, yy, w, h);
+        ctx.fill();
+      };
+      bar(p.x, -r, PIPE_W, p.top + r);
+      bar(p.x, p.top + p.gap, PIPE_W, H - p.top - p.gap + r);
+    }
+
+    // герой
+    ctx.save();
+    ctx.translate(W * 0.28, y);
+    ctx.rotate(Math.max(-0.5, Math.min(1.1, vy / 12)));
+    ctx.font = "38px system-ui, apple color emoji, segoe ui emoji";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("💩", 0, 0);
+    ctx.restore();
+
+    // счёт
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "800 44px system-ui, -apple-system, sans-serif";
+    ctx.fillText(String(score), W / 2, 54);
+
+    ctx.font = "600 14px system-ui, -apple-system, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    if (state === "ready") ctx.fillText("Жми, чтобы лететь", W / 2, H * 0.62);
+    if (state === "over") {
+      ctx.fillText("Рекорд: " + best, W / 2, H * 0.58);
+      ctx.fillText("Жми, чтобы начать заново", W / 2, H * 0.62);
+    }
+  };
+
+  const step = () => {
+    if (!box.isConnected) return;
+    if (state === "play") {
+      tick++;
+      vy += GRAV; y += vy;
+      if (tick % 96 === 0) addPipe();
+      for (const p of pipes) p.x -= SPEED;
+      pipes = pipes.filter((p) => p.x + PIPE_W > -10);
+
+      const hx = W * 0.28, rad = 17;
+      for (const p of pipes) {
+        if (!p.passed && p.x + PIPE_W < hx - rad) { p.passed = true; score++; }
+        const overX = hx + rad > p.x && hx - rad < p.x + PIPE_W;
+        if (overX && (y - rad < p.top || y + rad > p.top + p.gap)) die();
+      }
+      if (y > H - rad || y < rad) die();
+    }
+    draw();
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+
+  const tap = (e) => { e.preventDefault(); flap(); };
+  cv.addEventListener("pointerdown", tap);
+  const close = () => {
+    removeEventListener("resize", size);
+    box.remove();
+    document.body.classList.remove("gg-on");
+  };
+  box.querySelector(".gg-close").addEventListener("click", close);
+}
+
 function renderGut() {
   const list = gutList();
   const t = new Date();
@@ -4731,7 +4954,17 @@ function renderGut() {
           </span>`).join("")}
       </div>` : ""}`;
 
-  $("#gutGo").addEventListener("click", gutAdd);
+  /* Обычное касание — отметка, долгое — игра. Спрятанное развлечение:
+     кнопке от этого ничего не делается, а находка приятная. */
+  const go = $("#gutGo");
+  let holdT = 0, held = false;
+  const hold = () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { held = true; gutGame(); }, 620); };
+  const drop = () => clearTimeout(holdT);
+  go.addEventListener("pointerdown", hold);
+  go.addEventListener("pointerup", drop);
+  go.addEventListener("pointercancel", drop);
+  go.addEventListener("pointerleave", drop);
+  go.addEventListener("click", () => { if (held) { held = false; return; } gutAdd(); });
   document.querySelectorAll("[data-gutdrop]").forEach((b) =>
     b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
 }

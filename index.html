@@ -1611,6 +1611,30 @@
     .post.ev-done { border-left-color: #6ee7a8; }
     .post.ev-session { border-left-color: var(--violet); }
 
+    /* ── Сколько уже накопилось ── */
+    .tot-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
+    .tot-top b {
+      font-size: 2.6rem; font-weight: 850; line-height: 0.9; letter-spacing: -0.04em;
+      background: linear-gradient(160deg, var(--gold-2), var(--gold));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .tot-top span { font-size: 0.86rem; font-weight: 700; line-height: 1.25; }
+    .tot-top em { display: block; font-style: normal; font-size: 0.72rem; font-weight: 400; color: var(--dim); margin-top: 2px; }
+
+    .tot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+    .tot-cell {
+      background: var(--glass); border: 1px solid var(--glass-line);
+      border-radius: 12px; padding: 11px 8px; text-align: center; min-width: 0;
+    }
+    .tot-cell b {
+      display: block; font-size: 1.15rem; font-weight: 800; line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+    .tot-cell span {
+      display: block; font-size: 0.63rem; color: var(--dim);
+      margin-top: 4px; line-height: 1.25;
+    }
+
     /* ── Когда закончу ── */
     .blk-head { margin: 0 0 12px; font-size: 0.92rem; font-weight: 800; }
     .fc-list { display: grid; gap: 14px; }
@@ -1961,6 +1985,21 @@
       font-size: 0.78rem; font-variant-numeric: tabular-nums;
     }
     .gut-chip button { color: var(--dim); font-size: 0.8rem; line-height: 1; padding: 0 2px; }
+
+    /* Спрятанная игра: зажал большую кнопку — полетел. */
+    body.gg-on { overflow: hidden; }
+    #gutGame {
+      position: fixed; inset: 0; z-index: 95;
+      background: radial-gradient(120% 80% at 50% 0%, #1b1430, var(--bg));
+      touch-action: none; overscroll-behavior: contain;
+    }
+    #gutGame canvas { display: block; width: 100%; height: 100%; }
+    .gg-close {
+      position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px;
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--glass-2); border: 1px solid var(--glass-line);
+      color: var(--ink); font-size: 1rem; line-height: 1;
+    }
 
     /* ══════════ Шторка отметки ══════════ */
     .sheet-bg {
