@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 84";
+const APP_VERSION = "Кэйко 85";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -143,6 +143,7 @@ function emptyData() {
     shop: { theme: "dusk" },   // только оформление: покупать давно нечего
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
+    gut: [],       // отметки самочувствия — только в том профиле, где включено
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
@@ -225,6 +226,7 @@ function migrate(obj) {
      одной синхронизации со старым устройством, чтобы они вернулись. */
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
   if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
+  if (Array.isArray(obj.gut)) base.gut = obj.gut;
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
@@ -1342,7 +1344,7 @@ function crashScreen(e) {
 const dataStamp = () => [
   data.piano.entries, data.book.entries, data.pastel.entries, watchEntries(),
   data.thoughts || [], data.archive || [], data.freezes || [], data.takes || [],
-  data.wishes || []
+  data.wishes || [], data.gut || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
   + "|" + (data.shop.theme || "");
 // выбранный материал в снимок не входит: он меняется от свайпа и уже показан на экране —
@@ -1397,6 +1399,8 @@ function renderInner() {
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
     else if (tab === "wish") renderWishes();
+    // профиль сменили — вкладки уже нет, уводим на главную
+    else if (tab === "gut") { if (gutOn()) renderGut(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
     else renderAch();
   } catch (e) {
     console.error("вкладка " + (settingsOpen ? "настройки" : tab) + ":", e);
@@ -1448,7 +1452,8 @@ function renderTabbar() {
        видно в «Моментах», внутри той сессии, где они открылись, а полку
        и карту знаний перенесли в Библиотеку. Экран остался — просто без
        постоянной кнопки. */
-    ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}`]
+    ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}`],
+    ...(gutOn() ? [["gut", "💩", "Какуля"]] : [])
   ].map(([id, ic, nm]) =>
     `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
   syncTabHeight();
@@ -4407,6 +4412,161 @@ function wishDrop(id) {
   if (!w) return;
   w.deleted = true; w.updatedAt = now();
   saveData(); schedulePush(); renderWishes();
+}
+
+/* ══════════ «Какуля» — опыт для одного профиля ══════════
+   Тем, у кого с этим бывает трудно, важно видеть не отдельный случай, а ход
+   дела за месяц: когда было в прошлый раз и не затянулось ли. Отметка — одно
+   касание, без подробностей и оценок: спрашивать больше значит превращать
+   это в анкету, а анкету бросают. Другим профилям вкладки нет вовсе. */
+const gutOn = () => {
+  const p = profile();
+  return /diana|диан/i.test(String(p.id || "") + " " + String(p.name || ""));
+};
+const gutList = () => (data.gut || []).filter((g) => !g.deleted)
+  .sort((a, b) => (b.at || 0) - (a.at || 0));
+
+function gutAdd() {
+  data.gut = data.gut || [];
+  const t = now();
+  data.gut.push({ id: uid(), at: t, date: todayStr(), createdAt: t, updatedAt: t });
+  saveData();
+  schedulePush();
+  // короткий отклик в палец: подтверждение, которое чувствуешь, а не читаешь
+  try { if (navigator.vibrate) navigator.vibrate([18, 40, 26]); } catch {}
+  gutCheer();
+  renderGut();
+}
+
+function gutDrop(id) {
+  const g = (data.gut || []).find((x) => x.id === id);
+  if (!g) return;
+  g.deleted = true; g.updatedAt = now();
+  saveData(); schedulePush(); renderGut();
+}
+
+/* Фейерверк. Рисуем на канве поверх всего: это праздник на секунду,
+   в разметке ему делать нечего. */
+function gutCheer() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cv = document.createElement("canvas");
+  cv.className = "gut-fx";
+  const w = innerWidth, h = innerHeight, dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  document.body.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  const colors = ["#ffc94d", "#8b7cf6", "#6ee7a8", "#ff8fb8", "#7fd7e8"];
+  const parts = [];
+  const burst = (x, y) => {
+    for (let i = 0; i < 34; i++) {
+      const a = (Math.PI * 2 * i) / 34 + Math.random() * 0.2;
+      const v = 2.6 + Math.random() * 3.4;
+      parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+                   c: colors[(Math.random() * colors.length) | 0], life: 1, r: 1.6 + Math.random() * 2.2 });
+    }
+  };
+  burst(w / 2, h * 0.42);
+  setTimeout(() => burst(w * 0.26, h * 0.34), 160);
+  setTimeout(() => burst(w * 0.74, h * 0.36), 300);
+
+  /* Если экран погас или приложение ушло в фон, кадры перестают приходить,
+     и канва осталась бы висеть до возвращения. Убираем её по часам. */
+  const bail = setTimeout(() => cv.remove(), 3200);
+  const t0 = performance.now();
+  const step = (t) => {
+    const dt = Math.min(0.05, (t - (step.last || t0)) / 1000); step.last = t;
+    ctx.clearRect(0, 0, w, h);
+    let alive = 0;
+    for (const p of parts) {
+      if (p.life <= 0) continue;
+      alive++;
+      p.vy += 9 * dt;                       // притяжение: искры оседают, а не улетают
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.985; p.vy *= 0.985;
+      p.life -= dt * 0.85;
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.c;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.29); ctx.fill();
+    }
+    if (alive && t - t0 < 2600) requestAnimationFrame(step);
+    else { clearTimeout(bail); cv.remove(); }
+  };
+  requestAnimationFrame(step);
+}
+
+function renderGut() {
+  const list = gutList();
+  const t = new Date();
+  const monFirst = (d) => (d.getDay() + 6) % 7;          // неделя с понедельника
+  const weekFrom = new Date(t); weekFrom.setDate(t.getDate() - monFirst(t)); weekFrom.setHours(0, 0, 0, 0);
+  const monthFrom = new Date(t.getFullYear(), t.getMonth(), 1);
+
+  const week = list.filter((g) => g.at >= weekFrom.getTime()).length;
+  const month = list.filter((g) => g.at >= monthFrom.getTime()).length;
+  const last = list[0];
+
+  const ago = (ms) => {
+    const h = Math.floor((now() - ms) / 3600e3);
+    if (h < 1) return "только что";
+    if (h < 24) return h + " " + plural(h, "час", "часа", "часов") + " назад";
+    const d = Math.floor(h / 24);
+    return d + " " + plural(d, "день", "дня", "дней") + " назад";
+  };
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const dayFmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
+
+  // месяц сеткой: чем чаще в этот день, тем плотнее пятно
+  const days = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  const byDay = {};
+  for (const g of list) if (g.date) byDay[g.date] = (byDay[g.date] || 0) + 1;
+  const pad = monFirst(monthFrom);
+  const cells = Array.from({ length: pad }, () => `<i class="gc-pad"></i>`).concat(
+    Array.from({ length: days }, (_, i) => {
+      const ds = dateStr(new Date(t.getFullYear(), t.getMonth(), i + 1));
+      const n = byDay[ds] || 0;
+      const future = ds > todayStr();
+      return `<i class="gc-day${n ? " on" : ""}${future ? " fut" : ""}${ds === todayStr() ? " now" : ""}"
+        style="${n ? `--k:${Math.min(1, 0.35 + n * 0.3)}` : ""}" title="${esc(ds)}">${i + 1}</i>`;
+    })).join("");
+
+  const today = list.filter((g) => g.date === todayStr());
+
+  $("#view").innerHTML = `
+    <div class="gut-hero">
+      <button class="gut-btn" id="gutGo" type="button" aria-label="Отметить">💩</button>
+      <p class="gut-hint">Получилось — жми. Больше ничего заполнять не надо.</p>
+    </div>
+
+    <div class="gut-sum">
+      <div class="gut-card">
+        <b>${last ? ago(last.at) : "—"}</b>
+        <em>${last ? dayFmt.format(new Date(last.at)) + ", " + clock.format(new Date(last.at)) : "пока пусто"}</em>
+      </div>
+      <div class="gut-card"><b>${week}</b><em>на этой неделе</em></div>
+      <div class="gut-card"><b>${month}</b><em>в этом месяце</em></div>
+    </div>
+
+    <div class="lib-group">${esc(new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" }).format(t).replace(" г.", ""))}</div>
+    <div class="gut-cal">
+      ${["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((d) => `<i class="gc-h">${d}</i>`).join("")}
+      ${cells}
+    </div>
+
+    ${today.length ? `
+      <div class="lib-group">Сегодня · ${today.length}</div>
+      <div class="gut-today">
+        ${today.map((g) => `
+          <span class="gut-chip">${clock.format(new Date(g.at))}
+            <button data-gutdrop="${g.id}" type="button" aria-label="Убрать">✕</button>
+          </span>`).join("")}
+      </div>` : ""}`;
+
+  $("#gutGo").addEventListener("click", gutAdd);
+  document.querySelectorAll("[data-gutdrop]").forEach((b) =>
+    b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
 }
 
 function renderWishes() {
@@ -7513,6 +7673,7 @@ function restoreBackup(file) {
     data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
     data.wishes = mergeLists(data.wishes || [], d.wishes || []);
+    data.gut = mergeLists(data.gut || [], d.gut || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
     data.freezes = mergeLists(data.freezes || [], d.freezes || []);
 
@@ -8283,6 +8444,7 @@ async function restoreArchive(file) {
   data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
   data.wishes = mergeLists(data.wishes || [], d.wishes || []);
+  data.gut = mergeLists(data.gut || [], d.gut || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.freezes = mergeLists(data.freezes || [], d.freezes || []);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -8570,7 +8732,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -8628,6 +8790,7 @@ async function syncNow(manual) {
     data.freezes = mergeLists(data.freezes, remote.freezes);
     data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
     data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
+    data.gut = mergeLists(data.gut || [], remote.gut || []);
     if (remote.shop) {
       if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
         if (remote.shop.theme) data.shop.theme = remote.shop.theme;
@@ -8699,7 +8862,7 @@ function boot() {
   load();
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
-  if (["home", "progress", "ach", "notes", "wish"].includes(cfg.tab)) tab = cfg.tab;
+  if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
   applyTheme(data.shop.theme);
   if (["week", "month"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
