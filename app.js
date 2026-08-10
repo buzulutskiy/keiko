@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 78";
+const APP_VERSION = "Кэйко 79";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -255,7 +255,22 @@ function load() {
   try { eventsReset(); } catch {}      // разовая чистка выдуманных событий
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
 }
-const saveData = () => localStorage.setItem(LS.data, JSON.stringify(data));
+/* Отметка обязана пережить что угодно, поэтому запись на устройство
+   перечитывается: место в хранилище кончается молча, и «сохранённое» могло
+   не дожить до перезапуска. Сеть тут ни при чём — гист получит своё позже,
+   а на устройстве всё уже лежит. */
+function saveData() {
+  const txt = JSON.stringify(data);
+  try {
+    localStorage.setItem(LS.data, txt);
+    if (localStorage.getItem(LS.data) !== txt) throw new Error("запись не перечиталась");
+    return true;
+  } catch (e) {
+    console.error("сохранение:", e);
+    toast("Не сохранилось на устройстве — кончилось место");
+    return false;
+  }
+}
 const saveCfg = () => localStorage.setItem(LS.cfg, JSON.stringify(cfg));
 
 /* ── Выборки ── */
@@ -1016,6 +1031,15 @@ function diagLine() {
 function saveEntry() {
   if (!gistReady()) { closeSheet(); openSettingsSheet(); return; }
   const existing = entryFor(selectedDate);
+  const note0 = ($("#noteInput") && $("#noteInput").value.trim()) || "";
+
+  /* Отметка, которая ничего не прибавляет, раньше всё равно записывалась:
+     день засчитывался, за серию прилетала награда — а прогресс не двигался,
+     и выходило «молодец» неизвестно за что. Теперь говорим прямо. */
+  if (isBook() && bookMode(book()) !== "parts" && !note0 && pickPage <= bookProgress()) {
+    toast("Страница та же — прибавить нечего");
+    return;
+  }
   const beforeDone = new Set(achState().filter(a => a.done).map(a => a.id));
   const beforeFacts = new Set(factsState().filter(f => f.open).map(f => f.id));
   const before = curStats();
@@ -1209,6 +1233,12 @@ function switchTrack(which) {
 
 function syncPickers() {
   if (!hasMaterials()) return;
+  /* Пока открыт лист отметки — не трогаем набранное. Синхронизация приходит
+     в любой момент, в том числе посреди возни со степпером, и раньше она
+     сбрасывала страницу обратно к прочитанному. Со стороны это выглядело так,
+     что «Подтвердить» ничего не записало: день отмечался, награда за серию
+     выпадала, а прогресс стоял на месте. */
+  if (sheetMode === "log" && sheetOpen()) return;
   if (isBook()) pickPage = bookProgress();
   else if (isPiano() && piece()) {
     const bars = piece().bars;
@@ -6907,15 +6937,24 @@ function bookSheetUI() {
 
 function bindBookSheet() {
   const pages = book().pages;
+  /* Ниже уже прочитанного не спускаемся: «дочитал до страницы раньше той,
+     где остановился» — это не отметка, а промах по кнопке. Раньше такой
+     промах создавал запись, которая в прогрессе не отражалась никак. */
+  const floor = bookProgress();
   document.querySelectorAll(".st-btn").forEach(b =>
-    b.addEventListener("click", () => { pickPage = Math.min(pages, Math.max(0, pickPage + Number(b.dataset.d))); renderSheetBody(); }));
+    b.addEventListener("click", () => {
+      const next = pickPage + Number(b.dataset.d);
+      if (next < floor) { toast("Раньше " + floor + "-й страницы — это уже прочитано"); return; }
+      pickPage = Math.min(pages, next); renderSheetBody();
+    }));
   document.querySelectorAll(".qbtn").forEach(b =>
     b.addEventListener("click", () => { pickPage = Math.min(pages, pickPage + Number(b.dataset.add)); renderSheetBody(); }));
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;
     const n = Math.round(Number(v.replace(",", ".")));
-    if (isNaN(n) || n < 0 || n > pages) { toast(`Страница от 0 до ${pages}`); return; }
+    if (isNaN(n) || n > pages) { toast(`Страница от ${floor} до ${pages}`); return; }
+    if (n < floor) { toast(`Уже прочитано до ${floor}-й — меньше отметить нельзя`); return; }
     pickPage = n; renderSheetBody();
   });
 }
