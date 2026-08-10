@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 80";
+const APP_VERSION = "Кэйко 81";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4549,6 +4549,24 @@ function renderNotes() {
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
   const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
 
+  /* Текст карточки сессии по книге пересобираем на месте. Он записывался
+     один раз, при отметке, — и старые карточки навсегда остались бы без
+     промежутка. Данные для него всё равно лежат в самой записи дня. */
+  const dayEntry = (t) => {
+    if (t.track === "book") return (data.book.entries || []).find(
+      (x) => !x.deleted && (x.bookId || "snow-1") === t.key && x.date === t.date);
+    if (t.track === "piano") return (data.piano.entries || []).find(
+      (x) => !x.deleted && (x.pieceId || "bwv853") === t.key && x.date === t.date);
+    if (t.track === "pastel") return (data.pastel.entries || []).find(
+      (x) => !x.deleted && x.date === t.date);
+    return null;
+  };
+  const textOf = (t) => {
+    if (t.event !== "session" || !t.key) return t.text;
+    const e = dayEntry(t);
+    return e ? sessionText(t.track, e) : t.text;
+  };
+
   // один материал за день считаем один раз: событий в ленте много, а дней мало
   const dayCache = new Map();
   const progressOf = (t) => {
@@ -4667,7 +4685,7 @@ function renderNotes() {
               <button class="th-act" data-th="${t.id}" type="button" aria-label="Удалить">✕</button>`}
             </span>
           </div>
-          ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
+          ${((x) => x ? `<p class="post-text">${esc(x)}</p>` : "")(textOf(t))}
           ${((p) => p.ach.length || p.facts.length ? `
             <div class="ev-awards">
               ${p.ach.map((a) => `
@@ -5524,17 +5542,78 @@ function lessonRender(box) {
    видно, что и когда случилось. В случайную выборку они не попадают —
    «одна наугад» должна вытаскивать твои слова, а не отчёт приложения. */
 /* Что сделано в этот день — коротко, для карточки события. */
+/* Сколько прочитано за этот заход и откуда докуда. Запись хранит только
+   страницу, на которой остановился, — начало берём там, где кончился
+   предыдущий заход по этой книге. «До 210-й» само по себе не говорит
+   ничего: то ли двадцать страниц, то ли две. */
+function bookRunOf(e) {
+  const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
+  if (!b) return "";
+
+  if ((e.spans || []).length) {                       // книга-сборник: части вразнобой
+    const sp = mergeSpans(e.spans);
+    const n = sp.reduce((s, x) => s + (x.to - x.from + 1), 0);
+    return sp.map((x) => x.from + "–" + x.to).join(", ") + " стр."
+      + (n ? " · " + n + " " + plural(n, "страница", "страницы", "страниц") : "");
+  }
+  if (!e.page) return "";
+
+  let prev = b.startPage || 0;
+  for (const x of bookEntriesOf(b.id)) {
+    const earlier = x.date < e.date
+      || (x.date === e.date && (x.createdAt || 0) < (e.createdAt || 0));
+    if (!earlier) continue;
+    prev = Math.max(prev, x.page || 0);
+    for (const s of x.spans || []) prev = Math.max(prev, s.to || 0);
+  }
+  const gain = e.page - prev;
+  if (gain <= 0) return "перечитывал, до " + e.page + "-й стр.";
+  if (gain === 1) return e.page + "-я стр.";        // «241–241 · 1 страница» — лишнее
+  return (prev + 1) + "–" + e.page + " стр. · "
+    + gain + " " + plural(gain, "страница", "страницы", "страниц");
+}
+
+/* Объём захода одной строкой: что именно трогал и сколько этого было.
+   «18 мин» не говорит, разобрал ты четыре такта или весь лист. */
+const runRanges = (list) => {
+  const sp = mergeSpans(list);
+  const n = sp.reduce((a, x) => a + (x.to - x.from + 1), 0);
+  // одиночку пишем числом: «8–8» выглядит как опечатка
+  return { text: sp.map((x) => x.from === x.to ? String(x.from) : x.from + "–" + x.to).join(", "), n };
+};
+
+function pianoRunOf(e) {
+  // руки складываем в один диапазон: важно, какое место игралось, а не чем
+  if (!(e.spans || []).length) return "";
+  const r = runRanges(e.spans.map((x) => ({ from: x.from, to: x.to })));
+  return "такты " + r.text + " · " + r.n + " " + plural(r.n, "такт", "такта", "тактов");
+}
+
+function courseRunOf(e) {
+  const list = (e.lessons || []).slice().sort((a, b) => a - b);
+  if (!list.length) return "";
+  // уроки хранятся номерами позиций, человеку показываем счёт с единицы
+  const r = runRanges(list.map((i) => ({ from: i + 1, to: i + 1 })));
+  return "уроки " + r.text + " · " + r.n + " " + plural(r.n, "урок", "урока", "уроков");
+}
+
 function sessionText(track, e) {
   if (track === "book") {
     const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
-    return "Читал: " + ((b && b.title) || "книга") + (e.page ? " · до " + e.page + "-й стр." : "");
+    const run = bookRunOf(e);
+    return "Читал: " + ((b && b.title) || "книга") + (run ? " · " + run : "");
   }
   if (track === "piano") {
     const p = (data.piano.pieces || []).find((x) => x.id === (e.pieceId || "bwv853"));
-    return "Занимался: " + ((p && p.name) || "пьеса") + (e.mins ? " · " + e.mins + " мин" : "");
+    const run = pianoRunOf(e);
+    return "Занимался: " + ((p && p.name) || "пьеса")
+      + (run ? " · " + run : "") + (e.mins ? " · " + e.mins + " мин" : "");
   }
-  if (track === "pastel") return "Урок: " + (course().name || "курс")
-    + (e.lessons && e.lessons.length ? " · " + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков") : "");
+  if (track === "pastel") {
+    const run = courseRunOf(e);
+    return "Урок: " + (course().name || "курс")
+      + (run ? " · " + run : "") + (e.mins ? " · " + e.mins + " мин" : "");
+  }
   return "Занимался";
 }
 
