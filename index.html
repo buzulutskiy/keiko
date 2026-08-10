@@ -1472,7 +1472,22 @@
       flex: 1; border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--ink); font: inherit; font-size: 0.82rem; border-radius: 10px; padding: 10px;
     }
-    .pl-wait { font-size: 0.76rem; color: var(--dim); text-align: center; padding: 3px 0; margin: 0; }
+    /* Ожидание записи: видно, сколько приехало, и есть чем повторить. */
+    .pl-wait { display: grid; gap: 8px; justify-items: center; padding: 4px 0 2px; margin: 0; }
+    .pl-wait-t { font-size: 0.76rem; color: var(--dim); text-align: center; }
+    .pl-wait-bar {
+      width: 100%; height: 4px; border-radius: 2px;
+      background: var(--track); overflow: hidden;
+    }
+    .pl-wait-bar i {
+      display: block; height: 100%; border-radius: 2px;
+      background: var(--violet); transition: width .25s ease;
+    }
+    .pl-retry {
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--ink); font: inherit; font-size: 0.78rem;
+      border-radius: 9px; padding: 8px 16px;
+    }
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }

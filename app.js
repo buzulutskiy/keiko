@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 83";
+const APP_VERSION = "Кэйко 84";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1604,13 +1604,19 @@ async function readWithProgress(res, id, report) {
   return new TextDecoder().decode(all);
 }
 
+/* Почему запись не приехала. Раньше срыв проходил молча: в занятии навсегда
+   оставалась строка «Запись загружается…», и было не понять, идёт дело
+   или встало. */
+const audioFail = new Map();
+
 async function pullAudio(id) {
   if (!cfg.token || !cfg.catalogId || audioPulling.has(id) || audioUrls.has(id)) return;
   audioPulling.add(id);
+  audioFail.delete(id);
   audioProgress(id, 0);
   try {
     const r = await gh("/gists/" + cfg.catalogId);
-    if (!r.ok) return;
+    if (!r.ok) throw new Error("гист ответил " + r.status);
     const f = (await r.json()).files[CAT_AUDIO_FILE(id)];
     if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
     let txt = f.content;
@@ -1619,11 +1625,17 @@ async function pullAudio(id) {
       txt = await readWithProgress(res, id);
     }
     txt = txt.trim();
-    if (!txt.startsWith("data:")) return;
+    if (!txt.startsWith("data:")) throw new Error("файл не похож на звук");
     await audioSave(id, txt);
     audioNow = "";                                    // пусть audioSync подхватит заново
     audioSync();
-  } catch {} finally { audioPulling.delete(id); audioProgress(id, 1); }
+  } catch (e) {
+    audioFail.set(id, (e && e.message) || (navigator.onLine ? "не получилось" : "нет сети"));
+  } finally {
+    audioPulling.delete(id);
+    audioProgress(id, 1);
+    plWait();
+  }
 }
 
 /* ── Нота в шапке ── */
@@ -1631,6 +1643,7 @@ let audioPct = { id: "", v: 0 };
 function audioProgress(id, v) {
   audioPct = { id, v: Math.max(0, Math.min(1, v)) };
   paintSndBtn();
+  plWait();                    // в занятии та же полоса, что и на ноте в шапке
 }
 function paintSndBtn() {
   /* Нота живёт внутри обложки, а не поверх экрана: при листании она едет
@@ -5452,8 +5465,12 @@ function pracPlayer() {
   const url = audioUrls.get(id);
 
   if (!url) {
-    if (!audioUrls.has(id)) { pullAudio(id); box.hidden = false; box.innerHTML = '<p class="pl-wait">Запись загружается…</p>'; }
-    else box.hidden = true;
+    // записи у этой вещи нет вовсе — плеер просто не показываем
+    if (audioUrls.get(id) === "") { box.hidden = true; return; }
+    if (!audioUrls.has(id) && !audioPulling.has(id) && !audioFail.has(id)) pullAudio(id);
+    pracAudioEl = null;
+    box.hidden = false;
+    box.innerHTML = `<div class="pl-wait">${plWaitHTML(id)}</div>`;
     return;
   }
   if (pracAudioEl && pracAudioEl.dataset.for === id) { box.hidden = false; return; }
@@ -5502,6 +5519,32 @@ function pracPlayer() {
   pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
   plApplyRate();
   plPaint();
+}
+
+/* Пока запись едет — видно, сколько уже приехало; если сорвалось — видно,
+   почему, и есть чем повторить. Раньше здесь висела строка, которая не
+   менялась ни при успехе, ни при срыве. */
+function plWaitHTML(id) {
+  if (audioFail.has(id)) return `
+    <span class="pl-wait-t">Запись не приехала — ${esc(audioFail.get(id))}</span>
+    <button class="pl-retry" data-pl="retry" type="button">Повторить</button>`;
+  const pct = (audioPulling.has(id) && audioPct.id === id && audioPct.v > 0)
+    ? Math.round(audioPct.v * 100) : null;
+  return `
+    <span class="pl-wait-t">Запись загружается${pct == null ? "…" : " · " + pct + "%"}</span>
+    <span class="pl-wait-bar"><i style="width:${pct == null ? 8 : Math.max(4, pct)}%"></i></span>`;
+}
+
+/* Перерисовываем только строку ожидания. Перерисовка всего занятия здесь была
+   бы некстати: карточка шага пересобралась бы посреди работы. */
+function plWait() {
+  const box = $("#pracPlayer");
+  if (!box || !prac) return;
+  const id = piece().id;
+  if (audioUrls.get(id)) { pracPlayer(); return; }     // приехало — собираем плеер
+  if (box.hidden) return;
+  const w = box.querySelector(".pl-wait");
+  if (w) w.innerHTML = plWaitHTML(id);
 }
 
 /* Тянем края выделения. Считаем по ширине дорожки, а не по времени: палец
@@ -6238,6 +6281,13 @@ function bindPractice() {
   $("#pracPlayer").addEventListener("pointerdown", plDrag);
 
   $("#pracPlayer").addEventListener("click", (e) => {
+    const retry = e.target.closest('[data-pl="retry"]');
+    if (retry) {
+      const id = piece().id;
+      audioFail.delete(id); audioUrls.delete(id);
+      plWait(); pullAudio(id);
+      return;
+    }
     if (!pracAudioEl) return;
     const b = e.target.closest("[data-pl]");
     if (b) {
