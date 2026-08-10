@@ -292,8 +292,15 @@
     .sum-ring { position: relative; width: min(210px, 62vw); }
     .sum-ring svg { width: 100%; height: auto; transform: rotate(-90deg); display: block; }
     .sum-ring circle { fill: none; stroke-width: 13; stroke-linecap: round; }
-    .sum-ring .bg { stroke: var(--track); }
-    .sum-ring .fg { stroke: url(#grad); transition: stroke-dasharray 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+    /* Сегмент на каждый день периода. Занятый — цветом своего занятия,
+       пустой — едва слышно: смотреть на пропуски незачем. */
+    .sum-ring .rs { transition: stroke 0.5s ease, opacity 0.5s ease; }
+    .sum-ring .rs.off { stroke: var(--track); opacity: 0.55; }
+    .sum-ring .rs.fut { stroke: var(--track); opacity: 0.22; }
+    .sum-ring .rs.on { filter: drop-shadow(0 0 5px currentColor); }
+    /* Цель взята — кольцо чуть светится целиком. */
+    .sum-ring.done svg { filter: drop-shadow(0 0 10px rgba(255, 201, 77, 0.28)); }
+    .sum-ring.done .sum-sub { color: var(--gold); }
     .sum-txt {
       position: absolute; inset: 0;
       display: grid; place-content: center; justify-items: center; gap: 2px;
@@ -1603,6 +1610,29 @@
     .post.ev-ach { border-left-color: var(--gold); }
     .post.ev-done { border-left-color: #6ee7a8; }
     .post.ev-session { border-left-color: var(--violet); }
+
+    /* ── Когда закончу ── */
+    .blk-head { margin: 0 0 12px; font-size: 0.92rem; font-weight: 800; }
+    .fc-list { display: grid; gap: 14px; }
+    .fc-row { display: flex; gap: 11px; align-items: flex-start; }
+    .fc-row.cold { opacity: 0.62; }
+    .fc-ic { font-size: 1.2rem; line-height: 1.2; flex: none; }
+    .fc-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+    .fc-body b { font-size: 0.88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fc-when { font-size: 0.8rem; color: var(--gold); font-weight: 600; }
+    .fc-row.cold .fc-when { color: var(--dim); font-weight: 400; }
+    .fc-bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin-top: 2px; }
+    .fc-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
+    .fc-meta { font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .fc-note { margin: 12px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
+
+    /* ── Куда ушли дни ── */
+    .sp-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--track); }
+    .sp-bar i { display: block; height: 100%; }
+    .sp-keys { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 11px; }
+    .sp-key { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; color: var(--muted); }
+    .sp-key i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+    .sp-key b { color: var(--ink); font-variant-numeric: tabular-nums; }
 
     /* дни недели */
     .wk-prof { display: flex; align-items: flex-end; gap: 6px; height: 96px; margin: 4px 0 10px; }
