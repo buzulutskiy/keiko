@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 82";
+const APP_VERSION = "Кэйко 83";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5305,7 +5305,9 @@ function plSel(id, dur) {
 
 /* Настройки прослушивания живут рядом с выделением, в той же записи: скорость,
    увеличение и шаг сетки. У каждой вещи свои. */
-const PL_RATES = [0.5, 0.75, 0.9, 1];
+/* Совсем медленно — чтобы успевать разбирать по нотам. Прежние значения
+   оставлены как были: у кого что выбрано, то и останется. */
+const PL_RATES = [0.25, 0.4, 0.5, 0.75, 0.9, 1];
 const PL_GRIDS = [1, 2, 5];
 const plOpt = (id) => (pracLoops[id] = pracLoops[id] || {});
 const plRate = (id) => PL_RATES.includes(plOpt(id).rate) ? plOpt(id).rate : 1;

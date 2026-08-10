@@ -1476,15 +1476,17 @@
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }
-    .pl-set { display: flex; align-items: center; gap: 5px; }
+    .pl-set { display: flex; align-items: center; gap: 4px; }
     .pl-set em {
       font-style: normal; font-size: 0.68rem; color: var(--dim);
-      letter-spacing: .04em; width: 62px; flex: none;
+      letter-spacing: .04em; width: 58px; flex: none;
     }
+    /* Шесть скоростей держим одной строкой: перенос оставлял «1» болтаться
+       во всю ширину под остальными. Тесно, но читается. */
     .pl-set button {
-      flex: 1; min-width: 0; padding: 7px 4px;
+      flex: 1; min-width: 0; padding: 7px 2px;
       border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--muted); font: inherit; font-size: 0.76rem; border-radius: 9px;
+      color: var(--muted); font: inherit; font-size: 0.74rem; border-radius: 9px;
       font-variant-numeric: tabular-nums;
     }
     .pl-set button.on {
