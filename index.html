@@ -1444,6 +1444,12 @@
       position: relative; height: 34px; margin: 2px 0 10px;
       background: var(--track); border-radius: 8px; touch-action: none;
     }
+    /* Отбивки шага: по ним видно, куда притянется край выделения. */
+    .pl-grid {
+      position: absolute; inset: 0; pointer-events: none; border-radius: 8px;
+      background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px);
+      background-repeat: repeat-x; background-size: 0 100%;
+    }
     .pl-sel {
       position: absolute; top: 0; bottom: 0;
       background: rgba(139, 124, 246, 0.35);
@@ -1467,6 +1473,30 @@
       color: var(--ink); font: inherit; font-size: 0.82rem; border-radius: 10px; padding: 10px;
     }
     .pl-wait { font-size: 0.76rem; color: var(--dim); text-align: center; padding: 3px 0; margin: 0; }
+
+    /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
+    .pl-tools { display: grid; gap: 7px; margin-top: 9px; }
+    .pl-set { display: flex; align-items: center; gap: 5px; }
+    .pl-set em {
+      font-style: normal; font-size: 0.68rem; color: var(--dim);
+      letter-spacing: .04em; width: 62px; flex: none;
+    }
+    .pl-set button {
+      flex: 1; min-width: 0; padding: 7px 4px;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--muted); font: inherit; font-size: 0.76rem; border-radius: 9px;
+      font-variant-numeric: tabular-nums;
+    }
+    .pl-set button.on {
+      color: var(--ink); border-color: rgba(139, 124, 246, 0.5);
+      background: rgba(139, 124, 246, 0.14);
+    }
+    /* Начало и конец — числами: тянуть по тридцатипиксельной полоске точно
+       мучительно, а плюс с минусом попадают всегда. Шаг у них общий с сеткой. */
+    .pl-edge .pl-val {
+      flex: 2; color: var(--ink); font-variant-numeric: tabular-nums;
+      border-color: rgba(139, 124, 246, 0.3);
+    }
 
     /* «Смотрю»: добавление ссылки и список роликов */
     .wt-add { display: flex; gap: 8px; margin-top: 10px; }

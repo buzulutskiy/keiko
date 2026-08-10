@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 81";
+const APP_VERSION = "Кэйко 82";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5303,6 +5303,33 @@ function plSel(id, dur) {
   return { a: 0, b: dur || 0 };
 }
 
+/* Настройки прослушивания живут рядом с выделением, в той же записи: скорость,
+   увеличение и шаг сетки. У каждой вещи свои. */
+const PL_RATES = [0.5, 0.75, 0.9, 1];
+const PL_GRIDS = [1, 2, 5];
+const plOpt = (id) => (pracLoops[id] = pracLoops[id] || {});
+const plRate = (id) => PL_RATES.includes(plOpt(id).rate) ? plOpt(id).rate : 1;
+const plGrid = (id) => PL_GRIDS.includes(plOpt(id).grid) ? plOpt(id).grid : 2;
+
+/* Края примагничиваются к сетке. Разметку по тактам делать не стали: она
+   требует ручной привязки к каждой записи, а играют их всякий раз иначе.
+   Равномерный шаг по времени грубее, зато работает сразу и без вранья. */
+const plSnap = (t, id, dur) => {
+  const g = plGrid(id);
+  return Math.max(0, Math.min(dur || t, Math.round(t / g) * g));
+};
+
+function plApplyRate() {
+  const el = pracAudioEl;
+  if (!el) return;
+  const r = plRate(el.dataset.for);
+  /* Высоту сохраняем: замедленная запись должна звучать той же музыкой,
+     просто медленнее. Safari просит своё имя того же свойства. */
+  try { el.preservesPitch = true; } catch {}
+  try { el.webkitPreservesPitch = true; } catch {}
+  try { el.playbackRate = r; } catch {}
+}
+
 function plPaint() {
   const el = pracAudioEl, box = $("#pracPlayer");
   if (!el || !box || box.hidden) return;
@@ -5318,9 +5345,77 @@ function plPaint() {
   A.style.left = pc(sel.a) + "%";
   B.style.left = pc(sel.b) + "%";
   P.style.left = pc(el.currentTime) + "%";
-  T.textContent = plClock(el.currentTime) + " · отрезок " + plClock(sel.a) + "–" + plClock(sel.b);
+  T.textContent = plClock(el.currentTime) + " · отрезок " + plClock(sel.a) + "–" + plClock(sel.b)
+    + " · " + plClock(sel.b - sel.a);
   const btn = box.querySelector('[data-pl="play"]');
   if (btn) btn.textContent = el.paused ? "▶︎ Слушать" : "❚❚ Пауза";
+
+  const id = el.dataset.for;
+  const bar = box.querySelector(".pl-bar");
+
+  // отбивки рисуем шагом сетки — так видно, к чему притянется край
+  const grid = box.querySelector(".pl-grid");
+  if (grid && dur) {
+    const step = (plGrid(id) / dur) * (bar ? bar.offsetWidth : 0);
+    grid.style.backgroundSize = (step > 3 ? step : 0) + "px 100%";
+  }
+
+  box.querySelectorAll("[data-rate]").forEach((b) =>
+    b.classList.toggle("on", Number(b.dataset.rate) === plRate(id)));
+  box.querySelectorAll("[data-grid]").forEach((b) =>
+    b.classList.toggle("on", Number(b.dataset.grid) === plGrid(id)));
+  const va = box.querySelector('[data-set="a"]'), vb = box.querySelector('[data-set="b"]');
+  if (va) va.textContent = plClock(sel.a);
+  if (vb) vb.textContent = plClock(sel.b);
+}
+
+/* Края двигаются не только пальцем. Тянуть по тридцатипиксельной полоске
+   точно — мучение, поэтому у начала и конца есть плюс и минус, а сколько
+   они прибавляют, задаёт тот же шаг, что и у сетки. */
+function plEdge(which, dir) {
+  const el = pracAudioEl;
+  if (!el) return;
+  const id = el.dataset.for, dur = el.duration || 0;
+  if (!dur) return;              // длительность ещё не приехала — двигать нечего
+  const g = plGrid(id), cur = plSel(id, dur);
+  const next = which === "a"
+    ? { a: Math.max(0, Math.min(cur.a + dir * g, cur.b - g)), b: cur.b }
+    : { a: cur.a, b: Math.min(dur, Math.max(cur.b + dir * g, cur.a + g)) };
+  plSetSel(next);
+}
+
+/* Ввод точного времени: принимаем и «1:20», и просто секунды. */
+function plAsk(which) {
+  const el = pracAudioEl;
+  if (!el) return;
+  const id = el.dataset.for, dur = el.duration || 0;
+  if (!dur) { toast("Запись ещё грузится"); return; }
+  const cur = plSel(id, dur);
+  const was = which === "a" ? cur.a : cur.b;
+  const v = prompt(which === "a" ? "Начало отрезка (мин:сек)" : "Конец отрезка (мин:сек)", plClock(was));
+  if (v === null) return;
+  const parts = String(v).trim().split(":");
+  const t = parts.length > 1
+    ? Number(parts[0]) * 60 + Number(parts[1])
+    : Number(String(v).replace(",", "."));
+  if (!isFinite(t) || t < 0 || (dur && t > dur)) { toast("Время от 0:00 до " + plClock(dur)); return; }
+  plSetSel(which === "a"
+    ? { a: Math.min(t, cur.b - 0.5), b: cur.b }
+    : { a: cur.a, b: Math.max(t, cur.a + 0.5) });
+}
+
+function plSetSel(next) {
+  const el = pracAudioEl;
+  if (!el) return;
+  /* Схлопнутый отрезок не сохраняем: он остался бы в памяти нулём, и запись
+     после этого не игралась бы вовсе. */
+  if (!isFinite(next.a) || !isFinite(next.b) || next.b - next.a < 0.2) return;
+  const id = el.dataset.for;
+  Object.assign(plOpt(id), next);
+  pracSaveLoops();
+  if (el.currentTime < next.a || el.currentTime > next.b)
+    try { el.currentTime = next.a; } catch {}
+  plPaint();
 }
 
 /* Петля: дошли до правого края — возвращаемся к левому, кусок повторяется
@@ -5366,6 +5461,7 @@ function pracPlayer() {
     <div class="pl-top"><b>Как это звучит</b><span class="pl-time">0:00</span></div>
     <div class="pl-bar">
       <div class="pl-sel"></div>
+      <div class="pl-grid"></div>
       <div class="pl-head"></div>
       <div class="pl-h" data-h="a"></div>
       <div class="pl-h" data-h="b"></div>
@@ -5374,12 +5470,35 @@ function pracPlayer() {
       <button data-pl="play">▶︎ Слушать</button>
       <button data-pl="all">Весь трек</button>
     </div>
+    <div class="pl-tools">
+      <span class="pl-set">
+        <em>Скорость</em>
+        ${PL_RATES.map((r) => `<button data-rate="${r}">${String(r).replace(".", ",")}</button>`).join("")}
+      </span>
+      <span class="pl-set pl-edge">
+        <em>Начало</em>
+        <button data-edge="a" data-step="-">−</button>
+        <button class="pl-val" data-set="a">0:00</button>
+        <button data-edge="a" data-step="+">＋</button>
+      </span>
+      <span class="pl-set pl-edge">
+        <em>Конец</em>
+        <button data-edge="b" data-step="-">−</button>
+        <button class="pl-val" data-set="b">0:00</button>
+        <button data-edge="b" data-step="+">＋</button>
+      </span>
+      <span class="pl-set">
+        <em>Шаг</em>
+        ${PL_GRIDS.map((g) => `<button data-grid="${g}">${g}с</button>`).join("")}
+      </span>
+    </div>
     <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
   pracAudioEl = box.querySelector("audio");
-  pracAudioEl.addEventListener("loadedmetadata", plPaint);
+  pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
   pracAudioEl.addEventListener("pause", plPaint);
   pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
+  plApplyRate();
   plPaint();
 }
 
@@ -5399,12 +5518,13 @@ function plDrag(e) {
   const move = (ev) => {
     const r = bar.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
-    const t = x * dur;
+    const t = plSnap(x * dur, id, dur);
     const cur = plSel(id, dur);
+    const g = plGrid(id);
     const next = which === "a"
-      ? { a: Math.min(t, cur.b - 0.5), b: cur.b }
-      : { a: cur.a, b: Math.max(t, cur.a + 0.5) };
-    pracLoops[id] = next;
+      ? { a: Math.min(t, cur.b - g), b: cur.b }
+      : { a: cur.a, b: Math.max(t, cur.a + g) };
+    pracLoops[id] = Object.assign(plOpt(id), next);
     if (pracAudioEl.currentTime < next.a || pracAudioEl.currentTime > next.b)
       try { pracAudioEl.currentTime = next.a; } catch {}
     plPaint();
@@ -6127,12 +6247,24 @@ function bindPractice() {
           pracAudioEl.play().catch(() => {});
         } else pracAudioEl.pause();
       } else {
-        delete pracLoops[pracAudioEl.dataset.for];      // снова весь трек
+        // снова весь трек, но скорость, увеличение и шаг остаются как были
+        const o = plOpt(pracAudioEl.dataset.for);
+        delete o.a; delete o.b;
         pracSaveLoops();
         plPaint();
       }
       return;
     }
+
+    const id = pracAudioEl.dataset.for;
+    const rate = e.target.closest("[data-rate]");
+    if (rate) { plOpt(id).rate = Number(rate.dataset.rate); pracSaveLoops(); plApplyRate(); plPaint(); return; }
+    const grid = e.target.closest("[data-grid]");
+    if (grid) { plOpt(id).grid = Number(grid.dataset.grid); pracSaveLoops(); plPaint(); return; }
+    const edge = e.target.closest("[data-edge]");
+    if (edge) { plEdge(edge.dataset.edge, edge.dataset.step === "+" ? 1 : -1); return; }
+    const set = e.target.closest("[data-set]");
+    if (set) { plAsk(set.dataset.set); return; }
     // тап по дорожке — перемотка внутри выделения
     const bar = e.target.closest(".pl-bar");
     if (!bar || e.target.closest("[data-h]")) return;
