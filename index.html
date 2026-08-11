@@ -1427,6 +1427,35 @@
       border-top: 1px solid rgba(255, 255, 255, 0.07);
     }
 
+    /* ── Список тактов ── */
+    .bl-wrap {
+      position: fixed; inset: 0; z-index: 75; background: var(--bg);
+      padding: max(14px, env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+      overflow-y: auto; overflow-x: hidden;
+    }
+    .pl-head-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+    .pl-head-row b { font-size: 1rem; }
+    .bl-list { display: grid; gap: 10px; }
+    .bl-part {
+      background: var(--panel); border: 1px solid var(--glass-line);
+      border-radius: 14px; padding: 11px 12px;
+    }
+    .bl-part.now { border-color: rgba(255, 201, 77, 0.45); }
+    .bl-part.done { opacity: 0.72; }
+    .bl-head { display: grid; gap: 3px; text-align: left; width: 100%; }
+    .bl-name { font-size: 0.88rem; font-weight: 700; }
+    .bl-sub { font-size: 0.7rem; color: var(--dim); }
+    .bl-bars { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+    .bl-b {
+      font-style: normal; display: grid; place-items: center;
+      width: 26px; height: 26px; border-radius: 8px;
+      font-size: 0.64rem; font-variant-numeric: tabular-nums;
+      background: var(--track); color: var(--dim); cursor: pointer;
+    }
+    .bl-b.part { background: rgba(255, 201, 77, 0.28); color: var(--ink); }
+    .bl-b.firm { background: var(--gold); color: var(--bg); font-weight: 700; }
+    .bl-note { margin: 12px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
+
     /* ── Плеер разбора ── */
     #pracVideo {
       flex: 0 0 auto; max-width: 460px; width: 100%; margin: 10px auto 0;
@@ -1447,9 +1476,16 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .vd-task b { color: var(--ink); font-weight: 700; }
+    /* Рамка держит размер, картинка внутри может быть крупнее — тогда её
+       двигают пальцем, чтобы разглядеть руки. */
+    .vd-frame {
+      width: 100%; aspect-ratio: 16 / 9; border-radius: 11px;
+      overflow: hidden; background: #000; position: relative;
+    }
+    .vd-frame.zoomed { touch-action: none; cursor: grab; }
     #pracVideo video, .vd-yt {
-      width: 100%; aspect-ratio: 16 / 9; display: block;
-      border-radius: 11px; overflow: hidden; background: #000;
+      width: 100%; height: 100%; display: block; background: #000;
+      transition: transform 0.18s ease;
     }
     .vd-yt iframe { width: 100%; height: 100%; border: 0; display: block; }
 
@@ -1469,6 +1505,16 @@
       color: var(--ink); font-size: 0.9rem;
     }
     .vd-time { flex: 1; text-align: center; font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .vd-row.edges em {
+      font-style: normal; font-size: 0.68rem; color: var(--dim); width: 52px; flex: none;
+    }
+    .vd-row.edges button {
+      flex: 1; min-width: 0; padding: 7px 3px;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--muted); font: inherit; font-size: 0.74rem; border-radius: 9px;
+      font-variant-numeric: tabular-nums;
+    }
+    .vd-row.edges .vd-val { flex: 2; color: var(--ink); border-color: rgba(139, 124, 246, 0.3); }
     .vd-row.rates button, .vd-row.marks .btn {
       flex: 1; min-width: 0; padding: 8px 3px;
       border: 1px solid var(--glass-line); background: var(--glass);
@@ -1487,7 +1533,7 @@
       background: var(--bg); padding: max(14px, env(safe-area-inset-top)) 16px 20px;
       align-content: center; gap: 12px;
     }
-    .vd-wrap:fullscreen video, .vd-wrap:fullscreen .vd-yt { max-height: 62vh; aspect-ratio: 16 / 9; margin: 0 auto; }
+    .vd-wrap:fullscreen .vd-frame { max-height: 62vh; margin: 0 auto; }
     .vd-wrap:fullscreen .vd-task { font-size: 0.95rem; text-align: center; }
 
     /* плеер живёт отдельно от карточки: она перерисовывается на каждом шаге */
@@ -1497,6 +1543,15 @@
       border-radius: 15px; padding: 11px 13px;
     }
     #pracPlayer[hidden] { display: none; }
+    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
+       Нужен — развернул. */
+    .pl-fold {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      width: 100%; font-size: 0.8rem; font-weight: 600; color: var(--muted);
+    }
+    .pl-fold i { font-style: normal; font-size: 0.7rem; color: var(--dim); }
+    #pracPlayer.folded .pl-body { display: none; }
+    #pracPlayer:not(.folded) .pl-fold { margin-bottom: 8px; }
     .pl-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
     .pl-top b { font-size: 0.78rem; font-weight: 600; }
     .pl-time { font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }

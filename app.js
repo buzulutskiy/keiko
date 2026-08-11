@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 100";
+const APP_VERSION = "Кэйко 101";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5738,6 +5738,13 @@ const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 })
 function pracWhere() {
   const parts = pracParts();
 
+  /* Где встали в прошлый раз. Пока эта часть не доведена — продолжаем её,
+     а не отматываем к первой недоделанной по порядку. */
+  if (prac && prac.pick == null) {
+    const last = pracStore().lastPart;
+    if (last != null && parts[last] && !pracPartDone(parts[last])) prac.pick = last;
+  }
+
   /* Выбранная руками часть идёт вперёд очереди: иногда нужно вернуться
      к старому куску, не дожидаясь, пока до него дойдёт порядок. */
   if (prac && prac.pick != null && parts[prac.pick]) {
@@ -5766,20 +5773,77 @@ function pracWhere() {
   return { parts, asm, assembly: Math.max(0, asm.length - 1), finished: true };
 }
 
+/* ── Список тактов ──
+   Раньше выбрать место можно было только среди частей, и то вслепую: сколько
+   раз ты трогал такт и когда это было в последний раз, нигде не показывалось.
+   Здесь всё разом: сколько проходов у каждой руки, что уже закреплено,
+   что не трогал давно — и переход к любой части одним нажатием. */
+function pracBarInfo() {
+  const bars = piece().bars;
+  const p = passes();
+  const seen = new Array(bars + 1).fill("");     // когда трогали в последний раз
+  for (const e of entries()) {
+    for (const sp of e.spans || [])
+      for (let b = Math.max(1, sp.from); b <= Math.min(bars, sp.to); b++)
+        if (e.date > seen[b]) seen[b] = e.date;
+  }
+  return { right: p.right, left: p.left, seen };
+}
+
+function pracListHTML() {
+  const info = pracBarInfo();
+  const parts = pracParts();
+  const w = pracWhere();
+  const today = todayStr();
+  const hands = (b) => {
+    const r = Math.min(FIRM_AT, info.right[b] || 0), l = Math.min(FIRM_AT, info.left[b] || 0);
+    return { r, l, firm: r >= FIRM_AT && l >= FIRM_AT, touched: (info.right[b] || 0) + (info.left[b] || 0) > 0 };
+  };
+  const ago = (ds) => {
+    if (!ds) return "не трогал";
+    const d = daysBetween(ds, today);
+    return d <= 0 ? "сегодня" : d + " " + plural(d, "день", "дня", "дней") + " назад";
+  };
+
+  return `
+    <div class="pl-head-row">
+      <b>Такты</b>
+      <button class="th-link" data-prac="listClose" type="button">закрыть</button>
+    </div>
+    <div class="bl-list">
+      ${parts.map((p) => {
+        const done = pracPartDone(p);
+        const now = w.part && w.part.i === p.i;
+        const last = Math.max(...Array.from({ length: p.to - p.from + 1 },
+          (_, k) => (info.seen[p.from + k] ? fromStr(info.seen[p.from + k]).getTime() : 0)));
+        return `
+          <div class="bl-part${now ? " now" : ""}${done ? " done" : ""}">
+            <button class="bl-head" data-pickpart="${p.i}" type="button">
+              <span class="bl-name">${esc(p.why || "Часть " + (p.i + 1))}</span>
+              <span class="bl-sub">такты ${p.from}–${p.to} · ${done ? "закреплено" : now ? "здесь сейчас" : "в работе"}
+                · ${esc(last ? ago(dateStr(new Date(last))) : "не трогал")}</span>
+            </button>
+            <div class="bl-bars">
+              ${Array.from({ length: p.to - p.from + 1 }, (_, k) => {
+                const b = p.from + k, h = hands(b);
+                return `<i class="bl-b${h.firm ? " firm" : h.touched ? " part" : ""}"
+                  title="такт ${b}: правая ${h.r}/${FIRM_AT}, левая ${h.l}/${FIRM_AT}"
+                  data-barinfo="Такт ${b} · правая ${h.r} из ${FIRM_AT} · левая ${h.l} из ${FIRM_AT} · ${esc(ago(info.seen[b]))}">${b}</i>`;
+              }).join("")}
+            </div>
+          </div>`;
+      }).join("")}
+    </div>
+    <p class="bl-note">Кружок наполняется по числу проходов: такт считается выученным после ${FIRM_AT}. Нажми на часть, чтобы продолжить с неё.</p>`;
+}
+
 function pracQueue() {
   const w = pracWhere();
-  const store = pracStore();
   const q = [];
-  // освежаем давнее только в начале занятия
-  (prac.reviewed.length >= PRAC_REVIEW_N ? [] : Object.entries(store.done))
-    .filter(([k]) => !prac.reviewed.includes(k))
-    .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
-    .slice(0, PRAC_REVIEW_N)
-    .forEach(([k]) => {
-      const [size, span, hand] = k.split(":");
-      const [from, to] = span.split("-").map(Number);
-      q.push({ from, to, size: +size, hand, review: true, k });
-    });
+  /* Раньше занятие начиналось с «освежить давнее», и первым делом упорно
+     подсовывались самые первые такты. Со стороны это выглядело как «опять
+     сначала» и раздражало заслуженно: продолжать надо с того, на чём встал,
+     а вернуться к старому — дело добровольное, для этого есть список тактов. */
   const us = w.seam ? [w.seam]
     : w.part ? pracUnits(w.part.from, w.part.to, w.size)
     : (w.asm[w.assembly] || []).map(pracAsUnit);
@@ -6058,6 +6122,10 @@ function pracPlayer() {
 
   box.hidden = false;
   box.innerHTML = `
+    <button class="pl-fold" data-pl="fold" type="button">
+      <span>♪ Как это звучит</span><i>${pracStore().plOpen ? "свернуть" : "развернуть"}</i>
+    </button>
+    <div class="pl-body">
     <div class="pl-top"><b>Как это звучит</b><span class="pl-time">0:00</span></div>
     <div class="pl-bar">
       <div class="pl-sel"></div>
@@ -6092,7 +6160,9 @@ function pracPlayer() {
         ${PL_GRIDS.map((g) => `<button data-grid="${g}">${g}с</button>`).join("")}
       </span>
     </div>
+    </div>
     <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
+  box.classList.toggle("folded", !pracStore().plOpen);
   pracAudioEl = box.querySelector("audio");
   pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
@@ -6319,6 +6389,54 @@ function vidWhat() {
   return "файл на этом телефоне";
 }
 
+/* Края двигаются и числами: попасть пальцем в секунду на узкой дорожке
+   невозможно, а такт длится пару секунд. Шаг тот же, что у звука. */
+function vidEdge(which, dir) {
+  if (!V.ready()) return;
+  const dur = V.dur();
+  if (!dur) return;
+  const g = plGrid(piece().id), cur = vidSel(dur);
+  vidSetSel(which === "a"
+    ? { a: Math.max(0, Math.min(cur.a + dir * g, cur.b - g)), b: cur.b }
+    : { a: cur.a, b: Math.min(dur, Math.max(cur.b + dir * g, cur.a + g)) });
+}
+
+function vidAsk(which) {
+  if (!V.ready()) return;
+  const dur = V.dur(), cur = vidSel(dur);
+  const was = which === "a" ? cur.a : cur.b;
+  const v = prompt(which === "a" ? "Начало куска (мин:сек)" : "Конец куска (мин:сек)", plClock(was));
+  if (v === null) return;
+  const parts = String(v).trim().split(":");
+  const t = parts.length > 1 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(String(v).replace(",", "."));
+  if (!isFinite(t) || t < 0 || t > dur) { toast("Время от 0:00 до " + plClock(dur)); return; }
+  vidSetSel(which === "a" ? { a: Math.min(t, cur.b - 0.3), b: cur.b }
+                          : { a: cur.a, b: Math.max(t, cur.a + 0.3) });
+}
+
+/* Приближение: руки крупным планом. Тянем картинку внутри рамки, поэтому
+   двигать её можно и пальцем — при увеличении она больше рамки. */
+function vidZoom(box, step) {
+  const st = pracStore();
+  const z = Math.max(1, Math.min(3, (st.vzoom || 1) + step));
+  st.vzoom = z; st.vpan = z === 1 ? 0 : (st.vpan || 0);
+  saveData(); schedulePush();
+  vidApplyZoom(box);
+}
+
+function vidApplyZoom(box) {
+  const st = pracStore();
+  const z = st.vzoom || 1, pan = st.vpan || 0;
+  const wrap = box.querySelector(".vd-yt, video");
+  if (!wrap) return;
+  wrap.style.transform = `scale(${z}) translateX(${pan}%)`;
+  wrap.style.transformOrigin = "center center";
+  const frame = box.querySelector(".vd-frame");
+  if (frame) frame.classList.toggle("zoomed", z > 1);
+  const btn = box.querySelector('[data-vd="zoom"]');
+  if (btn) btn.textContent = z > 1 ? "×" + z : "🔍";
+}
+
 // набор скоростей известен только после готовности плеера — перерисовываем ряд
 function vidRates(box) {
   const row = box.querySelector(".vd-row.rates");
@@ -6344,6 +6462,9 @@ function vidPaint() {
   if (T) T.textContent = plClock(cur) + " · кусок " + plClock(sel.a) + "–" + plClock(sel.b);
   const play = q('[data-vd="play"]');
   if (play) play.textContent = V.paused() ? "▶︎" : "❚❚";
+  const va = q('[data-vset="a"]'), vb = q('[data-vset="b"]');
+  if (va) va.textContent = plClock(sel.a);
+  if (vb) vb.textContent = plClock(sel.b);
   const rate = pracStore().vrate || 1;
   box.querySelectorAll("[data-vrate]").forEach((b) => b.classList.toggle("on", Number(b.dataset.vrate) === rate));
 }
@@ -6375,6 +6496,31 @@ function vidSetSel(next) {
 
 function vidDrag(e) {
   const box = $("#pracVideo");
+
+  /* Приближённую картинку возят пальцем: иначе руки уезжают за край рамки
+     и приближение теряет смысл. */
+  const frame = e.target.closest(".vd-frame.zoomed");
+  if (frame) {
+    const st = pracStore();
+    const z = st.vzoom || 1;
+    const lim = (z - 1) * 50;                 // дальше края уже видно пустоту
+    const x0 = e.clientX, p0 = st.vpan || 0;
+    e.preventDefault();
+    const move = (ev) => {
+      const dx = (ev.clientX - x0) / frame.clientWidth * 100 / z;
+      st.vpan = Math.max(-lim, Math.min(lim, p0 + dx));
+      vidApplyZoom(box);
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      saveData(); schedulePush();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    return;
+  }
+
   const h = e.target.closest("[data-vh]");
   const bar = box && box.querySelector(".vd-bar");
   if (!h || !bar || !V.ready()) return;
@@ -6434,7 +6580,20 @@ function vidControlsHTML(task) {
     <div class="vd-row">
       <button class="vd-btn" data-vd="play" type="button">▶︎</button>
       <span class="vd-time">0:00</span>
+      <button class="vd-btn" data-vd="zoom" type="button" aria-label="Приблизить">🔍</button>
       <button class="vd-btn" data-vd="full" type="button" aria-label="Во весь экран">⤢</button>
+    </div>
+    <div class="vd-row edges">
+      <em>Начало</em>
+      <button data-vedge="a" data-vstep="-1" type="button">−</button>
+      <button class="vd-val" data-vset="a" type="button">0:00</button>
+      <button data-vedge="a" data-vstep="1" type="button">＋</button>
+    </div>
+    <div class="vd-row edges">
+      <em>Конец</em>
+      <button data-vedge="b" data-vstep="-1" type="button">−</button>
+      <button class="vd-val" data-vset="b" type="button">0:00</button>
+      <button data-vedge="b" data-vstep="1" type="button">＋</button>
     </div>
     ${rates.length ? `
     <div class="vd-row rates">
@@ -6506,7 +6665,7 @@ function vidMountFile(box, id, url, task, u) {
   box.innerHTML = `
     <div class="vd-wrap">
       <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
-      <video playsinline preload="metadata" src="${esc(url)}"></video>
+      <div class="vd-frame"><video playsinline preload="metadata" src="${esc(url)}"></video></div>
       ${vidControlsHTML(task)}
     </div>`;
   pracVidEl = box.querySelector("video");
@@ -6524,6 +6683,7 @@ function vidMountFile(box, id, url, task, u) {
     vidWant = null;
   });
   V.rate(pracStore().vrate || 1);
+  vidApplyZoom(box);
   vidTick();
   vidPaint();
 }
@@ -6624,14 +6784,14 @@ function vidMountVK(box, id, v, task, u) {
     box.innerHTML = `
       <div class="vd-wrap">
         <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
-        <div class="vd-yt"><iframe src="${esc(vkSrc(v))}" frameborder="0"
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe></div>
+        <div class="vd-frame"><div class="vd-yt"><iframe src="${esc(vkSrc(v))}" frameborder="0"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe></div></div>
         ${vidControlsHTML(task)}
       </div>`;
     const frame = box.querySelector("iframe");
     try { vkPlayer = new VKapi.VideoPlayer(frame); } catch { vidFail(box, -1); return; }
     const E = VKapi.VideoPlayer.Events;
-    vkPlayer.on(E.INITED, (s2) => { vkDur = (s2 && s2.duration) || 0; vidRates(box); vidJump(u); vidPaint(); });
+    vkPlayer.on(E.INITED, (s2) => { vkDur = (s2 && s2.duration) || 0; vidRates(box); vidJump(u); vidApplyZoom(box); vidPaint(); });
     vkPlayer.on(E.TIMEUPDATE, (s2) => {
       if (!s2) return;
       vkTime = s2.time || 0;
@@ -6675,7 +6835,7 @@ function vidMountYT(box, id, vid, task, u) {
     box.innerHTML = `
       <div class="vd-wrap">
         <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
-        <div class="vd-yt"><div id="ytHost"></div></div>
+        <div class="vd-frame"><div class="vd-yt"><div id="ytHost"></div></div></div>
         ${vidControlsHTML(task)}
       </div>`;
     ytPlayer = new YT.Player("ytHost", {
@@ -6686,6 +6846,7 @@ function vidMountYT(box, id, vid, task, u) {
           V.rate(pracStore().vrate || 1);
           vidJump(u);
           vidRates(box);
+          vidApplyZoom(box);
           vidTick();
           vidPaint();
         },
@@ -7179,15 +7340,20 @@ function pracRender() {
     <div class="pr-bot">
       <button class="pr-go" data-prac="ok">Получилось</button>
       <div class="pr-row">
+        <button class="pr-ghost" data-prac="list">Такты</button>
         ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
         ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
         <button class="pr-ghost" data-prac="finish">Закончить</button>
       </div>
-    </div>`;
+    </div>
+    ${prac.listOpen ? `<div class="bl-wrap" id="pracList">${pracListHTML()}</div>` : ""}`;
 }
 
 function pracNext() {
   if (!prac.queue.length) prac.queue = pracQueue();
+  // отмечаем, над какой частью работаем: со следующего занятия начнём отсюда
+  const wNow = pracWhere();
+  if (wNow.part) { pracStore().lastPart = wNow.part.i; saveData(); }
   prac.cur = prac.queue.shift() || null;
   prac.unitAt = Date.now();          // с этого мгновения считаем время на отрезок
   prac.screen = prac.cur ? "work" : "done";
@@ -7202,7 +7368,7 @@ function openLesson() {
     kind: "lesson", screen: "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
-    cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false,
+    cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false, listOpen: false,
   };
   /* Запись не заводим на открытии: нажал «Начать урок», передумал и вышел —
      занятия не было, и в истории его быть не должно. Подход засчитается
@@ -7225,7 +7391,7 @@ function openPractice() {
   if (!pracDoc() && cfg.token && cfg.catalogId)
     catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
   prac = {
-    screen: "start", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null,
+    screen: "start", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, listOpen: false,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
   };
@@ -7443,7 +7609,14 @@ function bindPractice() {
       saveData(); schedulePush(); V.rate(pracStore().vrate); vidPaint();
       return;
     }
+    const edge = e.target.closest("[data-vedge]");
+    if (edge) { vidEdge(edge.dataset.vedge, Number(edge.dataset.vstep)); return; }
+    const setv = e.target.closest("[data-vset]");
+    if (setv) { vidAsk(setv.dataset.vset); return; }
     if (!b) return;
+
+    // приближение по кругу: 1 → 2 → 3 → снова 1
+    if (b.dataset.vd === "zoom") { vidZoom(box, (pracStore().vzoom || 1) >= 3 ? -2 : 1); return; }
 
     if (b.dataset.vd === "link") {
       const raw = ((box.querySelector("#vdUrl") || {}).value || "").trim();
@@ -7541,6 +7714,16 @@ function bindPractice() {
     }
     if (!pracAudioEl) return;
     const b = e.target.closest("[data-pl]");
+    if (b && b.dataset.pl === "fold") {
+      const st = pracStore();
+      st.plOpen = !st.plOpen;
+      saveData(); schedulePush();
+      $("#pracPlayer").classList.toggle("folded", !st.plOpen);
+      const lbl = $("#pracPlayer .pl-fold i");
+      if (lbl) lbl.textContent = st.plOpen ? "свернуть" : "развернуть";
+      if (st.plOpen) plPaint();
+      return;
+    }
     if (b) {
       if (b.dataset.pl === "play") {
         if (pracAudioEl.paused) {
@@ -7581,6 +7764,10 @@ function bindPractice() {
   });
 
   $("#prac").addEventListener("click", async (e) => {
+    // подробности по такту — нажатием на его кружок
+    const bar = e.target.closest("[data-barinfo]");
+    if (bar) { toast(bar.dataset.barinfo); return; }
+
     const b = e.target.closest("button");
     if (!b || !prac) return;
 
@@ -7588,6 +7775,15 @@ function bindPractice() {
       prac.pick = +b.dataset.part;
       prac.queue = [];
       return pracRender();
+    }
+
+    // выбор части из списка тактов: продолжаем прямо с неё
+    if (b.dataset.pickpart !== undefined) {
+      prac.pick = +b.dataset.pickpart;
+      pracStore().lastPart = prac.pick;
+      prac.queue = []; prac.listOpen = false;
+      saveData(); schedulePush();
+      return pracNext();
     }
 
     if (b.dataset.rest !== undefined) {
@@ -7693,6 +7889,8 @@ function bindPractice() {
         return pracNext();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
+      case "list": prac.listOpen = !prac.listOpen; return pracRender();
+      case "listClose": prac.listOpen = false; return pracRender();
 
       case "undo": {
         /* Промахнулся по «Получилось» — возвращаем отрезок и убираем его след
