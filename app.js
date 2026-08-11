@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 96";
+const APP_VERSION = "Кэйко 97";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6228,6 +6228,25 @@ const vmarkFor = (from, to) =>
    Полный экран берём у обёртки, а не у самого видео: иначе задание и петля
    остались бы под ним. */
 let pracVidEl = null, ytPlayer = null, vidKind = "", vidTimer = 0;
+/* ВК своего «который час» не отдаёт — только шлёт timeupdate. Держим последнее
+   услышанное у себя, иначе петле не на что опереться. */
+let vkPlayer = null, vkTime = 0, vkDur = 0, vkPlaying = false;
+let vidWant = null;                    // перемотка, которая ждёт готовности
+
+/* Из вставки или ссылки достаём три числа, которыми ВК опознаёт ролик. */
+function vkParse(raw) {
+  const t = String(raw || "");
+  const oid = (/[?&]oid=(-?\d+)/.exec(t) || [])[1];
+  const id = (/[?&]id=(\d+)/.exec(t) || [])[1];
+  const hash = (/[?&]hash=([0-9a-f]+)/.exec(t) || [])[1];
+  if (oid && id) return { oid, id, hash: hash || "" };
+  // короткая ссылка вида vkvideo.ru/video-1_2
+  const m = /video(-?\d+)_(\d+)/.exec(t);
+  return m ? { oid: m[1], id: m[2], hash: "" } : null;
+}
+const vkSrc = (v) => "https://vkvideo.ru/video_ext.php?oid=" + encodeURIComponent(v.oid)
+  + "&id=" + encodeURIComponent(v.id) + (v.hash ? "&hash=" + encodeURIComponent(v.hash) : "")
+  + "&hd=1&js_api=1";
 
 const vloop = () => pracStore().vloop || null;
 
@@ -6240,22 +6259,47 @@ function vidSel(dur) {
 /* Один и тот же набор действий поверх двух разных плееров: дальше коду
    всё равно, ютуб там или файл. */
 const V = {
-  ready: () => (vidKind === "yt" ? !!(ytPlayer && ytPlayer.getDuration) : !!pracVidEl),
-  dur: () => { try { return (vidKind === "yt" ? ytPlayer.getDuration() : pracVidEl.duration) || 0; } catch { return 0; } },
-  now: () => { try { return (vidKind === "yt" ? ytPlayer.getCurrentTime() : pracVidEl.currentTime) || 0; } catch { return 0; } },
-  paused: () => { try { return vidKind === "yt" ? ytPlayer.getPlayerState() !== 1 : pracVidEl.paused; } catch { return true; } },
-  seek: (t) => { try { if (vidKind === "yt") ytPlayer.seekTo(t, true); else pracVidEl.currentTime = t; } catch {} },
-  play: () => { try { if (vidKind === "yt") ytPlayer.playVideo(); else pracVidEl.play().catch(() => {}); } catch {} },
-  pause: () => { try { if (vidKind === "yt") ytPlayer.pauseVideo(); else pracVidEl.pause(); } catch {} },
+  ready: () => vidKind === "yt" ? !!(ytPlayer && ytPlayer.getDuration)
+             : vidKind === "vk" ? !!(vkPlayer && vkDur)
+             : !!pracVidEl,
+  dur: () => { try {
+    return (vidKind === "yt" ? ytPlayer.getDuration() : vidKind === "vk" ? vkDur : pracVidEl.duration) || 0;
+  } catch { return 0; } },
+  now: () => { try {
+    return (vidKind === "yt" ? ytPlayer.getCurrentTime() : vidKind === "vk" ? vkTime : pracVidEl.currentTime) || 0;
+  } catch { return 0; } },
+  paused: () => { try {
+    return vidKind === "yt" ? ytPlayer.getPlayerState() !== 1 : vidKind === "vk" ? !vkPlaying : pracVidEl.paused;
+  } catch { return true; } },
+  seek: (t) => { try {
+    if (vidKind === "yt") ytPlayer.seekTo(t, true);
+    else if (vidKind === "vk") { vkTime = t; vkPlayer.seek(t); }
+    else if (pracVidEl.readyState >= 1) pracVidEl.currentTime = t;
+    /* По ссылке файл ещё качается, и перемотка в непрочитанное место молча
+       не срабатывает. Запоминаем, куда хотели, и доводим, когда станет можно. */
+    else vidWant = t;
+  } catch {} },
+  play: () => { try {
+    if (vidKind === "yt") ytPlayer.playVideo();
+    else if (vidKind === "vk") vkPlayer.play();
+    else pracVidEl.play().catch(() => {});
+  } catch {} },
+  pause: () => { try {
+    if (vidKind === "yt") ytPlayer.pauseVideo();
+    else if (vidKind === "vk") vkPlayer.pause();
+    else pracVidEl.pause();
+  } catch {} },
   rate: (r) => {
     try {
       if (vidKind === "yt") ytPlayer.setPlaybackRate(r);
+      else if (vidKind === "vk") { /* нечем: у ВК скорости в API нет */ }
       else { pracVidEl.preservesPitch = true; pracVidEl.webkitPreservesPitch = true; pracVidEl.playbackRate = r; }
     } catch {}
   },
-  /* Ютуб отдаёт свой набор скоростей и молча округляет чужие вниз. Спрашиваем
-     у него и показываем только то, что он правда умеет. */
+  /* Ютуб отдаёт свой набор скоростей и молча округляет чужие вниз — спрашиваем
+     у него. ВК замедлять не умеет вовсе, и пустой ряд кнопок врал бы. */
   rates: () => {
+    if (vidKind === "vk") return [];
     if (vidKind !== "yt") return PL_RATES;
     try {
       const list = (ytPlayer.getAvailablePlaybackRates() || []).filter((r) => r <= 1);
@@ -6263,6 +6307,14 @@ const V = {
     } catch { return [0.25, 0.5, 0.75, 1]; }
   }
 };
+
+// набор скоростей известен только после готовности плеера — перерисовываем ряд
+function vidRates(box) {
+  const row = box.querySelector(".vd-row.rates");
+  if (!row) return;
+  row.innerHTML = V.rates()
+    .map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
+}
 
 function vidPaint() {
   const box = $("#pracVideo");
@@ -6292,8 +6344,10 @@ function vidTick() {
   vidTimer = setInterval(() => {
     if (!V.ready()) return;
     if (!V.paused()) {
-      const dur = V.dur(), sel = vidSel(dur);
-      if (dur && V.now() >= sel.b - 0.15) V.seek(sel.a);
+      const dur = V.dur(), sel = vidSel(dur), t = V.now();
+      /* Держим окно с обеих сторон. Только правый край мало: если начало
+         не догналось, ролик спокойно играл бы всё, что до куска. */
+      if (dur && (t >= sel.b - 0.15 || t < sel.a - 0.4)) V.seek(sel.a);
     }
     vidPaint();
   }, 120);
@@ -6371,9 +6425,10 @@ function vidControlsHTML(task) {
       <span class="vd-time">0:00</span>
       <button class="vd-btn" data-vd="full" type="button" aria-label="Во весь экран">⤢</button>
     </div>
+    ${rates.length ? `
     <div class="vd-row rates">
       ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
-    </div>
+    </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
     <div class="vd-row marks">
       <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
       <button class="btn" data-vd="all" type="button">Весь ролик</button>
@@ -6397,6 +6452,12 @@ function pracVideo(u) {
     return;
   }
 
+  /* Прямая ссылка на файл — самый простой случай и самый полный: это обычное
+     видео, значит доступно всё, что умеет браузер. Ничего никуда не копируем,
+     просто играем по адресу, который дали. */
+  if (st.ya) { vidMountYa(box, id, st.ya, task, u); return; }
+  if (st.url) { vidMountFile(box, id, st.url, task, u); return; }
+  if (st.vk) { vidMountVK(box, id, st.vk, task, u); return; }
   if (st.yt) { vidMountYT(box, id, st.yt, task, u); return; }
 
   const url = videoUrls.get(id);
@@ -6409,10 +6470,10 @@ function pracVideo(u) {
   box.innerHTML = `
     <div class="vd-empty">
       <b>Разбор по видео</b>
-      <span>Ссылка на ютуб — играет их плеер, управление моё. Файл — останется на этом телефоне и будет открываться сам.</span>
-      <input class="note-input" id="vdUrl" placeholder="Ссылка на YouTube" autocomplete="off">
+      <span>Яндекс.Диск, прямая ссылка или файл с устройства — доступно всё: замедление, петля по кадрам, полный экран. Ютуб и ВК играют своим плеером, у ВК нет замедления.</span>
+      <input class="note-input" id="vdUrl" placeholder="Ссылка с Яндекс.Диска, прямая ссылка, ютуб или ВК" autocomplete="off">
       <div class="vd-pickrow">
-        <button class="btn gold" data-vd="yt" type="button">Взять ролик</button>
+        <button class="btn gold" data-vd="link" type="button">Взять ролик</button>
         <button class="btn" data-vd="pick" type="button">Выбрать файл</button>
       </div>
       <input type="file" accept="video/*" hidden>
@@ -6433,14 +6494,109 @@ function vidMountFile(box, id, url, task, u) {
   pracVidEl.addEventListener("loadedmetadata", () => {
     V.rate(pracStore().vrate || 1);
     vidJump(u);
-    box.querySelector(".vd-row.rates").innerHTML =
-      V.rates().map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
+    vidRates(box);
     vidPaint();
   });
   pracVidEl.addEventListener("play", vidTick);
+  pracVidEl.addEventListener("error", () => vidFail(box, -2));
+  pracVidEl.addEventListener("loadeddata", () => {
+    if (vidWant == null) return;
+    try { pracVidEl.currentTime = vidWant; } catch {}
+    vidWant = null;
+  });
   V.rate(pracStore().vrate || 1);
   vidTick();
   vidPaint();
+}
+
+/* Яндекс.Диск: у них есть публичный API, который по ссылке на файл отдаёт
+   прямую. Она временная, поэтому храним именно ту ссылку, что дали, а прямую
+   спрашиваем при каждом открытии. Дальше это обычное видео — со всем, что
+   умеет браузер: любая скорость, петля по кадрам, полный экран. */
+const yaHref = new Map();
+
+async function yaResolve(share) {
+  if (yaHref.has(share)) return yaHref.get(share);
+  const api = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key="
+    + encodeURIComponent(share);
+  const r = await withTimeout(fetch(api), 15000);
+  if (!r.ok) throw new Error("диск ответил " + r.status);
+  const href = (await r.json()).href;
+  if (!href) throw new Error("нет ссылки на файл");
+  yaHref.set(share, href);
+  return href;
+}
+
+function vidMountYa(box, id, share, task, u) {
+  box.hidden = false;
+  if (box.dataset.mode !== "loading") {
+    box.dataset.mode = "loading"; box.dataset.for = "";
+    box.innerHTML = `<div class="vd-empty"><span>Ролик загружается…</span></div>`;
+  }
+  yaResolve(share)
+    .then((href) => {
+      if (!prac || pracStore().ya !== share) return;
+      box.dataset.mode = "";
+      vidMountFile(box, id, href, task, u);
+    })
+    .catch(() => vidFail(box, -3));
+}
+
+/* ВК: официальный плеер во вставке плюс их же скрипт управления. Прямую
+   ссылку на файл не трогаем — работаем через то, что они сами предлагают.
+   Времени плеер не отдаёт по запросу, только шлёт его событиями, поэтому
+   последнее услышанное держим у себя. */
+function vidMountVK(box, id, v, task, u) {
+  box.hidden = false;
+  if (box.dataset.mode !== "loading") {
+    box.dataset.mode = "loading"; box.dataset.for = "";
+    box.innerHTML = `<div class="vd-empty"><span>Ролик загружается…</span></div>`;
+  }
+  vkApi().then((VKapi) => {
+    const st = pracStore();
+    if (!prac || !st.vk || st.vk.id !== v.id) return;
+    vidKind = "vk"; pracVidEl = null; ytPlayer = null;
+    vkTime = 0; vkDur = 0; vkPlaying = false;
+    box.dataset.mode = "play"; box.dataset.for = id;
+    box.innerHTML = `
+      <div class="vd-wrap">
+        <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
+        <div class="vd-yt"><iframe src="${esc(vkSrc(v))}" frameborder="0"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"></iframe></div>
+        ${vidControlsHTML(task)}
+      </div>`;
+    const frame = box.querySelector("iframe");
+    try { vkPlayer = new VKapi.VideoPlayer(frame); } catch { vidFail(box, -1); return; }
+    const E = VKapi.VideoPlayer.Events;
+    vkPlayer.on(E.INITED, (s2) => { vkDur = (s2 && s2.duration) || 0; vidRates(box); vidJump(u); vidPaint(); });
+    vkPlayer.on(E.TIMEUPDATE, (s2) => {
+      if (!s2) return;
+      vkTime = s2.time || 0;
+      if (s2.duration) vkDur = s2.duration;
+      vidPaint();
+    });
+    vkPlayer.on(E.STARTED, () => { vkPlaying = true; vidTick(); });
+    vkPlayer.on(E.RESUMED, () => { vkPlaying = true; vidTick(); });
+    vkPlayer.on(E.PAUSED, () => { vkPlaying = false; vidPaint(); });
+    vkPlayer.on(E.ENDED, () => { vkPlaying = false; vidPaint(); });
+    vkPlayer.on(E.ERROR, () => vidFail(box, -1));
+    vidTick();
+  }).catch(() => vidFail(box, 0));
+}
+
+let vkApiP = null;
+function vkApi() {
+  if (vkApiP) return vkApiP;
+  vkApiP = new Promise((ok, fail) => {
+    if (window.VK && window.VK.VideoPlayer) return ok(window.VK);
+    const t = document.createElement("script");
+    t.src = "https://vk.com/js/api/videoplayer.js";
+    t.onload = () => (window.VK && window.VK.VideoPlayer) ? ok(window.VK) : fail(new Error("нет плеера"));
+    t.onerror = () => fail(new Error("нет сети"));
+    document.head.appendChild(t);
+    setTimeout(() => fail(new Error("ВК не ответил")), 15000);
+  }).catch((e) => { vkApiP = null; throw e; });
+  return vkApiP;
 }
 
 function vidMountYT(box, id, vid, task, u) {
@@ -6466,8 +6622,7 @@ function vidMountYT(box, id, vid, task, u) {
         onReady: () => {
           V.rate(pracStore().vrate || 1);
           vidJump(u);
-          box.querySelector(".vd-row.rates").innerHTML =
-            V.rates().map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
+          vidRates(box);
           vidTick();
           vidPaint();
         },
@@ -6481,6 +6636,8 @@ function vidMountYT(box, id, vid, task, u) {
 }
 
 const YT_WHY = {
+  "-3": "Яндекс.Диск не дал ссылку на файл — проверь, что доступ по ссылке открыт",
+  "-2": "файл по ссылке не открылся — проверь адрес и что он отдаёт само видео",
   2: "ссылка не похожа на ролик",
   5: "этот ролик не играет во встроенном плеере",
   100: "ролик удалён или закрыт автором",
@@ -6490,15 +6647,18 @@ const YT_WHY = {
 
 function vidFail(box, code) {
   clearInterval(vidTimer);
-  ytPlayer = null; vidKind = "";
+  ytPlayer = null; vkPlayer = null; vidKind = "";
   box.dataset.mode = "off"; box.dataset.for = "";
   const why = YT_WHY[code] || (navigator.onLine ? "ютуб не ответил" : "нет сети");
-  const vid = pracStore().yt;
+  const st = pracStore();
+  const link = st.yt ? "https://www.youtube.com/watch?v=" + st.yt
+    : st.vk ? "https://vkvideo.ru/video" + st.vk.oid + "_" + st.vk.id
+    : (st.ya || st.url || "");
   box.innerHTML = `
     <div class="vd-empty">
       <b>Ролик не открылся</b>
       <span>${esc(why)}.</span>
-      ${vid ? `<a class="btn" href="https://www.youtube.com/watch?v=${esc(vid)}" target="_blank" rel="noopener">Открыть на ютубе</a>` : ""}
+      ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Открыть у них</a>` : ""}
       <button class="btn" data-vd="src" type="button">Взять другое видео</button>
     </div>`;
 }
@@ -7028,7 +7188,7 @@ function closePractice() {
   if (pl) { pl.innerHTML = ""; pl.hidden = true; }
   clearInterval(vidTimer);
   try { V.pause(); } catch {}
-  pracVidEl = null; ytPlayer = null; vidKind = "";
+  pracVidEl = null; ytPlayer = null; vkPlayer = null; vidKind = "";
   const vd = $("#pracVideo");
   if (vd) { vd.innerHTML = ""; vd.hidden = true; vd.dataset.mode = ""; vd.dataset.for = ""; }
   prac = null;
@@ -7222,12 +7382,19 @@ function bindPractice() {
     }
     if (!b) return;
 
-    if (b.dataset.vd === "yt") {
-      const raw = (box.querySelector("#vdUrl") || {}).value || "";
-      const vid = ytId(raw.trim());
-      if (!vid) { toast("Это не похоже на ссылку с YouTube"); return; }
-      pracStore().yt = vid;
+    if (b.dataset.vd === "link") {
+      const raw = ((box.querySelector("#vdUrl") || {}).value || "").trim();
+      const ya = /disk\.yandex\.[a-z]+\//i.test(raw) ? raw : "";
+      const vk = !ya && /vk(?:video)?\.(?:com|ru)|video_ext\.php/.test(raw) ? vkParse(raw) : null;
+      const yt = (ya || vk) ? null : ytId(raw);
+      // не узнали площадку — считаем, что это прямая ссылка на файл
+      const direct = (!ya && !vk && !yt && /^https?:\/\/\S+$/i.test(raw)) ? raw : "";
+      if (!ya && !vk && !yt && !direct) { toast("Не разобрал ссылку"); return; }
+      const st = pracStore();
+      delete st.yt; delete st.vk; delete st.url; delete st.ya;
+      if (ya) st.ya = ya; else if (vk) st.vk = vk; else if (yt) st.yt = yt; else st.url = direct;
       await videoDrop(piece().id);          // файл и ссылка одновременно ни к чему
+      videoUrls.set(piece().id, "");
       saveData(); schedulePush();
       box.dataset.mode = ""; pracVideo(prac && prac.cur);
       return;
@@ -7242,7 +7409,7 @@ function bindPractice() {
         try {
           toast("Сохраняю видео…");
           await videoSave(piece().id, f);
-          delete pracStore().yt;
+          delete pracStore().yt; delete pracStore().vk; delete pracStore().url; delete pracStore().ya;
           saveData(); schedulePush();
           box.dataset.mode = ""; pracVideo(prac && prac.cur);
           toast("Готово — больше выбирать не придётся");
@@ -7255,11 +7422,11 @@ function bindPractice() {
 
     if (b.dataset.vd === "src") {
       if (!confirm("Выбрать другое видео?\n\nРазметка по тактам останется.")) return;
-      delete pracStore().yt;
+      delete pracStore().yt; delete pracStore().vk; delete pracStore().url; delete pracStore().ya;
       await videoDrop(piece().id);
       videoUrls.set(piece().id, "");
       saveData(); schedulePush();
-      clearInterval(vidTimer); ytPlayer = null; pracVidEl = null; vidKind = "";
+      clearInterval(vidTimer); ytPlayer = null; vkPlayer = null; pracVidEl = null; vidKind = "";
       box.dataset.mode = ""; pracVideo(prac && prac.cur);
       return;
     }
