@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 92";
+const APP_VERSION = "Кэйко 93";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2285,6 +2285,28 @@ function takeProgress(id, v) {
   if (cap) cap.textContent = cap.dataset.what + " загружается · " + Math.round(pct * 100) + "%";
 }
 
+/* Вложение доехало. Раньше здесь стояла полная перерисовка — и не тихая,
+   а с анимациями входа: открыл «Моменты», начали подгружаться снимки, и лента
+   на каждом из них дёргалась и уезжала к началу. Меняем на месте ровно то,
+   что этого вложения и ждало. */
+function takeArrived(id) {
+  let swapped = 0;
+  document.querySelectorAll("[data-media]").forEach((el) => {
+    if (el.dataset.media !== id) return;
+    const t = (data.thoughts || []).find((x) => !x.deleted && x.mediaId === id);
+    if (!t) return;
+    el.outerHTML = mediaHTML(t);
+    swapped++;
+  });
+  if (!swapped) { render(true); return; }      // ждали не в ленте — обновим тихо
+  // у подменённого снимка обработчика ещё нет: вешаем заново
+  document.querySelectorAll("[data-shot-src]").forEach((el) => {
+    if (el.dataset.bound) return;
+    el.dataset.bound = "1";
+    el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen));
+  });
+}
+
 async function takesBox() { return await caches.open(TAKE_CACHE); }
 
 async function takeSave(id, blob) {
@@ -2357,7 +2379,7 @@ async function takePull(id) {
     takeProgress(id, 1);
     await takeSave(id, await (await fetch(txt)).blob());
     takePct.delete(id);
-    render();
+    takeArrived(id);
     takeFail.delete(id);
   } catch {
     takePct.delete(id); takeFail.set(id, now());
@@ -5140,8 +5162,10 @@ function renderNotes() {
         </article>`).join("")}
     </div>` : `<div class="empty-note">Здесь копятся моменты: мысль, запись, снимок.<br>Первый можно оставить прямо сейчас.</div>`}`;
 
-  document.querySelectorAll("[data-shot-src]").forEach(el =>
-    el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen)));
+  document.querySelectorAll("[data-shot-src]").forEach((el) => {
+    el.dataset.bound = "1";           // тот же признак, что и у подменённых на лету
+    el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen));
+  });
 
   /* Награда в ленте — не текст, а ссылка на саму награду: жмёшь и видишь,
      за что она и что там написано. */
