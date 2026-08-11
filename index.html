@@ -880,13 +880,19 @@
     .day.sel { outline: 2px solid var(--gold); outline-offset: -1px; }
     .day.future { opacity: 0.32; }
 
+    /* Длинное название материала растягивало колонку и выносило карточку
+       за край экрана: у auto-колонки нет причины ужиматься, а nowrap не давал
+       переносить. Обе колонки теперь могут сжиматься. */
     .rec {
-      display: grid; grid-template-columns: auto 1fr auto;
+      display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
       align-items: center; gap: 11px;
       background: var(--card-2); border: 1px solid var(--line);
       border-radius: 13px; padding: 10px 12px;
     }
-    .rec .what { font-weight: 800; color: var(--gold); white-space: nowrap; font-size: 0.92rem; }
+    .rec .what {
+      font-weight: 800; color: var(--gold); font-size: 0.92rem;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .rec .note { color: var(--muted); font-size: 0.86rem; overflow-wrap: anywhere; }
     .rec .del { color: var(--dim); width: 30px; height: 30px; border-radius: 8px; font-size: 1rem; }
     .empty { color: var(--dim); font-size: 0.87rem; text-align: center; padding: 4px 0; }
@@ -1513,45 +1519,63 @@
     }
     .vd-yt iframe { width: 100%; height: 100%; border: 0; display: block; }
 
-    /* Полоса перемотки — крупная и тянется. */
-    .vd-scrub {
-      position: relative; height: 22px; border-radius: 11px;
-      background: var(--track); touch-action: none; cursor: pointer;
+    /* Одна дорожка: бегунок, выделение и две ручки. Пока ручку держат,
+       дорожка растягивается вокруг неё — тогда край ставится точно. */
+    .tl {
+      position: relative; height: 34px; border-radius: 10px;
+      background: var(--track); touch-action: none; overflow: hidden;
+      transition: height 0.16s ease, background 0.16s ease;
     }
-    .vd-played {
-      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 11px;
-      background: rgba(255, 201, 77, 0.28); pointer-events: none;
+    .tl.mag { height: 46px; background: rgba(139, 124, 246, 0.12); overflow: visible; }
+    .tl-sel {
+      position: absolute; top: 0; bottom: 0;
+      background: rgba(139, 124, 246, 0.38); pointer-events: none;
     }
-    .vd-knob {
-      position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
-      border-radius: 50%; background: var(--gold); pointer-events: none;
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    .tl-head {
+      position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px;
+      background: var(--gold); border-radius: 1px; pointer-events: none;
+      box-shadow: 0 0 6px rgba(255, 201, 77, 0.7);
     }
+    .tl-h {
+      position: absolute; top: 0; bottom: 0; width: 34px; margin-left: -17px;
+      display: grid; place-items: center; cursor: ew-resize; touch-action: none;
+    }
+    .tl-h i {
+      width: 7px; height: 72%; border-radius: 4px; background: var(--violet);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+      transition: height 0.16s ease, width 0.16s ease;
+    }
+    .tl.mag .tl-h i { width: 9px; height: 86%; }
+    .tl-mag {
+      position: absolute; left: 0; right: 0; top: -18px; text-align: center;
+      font-size: 0.66rem; color: var(--violet); font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+    .tl-info {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums;
+    }
+    .tl-loop { color: var(--muted); }
+    .vd-gap { flex: 1; }
 
-    .vd-row { display: flex; align-items: center; gap: 7px; }
+    /* Подробности спрятаны под «Точнее»: на каждый день они не нужны. */
+    .vd-more { border-top: 1px solid var(--glass-line); padding-top: 8px; }
+    .vd-more summary {
+      font-size: 0.74rem; color: var(--dim); cursor: pointer; list-style: none;
+      padding: 2px 0;
+    }
+    .vd-more summary::-webkit-details-marker { display: none; }
+    .vd-more summary::before { content: "▸ "; }
+    .vd-more[open] summary::before { content: "▾ "; }
+    .vd-more > * + * { margin-top: 8px; }
+
+        .vd-row { display: flex; align-items: center; gap: 7px; }
     .vd-btn {
-      width: 42px; height: 38px; flex: none; border-radius: 11px;
+      width: 44px; height: 40px; flex: none; border-radius: 12px;
       border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--ink); font-size: 0.9rem;
+      color: var(--ink); font-size: 0.95rem; line-height: 1;
     }
-    .vd-time { flex: 1; text-align: center; font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-
-    /* Петля живёт своим блоком: она про кусок, а не про воспроизведение. */
-    .vd-loop {
-      display: grid; gap: 8px; padding: 10px;
-      background: var(--glass); border: 1px solid var(--glass-line); border-radius: 12px;
-    }
-    .vd-loop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .vd-loop-head b { font-size: 0.78rem; }
-    .vd-loop-t { font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-    .vd-bar {
-      position: relative; height: 26px; border-radius: 8px;
-      background: var(--track); touch-action: none;
-    }
-    .vd-sel { position: absolute; top: 0; bottom: 0; background: rgba(139, 124, 246, 0.35); border-radius: 8px; pointer-events: none; }
-    .vd-head { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--gold); border-radius: 1px; pointer-events: none; }
-    .vd-h { position: absolute; top: -8px; bottom: -8px; width: 30px; margin-left: -15px; display: grid; place-items: center; cursor: ew-resize; touch-action: none; }
-    .vd-h::before { content: ""; width: 6px; height: 100%; border-radius: 3px; background: var(--violet); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); }
+    .vd-time { font-variant-numeric: tabular-nums; }
 
     .vd-row.edges em { font-style: normal; font-size: 0.68rem; color: var(--dim); width: 52px; flex: none; }
     .vd-row.edges button, .vd-row.rates button, .vd-row.marks .btn {
@@ -1566,7 +1590,6 @@
     .vd-slow { margin: 0; font-size: 0.72rem; color: var(--gold); line-height: 1.4; }
     .vd-src { display: flex; align-items: baseline; gap: 8px; font-size: 0.72rem; color: var(--dim); }
     .vd-src b { color: var(--muted); font-weight: 600; }
-    .vd-note { display: none; }
 
     /* Полный экран свой, на классе: системный на айфоне для произвольного
        блока не работает вовсе. Видео занимает всё, снизу узкая панель —
@@ -1600,18 +1623,15 @@
     #pracVideo.full .vd-row.rates,
     #pracVideo.full .vd-slow,
     #pracVideo.full .vd-src,
-    #pracVideo.full .vd-loop-head { display: none; }
+    #pracVideo.full .vd-more { display: none; }
 
-    #pracVideo.full .vd-scrub { margin: 10px 14px 0; }
-    #pracVideo.full .vd-row { margin: 8px 14px; }
-    #pracVideo.full .vd-loop {
-      background: none; border: 0; padding: 0;
-      margin: 0 14px calc(12px + env(safe-area-inset-bottom));
-    }
+    #pracVideo.full .tl { margin: 10px 14px 0; }
+    #pracVideo.full .tl-info { margin: 6px 14px 0; }
+    #pracVideo.full .vd-row { margin: 8px 14px calc(12px + env(safe-area-inset-bottom)); }
     /* кнопка «во весь экран» превращается в «закрыть» и остаётся доступной */
     #pracVideo.full .vd-btn { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.16); }
 
-        /* Звук на этом экране — не главное    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
+    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
        Нужен — развернул. */
     .pl-fold {
       display: flex; align-items: baseline; justify-content: space-between; gap: 10px;

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 103";
+const APP_VERSION = "Кэйко 104";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -193,6 +193,7 @@ function migrate(obj) {
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
   if (obj.eventsV) base.eventsV = obj.eventsV;
+  if (obj.pracTrimV) base.pracTrimV = obj.pracTrimV;
 
   if (obj.watch) {
     base.watch.videos = Array.isArray(obj.watch.videos) ? obj.watch.videos : [];
@@ -260,6 +261,7 @@ function load() {
   }
   data = migrate(raw);
   try { eventsReset(); } catch {}      // разовая чистка выдуманных событий
+  try { shortPracReset(); } catch {}   // и заходов короче двух минут
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
 }
 /* Отметка обязана пережить что угодно, поэтому запись на устройство
@@ -6510,35 +6512,55 @@ function vidRates(box) {
     .map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
 }
 
+/* Что сейчас показывает дорожка: целый ролик или растянутое окно вокруг
+   ручки, которую держат. */
+let vidMag = null;
+function vidView(dur) {
+  if (!vidMag || !dur) return { from: 0, to: dur || 0 };
+  const half = Math.max(1.5, Math.min(dur, vidMag.span) / 2);
+  let from = vidMag.at - half, to = vidMag.at + half;
+  if (from < 0) { to -= from; from = 0; }
+  if (to > dur) { from -= to - dur; to = dur; }
+  return { from: Math.max(0, from), to: Math.min(dur, to) };
+}
+
 function vidPaint() {
   const box = $("#pracVideo");
   if (!box || box.hidden || !V.ready()) return;
   const dur = V.dur(), cur = V.now();
   const sel = vidSel(dur);
-  const pc = (t) => (dur ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0);
+  const view = vidView(dur);
+  const span = Math.max(0.001, view.to - view.from);
+  const pc = (t) => Math.max(-5, Math.min(105, ((t - view.from) / span) * 100));
   const q = (c) => box.querySelector(c);
-  const S = q(".vd-sel"), A = q('[data-vh="a"]'), B = q('[data-vh="b"]'), P = q(".vd-head"), T = q(".vd-time");
+
+  const S = q(".tl-sel"), A = q('[data-vh="a"]'), B = q('[data-vh="b"]'), P = q(".tl-head");
   if (!S) return;
-  S.style.left = pc(sel.a) + "%";
-  S.style.width = Math.max(0, pc(sel.b) - pc(sel.a)) + "%";
-  A.style.left = pc(sel.a) + "%";
-  B.style.left = pc(sel.b) + "%";
+  const a = pc(sel.a), b = pc(sel.b);
+  S.style.left = Math.max(0, a) + "%";
+  S.style.width = Math.max(0, Math.min(100, b) - Math.max(0, a)) + "%";
+  A.style.left = a + "%";
+  B.style.left = b + "%";
   P.style.left = pc(cur) + "%";
+
+  const mag = q(".tl-mag");
+  if (mag) mag.textContent = vidMag ? plClock(view.from) + " … " + plClock(view.to) : "";
+  box.querySelector(".tl").classList.toggle("mag", !!vidMag);
+
+  const T = q(".vd-time");
   if (T) T.textContent = plClock(cur) + " / " + plClock(dur);
+  const L = q(".tl-loop");
+  if (L) L.textContent = sel.b - sel.a >= dur - 0.5
+    ? "весь ролик"
+    : "кусок " + plClock(sel.a) + "–" + plClock(sel.b) + " · " + plClock(sel.b - sel.a);
+
   const play = q('[data-vd="play"]');
   if (play) play.textContent = V.paused() ? "▶︎" : "❚❚";
   const va = q('[data-vset="a"]'), vb = q('[data-vset="b"]');
   if (va) va.textContent = plClock(sel.a);
   if (vb) vb.textContent = plClock(sel.b);
-  const lt = q(".vd-loop-t");
-  if (lt) lt.textContent = plClock(sel.a) + "–" + plClock(sel.b) + " · " + plClock(sel.b - sel.a);
-
-  // отдельная полоса перемотки: за неё тянут, чтобы попасть куда угодно
-  const played = q(".vd-played"), knob = q(".vd-knob");
-  if (played) played.style.width = pc(cur) + "%";
-  if (knob) knob.style.left = pc(cur) + "%";
   const rate = pracStore().vrate || 1;
-  box.querySelectorAll("[data-vrate]").forEach((b) => b.classList.toggle("on", Number(b.dataset.vrate) === rate));
+  box.querySelectorAll("[data-vrate]").forEach((x) => x.classList.toggle("on", Number(x.dataset.vrate) === rate));
 }
 
 /* Петля. У ютуба своего «доиграл до сих пор» нет, поэтому просто спрашиваем
@@ -6566,39 +6588,18 @@ function vidSetSel(next) {
   vidPaint();
 }
 
+/* Одна дорожка — три жеста. Тянешь за ручку — двигаешь край куска, и на
+   время удержания дорожка растягивается вокруг этой ручки: попасть в секунду
+   на десятиминутном ролике иначе нельзя. Тянешь за пустое место — перематываешь.
+   Отпустил ручку — масштаб вернулся к целому ролику. */
 function vidDrag(e) {
   const box = $("#pracVideo");
 
-  /* Перемотка: тянем за полосу, а не тыкаем. Попасть в нужное место пальцем
-     на узкой дорожке иначе нельзя, а это первое, чего от плеера ждут. */
-  const scrub = e.target.closest(".vd-scrub");
-  if (scrub && V.ready()) {
-    const dur = V.dur();
-    if (!dur) return;
-    e.preventDefault();
-    const at = (ev) => {
-      const r = scrub.getBoundingClientRect();
-      V.seek(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * dur);
-      vidPaint();
-    };
-    at(e);
-    const up = () => {
-      document.removeEventListener("pointermove", at);
-      document.removeEventListener("pointerup", up);
-    };
-    document.addEventListener("pointermove", at);
-    document.addEventListener("pointerup", up);
-    return;
-  }
-
-
-  /* Приближённую картинку возят пальцем: иначе руки уезжают за край рамки
-     и приближение теряет смысл. */
   const frame = e.target.closest(".vd-frame.zoomed");
   if (frame && !vidPinch.two) {
     const st = pracStore();
     const z = st.vzoom || 1;
-    const lim = (z - 1) * 50;                 // дальше края уже видно пустоту
+    const lim = (z - 1) * 50;
     const x0 = e.clientX, y0 = e.clientY;
     const p0 = st.vpan || 0, q0 = st.vpanY || 0;
     e.preventDefault();
@@ -6619,25 +6620,53 @@ function vidDrag(e) {
     return;
   }
 
-  const h = e.target.closest("[data-vh]");
-  const bar = box && box.querySelector(".vd-bar");
-  if (!h || !bar || !V.ready()) return;
+  const tl = e.target.closest(".tl");
+  if (!tl || !V.ready()) return;
   const dur = V.dur();
   if (!dur) return;
   e.preventDefault();
-  const which = h.dataset.vh;
-  const move = (ev) => {
-    const r = bar.getBoundingClientRect();
-    const t = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * dur;
-    const cur = vidSel(dur);
-    vidSetSel(which === "a" ? { a: Math.min(t, cur.b - 0.3), b: cur.b }
-                            : { a: cur.a, b: Math.max(t, cur.a + 0.3) });
+
+  const at = (ev) => {
+    const view = vidView(dur);
+    const r = tl.getBoundingClientRect();
+    const k = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+    return view.from + k * (view.to - view.from);
   };
+
+  const h = e.target.closest("[data-vh]");
+  if (h) {
+    const which = h.dataset.vh;
+    const cur0 = vidSel(dur);
+    // растягиваем окно вокруг ручки — на время, пока её держат
+    vidMag = { at: which === "a" ? cur0.a : cur0.b, span: Math.max(6, Math.min(dur, dur / 12)) };
+    vidPaint();
+    const move = (ev) => {
+      const t = at(ev);
+      const cur = vidSel(dur);
+      vidMag.at = t;
+      vidSetSel(which === "a"
+        ? { a: Math.max(0, Math.min(t, cur.b - 0.3)), b: cur.b }
+        : { a: cur.a, b: Math.min(dur, Math.max(t, cur.a + 0.3)) });
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      vidMag = null;                 // отпустил — дорожка снова про весь ролик
+      vidPaint();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    return;
+  }
+
+  // пустое место дорожки — перемотка
+  const seek = (ev) => { V.seek(at(ev)); vidPaint(); };
+  seek(e);
   const up = () => {
-    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointermove", seek);
     document.removeEventListener("pointerup", up);
   };
-  document.addEventListener("pointermove", move);
+  document.addEventListener("pointermove", seek);
   document.addEventListener("pointerup", up);
 }
 
@@ -6666,29 +6695,39 @@ function ytReady() {
   return ytApi;
 }
 
+/* Один таймлайн вместо двух. Раньше их было два — «где я в ролике» и «какой
+   кусок повторяю», — и глазу приходилось сопоставлять их между собой. Теперь
+   это одна дорожка: на ней и бегунок, и выделение с двумя ручками.
+
+   Ручку можно зажать — дорожка растянется вокруг неё, и край ставится точно.
+   Отпустил — вернулась к целому ролику. Это заменяет возню с числами, хотя
+   числа тоже остались. */
 function vidControlsHTML(task) {
   const rates = V.rates();
   return `
-    <div class="vd-scrub"><i class="vd-played"></i><b class="vd-knob"></b></div>
+    <div class="tl" data-tl>
+      <div class="tl-sel"></div>
+      <div class="tl-h" data-vh="a"><i></i></div>
+      <div class="tl-h" data-vh="b"><i></i></div>
+      <div class="tl-head"></div>
+      <div class="tl-mag"></div>
+    </div>
+    <div class="tl-info">
+      <span class="vd-time">0:00</span>
+      <span class="tl-loop">кусок 0:00–0:00</span>
+    </div>
+
     <div class="vd-row">
       <button class="vd-btn" data-vd="play" type="button">▶︎</button>
-      <button class="vd-btn" data-vd="back" type="button" aria-label="Сначала">↺</button>
-      <span class="vd-time">0:00</span>
+      <button class="vd-btn" data-vd="back" type="button" aria-label="Начать кусок сначала">↺</button>
+      <button class="vd-btn" data-vd="all" type="button" aria-label="Весь ролик">⤾</button>
+      <span class="vd-gap"></span>
       <button class="vd-btn" data-vd="zoom" type="button" aria-label="Приблизить">🔍</button>
       <button class="vd-btn" data-vd="full" type="button" aria-label="Во весь экран">⤢</button>
     </div>
 
-    <div class="vd-loop">
-      <div class="vd-loop-head">
-        <b>Кусок по кругу</b>
-        <span class="vd-loop-t">0:00–0:00</span>
-      </div>
-      <div class="vd-bar">
-        <div class="vd-sel"></div>
-        <div class="vd-head"></div>
-        <div class="vd-h" data-vh="a"></div>
-        <div class="vd-h" data-vh="b"></div>
-      </div>
+    <details class="vd-more">
+      <summary>Точнее</summary>
       <div class="vd-row edges">
         <em>Начало</em>
         <button data-vedge="a" data-vstep="-1" type="button">−</button>
@@ -6703,19 +6742,16 @@ function vidControlsHTML(task) {
       </div>
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
-        <button class="btn" data-vd="all" type="button">Весь ролик</button>
       </div>
-    </div>
-
-    ${rates.length ? `
-    <div class="vd-row rates">
-      ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
-    </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
-
-    <div class="vd-src">
-      Источник: <b>${esc(vidWhat())}</b>
-      <button class="th-link" data-vd="src" type="button">сменить</button>
-    </div>`;
+      ${rates.length ? `
+      <div class="vd-row rates">
+        ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
+      </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
+      <div class="vd-src">
+        Источник: <b>${esc(vidWhat())}</b>
+        <button class="th-link" data-vd="src" type="button">сменить</button>
+      </div>
+    </details>`;
 }
 
 function pracVideo(u) {
@@ -6753,15 +6789,14 @@ function pracVideo(u) {
   box.hidden = false;
   if (box.dataset.mode === "pick") return;
   box.dataset.mode = "pick"; box.dataset.for = "";
+  /* Осталось одно действие. Ссылки умели то же самое, но только после
+     скачивания, а выбор из четырёх источников на пустом месте — лишний
+     разговор. Файл выбирается один раз и запоминается. */
   box.innerHTML = `
     <div class="vd-empty">
       <b>Разбор по видео</b>
-      <span>Яндекс.Диск, прямая ссылка или файл с устройства — доступно всё: замедление, петля по кадрам, полный экран. Ютуб и ВК играют своим плеером, у ВК нет замедления.</span>
-      <input class="note-input" id="vdUrl" placeholder="Ссылка с Яндекс.Диска, прямая ссылка, ютуб или ВК" autocomplete="off">
-      <div class="vd-pickrow">
-        <button class="btn gold" data-vd="link" type="button">Взять ролик</button>
-        <button class="btn" data-vd="pick" type="button">Выбрать файл</button>
-      </div>
+      <span>Выбери файл — он останется на этом телефоне и дальше будет открываться сам.</span>
+      <button class="btn gold" data-vd="pick" type="button">Выбрать видео</button>
       <input type="file" accept="video/*" hidden>
     </div>`;
 }
@@ -7239,6 +7274,24 @@ function addEvent(kind, key, track, text, extra) {
 
    Ранее полученное при этом не теряется: приложение помечает его как уже
    учтённое, чтобы оно не всплыло «новым» на следующем занятии. */
+/* Разовая уборка: заходы короче двух минут занятиями не считаются, и те,
+   что успели записаться раньше, из истории убираются. Трогаем только записи
+   самого занятия по плану — ручные отметки, где минут просто нет, остаются
+   как есть. Разбор пьесы не трогаем: это пройденные такты, а не время. */
+function shortPracReset() {
+  if (data.pracTrimV === 1) return;
+  let n = 0;
+  for (const e of (data.piano.entries || [])) {
+    if (e.deleted) continue;
+    if (typeof e.mins !== "number" || e.mins >= 2) continue;
+    if (!String(e.note || "").startsWith("занятие по плану")) continue;
+    e.deleted = true; e.updatedAt = now(); n++;
+  }
+  data.pracTrimV = 1;
+  saveData();
+  if (n) schedulePush();
+}
+
 function eventsReset() {
   if (data.eventsV === 4) return;
   /* Прошлая чистка сносила ВСЕ события разом — вместе с одиночными наградами
@@ -7624,7 +7677,7 @@ function pracNote(u, sec) {
 }
 
 /* Сегодняшняя запись занятия: одна на день, как и при ручной отметке. */
-const PRAC_MIN_ENTRY = 1;             // минут: короче — это не занятие, а взгляд одним глазом
+const PRAC_MIN_ENTRY = 2;             // минут: короче — это не занятие, а взгляд одним глазом
 
 function pracEntry(make) {
   const ds = todayStr();
@@ -10199,7 +10252,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
