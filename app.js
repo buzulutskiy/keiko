@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 93";
+const APP_VERSION = "Кэйко 94";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3449,6 +3449,122 @@ function forecastHTML() {
   `;
 }
 
+/* ── Из чего сложилась неделя ──
+   Полоса «куда ушли дни» отвечает про треки: пианино против чтения. А хочется
+   видеть сами вещи — какая книга, какая пьеса, — и видеть на глаз, не читая
+   чисел. Каждый материал здесь кружок, площадь которого равна числу дней:
+   площадь, а не радиус, иначе вдвое больше выглядит вчетверо.
+
+   Размер считаем по дням, а не по минутам: минуты знает только пианино и курс,
+   у книги и роликов их нет вовсе. Складывать известное с выдуманным нельзя,
+   а дни есть у всех и означают одно и то же. */
+let pileOff = 0;                       // на сколько недель (месяцев) назад смотрим
+
+function pileRange() {
+  const d = new Date();
+  if (period === "month") {
+    const m = new Date(d.getFullYear(), d.getMonth() + pileOff, 1);
+    const last = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+    return { from: dateStr(m), to: dateStr(last),
+      title: new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" })
+        .format(m).replace(" г.", "") };
+  }
+  const mon = mondayOf(d); mon.setDate(mon.getDate() + pileOff * 7);
+  const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+  return { from: dateStr(mon), to: dateStr(sun), title: fmtRange(dateStr(mon), dateStr(sun)) };
+}
+
+function pileItems(from, to) {
+  const inR = (e) => !e.deleted && e.date >= from && e.date <= to;
+  const out = [];
+  const add = (icon, title, track, list, mins) => {
+    const days = new Set(list.map((e) => e.date)).size;
+    if (days) out.push({ icon, title, track, days, mins: mins || 0 });
+  };
+
+  for (const b of (data.book.books || [])) {
+    const list = bookEntriesOf(b.id).filter(inR);
+    add("📖", b.title, "book", list, 0);
+  }
+  for (const pc of (data.piano.pieces || [])) {
+    const list = pieceEntriesOf(pc.id).filter(inR);
+    add("🎹", pc.name, "piano", list, list.reduce((n, e) => n + (e.mins || 0), 0));
+  }
+  if (course().lessons.length) {
+    const list = courseTrack().entries.filter(inR);
+    add("🎨", course().name, "pastel", list, list.reduce((n, e) => n + (e.mins || 0), 0));
+  }
+  for (const v of videos()) {
+    add("🎬", v.title, "watch", watchEntriesOf(v.id).filter(inR), 0);
+  }
+  return out.sort((a, b) => b.days - a.days);
+}
+
+/* Раскладка «горкой»: крупное в середине, мелкое липнет по краям. Идём по
+   спирали от центра и садимся в первое место, где ни с кем не пересекаемся. */
+function pilePack(items, W, H) {
+  const put = [];
+  for (const it of items) {
+    for (let a = 0; a < 3000; a++) {
+      const t = a * 0.4, R = 2.2 * Math.sqrt(a);
+      const x = W / 2 + R * Math.cos(t), y = H / 2 + R * Math.sin(t) * 0.72;
+      if (x - it.r < 1 || x + it.r > W - 1 || y - it.r < 1 || y + it.r > H - 1) continue;
+      if (put.every((q) => Math.hypot(q.x - x, q.y - y) >= q.r + it.r + 2.5)) {
+        put.push({ ...it, x, y });
+        break;
+      }
+    }
+  }
+  return put;
+}
+
+function pileHTML() {
+  const r = pileRange();
+  const items = pileItems(r.from, r.to);
+  const W = 320, H = 190;
+  const max = items[0] ? items[0].days : 1;
+  /* Радиус — корень из доли: тогда ПЛОЩАДЬ пропорциональна дням, а глаз
+     считывает именно площадь. Нижнюю подпорку держим маленькой: чем она
+     больше, тем сильнее мелкое притворяется крупным. */
+  const sized = items.map((it) => ({ ...it, r: Math.max(13, 46 * Math.sqrt(it.days / max)) }));
+  /* Две пьесы одного цвета сливаются в одно пятно. Внутри трека делаем шаг
+     по прозрачности: цвет остаётся узнаваемым, а вещи различимы. */
+  const seen = {};
+  for (const it of sized) {
+    const n = (seen[it.track] = (seen[it.track] || 0) + 1) - 1;
+    it.dim = Math.max(0.5, 0.92 - n * 0.2);
+  }
+  const put = pilePack(sized, W, H);
+
+  const ahead = pileOff >= 0;
+  return `
+    <div class="panel">
+      <div class="pile-head">
+        <h3 class="blk-head">Из чего сложилась ${period === "month" ? "месяц" : "неделя"}</h3>
+        <div class="pile-nav">
+          <button data-pile="-1" type="button">‹</button>
+          <b>${esc(r.title)}</b>
+          <button data-pile="1" type="button" ${ahead ? "disabled" : ""}>›</button>
+        </div>
+      </div>
+      ${put.length ? `
+        <svg class="pile" viewBox="0 0 ${W} ${H}" role="img">
+          ${put.map((it) => `
+            <g class="pl-b" data-pileinfo="${esc(it.title + " · " + it.days + " " + plural(it.days, "день", "дня", "дней") + (it.mins ? " · " + it.mins + " мин" : ""))}">
+              <title>${esc(it.title)}</title>
+              <circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${it.r.toFixed(1)}"
+                fill="${TRACK_HUE[it.track] || "var(--gold)"}" opacity="${it.dim}"></circle>
+              <text x="${it.x.toFixed(1)}" y="${(it.y + it.r * 0.12).toFixed(1)}"
+                font-size="${(it.r * 0.72).toFixed(1)}" text-anchor="middle" dominant-baseline="middle">${it.icon}</text>
+              <text class="pl-n" x="${it.x.toFixed(1)}" y="${(it.y + it.r * 0.72).toFixed(1)}"
+                font-size="${Math.max(8, it.r * 0.3).toFixed(1)}" text-anchor="middle">${it.days}</text>
+            </g>`).join("")}
+        </svg>
+        <p class="pile-note">Размер — сколько дней ты к этому возвращался. Нажми на кружок, чтобы увидеть подробности.</p>`
+      : `<div class="empty-note">${pileOff ? "В этот раз ничего не отмечено." : "Пока пусто — но неделя ещё идёт."}</div>`}
+    </div>`;
+}
+
 /* ── Куда ушли дни ──
    Один материал легко съедает всё внимание, а остальные тихо стоят. Полоса
    показывает перекос сразу: видно, что заброшено, ещё до того, как заметишь. */
@@ -3665,6 +3781,7 @@ function renderProgress() {
       ${summaryHTML()}
     </div>
 
+    ${pileHTML()}
     ${forecastHTML()}
     ${splitHTML()}
     ${weekProfileHTML()}
@@ -3706,8 +3823,19 @@ function renderProgress() {
     b.addEventListener("click", () => {
       period = b.dataset.p;
       cfg.period = period; saveCfg();
+      pileOff = 0;                    // сменили масштаб — возвращаемся к нынешнему
       renderProgress();
     }));
+
+  document.querySelectorAll("[data-pile]").forEach(b =>
+    b.addEventListener("click", () => {
+      const next = pileOff + Number(b.dataset.pile);
+      if (next > 0) return;           // вперёд дальше нынешнего смысла нет
+      pileOff = next;
+      renderProgress();
+    }));
+  document.querySelectorAll("[data-pileinfo]").forEach(g =>
+    g.addEventListener("click", () => toast(g.dataset.pileinfo)));
 
   $("#calPrev").addEventListener("click", () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
   $("#calNext").addEventListener("click", () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
