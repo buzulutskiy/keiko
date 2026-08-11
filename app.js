@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 102";
+const APP_VERSION = "Кэйко 103";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6416,6 +6416,27 @@ function vidAsk(which) {
                           : { a: cur.a, b: Math.max(t, cur.a + 0.3) });
 }
 
+/* Свой полный экран, а не системный. iOS Safari разворачивать произвольный
+   элемент не умеет вовсе: у него есть только полный экран для самого <video>
+   с родными кнопками Apple — а там ни петли, ни щипка, ни задания. Поэтому
+   растягиваем блок сами, обычным классом. Разметку при этом не трогаем:
+   пересоздать плеер значило бы прервать воспроизведение.
+   Системный полный экран всё же просим там, где он есть, — ради лишних
+   пикселей под строкой состояния; но раскладка от него не зависит. */
+function vidFull(on) {
+  const box = $("#pracVideo");
+  if (!box) return;
+  box.classList.toggle("full", on);
+  document.body.classList.toggle("vd-full", on);
+  const b = box.querySelector('[data-vd="full"]');
+  if (b) { b.textContent = on ? "✕" : "⤢"; b.setAttribute("aria-label", on ? "Свернуть" : "Во весь экран"); }
+  try {
+    if (on && box.requestFullscreen) box.requestFullscreen().catch(() => {});
+    else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch {}
+  requestAnimationFrame(() => vidPaint());
+}
+
 /* Щипок двумя пальцами — то, как приближают везде. Кнопка остаётся для тех
    случаев, когда рука одна занята инструментом. */
 const vidPinch = { two: false, d0: 0, z0: 1 };
@@ -7481,10 +7502,13 @@ function openPractice() {
   // разбора может не быть на этом устройстве — просим каталог сразу
   if (!pracDoc() && cfg.token && cfg.catalogId)
     catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
+  /* Промежуточного экрана «занятие такое-то · продолжить» больше нет: он
+     ничего не решал, а вставал между тобой и первым тактом. Открыл — играешь. */
   prac = {
-    screen: "start", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, listOpen: false,
+    screen: "work", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, listOpen: false,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
-    startedAt: 0, breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
+    startedAt: Date.now(), counted: 0,
+    breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
   };
   $("#prac").hidden = false;
   $("#prac").setAttribute("aria-hidden", "false");
@@ -7496,7 +7520,8 @@ function openPractice() {
     else pracWatch();
   }, 1000);
   keepAwake(true);
-  pracRender();
+  prac.queue = pracQueue();
+  pracNext();
 }
 
 function closePractice() {
@@ -7510,7 +7535,8 @@ function closePractice() {
   try { V.pause(); } catch {}
   pracVidEl = null; ytPlayer = null; vkPlayer = null; vidKind = "";
   const vd = $("#pracVideo");
-  if (vd) { vd.innerHTML = ""; vd.hidden = true; vd.dataset.mode = ""; vd.dataset.for = ""; }
+  if (vd) { vd.classList.remove("full"); vd.innerHTML = ""; vd.hidden = true; vd.dataset.mode = ""; vd.dataset.for = ""; }
+  document.body.classList.remove("vd-full");
   prac = null;
   $("#prac").hidden = true;
   $("#prac").setAttribute("aria-hidden", "true");
@@ -7598,12 +7624,23 @@ function pracNote(u, sec) {
 }
 
 /* Сегодняшняя запись занятия: одна на день, как и при ручной отметке. */
+const PRAC_MIN_ENTRY = 1;             // минут: короче — это не занятие, а взгляд одним глазом
+
 function pracEntry(make) {
   const ds = todayStr();
   let e = data.piano.entries.find((x) => !x.deleted && x.date === ds && (x.pieceId || "bwv853") === piece().id);
+  /* Заглянул на секунду — записи не будет. Раньше в истории заводились
+     занятия по одной секунде: формально правда, а по смыслу мусор. */
+  if (!e && make && prac && pracMin() < PRAC_MIN_ENTRY) return null;
   if (!e && make) {
     e = { id: uid(), date: ds, pieceId: piece().id, spans: [], mins: 0, sessions: 0,
           note: "занятие по плану", createdAt: now(), updatedAt: now() };
+    /* Отрезки, закрытые до того, как минута набралась, не пропадают:
+       они дожидались здесь и уходят в запись целиком. */
+    if (prac && prac.pending && prac.pending.length) {
+      e.spans.push(...prac.pending);
+      prac.pending = [];
+    }
     data.piano.entries.push(e);
   }
   return e || null;
@@ -7614,6 +7651,7 @@ function pracEntry(make) {
    от последнего. Дописываем только прирост с прошлой записи. */
 function pracCount() {
   const e = pracEntry(true);
+  if (!e) return null;                 // ещё не минута — записи пока нет
   if (!prac.sessionCounted) { e.sessions = (e.sessions || 0) + 1; prac.sessionCounted = true; }
   const cur = pracMin();
   const add = Math.max(0, cur - (prac.counted || 0));
@@ -7629,8 +7667,14 @@ function pracCount() {
    только по кнопке «Завершить»: закроешь приложение посреди занятия — и всё,
    что успел, оставалось в разборе, но в прогресс приложения не попадало. */
 function pracLog(u) {
-  const e = pracEntry(true);
   const hands = u.hand === "both" ? ["right", "left"] : [u.hand];
+  const e = pracEntry(true);
+  if (!e) {
+    // минуты ещё нет: придерживаем отрезки до того, как запись появится
+    prac.pending = (prac.pending || []).concat(hands.map((h) => ({ hand: h, from: u.from, to: u.to })));
+    saveData();
+    return hands.length;
+  }
   for (const h of hands) e.spans.push({ hand: h, from: u.from, to: u.to });
   /* Минуты пишем сразу, а не только по кнопке «Завершить»: экран гаснет,
      приложение уходит в фон, и до кнопки дело может не дойти. */
@@ -7668,8 +7712,10 @@ function pracFinish() {
   /* День отмечается, даже если ни один отрезок не дошёл до конца: сорок минут
      за инструментом — это занятие, а не пустое место, и серию оно рвать
      не должно. */
-  if (prac && prac.startedAt && (prac.closed.length || pracEntry(false))) {
+  // короткий заход занятием не считается: ни записи, ни серии, ни минут
+  if (prac && prac.startedAt && pracMin() >= PRAC_MIN_ENTRY && (prac.closed.length || pracEntry(false))) {
     const e = pracCount();
+    if (!e) { closePractice(); return; }
     pracStore().session++;
     saveData();
     schedulePush();
@@ -7773,14 +7819,7 @@ function bindPractice() {
       } else V.pause();
       vidPaint();
     } else if (b.dataset.vd === "full") {
-      /* Разворачиваем обёртку, а не само видео: задание, дорожка и петля
-         должны остаться на экране. */
-      const wrap = box.querySelector(".vd-wrap");
-      try {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else if (wrap.requestFullscreen) await wrap.requestFullscreen();
-        else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
-      } catch {}
+      vidFull(!box.classList.contains("full"));
     } else if (b.dataset.vd === "bind") {
       const u = prac && prac.cur;
       if (!u) { toast("Сейчас нет текущего задания"); return; }

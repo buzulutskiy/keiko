@@ -1568,43 +1568,48 @@
     .vd-src b { color: var(--muted); font-weight: 600; }
     .vd-note { display: none; }
 
-    /* Полный экран — отдельный режим, а не та же страница покрупнее.
-       Видео занимает всё, снизу узкая панель: перемотка с видимой петлёй,
-       пуск, пауза, начало куска. Приближение щипком и таскание работают
-       здесь же — рамка та же самая. */
-    .vd-wrap:fullscreen {
-      background: #000; padding: 0; gap: 0;
-      display: flex; flex-direction: column;
+    /* Полный экран свой, на классе: системный на айфоне для произвольного
+       блока не работает вовсе. Видео занимает всё, снизу узкая панель —
+       перемотка с видимой петлёй, пуск и «сначала». Щипок и таскание живут
+       здесь же: рамка та же самая. */
+    body.vd-full { overflow: hidden; }
+    #pracVideo.full {
+      position: fixed; inset: 0; z-index: 80; margin: 0;
+      max-width: none; border: 0; border-radius: 0; padding: 0;
+      background: #000; display: flex;
     }
-    .vd-wrap:fullscreen .vd-task {
+    #pracVideo.full .vd-wrap {
+      flex: 1; display: flex; flex-direction: column; gap: 0; min-height: 0;
+    }
+    #pracVideo.full .vd-task {
       position: absolute; left: 0; right: 0; z-index: 2;
       top: max(12px, env(safe-area-inset-top));
-      text-align: center; font-size: 0.86rem; color: rgba(255, 255, 255, 0.65);
-      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); pointer-events: none;
+      text-align: center; font-size: 0.86rem; color: rgba(255, 255, 255, 0.7);
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85); pointer-events: none;
     }
-    .vd-wrap:fullscreen .vd-task b { color: #fff; }
-    .vd-wrap:fullscreen .vd-frame {
-      flex: 1 1 auto; aspect-ratio: auto; height: auto; border-radius: 0; background: #000;
+    #pracVideo.full .vd-task b { color: #fff; }
+    #pracVideo.full .vd-frame {
+      flex: 1 1 auto; aspect-ratio: auto; height: auto; min-height: 0;
+      border-radius: 0; background: #000;
     }
-    .vd-wrap:fullscreen video, .vd-wrap:fullscreen .vd-yt { object-fit: contain; }
+    #pracVideo.full video, #pracVideo.full .vd-yt { object-fit: contain; }
 
     /* в полном экране оставляем только то, что нужно руками */
-    .vd-wrap:fullscreen .vd-row.edges,
-    .vd-wrap:fullscreen .vd-row.marks,
-    .vd-wrap:fullscreen .vd-row.rates,
-    .vd-wrap:fullscreen .vd-slow,
-    .vd-wrap:fullscreen .vd-src,
-    .vd-wrap:fullscreen .vd-loop-head { display: none; }
+    #pracVideo.full .vd-row.edges,
+    #pracVideo.full .vd-row.marks,
+    #pracVideo.full .vd-row.rates,
+    #pracVideo.full .vd-slow,
+    #pracVideo.full .vd-src,
+    #pracVideo.full .vd-loop-head { display: none; }
 
-    .vd-wrap:fullscreen .vd-scrub,
-    .vd-wrap:fullscreen .vd-row,
-    .vd-wrap:fullscreen .vd-loop { margin: 0 14px; }
-    .vd-wrap:fullscreen .vd-scrub { margin-top: 10px; }
-    .vd-wrap:fullscreen .vd-loop {
+    #pracVideo.full .vd-scrub { margin: 10px 14px 0; }
+    #pracVideo.full .vd-row { margin: 8px 14px; }
+    #pracVideo.full .vd-loop {
       background: none; border: 0; padding: 0;
-      margin-bottom: calc(12px + env(safe-area-inset-bottom));
+      margin: 0 14px calc(12px + env(safe-area-inset-bottom));
     }
-    .vd-wrap:fullscreen .vd-row { margin-top: 8px; margin-bottom: 8px; }
+    /* кнопка «во весь экран» превращается в «закрыть» и остаётся доступной */
+    #pracVideo.full .vd-btn { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.16); }
 
         /* Звук на этом экране — не главное    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
        Нужен — развернул. */
