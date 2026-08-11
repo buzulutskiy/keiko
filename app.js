@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 97";
+const APP_VERSION = "Кэйко 98";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6308,6 +6308,17 @@ const V = {
   }
 };
 
+/* Что именно сейчас играет. Раньше это было ниоткуда не видно, и сменить
+   источник предлагалось безымянным «⋯» — найти его было нельзя. */
+function vidWhat() {
+  const st = pracStore();
+  if (st.ya) return "Яндекс.Диск";
+  if (st.url) return "ссылка на файл";
+  if (st.vk) return "ВК";
+  if (st.yt) return "YouTube";
+  return "файл на этом телефоне";
+}
+
 // набор скоростей известен только после готовности плеера — перерисовываем ряд
 function vidRates(box) {
   const row = box.querySelector(".vd-row.rates");
@@ -6432,7 +6443,10 @@ function vidControlsHTML(task) {
     <div class="vd-row marks">
       <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
       <button class="btn" data-vd="all" type="button">Весь ролик</button>
-      <button class="btn" data-vd="src" type="button" aria-label="Сменить источник">⋯</button>
+    </div>
+    <div class="vd-src">
+      Источник: <b>${esc(vidWhat())}</b>
+      <button class="th-link" data-vd="src" type="button">сменить</button>
     </div>
     <p class="vd-note">Кусок повторяется по кругу. «Это такты…» запоминает его за ними — в следующий раз откроется сам.</p>`;
 }
@@ -6455,6 +6469,11 @@ function pracVideo(u) {
   /* Прямая ссылка на файл — самый простой случай и самый полный: это обычное
      видео, значит доступно всё, что умеет браузер. Ничего никуда не копируем,
      просто играем по адресу, который дали. */
+  /* Ссылку с Диска прошлая версия принимала за прямую и пыталась играть
+     страницу. Переселяем молча — иначе останется вечное «не открылось». */
+  if (st.url && /disk\.yandex\.[a-z]+\//i.test(st.url)) {
+    st.ya = st.url; delete st.url; saveData(); schedulePush();
+  }
   if (st.ya) { vidMountYa(box, id, st.ya, task, u); return; }
   if (st.url) { vidMountFile(box, id, st.url, task, u); return; }
   if (st.vk) { vidMountVK(box, id, st.vk, task, u); return; }
@@ -7421,7 +7440,7 @@ function bindPractice() {
     }
 
     if (b.dataset.vd === "src") {
-      if (!confirm("Выбрать другое видео?\n\nРазметка по тактам останется.")) return;
+      // спрашивать не о чем: разметка по тактам остаётся, файл при желании вернут
       delete pracStore().yt; delete pracStore().vk; delete pracStore().url; delete pracStore().ya;
       await videoDrop(piece().id);
       videoUrls.set(piece().id, "");
