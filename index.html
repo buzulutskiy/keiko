@@ -292,15 +292,8 @@
     .sum-ring { position: relative; width: min(210px, 62vw); }
     .sum-ring svg { width: 100%; height: auto; transform: rotate(-90deg); display: block; }
     .sum-ring circle { fill: none; stroke-width: 13; stroke-linecap: round; }
-    /* Сегмент на каждый день периода. Занятый — цветом своего занятия,
-       пустой — едва слышно: смотреть на пропуски незачем. */
-    .sum-ring .rs { transition: stroke 0.5s ease, opacity 0.5s ease; }
-    .sum-ring .rs.off { stroke: var(--track); opacity: 0.55; }
-    .sum-ring .rs.fut { stroke: var(--track); opacity: 0.22; }
-    .sum-ring .rs.on { filter: drop-shadow(0 0 5px currentColor); }
-    /* Цель взята — кольцо чуть светится целиком. */
-    .sum-ring.done svg { filter: drop-shadow(0 0 10px rgba(255, 201, 77, 0.28)); }
-    .sum-ring.done .sum-sub { color: var(--gold); }
+    .sum-ring .bg { stroke: var(--track); }
+    .sum-ring .fg { stroke: url(#grad); transition: stroke-dasharray 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
     .sum-txt {
       position: absolute; inset: 0;
       display: grid; place-content: center; justify-items: center; gap: 2px;
@@ -1611,40 +1604,14 @@
     .post.ev-done { border-left-color: #6ee7a8; }
     .post.ev-session { border-left-color: var(--violet); }
 
-    /* ── Сколько уже накопилось ── */
-    .tot-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 16px; }
-    .tot-top b {
-      font-size: 2.6rem; font-weight: 850; line-height: 0.9; letter-spacing: -0.04em;
-      background: linear-gradient(160deg, var(--gold-2), var(--gold));
-      -webkit-background-clip: text; background-clip: text; color: transparent;
-    }
-    .tot-top span { font-size: 0.86rem; font-weight: 700; line-height: 1.25; }
-    .tot-top em { display: block; font-style: normal; font-size: 0.72rem; font-weight: 400; color: var(--dim); margin-top: 2px; }
-
-    .tot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
-    .tot-cell {
-      background: var(--glass); border: 1px solid var(--glass-line);
-      border-radius: 12px; padding: 11px 8px; text-align: center; min-width: 0;
-    }
-    .tot-cell b {
-      display: block; font-size: 1.15rem; font-weight: 800; line-height: 1.1;
-      font-variant-numeric: tabular-nums;
-    }
-    .tot-cell span {
-      display: block; font-size: 0.63rem; color: var(--dim);
-      margin-top: 4px; line-height: 1.25;
-    }
-
     /* ── Когда закончу ── */
     .blk-head { margin: 0 0 12px; font-size: 0.92rem; font-weight: 800; }
     .fc-list { display: grid; gap: 14px; }
     .fc-row { display: flex; gap: 11px; align-items: flex-start; }
-    .fc-row.cold { opacity: 0.62; }
     .fc-ic { font-size: 1.2rem; line-height: 1.2; flex: none; }
     .fc-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
     .fc-body b { font-size: 0.88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .fc-when { font-size: 0.8rem; color: var(--gold); font-weight: 600; }
-    .fc-row.cold .fc-when { color: var(--dim); font-weight: 400; }
     .fc-bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin-top: 2px; }
     .fc-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
     .fc-meta { font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }

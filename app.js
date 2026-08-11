@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 88";
+const APP_VERSION = "Кэйко 89";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3258,19 +3258,28 @@ function humanWhen(d, days) {
 }
 
 // короткая строка прогноза: «≈ 12 занятий · примерно до 5 октября»
+/* Единственное место, где прогноз превращается в срок. Раньше пересчёт жил
+   в двух экранах порознь, и они расходились на месяцы — на главной одно,
+   в прогрессе другое. Два разных ответа на один вопрос хуже одного
+   приблизительного: непонятно, какому верить.
+   Прикидка от спокойного ритма: занимаешься через день — вот и срок.
+   Пропустил — назавтра дата сдвинется, и это нормально. */
+function paceWhen(f) {
+  if (!f || f.done) return null;
+  const days = f.sessions * 2;
+  const when = new Date();
+  when.setDate(when.getDate() + days);
+  return { days, when, text: humanWhen(when, days) };
+}
+
 function paceHTML() {
   const f = paceForecast();
   if (!f) return "";
   if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
-
-  // прикидка от спокойного ритма: занимаешься через день — вот и срок.
-  // Пропустил — назавтра дата сдвинется, и это нормально
-  const days = f.sessions * 2;
-  const d = new Date();
-  d.setDate(d.getDate() + days);
+  const w = paceWhen(f);
   return `<span class="pace">${subLine(
     `≈ ${f.sessions} ${plural(f.sessions, "занятие", "занятия", "занятий")}`,
-    `в таком темпе ${humanWhen(d, days)}`
+    `в таком темпе ${w.text}`
   )}</span>`;
 }
 
@@ -3358,185 +3367,61 @@ function lineChartHTML(points) {
 }
 
 // шапка «Прогресс»: неделя или месяц целиком
-/* ── Сколько уже накопилось ──
-   Всё остальное на этом экране отвечает про период: неделя, месяц, темп.
-   Здесь — итог за всё время. Единственные числа в приложении, которые не
-   могут уменьшиться: плохой месяц их не отнимет, отпуск не обнулит. Смотреть
-   на них можно в любом настроении. */
-function totalHTML() {
-  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
-    .filter((e) => !e.deleted);
-  if (!all.length) return "";
-
-  const dates = [...new Set(all.map((e) => e.date))].sort();
-  const days = dates.length;
-  const since = dates[0];
-
-  // страницы: и то, что читается сейчас, и то, что уже уехало на полку
-  let pages = 0;
-  for (const b of (data.book.books || [])) pages += Math.min(b.pages || 0, bookCovered(b));
-  for (const a of (data.archive || []).filter((x) => !x.deleted && x.track === "book")) pages += a.pages || 0;
-
-  const mins = data.piano.entries.filter((e) => !e.deleted).reduce((n, e) => n + (e.mins || 0), 0)
-    + data.pastel.entries.filter((e) => !e.deleted).reduce((n, e) => n + (e.mins || 0), 0);
-  const hours = Math.floor(mins / 60);
-
-  let bars = 0;
-  for (const pc of (data.piano.pieces || [])) {
-    const set = new Set();
-    for (const e of pieceEntriesOf(pc.id))
-      for (const sp of e.spans || []) for (let i = sp.from; i <= sp.to; i++) set.add(i);
-    bars += set.size;
-  }
-
-  const lessons = new Set(data.pastel.entries.filter((e) => !e.deleted)
-    .flatMap((e) => (e.lessons || []).map((i) => (e.courseId || "c") + ":" + i))).size;
-  const shelf = (data.archive || []).filter((x) => !x.deleted).length;
-  const awards = Object.keys(data.achAt || {}).length;
-  const facts = Object.keys(data.factAt || {}).length;
-  const thoughts = (data.thoughts || []).filter((t) => !t.deleted && !t.event).length;
-  const watched = (data.watch.videos || []).filter((v) => v.done).length;
-
-  const tiles = [
-    [pages, "страниц прочитано", pages],
-    [hours ? hours : mins, hours ? plural(hours, "час занятий", "часа занятий", "часов занятий") : "минут занятий", mins],
-    [bars, plural(bars, "такт разобран", "такта разобрано", "тактов разобрано"), bars],
-    [lessons, plural(lessons, "урок пройден", "урока пройдено", "уроков пройдено"), lessons],
-    [watched, plural(watched, "ролик досмотрен", "ролика досмотрено", "роликов досмотрено"), watched],
-    [shelf, plural(shelf, "материал завершён", "материала завершено", "материалов завершено"), shelf],
-    [awards, plural(awards, "награда", "награды", "наград"), awards],
-    [facts, plural(facts, "карточка знаний", "карточки знаний", "карточек знаний"), facts],
-    [thoughts, plural(thoughts, "момент записан", "момента записано", "моментов записано"), thoughts]
-  ].filter((t) => t[2] > 0);
-
-  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
-  const nice = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-
-  return `
-    <div class="panel tot-panel">
-      <h3 class="blk-head">Сколько уже накопилось</h3>
-      <div class="tot-top">
-        <b>${nice(days)}</b>
-        <span>${plural(days, "день занятий", "дня занятий", "дней занятий")}<em>с ${esc(fmt.format(fromStr(since)).replace(" г.", ""))}</em></span>
-      </div>
-      <div class="tot-grid">
-        ${tiles.map(([v, name]) => `
-          <div class="tot-cell"><b>${nice(v)}</b><span>${esc(name)}</span></div>`).join("")}
-      </div>
-    </div>`;
-}
+/* Цвета треков — те же, что у точек в календаре и у суточных циклов. */
+const TRACK_HUE = { piano: "var(--gold)", book: "var(--violet)", pastel: "#f0a3b5", watch: "#6ee7a8" };
 
 /* ── Когда закончу ──
-   Процент говорит, где ты сейчас, но не говорит, дойдёшь ли вообще. Темп
-   берём за последние четыре недели — по нему и считаем, сколько осталось.
-   Ничего не обещаем: если за месяц не сдвинулось, так и пишем. */
-const FORECAST_WINDOW = 28;
-
-function forecastOf(view, done, total, started) {
-  if (!total || done >= total) return null;
-  const from = dateStr(new Date(now() - FORECAST_WINDOW * 864e5));
-  const before = withMaterial(view, () => progressAt(from));
-  const gained = done - before;
-  if (gained <= 0) return { stuck: true };
-  const perDay = gained / FORECAST_WINDOW;
-  const daysLeft = Math.ceil((total - done) / perDay);
-  if (daysLeft > 900) return { stuck: true };
-  const when = new Date(now() + daysLeft * 864e5);
-
-  /* Полоса считает дни, а не материал. Процент пройденного обманывает: первые
-     такты даются быстро, последние тянутся, и полоска врёт про то, много ли
-     осталось. Дни не врут — от первой отметки до предполагаемого конца. */
-  const gone = started ? daysBetween(started, todayStr()) + 1 : 0;
-  const span = gone + daysLeft;
-  return { daysLeft, when, gone, span, pct: span ? Math.round(gone / span * 100) : 0 };
-}
-
-/* Сколько было пройдено к этой дате — по тем же правилам, что и «сейчас». */
-function progressAt(ds) {
-  if (isBook()) {
-    const b = book();
-    let page = b.startPage || 0;
-    for (const e of bookEntriesOf(b.id)) {
-      if (e.date > ds) continue;
-      page = Math.max(page, e.page || 0);
-      for (const sp of e.spans || []) page = Math.max(page, sp.to || 0);
-    }
-    return Math.min(page, b.pages);
-  }
-  if (isCourse()) return new Set(courseTrack().entries
-    .filter((e) => !e.deleted && e.date <= ds)
-    .flatMap((e) => e.lessons || [])).size;
-  const set = new Set();
-  for (const e of pieceEntriesOf(piece().id)) {
-    if (e.date > ds) continue;
-    for (const sp of e.spans || []) for (let i = sp.from; i <= sp.to; i++) set.add(sp.hand + ":" + i);
-  }
-  return set.size;
-}
-
+   Считаем ровно тем же, чем главная: paceForecast. Раньше здесь была своя
+   прикидка — по темпу последних четырёх недель и по «задетым» тактам, — и она
+   расходилась с главной на месяцы. Два разных ответа на один вопрос хуже, чем
+   один приблизительный: непонятно, какому верить. */
 function forecastHTML() {
-  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
   const rows = [];
-
-  const startOf = (list) => {
-    const ds = list.filter((e) => !e.deleted).map((e) => e.date).sort();
-    return ds[0] || "";
+  const add = (icon, title, view) => {
+    const f = withMaterial(view, paceForecast);
+    if (!f || f.done) return;
+    const started = withMaterial(view, () => {
+      const ds = entries().map((e) => e.date).sort();
+      return ds[0] || "";
+    });
+    rows.push({ icon, title, f, started });
   };
 
-  for (const b of (data.book.books || []).filter((x) => !x.archived)) {
-    const view = { track: "book", bookId: b.id };
-    const done = withMaterial(view, bookProgress);
-    const from = startOf(bookEntriesOf(b.id));
-    rows.push({ icon: "📖", title: b.title, unit: "стр.", done, total: b.pages, from,
-                f: forecastOf(view, done, b.pages, from) });
-  }
-  for (const pc of (data.piano.pieces || []).filter((x) => !x.archived)) {
-    const view = { track: "piano", pieceId: pc.id };
-    const done = withMaterial(view, () => progressAt(todayStr()));
-    const from = startOf(pieceEntriesOf(pc.id));
-    rows.push({ icon: "🎹", title: pc.name, unit: "тактов-рук", done, total: pc.bars * 2, from,
-                f: forecastOf(view, done, pc.bars * 2, from) });
-  }
-  if (course().lessons.length) {
-    const view = { track: "pastel" };
-    const done = withMaterial(view, () => progressAt(todayStr()));
-    const from = startOf(courseTrack().entries);
-    rows.push({ icon: "🎨", title: course().name, unit: "уроков", done, total: course().lessons.length, from,
-                f: forecastOf(view, done, course().lessons.length, from) });
-  }
+  for (const b of (data.book.books || []).filter((x) => !x.archived))
+    add("📖", b.title, { track: "book", bookId: b.id });
+  for (const pc of (data.piano.pieces || []).filter((x) => !x.archived))
+    add("🎹", pc.name, { track: "piano", pieceId: pc.id });
+  if (course().lessons.length) add("🎨", course().name, { track: "pastel" });
 
-  const live = rows.filter((x) => x.f);
-  if (!live.length) return "";
+  if (!rows.length) return "";
 
   return `
     <div class="panel">
       <h3 class="blk-head">Когда закончу</h3>
       <div class="fc-list">
-        ${live.map((x) => {
-          const stuck = x.f.stuck;
-          // застряло — дней до конца нет, показываем то единственное, что известно
-          const pct = stuck ? Math.round(x.done / x.total * 100) : x.f.pct;
-          const line = stuck
-            ? "за месяц не сдвинулось"
-            : x.f.daysLeft <= 1 ? "остался последний рывок"
-            : `${fmt.format(x.f.when)} · через ${x.f.daysLeft} ${plural(x.f.daysLeft, "день", "дня", "дней")}`;
-          const meta = stuck
-            ? `${x.done} из ${x.total} ${esc(x.unit)}`
-            : `${x.done} из ${x.total} ${esc(x.unit)} · идёт ${x.f.gone}-й день из ${x.f.span}`;
+        ${rows.map((x) => {
+          const { days, text } = paceWhen(x.f);
+          /* Полоса — про дни, а не про материал: первые такты даются быстро,
+             последние тянутся, и процент пройденного врал про то, много ли
+             осталось. Считаем от первой отметки до предполагаемого конца. */
+          const gone = x.started ? daysBetween(x.started, todayStr()) + 1 : 0;
+          const span = gone + days;
+          const pct = span ? Math.round(gone / span * 100) : 0;
           return `
-            <div class="fc-row${stuck ? " cold" : ""}">
+            <div class="fc-row">
               <span class="fc-ic">${x.icon}</span>
               <span class="fc-body">
                 <b>${esc(x.title)}</b>
-                <span class="fc-when">${esc(line)}</span>
+                <span class="fc-when">${esc(text)}</span>
                 <span class="fc-bar"><i style="width:${pct}%"></i></span>
-                <span class="fc-meta">${meta}</span>
+                <span class="fc-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</span>
               </span>
             </div>`;
         }).join("")}
       </div>
-      <p class="fc-note">Полоса — это дни: от первой отметки до предполагаемого конца. Срок считается по темпу последних четырёх недель, ускоришься — он поедет назад.</p>
-    </div>`;
+      <p class="fc-note">Прикидка от спокойного ритма — через день. Тот же счёт, что под кольцом на главной. Пропустил — назавтра дата сдвинется, и это нормально.</p>
+    </div>
+  `;
 }
 
 /* ── Куда ушли дни ──
@@ -3571,51 +3456,6 @@ function splitHTML() {
             <i style="background:${x.color}"></i>${esc(x.name)}
             <b>${x.days.size}</b>
           </span>`).join("")}
-      </div>
-    </div>`;
-}
-
-/* Кольцо по дням, а не одной дугой.
-   Гладкая дуга говорила ровно одно число и молчала обо всём остальном.
-   Здесь каждый день периода — свой сегмент, и он окрашен тем, чем ты в этот
-   день занимался: видно не «сколько процентов», а как прошла неделя. Пустые
-   дни намеренно едва заметны — упрекать ими незачем. */
-/* Цвета треков берём те же, что у точек в календаре и у суточных циклов:
-   два разных набора на одном экране читались бы как разные вещи. */
-const TRACK_HUE = { piano: "var(--gold)", book: "var(--violet)", pastel: "#f0a3b5", watch: "#6ee7a8" };
-
-function ringHTML2(range, val, max, cap, sub) {
-  const R = 78, C = 2 * Math.PI * R, cx = 95;
-  const days = [];
-  for (const d = fromStr(range.from); dateStr(d) <= range.to; d.setDate(d.getDate() + 1))
-    days.push(dateStr(d));
-
-  const today = todayStr();
-  const seg = C / days.length;
-  const gap = Math.min(6, seg * 0.22);
-  const arcs = days.map((ds, i) => {
-    const list = allEntriesOn(ds);
-    const future = ds > today;
-    // несколько занятий за день — золото: это уже не про один трек, а про день
-    const tracks = [...new Set(list.map((x) => x.track))];
-    // день с несколькими занятиями — белым: он не про один трек, а про день целиком
-    const color = !list.length ? "" : tracks.length > 1 ? "var(--ink)" : (TRACK_HUE[tracks[0]] || "var(--gold)");
-    const cls = list.length ? "on" : future ? "fut" : "off";
-    return `<circle class="rs ${cls}" cx="${cx}" cy="${cx}" r="${R}"
-      ${color ? `stroke="${color}"` : ""}
-      stroke-dasharray="${(seg - gap).toFixed(2)} ${(C - seg + gap).toFixed(2)}"
-      stroke-dashoffset="${(-i * seg).toFixed(2)}"></circle>`;
-  }).join("");
-
-  const done = max && val >= max;
-  const over = max ? Math.max(0, val - max) : 0;
-  return `
-    <div class="sum-ring${done ? " done" : ""}">
-      <svg viewBox="0 0 190 190">${arcs}</svg>
-      <div class="sum-txt">
-        <span class="sum-cap">${esc(cap)}</span>
-        <b>${val}</b>
-        <span class="sum-sub">${esc(over ? "цель взята, и ещё " + over + " сверху" : sub)}</span>
       </div>
     </div>`;
 }
@@ -3658,7 +3498,17 @@ function summaryHTML() {
     </div>
 
     <div class="summary">
-      ${ringHTML2(r, ringVal, ringMax, cap, sub)}
+      <div class="sum-ring">
+        <svg viewBox="0 0 190 190">
+          <circle class="bg" cx="95" cy="95" r="${R}"></circle>
+          ${ringVal ? `<circle class="fg" cx="95" cy="95" r="${R}" stroke-dasharray="${on.toFixed(1)} ${C.toFixed(1)}"></circle>` : ""}
+        </svg>
+        <div class="sum-txt">
+          <span class="sum-cap">${esc(cap)}</span>
+          <b>${ringVal}</b>
+          <span class="sum-sub">${esc(sub)}</span>
+        </div>
+      </div>
 
       <div class="sum-chips">
         <div class="sc ${best ? "hot" : ""}"><b>🔥 ${best}</b><span>${T("streak")}</span></div>
@@ -3790,7 +3640,6 @@ function renderProgress() {
       ${summaryHTML()}
     </div>
 
-    ${totalHTML()}
     ${forecastHTML()}
     ${splitHTML()}
     ${weekProfileHTML()}
