@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 104";
+const APP_VERSION = "Кэйко 105";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6636,19 +6636,26 @@ function vidDrag(e) {
   const h = e.target.closest("[data-vh]");
   if (h) {
     const which = h.dataset.vh;
-    const cur0 = vidSel(dur);
-    // растягиваем окно вокруг ручки — на время, пока её держат
-    vidMag = { at: which === "a" ? cur0.a : cur0.b, span: Math.max(6, Math.min(dur, dur / 12)) };
-    vidPaint();
+    /* Растягивание — по долгому удержанию, а не сразу. Обычное перетаскивание
+       занимает секунду-другую, и дорожка, прыгающая в масштаб на каждое
+       движение, только мешала бы. Держишь пять секунд — значит целишься. */
+    const magAt = setTimeout(() => {
+      const cur = vidSel(dur);
+      vidMag = { at: which === "a" ? cur.a : cur.b, span: Math.max(6, Math.min(dur, dur / 12)) };
+      if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
+      vidPaint();
+    }, 5000);
+
     const move = (ev) => {
       const t = at(ev);
       const cur = vidSel(dur);
-      vidMag.at = t;
+      if (vidMag) vidMag.at = t;
       vidSetSel(which === "a"
         ? { a: Math.max(0, Math.min(t, cur.b - 0.3)), b: cur.b }
         : { a: cur.a, b: Math.min(dur, Math.max(t, cur.a + 0.3)) });
     };
     const up = () => {
+      clearTimeout(magAt);
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       vidMag = null;                 // отпустил — дорожка снова про весь ролик
