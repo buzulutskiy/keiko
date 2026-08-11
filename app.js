@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 91";
+const APP_VERSION = "Кэйко 92";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9024,13 +9024,15 @@ async function connectGitHub(token) {
     const r = await gh("/gists?per_page=100");
     if (r.status === 401) throw new Error("Токен не подошёл");
     if (!r.ok) throw new Error("GitHub ответил " + r.status);
-    const found = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
+    // гист мог уже переехать на файлы по профилям — ищем и такой
+    const found = (await r.json()).find(g => g.files &&
+      (g.files[GIST_FILE] || Object.keys(g.files).some((n) => /^keiko-.+\.json$/.test(n))));
     if (found) { cfg.gistId = found.id; saveCfg(); await syncNow(false); toast("Подключено"); }
     else {
       const cr = await gh("/gists", {
         method: "POST",
         body: JSON.stringify({ description: "Кэйко — данные профилей", public: false,
-          files: { [GIST_FILE]: { content: JSON.stringify({ v: 8, savedAt: now(), profiles: { [profileId]: exportData() } }) } } })
+          files: { [PROF_FILE(profileId)]: { content: JSON.stringify(exportData()) } } })
       });
       if (!cr.ok) throw new Error("Не создался гист");
       cfg.gistId = (await cr.json()).id; cfg.lastSync = now(); saveCfg();
