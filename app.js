@@ -17,8 +17,13 @@ const LS = {
   get cfg() { return "keiko-cfg-v1"; },            // токен и гист общие для всех профилей
   get older() { return []; }
 };
-const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 90";
+const GIST_FILE = "prokachka.json";                // общий файл первой версии — только на чтение
+/* Свой файл на профиль. Раньше оба профиля лежали в одном, и каждая отметка
+   отправляла их вместе — чужие записи ездили через твой телефон при каждом
+   касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
+   читают, пока не переехали, и он же годится как замороженная копия. */
+const PROF_FILE = (id) => "keiko-" + id + ".json";
+const APP_VERSION = "Кэйко 91";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4267,20 +4272,32 @@ function renderConnect(err) {
         const r = await gh("/gists?per_page=100");
         if (r.status === 401) throw new Error("Токен не подошёл");
         if (!r.ok) throw new Error("GitHub ответил " + r.status);
-        const found = (await r.json()).find(g => g.files && g.files[GIST_FILE]);
+        const found = (await r.json()).find(g => g.files &&
+          (g.files[GIST_FILE] || Object.keys(g.files).some((n) => /^keiko-.+\.json$/.test(n))));
         if (!found) throw new Error("Гист с данными не нашёлся — впиши id вручную");
         cfg.gistId = found.id; saveCfg();
       }
       await catalogPull(true).catch(() => {});     // каталог: профили, награды, карточки
       const r = await gh("/gists/" + cfg.gistId);
       if (!r.ok) throw new Error("Гист не открылся");
-      const f = (await r.json()).files[GIST_FILE];
-      if (!f) throw new Error("В гисте нет файла " + GIST_FILE);
-      let txt = f.content;
-      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
-      const box = JSON.parse(txt);
-      cfg.profileIds = Object.keys(box.profiles || {}); saveCfg();
-      profilesFromKeys(cfg.profileIds);
+      const files = (await r.json()).files || {};
+      /* Профили ищем и в переехавших файлах, и в общем: на первом подключении
+         гист может быть в любом из двух состояний. */
+      const ids = Object.keys(files)
+        .map((n) => /^keiko-(.+)\.json$/.exec(n)).filter(Boolean).map((m) => m[1]);
+      const f = files[GIST_FILE];
+      if (f) {
+        let txt = f.content;
+        if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
+        try {
+          const box = JSON.parse(txt);
+          for (const id of Object.keys((box && box.profiles) || {}))
+            if (!ids.includes(id)) ids.push(id);
+        } catch {}
+      }
+      if (!ids.length) throw new Error("В гисте нет данных Кэйко");
+      cfg.profileIds = ids; saveCfg();
+      profilesFromKeys(ids);
       document.body.classList.remove("picking");
       renderProfilePick();
     } catch (e) {
@@ -9057,32 +9074,49 @@ async function syncNow(manual) {
     const r = await gh("/gists/" + cfg.gistId, cond);
     if (r.status !== 304 && !r.ok) throw new Error("Ошибка сети (" + r.status + ")");
 
-    let box, remote, fresh = r.status !== 304 || !gistBox;
+    let mine, remote, fresh = r.status !== 304 || !gistBox;
     if (!fresh) {
       /* Ничего не изменилось — берём то, что уже разобрали. Сливать заново
          нечего: удалённая сторона ровно та же, что в прошлый раз. */
-      box = gistBox;
+      mine = gistBox;
       remote = null;
     } else {
       const g = await r.json();
       gistEtag = r.headers.get("etag") || "";
-      const f = g.files && g.files[GIST_FILE];
-      box = {};                         // содержимое файла целиком: { profiles: {...} }
-      remote = emptyData();
-      if (f) {
-        let txt = f.content;
-        if (f.truncated && f.raw_url) txt = await (await fetch(f.raw_url)).text();
-        try {
-          const parsed = JSON.parse(txt);
-          // старый файл был плоским — считаем его данными первого профиля
-          box = parsed && parsed.profiles ? parsed : { profiles: { anton: parsed } };
-          remote = migrate(box.profiles[profileId] || null);
-        } catch {}
+      const files = g.files || {};
+      const read = async (f) => {
+        if (!f) return null;
+        if (!f.truncated) return f.content;
+        return f.raw_url ? await (await fetch(f.raw_url)).text() : null;
+      };
+
+      mine = null;
+      const own = await read(files[PROF_FILE(profileId)]);
+      if (own) { try { mine = JSON.parse(own); } catch {} }
+
+      // своего файла ещё нет — берём себя из общего, он же и переедет при записи
+      let shared = null;
+      if (!mine) {
+        const txt = await read(files[GIST_FILE]);
+        if (txt) {
+          try {
+            const parsed = JSON.parse(txt);
+            // самый старый файл был плоским — считаем его данными первого профиля
+            shared = parsed && parsed.profiles ? parsed : { profiles: { anton: parsed } };
+            mine = shared.profiles[profileId] || null;
+          } catch {}
+        }
       }
-      if (!box.profiles) box = { profiles: {} };
-      gistBox = box;
-      cfg.profileIds = Object.keys(box.profiles); saveCfg();
-      profilesFromKeys(cfg.profileIds);
+      remote = migrate(mine);
+      gistBox = mine;
+
+      /* Кто вообще есть: и переехавшие файлы, и те, кто ещё в общем. */
+      const ids = Object.keys(files)
+        .map((n) => /^keiko-(.+)\.json$/.exec(n))
+        .filter(Boolean).map((m) => m[1]);
+      for (const id of Object.keys((shared && shared.profiles) || {}))
+        if (!ids.includes(id)) ids.push(id);
+      if (ids.length) { cfg.profileIds = ids; saveCfg(); profilesFromKeys(ids); }
     }
 
     if (remote) {
@@ -9129,14 +9163,13 @@ async function syncNow(manual) {
     // сравниваем профиль целиком: раньше смотрели только занятия, и новые мысли,
     // книги на полке, паузы или цель могли навсегда остаться на одном устройстве
     const norm = (o) => JSON.stringify(migrate(o));
-    const changed = norm(box.profiles[profileId]) !== norm(exportData());
+    const changed = norm(mine) !== norm(exportData());
     if (changed) {
-      box.profiles[profileId] = exportData();     // чужой профиль в файле остаётся нетронутым
-      box.v = 8; box.savedAt = now();
-      const payload = JSON.stringify(box);
+      // отправляем один файл — свой; чужие в гисте PATCH не трогает
+      const payload = JSON.stringify(exportData());
       const pr = await gh("/gists/" + cfg.gistId, {
         method: "PATCH",
-        body: JSON.stringify({ files: { [GIST_FILE]: { content: payload } } })
+        body: JSON.stringify({ files: { [PROF_FILE(profileId)]: { content: payload } } })
       });
       if (!pr.ok) throw new Error("Не сохранилось");
       /* После записи метка старая. Берём ту, что вернул сам PATCH: совпадёт —
@@ -9148,9 +9181,11 @@ async function syncNow(manual) {
          в гист вовсе. */
       gistEtag = pr.headers.get("etag") || "";
       gistBox = JSON.parse(payload);
+      mine = gistBox;
     }
     cfg.lastSync = now(); saveCfg(); setSyncDot("ok");
-    maybeArchive(box);                  // раз в неделю снимок уезжает в архив, молча
+    // снимок в архив кладём в прежней форме: восстановление читает её же
+    maybeArchive({ v: 9, savedAt: now(), profiles: { [profileId]: mine || exportData() } });
     catalogPull(false).catch(() => {});  // каталог сверяем не чаще раза в сутки
     syncError = "";
     syncPickers();
