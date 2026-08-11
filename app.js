@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 89";
+const APP_VERSION = "Кэйко 90";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1620,16 +1620,17 @@ async function pullAudio(id) {
   audioFail.delete(id);
   audioProgress(id, 0);
   try {
-    const r = await gh("/gists/" + cfg.catalogId);
-    if (!r.ok) throw new Error("гист ответил " + r.status);
-    const f = (await r.json()).files[CAT_AUDIO_FILE(id)];
+    const files = await catalogFiles(false);
+    if (!files) throw new Error("каталог недоступен");
+    const f = files[CAT_AUDIO_FILE(id)];
     if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
     let txt = f.content;
     if (f.truncated && f.raw_url) {
+      // большое качаем отдельно и с полосой: слушателю видно, сколько осталось
       const res = await withTimeout(fetch(f.raw_url), 90000);
       txt = await readWithProgress(res, id);
     }
-    txt = txt.trim();
+    txt = String(txt || "").trim();
     if (!txt.startsWith("data:")) throw new Error("файл не похож на звук");
     await audioSave(id, txt);
     audioNow = "";                                    // пусть audioSync подхватит заново
@@ -1921,12 +1922,9 @@ const bgPreset = () => BG_PRESETS.find(p => p.id === cfg.bgPreset) || BG_PRESETS
 async function pullEnvelopes() {
   if (!cfg.token || !cfg.catalogId || ENVEL) return;
   try {
-    const r = await gh("/gists/" + cfg.catalogId);
-    if (!r.ok) return;
-    const f = (await r.json()).files[ENV_FILE];
-    if (!f) return;
-    let txt = f.content;
-    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 30000)).text();
+    const files = await catalogFiles(false);
+    const txt = await catText(files, ENV_FILE, 30000);
+    if (!txt) return;
     ENVEL = JSON.parse(txt);
     try { localStorage.setItem(LS_ENV, txt); } catch {}
     waveStart();
@@ -7952,12 +7950,10 @@ const CAT_COVER_FILE = (id) => `cover-${id}.txt`;
 const CAT_EVERY = 24 * 3600e3;
 
 async function ensureCatalogGist(create) {
-  if (cfg.catalogId) {
-    // проверяем, что это по-прежнему наш гист, а не чужой с похожим файлом
-    const cur = await gh("/gists/" + cfg.catalogId);
-    if (cur.ok && ((await cur.json()).files || {})[CAT_FILE]) return cfg.catalogId;
-    cfg.catalogId = ""; saveCfg();
-  }
+  /* Раньше здесь стояла проверка «тот ли это гист» — ещё одно полное скачивание
+     перед каждым настоящим. Проверять есть чем и так: опись всё равно будет
+     прочитана, и если нужного файла в ней нет, адрес сбросится там же. */
+  if (cfg.catalogId) return cfg.catalogId;
   const r = await gh("/gists?per_page=100");
   if (!r.ok) throw new Error("список гистов недоступен");
   const found = (await r.json()).find(g => g.files && g.files[CAT_FILE]);
@@ -7993,18 +7989,60 @@ function profilesFromKeys(keys) {
   PROFILES = (keys || []).map(id => ({ id, name: id, hint: "из гиста" }));
 }
 
+/* Опись каталожного гиста — одна на сессию.
+   Раньше за ней ходили четверо: обложки, звук, огибающие и сам каталог, —
+   и каждый тянул гист целиком. А ответ GitHub несёт содержимое всех файлов
+   разом: обложки лежат там же и приезжают инлайном, даже когда нужен один
+   звук. Теперь опись берётся один раз, дальше — условным запросом, и на 304
+   не приходит ничего. Содержимое файла чаще всего уже в ней, а что не влезло
+   (оно помечено truncated) — докачиваем по своей ссылке. */
+let catFiles = null, catEtag = "";
+
+async function catalogFiles(force) {
+  if (catFiles && !force) return catFiles;
+  if (!cfg.token) return null;
+  const id = await ensureCatalogGist(false);
+  if (!id) return null;
+  const cond = catEtag && catFiles ? { headers: { "If-None-Match": catEtag } } : {};
+  const r = await gh("/gists/" + id, cond);
+  if (r.status === 304) return catFiles;
+  if (!r.ok) return catFiles;                       // связи нет — работаем тем, что было
+  const files = (await r.json()).files || {};
+  if (!files[CAT_FILE]) {
+    // адрес указывает не туда — забываем его и ищем каталог заново
+    cfg.catalogId = ""; saveCfg();
+    catFiles = null; catEtag = "";
+    const again = await ensureCatalogGist(false);
+    if (!again) return null;
+    const r2 = await gh("/gists/" + again);
+    if (!r2.ok) return null;
+    catEtag = r2.headers.get("etag") || "";
+    catFiles = (await r2.json()).files || {};
+    return catFiles;
+  }
+  catEtag = r.headers.get("etag") || "";
+  catFiles = files;
+  return catFiles;
+}
+
+/* Содержимое одного файла описи. Большое приезжает по raw_url — в ссылке
+   зашита ревизия, поэтому она неизменяемая и её не жалко кэшировать. */
+async function catText(files, name, ms) {
+  const f = files && files[name];
+  if (!f) return null;
+  if (!f.truncated) return f.content;
+  if (!f.raw_url) return null;
+  return await (await withTimeout(fetch(f.raw_url), ms || 20000)).text();
+}
+
 async function catalogPull(force) {
   if (!cfg.token) return;
   if (!force && now() - (cfg.catalogAt || 0) < CAT_EVERY) return;
-  const id = await ensureCatalogGist(false);
-  if (!id) return;
-  const r = await gh("/gists/" + id);
-  if (!r.ok) throw new Error("каталог недоступен");
-  const files = (await r.json()).files || {};
+  const files = await catalogFiles(true);
+  if (!files) throw new Error("каталог недоступен");
   const f = files[CAT_FILE];
   if (!f) return;
-  let txt = f.content;
-  if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 20000)).text();
+  const txt = await catText(files, CAT_FILE);
   const n = applyCatalog(JSON.parse(txt));
   await applyTaxonomy(files);
   return n;
@@ -8014,10 +8052,8 @@ async function catalogPull(force) {
 async function applyTaxonomy(files) {
   try {
     const readFile = async (name) => {
-      const f = files[name]; if (!f) return null;
-      let t = f.content;
-      if (f.truncated && f.raw_url) t = await (await withTimeout(fetch(f.raw_url), 20000)).text();
-      return JSON.parse(t);
+      const t = await catText(files, name);
+      return t ? JSON.parse(t) : null;
     };
     const tax = await readFile(TAX_FILE);
     const cats = await readFile(CATS_FILE);
@@ -8039,12 +8075,9 @@ async function pullCover(id) {
   if (!cfg.token || !cfg.catalogId || coverPulling.has(id)) return;
   coverPulling.add(id);
   try {
-    const r = await gh("/gists/" + cfg.catalogId);
-    if (!r.ok) return;
-    const f = (await r.json()).files[CAT_COVER_FILE(id)];
-    if (!f) return;
-    let txt = f.content;
-    if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 25000)).text();
+    const files = await catalogFiles(false);
+    let txt = await catText(files, CAT_COVER_FILE(id), 25000);
+    if (!txt) return;
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
     await coverSave(id, txt);
@@ -8081,6 +8114,7 @@ async function catalogUpload(file) {
   }
   const up = await gh("/gists/" + id, { method: "PATCH", body: JSON.stringify({ files }) });
   if (!up.ok) throw new Error("каталог не записался (" + up.status + ")");
+  catFiles = null; catEtag = "";        // опись устарела: только что сами её и переписали
 
   applyCatalog(cat);
   for (const [mid, uri] of Object.entries(covers)) {
@@ -8664,10 +8698,16 @@ async function archiveNow(box, manual) {
 }
 
 // вызывается после удачной синхронизации: раз в неделю и молча
+let archTried = 0;
 function maybeArchive(box) {
   if (!cfg.token || !cfg.gistId || cfg.archiveOff) return;   // по умолчанию включена
   if (now() - (cfg.lastArchive || 0) < ARCH_EVERY) return;
-  archiveNow(box, false).catch(() => {});   // не получилось — попробуем в следующий раз
+  /* Отметка успеха ставится только при удаче, поэтому сорвавшийся снимок
+     пробовался заново на КАЖДОЙ сверке — а каждая попытка перебирает все гисты
+     аккаунта. Между неудачами держим паузу. */
+  if (now() - archTried < 3600e3) return;
+  archTried = now();
+  archiveNow(box, false).catch(() => {});   // не получилось — попробуем через час
 }
 
 // список снимков в архиве: для восстановления
@@ -8943,9 +8983,12 @@ function renderSettingsSection(id) {
 function setSyncDot(state) { $("#syncDot").className = "sync-dot" + (state ? " " + state : ""); }
 
 function gh(path, opts = {}) {
-  return withTimeout(fetch("https://api.github.com" + path, Object.assign({
-    headers: { "Authorization": "Bearer " + cfg.token, "Accept": "application/vnd.github+json" }
-  }, opts)), 12000);
+  // свои заголовки добавляем к обязательным, а не вместо них
+  const headers = Object.assign(
+    { "Authorization": "Bearer " + cfg.token, "Accept": "application/vnd.github+json" },
+    opts.headers || {});
+  return withTimeout(fetch("https://api.github.com" + path,
+    Object.assign({}, opts, { headers })), 12000);
 }
 
 // без потолка по времени запрос в самолёте висит до системного таймаута — и всё приложение ждёт
@@ -8998,69 +9041,91 @@ function mergeLists(local, remote) {
   return [...map.values()];
 }
 
+/* Слепок последнего ответа гиста. Живёт в памяти сессии: пока он есть,
+   можно спрашивать «а не изменилось ли» условным запросом и получать 304 без
+   тела. Раньше каждая отметка тянула файл целиком — с обоими профилями и
+   всеми мыслями, — хотя чаще всего там ничего не менялось. */
+let gistEtag = "", gistBox = null;
+
 async function syncNow(manual) {
   if (!cfg.token || !cfg.gistId || syncing) { if (manual && !cfg.token) openSettingsSheet(); return; }
   if (!navigator.onLine) { online = false; setSyncDot("off"); renderBanner(); return; }
   syncing = true; setSyncDot("busy");
   const stampBefore = dataStamp();
   try {
-    const r = await gh("/gists/" + cfg.gistId);
-    if (!r.ok) throw new Error("Ошибка сети (" + r.status + ")");
-    const g = await r.json();
-    const f = g.files && g.files[GIST_FILE];
-    let box = {};                       // содержимое файла целиком: { profiles: {...} }
-    let remote = emptyData();
-    if (f) {
-      let txt = f.content;
-      if (f.truncated && f.raw_url) txt = await (await fetch(f.raw_url)).text();
-      try {
-        const parsed = JSON.parse(txt);
-        // старый файл был плоским — считаем его данными первого профиля
-        box = parsed && parsed.profiles ? parsed : { profiles: { anton: parsed } };
-        remote = migrate(box.profiles[profileId] || null);
-      } catch {}
-    }
-    if (!box.profiles) box = { profiles: {} };
-    cfg.profileIds = Object.keys(box.profiles); saveCfg();
-    profilesFromKeys(cfg.profileIds);
-    // определения материалов живут в гисте наравне с записями
-    data.piano.pieces = mergeLists(data.piano.pieces, remote.piano.pieces);
-    data.book.books = mergeLists(data.book.books, remote.book.books);
-    if (remote.pastel.course && (!data.pastel.course ||
-        (remote.pastel.course.updatedAt || 0) >= (data.pastel.course.updatedAt || 0))) {
-      data.pastel.course = remote.pastel.course;
-    }
-    if (!data.piano.activePiece && data.piano.pieces[0]) data.piano.activePiece = data.piano.pieces[0].id;
-    if (!data.book.activeBook && data.book.books[0]) data.book.activeBook = data.book.books[0].id;
+    const cond = gistEtag && gistBox ? { headers: { "If-None-Match": gistEtag } } : {};
+    const r = await gh("/gists/" + cfg.gistId, cond);
+    if (r.status !== 304 && !r.ok) throw new Error("Ошибка сети (" + r.status + ")");
 
-    data.piano.entries = mergeLists(data.piano.entries, remote.piano.entries);
-    data.book.entries = mergeLists(data.book.entries, remote.book.entries);
-    data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
-
-    data.watch.videos = mergeLists(data.watch.videos, remote.watch.videos);
-    data.watch.entries = mergeLists(data.watch.entries, remote.watch.entries);
-    if (!data.watch.activeVideo && data.watch.videos[0]) data.watch.activeVideo = data.watch.videos[0].id;
-    if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
-    data.freezes = mergeLists(data.freezes, remote.freezes);
-    data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
-    data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
-    data.gut = mergeLists(data.gut || [], remote.gut || []);
-    if (remote.shop) {
-      if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
-        if (remote.shop.theme) data.shop.theme = remote.shop.theme;
+    let box, remote, fresh = r.status !== 304 || !gistBox;
+    if (!fresh) {
+      /* Ничего не изменилось — берём то, что уже разобрали. Сливать заново
+         нечего: удалённая сторона ровно та же, что в прошлый раз. */
+      box = gistBox;
+      remote = null;
+    } else {
+      const g = await r.json();
+      gistEtag = r.headers.get("etag") || "";
+      const f = g.files && g.files[GIST_FILE];
+      box = {};                         // содержимое файла целиком: { profiles: {...} }
+      remote = emptyData();
+      if (f) {
+        let txt = f.content;
+        if (f.truncated && f.raw_url) txt = await (await fetch(f.raw_url)).text();
+        try {
+          const parsed = JSON.parse(txt);
+          // старый файл был плоским — считаем его данными первого профиля
+          box = parsed && parsed.profiles ? parsed : { profiles: { anton: parsed } };
+          remote = migrate(box.profiles[profileId] || null);
+        } catch {}
       }
+      if (!box.profiles) box = { profiles: {} };
+      gistBox = box;
+      cfg.profileIds = Object.keys(box.profiles); saveCfg();
+      profilesFromKeys(cfg.profileIds);
     }
-    data.archive = mergeLists(data.archive, remote.archive);
-    data.takes = mergeLists(data.takes || [], remote.takes || []);
-    // адрес гиста с файлами обязан жить в данных, а не в настройках устройства,
-    // иначе на втором телефоне вложения просто неоткуда взять
-    if (!data.takesId && remote.takesId) data.takesId = remote.takesId;
-    if (data.takesId) { cfg.takesId = data.takesId; saveCfg(); }
-    if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
-      data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
+
+    if (remote) {
+      // определения материалов живут в гисте наравне с записями
+      data.piano.pieces = mergeLists(data.piano.pieces, remote.piano.pieces);
+      data.book.books = mergeLists(data.book.books, remote.book.books);
+      if (remote.pastel.course && (!data.pastel.course ||
+          (remote.pastel.course.updatedAt || 0) >= (data.pastel.course.updatedAt || 0))) {
+        data.pastel.course = remote.pastel.course;
+      }
+      if (!data.piano.activePiece && data.piano.pieces[0]) data.piano.activePiece = data.piano.pieces[0].id;
+      if (!data.book.activeBook && data.book.books[0]) data.book.activeBook = data.book.books[0].id;
+
+      data.piano.entries = mergeLists(data.piano.entries, remote.piano.entries);
+      data.book.entries = mergeLists(data.book.entries, remote.book.entries);
+      data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
+
+      data.watch.videos = mergeLists(data.watch.videos, remote.watch.videos);
+      data.watch.entries = mergeLists(data.watch.entries, remote.watch.entries);
+      if (!data.watch.activeVideo && data.watch.videos[0]) data.watch.activeVideo = data.watch.videos[0].id;
+      if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
+      data.freezes = mergeLists(data.freezes, remote.freezes);
+      data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
+      data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
+      data.gut = mergeLists(data.gut || [], remote.gut || []);
+      if (remote.shop) {
+        if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
+          if (remote.shop.theme) data.shop.theme = remote.shop.theme;
+        }
+      }
+      data.archive = mergeLists(data.archive, remote.archive);
+      data.takes = mergeLists(data.takes || [], remote.takes || []);
+      // адрес гиста с файлами обязан жить в данных, а не в настройках устройства,
+      // иначе на втором телефоне вложения просто неоткуда взять
+      if (!data.takesId && remote.takesId) data.takesId = remote.takesId;
+      if (data.takesId) { cfg.takesId = data.takesId; saveCfg(); }
+      if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
+        data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
+      }
+      normalizeActive();
+      saveData();
     }
-    normalizeActive();
-    saveData();
+
     // сравниваем профиль целиком: раньше смотрели только занятия, и новые мысли,
     // книги на полке, паузы или цель могли навсегда остаться на одном устройстве
     const norm = (o) => JSON.stringify(migrate(o));
@@ -9068,11 +9133,21 @@ async function syncNow(manual) {
     if (changed) {
       box.profiles[profileId] = exportData();     // чужой профиль в файле остаётся нетронутым
       box.v = 8; box.savedAt = now();
+      const payload = JSON.stringify(box);
       const pr = await gh("/gists/" + cfg.gistId, {
         method: "PATCH",
-        body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(box) } } })
+        body: JSON.stringify({ files: { [GIST_FILE]: { content: payload } } })
       });
       if (!pr.ok) throw new Error("Не сохранилось");
+      /* После записи метка старая. Берём ту, что вернул сам PATCH: совпадёт —
+         следующая сверка придёт пустой; не совпадёт — просто скачаем файл, как
+         раньше. Хуже прежнего не будет.
+         Слепок кладём РАЗОБРАННЫЙ ЗАНОВО, а не сам box: exportData отдаёт живые
+         массивы приложения, и слепок менялся бы вместе с ними. Тогда сравнение
+         «изменилось ли» всегда говорило бы «нет», и правки переставали уходить
+         в гист вовсе. */
+      gistEtag = pr.headers.get("etag") || "";
+      gistBox = JSON.parse(payload);
     }
     cfg.lastSync = now(); saveCfg(); setSyncDot("ok");
     maybeArchive(box);                  // раз в неделю снимок уезжает в архив, молча
