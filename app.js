@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 99";
+const APP_VERSION = "Кэйко 100";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6535,6 +6535,8 @@ function vidMountFile(box, id, url, task, u) {
 const yaHref = new Map();
 
 async function yaResolve(share) {
+  // уже прямая ссылка на хранилище — спрашивать нечего
+  if (/storage\.yandex\.net|\/rdisk\//i.test(share)) return share;
   if (yaHref.has(share)) return yaHref.get(share);
   const api = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key="
     + encodeURIComponent(share);
@@ -7445,7 +7447,9 @@ function bindPractice() {
 
     if (b.dataset.vd === "link") {
       const raw = ((box.querySelector("#vdUrl") || {}).value || "").trim();
-      const ya = /disk\.yandex\.[a-z]+\//i.test(raw) ? raw : "";
+      /* И страница «поделиться», и прямая ссылка на хранилище идут одним путём:
+         обе временные, поэтому по ним забирается файл, а не играется поток. */
+      const ya = /disk\.yandex\.[a-z]+\/|storage\.yandex\.net|\/rdisk\//i.test(raw) ? raw : "";
       const vk = !ya && /vk(?:video)?\.(?:com|ru)|video_ext\.php/.test(raw) ? vkParse(raw) : null;
       const yt = (ya || vk) ? null : ytId(raw);
       // не узнали площадку — считаем, что это прямая ссылка на файл
