@@ -18,7 +18,7 @@ const LS = {
   get older() { return []; }
 };
 const GIST_FILE = "prokachka.json";                // тот же файл, что и в первой версии
-const APP_VERSION = "Кэйко 87";
+const APP_VERSION = "Кэйко 88";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5459,7 +5459,11 @@ function maybeDailyThought() {
   if ($("#cheer")?.classList.contains("show")) return;   // не перебиваем награды
   if ($("#sheet")?.classList.contains("show")) return;
 
-  const list = thoughts();
+  /* События — не мысли. «Занимался: Бах — Прелюдия es-moll» в качестве мысли
+     дня выглядит как сбой: перечитывать там нечего. Заодно отсеиваем записи
+     без текста — одно вложение показывать этим экраном нечем.
+     Наугад из ленты такие уже не тянулись, а сюда фильтр не доехал. */
+  const list = thoughts().filter((t) => !t.event && String(t.text || "").trim());
   if (!list.length) return;                              // нечего показывать — молчим
 
   const seen = Array.isArray(st.seen) ? st.seen : [];
@@ -5478,11 +5482,12 @@ function maybeDailyThought() {
 
 function showDailyThought(t) {
   const mats = achMaterials();
-  const m = mats.find(x => keyOf(x) === t.key);
-  const a = (data.archive || []).find(x => x.id === t.key);
+  const m = t.key ? mats.find(x => keyOf(x) === t.key) : null;
+  const a = t.key ? (data.archive || []).find(x => x.id === t.key) : null;
   const src = m || a || null;
-  const icon = src ? (src.icon || "📖") : "📎";
-  const title = src ? src.title : "Архив";
+  // мысль сама по себе — подписываем так же, как в ленте, а не «Архивом»
+  const icon = src ? (src.icon || "📖") : (t.key ? "📎" : NO_MAT_ITEM.icon);
+  const title = src ? src.title : (t.key ? "Архив" : NO_MAT_ITEM.title);
   const cover = src && src.cover ? src.cover : "";
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
 
