@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 95";
+const APP_VERSION = "Кэйко 96";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6470,17 +6470,37 @@ function vidMountYT(box, id, vid, task, u) {
             V.rates().map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
           vidTick();
           vidPaint();
-        }
+        },
+        /* Ролик может не открыться и при живой сети. Чаще всего — автор запретил
+           встраивание: у разборов это обычное дело. Молчать тут нельзя, иначе
+           остаётся чёрный прямоугольник и непонятно, что делать. */
+        onError: (ev) => vidFail(box, Number(ev && ev.data))
       }
     });
-  }).catch(() => {
-    box.dataset.mode = "off";
-    box.innerHTML = `
-      <div class="vd-empty">
-        <span>Ролик с ютуба сейчас не открыть — нет сети.</span>
-        <button class="btn" data-vd="src" type="button">Выбрать другое</button>
-      </div>`;
-  });
+  }).catch(() => vidFail(box, 0));
+}
+
+const YT_WHY = {
+  2: "ссылка не похожа на ролик",
+  5: "этот ролик не играет во встроенном плеере",
+  100: "ролик удалён или закрыт автором",
+  101: "автор запретил встраивание — открыть можно только на ютубе",
+  150: "автор запретил встраивание — открыть можно только на ютубе"
+};
+
+function vidFail(box, code) {
+  clearInterval(vidTimer);
+  ytPlayer = null; vidKind = "";
+  box.dataset.mode = "off"; box.dataset.for = "";
+  const why = YT_WHY[code] || (navigator.onLine ? "ютуб не ответил" : "нет сети");
+  const vid = pracStore().yt;
+  box.innerHTML = `
+    <div class="vd-empty">
+      <b>Ролик не открылся</b>
+      <span>${esc(why)}.</span>
+      ${vid ? `<a class="btn" href="https://www.youtube.com/watch?v=${esc(vid)}" target="_blank" rel="noopener">Открыть на ютубе</a>` : ""}
+      <button class="btn" data-vd="src" type="button">Взять другое видео</button>
+    </div>`;
 }
 
 /* ══════════ Курс: урок = видео плюс задание ══════════
