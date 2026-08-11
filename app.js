@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 94";
+const APP_VERSION = "Кэйко 95";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6164,6 +6164,325 @@ function plDrag(e) {
   document.addEventListener("pointerup", up);
 }
 
+/* ══════════ Разбор по видео ══════════
+   Ролик, где вещь разбирают медленно и видно руки, объясняет больше, чем
+   запись целиком. Файл выбирается один раз и живёт в хранилище браузера
+   этого устройства: никуда не отправляется, в гист не попадает и синхронизацию
+   не трогает. Синхронизируется только разметка — числа, где какой такт. */
+const VIDEO_CACHE = "keiko-video-v1";
+const videoKey = (id) => "keiko-video/" + encodeURIComponent(id);
+const videoUrls = new Map();
+let vidBusy = false;
+
+async function videoBox() { return await caches.open(VIDEO_CACHE); }
+
+async function videoSave(id, blob) {
+  const box = await videoBox();
+  await box.put(videoKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "video/mp4" } }));
+  const old = videoUrls.get(id);
+  if (old) URL.revokeObjectURL(old);
+  videoUrls.set(id, URL.createObjectURL(blob));
+}
+
+async function videoLoad(id) {
+  if (videoUrls.has(id)) return videoUrls.get(id);
+  try {
+    const box = await videoBox();
+    const res = await box.match(videoKey(id));
+    if (!res) { videoUrls.set(id, ""); return ""; }
+    videoUrls.set(id, URL.createObjectURL(await res.blob()));
+  } catch { videoUrls.set(id, ""); }
+  return videoUrls.get(id);
+}
+
+async function videoDrop(id) {
+  try { (await videoBox()).delete(videoKey(id)); } catch {}
+  const old = videoUrls.get(id);
+  if (old) URL.revokeObjectURL(old);
+  videoUrls.delete(id);
+}
+
+/* Разметка: какому такту какой кусок видео соответствует. Живёт рядом с ходом
+   разбора, значит уезжает в гист и приезжает на второй телефон — в отличие от
+   самого файла. Это просто числа. */
+const vmarks = () => {
+  const st = pracStore();
+  st.vmarks = st.vmarks || [];
+  return st.vmarks;
+};
+// нужный кусок: сперва тот, что накрывает весь отрезок, иначе — тот же зачин
+const vmarkFor = (from, to) =>
+  vmarks().find((m) => m.from <= from && m.to >= to)
+  || vmarks().find((m) => m.from === from) || null;
+
+/* ── Плеер разбора ──
+   Ролик, где вещь разбирают медленно и видно руки, объясняет больше записи
+   целиком. Источника два, и оба ничего не публикуют: ссылка на ютуб — играет
+   официальный плеер, я лишь управляю им и рисую свою дорожку поверх; файл
+   с устройства — лежит в хранилище браузера этого телефона, выбирается один
+   раз и дальше открывается сам. В гист не уходит ни то ни другое; уезжает
+   только разметка — числа, где какой такт.
+
+   Задание всё время на виду: ради него всё и затевалось. Отметил «получилось» —
+   видео не закрывается и не перематывается, меняется только строка сверху.
+   Полный экран берём у обёртки, а не у самого видео: иначе задание и петля
+   остались бы под ним. */
+let pracVidEl = null, ytPlayer = null, vidKind = "", vidTimer = 0;
+
+const vloop = () => pracStore().vloop || null;
+
+function vidSel(dur) {
+  const l = vloop();
+  if (l && isFinite(l.a) && isFinite(l.b) && l.b > l.a) return { a: l.a, b: Math.min(l.b, dur || l.b) };
+  return { a: 0, b: dur || 0 };
+}
+
+/* Один и тот же набор действий поверх двух разных плееров: дальше коду
+   всё равно, ютуб там или файл. */
+const V = {
+  ready: () => (vidKind === "yt" ? !!(ytPlayer && ytPlayer.getDuration) : !!pracVidEl),
+  dur: () => { try { return (vidKind === "yt" ? ytPlayer.getDuration() : pracVidEl.duration) || 0; } catch { return 0; } },
+  now: () => { try { return (vidKind === "yt" ? ytPlayer.getCurrentTime() : pracVidEl.currentTime) || 0; } catch { return 0; } },
+  paused: () => { try { return vidKind === "yt" ? ytPlayer.getPlayerState() !== 1 : pracVidEl.paused; } catch { return true; } },
+  seek: (t) => { try { if (vidKind === "yt") ytPlayer.seekTo(t, true); else pracVidEl.currentTime = t; } catch {} },
+  play: () => { try { if (vidKind === "yt") ytPlayer.playVideo(); else pracVidEl.play().catch(() => {}); } catch {} },
+  pause: () => { try { if (vidKind === "yt") ytPlayer.pauseVideo(); else pracVidEl.pause(); } catch {} },
+  rate: (r) => {
+    try {
+      if (vidKind === "yt") ytPlayer.setPlaybackRate(r);
+      else { pracVidEl.preservesPitch = true; pracVidEl.webkitPreservesPitch = true; pracVidEl.playbackRate = r; }
+    } catch {}
+  },
+  /* Ютуб отдаёт свой набор скоростей и молча округляет чужие вниз. Спрашиваем
+     у него и показываем только то, что он правда умеет. */
+  rates: () => {
+    if (vidKind !== "yt") return PL_RATES;
+    try {
+      const list = (ytPlayer.getAvailablePlaybackRates() || []).filter((r) => r <= 1);
+      return list.length ? list : [0.25, 0.5, 0.75, 1];
+    } catch { return [0.25, 0.5, 0.75, 1]; }
+  }
+};
+
+function vidPaint() {
+  const box = $("#pracVideo");
+  if (!box || box.hidden || !V.ready()) return;
+  const dur = V.dur(), cur = V.now();
+  const sel = vidSel(dur);
+  const pc = (t) => (dur ? Math.max(0, Math.min(100, (t / dur) * 100)) : 0);
+  const q = (c) => box.querySelector(c);
+  const S = q(".vd-sel"), A = q('[data-vh="a"]'), B = q('[data-vh="b"]'), P = q(".vd-head"), T = q(".vd-time");
+  if (!S) return;
+  S.style.left = pc(sel.a) + "%";
+  S.style.width = Math.max(0, pc(sel.b) - pc(sel.a)) + "%";
+  A.style.left = pc(sel.a) + "%";
+  B.style.left = pc(sel.b) + "%";
+  P.style.left = pc(cur) + "%";
+  if (T) T.textContent = plClock(cur) + " · кусок " + plClock(sel.a) + "–" + plClock(sel.b);
+  const play = q('[data-vd="play"]');
+  if (play) play.textContent = V.paused() ? "▶︎" : "❚❚";
+  const rate = pracStore().vrate || 1;
+  box.querySelectorAll("[data-vrate]").forEach((b) => b.classList.toggle("on", Number(b.dataset.vrate) === rate));
+}
+
+/* Петля. У ютуба своего «доиграл до сих пор» нет, поэтому просто спрашиваем
+   время по часам — этого хватает и работает одинаково для обоих плееров. */
+function vidTick() {
+  clearInterval(vidTimer);
+  vidTimer = setInterval(() => {
+    if (!V.ready()) return;
+    if (!V.paused()) {
+      const dur = V.dur(), sel = vidSel(dur);
+      if (dur && V.now() >= sel.b - 0.15) V.seek(sel.a);
+    }
+    vidPaint();
+  }, 120);
+}
+
+function vidSetSel(next) {
+  if (!next || !isFinite(next.a) || !isFinite(next.b) || next.b - next.a < 0.2) return;
+  pracStore().vloop = next;
+  saveData(); schedulePush();
+  const cur = V.now();
+  if (cur < next.a || cur > next.b) V.seek(next.a);
+  vidPaint();
+}
+
+function vidDrag(e) {
+  const box = $("#pracVideo");
+  const h = e.target.closest("[data-vh]");
+  const bar = box && box.querySelector(".vd-bar");
+  if (!h || !bar || !V.ready()) return;
+  const dur = V.dur();
+  if (!dur) return;
+  e.preventDefault();
+  const which = h.dataset.vh;
+  const move = (ev) => {
+    const r = bar.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * dur;
+    const cur = vidSel(dur);
+    vidSetSel(which === "a" ? { a: Math.min(t, cur.b - 0.3), b: cur.b }
+                            : { a: cur.a, b: Math.max(t, cur.a + 0.3) });
+  };
+  const up = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+
+// у этих тактов уже есть запомненный кусок — подставляем его
+function vidJump(u) {
+  if (!u || !V.ready()) return;
+  const m = vmarkFor(u.from, u.to);
+  if (m) vidSetSel({ a: m.a, b: m.b });
+}
+
+/* Библиотека ютуба грузится один раз и только когда понадобилась: офлайн она
+   не приедет, и это нормально — тогда работает файл с устройства. */
+let ytApi = null;
+function ytReady() {
+  if (ytApi) return ytApi;
+  ytApi = new Promise((ok, fail) => {
+    if (window.YT && window.YT.Player) return ok(window.YT);
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (prev) try { prev(); } catch {} ok(window.YT); };
+    const t = document.createElement("script");
+    t.src = "https://www.youtube.com/iframe_api";
+    t.onerror = () => fail(new Error("нет сети"));
+    document.head.appendChild(t);
+    setTimeout(() => fail(new Error("ютуб не ответил")), 15000);
+  }).catch((e) => { ytApi = null; throw e; });
+  return ytApi;
+}
+
+function vidControlsHTML(task) {
+  const rates = V.rates();
+  return `
+    <div class="vd-bar">
+      <div class="vd-sel"></div>
+      <div class="vd-head"></div>
+      <div class="vd-h" data-vh="a"></div>
+      <div class="vd-h" data-vh="b"></div>
+    </div>
+    <div class="vd-row">
+      <button class="vd-btn" data-vd="play" type="button">▶︎</button>
+      <span class="vd-time">0:00</span>
+      <button class="vd-btn" data-vd="full" type="button" aria-label="Во весь экран">⤢</button>
+    </div>
+    <div class="vd-row rates">
+      ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
+    </div>
+    <div class="vd-row marks">
+      <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
+      <button class="btn" data-vd="all" type="button">Весь ролик</button>
+      <button class="btn" data-vd="src" type="button" aria-label="Сменить источник">⋯</button>
+    </div>
+    <p class="vd-note">Кусок повторяется по кругу. «Это такты…» запоминает его за ними — в следующий раз откроется сам.</p>`;
+}
+
+function pracVideo(u) {
+  const box = $("#pracVideo");
+  if (!box) return;
+  const id = piece().id;
+  const st = pracStore();
+  const task = u ? `такты ${u.from}–${u.to}` : "";
+
+  // уже собран для этой пьесы — меняем только строку задания
+  if (box.dataset.mode === "play" && box.dataset.for === id) {
+    const t = box.querySelector(".vd-task b");
+    if (t) t.textContent = task;
+    vidPaint();
+    return;
+  }
+
+  if (st.yt) { vidMountYT(box, id, st.yt, task, u); return; }
+
+  const url = videoUrls.get(id);
+  if (url === undefined) { videoLoad(id).then(() => { if (prac) pracVideo(u); }); return; }
+  if (url) { vidMountFile(box, id, url, task, u); return; }
+
+  box.hidden = false;
+  if (box.dataset.mode === "pick") return;
+  box.dataset.mode = "pick"; box.dataset.for = "";
+  box.innerHTML = `
+    <div class="vd-empty">
+      <b>Разбор по видео</b>
+      <span>Ссылка на ютуб — играет их плеер, управление моё. Файл — останется на этом телефоне и будет открываться сам.</span>
+      <input class="note-input" id="vdUrl" placeholder="Ссылка на YouTube" autocomplete="off">
+      <div class="vd-pickrow">
+        <button class="btn gold" data-vd="yt" type="button">Взять ролик</button>
+        <button class="btn" data-vd="pick" type="button">Выбрать файл</button>
+      </div>
+      <input type="file" accept="video/*" hidden>
+    </div>`;
+}
+
+function vidMountFile(box, id, url, task, u) {
+  vidKind = "file"; ytPlayer = null;
+  box.dataset.mode = "play"; box.dataset.for = id;
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="vd-wrap">
+      <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
+      <video playsinline preload="metadata" src="${esc(url)}"></video>
+      ${vidControlsHTML(task)}
+    </div>`;
+  pracVidEl = box.querySelector("video");
+  pracVidEl.addEventListener("loadedmetadata", () => {
+    V.rate(pracStore().vrate || 1);
+    vidJump(u);
+    box.querySelector(".vd-row.rates").innerHTML =
+      V.rates().map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
+    vidPaint();
+  });
+  pracVidEl.addEventListener("play", vidTick);
+  V.rate(pracStore().vrate || 1);
+  vidTick();
+  vidPaint();
+}
+
+function vidMountYT(box, id, vid, task, u) {
+  box.hidden = false;
+  if (box.dataset.mode !== "loading") {
+    box.dataset.mode = "loading"; box.dataset.for = "";
+    box.innerHTML = `<div class="vd-empty"><span>Ролик загружается…</span></div>`;
+  }
+  ytReady().then((YT) => {
+    if (!prac || pracStore().yt !== vid) return;
+    vidKind = "yt"; pracVidEl = null;
+    box.dataset.mode = "play"; box.dataset.for = id;
+    box.innerHTML = `
+      <div class="vd-wrap">
+        <div class="vd-task">Сейчас: <b>${esc(task)}</b></div>
+        <div class="vd-yt"><div id="ytHost"></div></div>
+        ${vidControlsHTML(task)}
+      </div>`;
+    ytPlayer = new YT.Player("ytHost", {
+      videoId: vid,
+      playerVars: { controls: 0, rel: 0, modestbranding: 1, playsinline: 1, disablekb: 1, fs: 0 },
+      events: {
+        onReady: () => {
+          V.rate(pracStore().vrate || 1);
+          vidJump(u);
+          box.querySelector(".vd-row.rates").innerHTML =
+            V.rates().map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
+          vidTick();
+          vidPaint();
+        }
+      }
+    });
+  }).catch(() => {
+    box.dataset.mode = "off";
+    box.innerHTML = `
+      <div class="vd-empty">
+        <span>Ролик с ютуба сейчас не открыть — нет сети.</span>
+        <button class="btn" data-vd="src" type="button">Выбрать другое</button>
+      </div>`;
+  });
+}
+
 /* ══════════ Курс: урок = видео плюс задание ══════════
    У пьесы единица — такт, у курса — урок. Внутри урока два шага: посмотреть
    и сделать задание. Задание есть не всегда, поэтому про него спрашивают,
@@ -6494,6 +6813,7 @@ function pracRender() {
   if (prac.kind === "lesson") {
     $("#pracWhere").textContent = course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
     const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
+    const vd = $("#pracVideo"); if (vd) vd.hidden = true;
     if (["break", "resting", "wrap"].includes(prac.screen)) { /* общие экраны ниже */ }
     else { lessonRender($("#pracStage")); return; }
   }
@@ -6502,7 +6822,10 @@ function pracRender() {
   $("#pracWhere").textContent = piece().name + (prac.startedAt ? " · " + m + " мин" : "");
   const box = $("#pracStage");
 
-  if (prac.screen !== "work") { const pl = $("#pracPlayer"); if (pl) pl.hidden = true; }
+  if (prac.screen !== "work") {
+    const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
+    const vd = $("#pracVideo"); if (vd) vd.hidden = true;
+  }
 
   if (prac.screen === "start") {
     const p = w.part;
@@ -6577,6 +6900,7 @@ function pracRender() {
   pracPlayer();
   const u = prac.cur;
   if (!u) { pracFinish(); return; }
+  pracVideo(u);
 
   /* Что за этап, который сейчас, и что будет следующим. */
   let top = "", stage = "", after = "";
@@ -6682,6 +7006,11 @@ function closePractice() {
   pracAudioEl = null;
   const pl = $("#pracPlayer");
   if (pl) { pl.innerHTML = ""; pl.hidden = true; }
+  clearInterval(vidTimer);
+  try { V.pause(); } catch {}
+  pracVidEl = null; ytPlayer = null; vidKind = "";
+  const vd = $("#pracVideo");
+  if (vd) { vd.innerHTML = ""; vd.hidden = true; vd.dataset.mode = ""; vd.dataset.for = ""; }
   prac = null;
   $("#prac").hidden = true;
   $("#prac").setAttribute("aria-hidden", "true");
@@ -6860,6 +7189,94 @@ function pracFinish() {
 function bindPractice() {
   $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
   $("#pracPlayer").addEventListener("pointerdown", plDrag);
+  $("#pracVideo").addEventListener("pointerdown", vidDrag);
+
+  $("#pracVideo").addEventListener("click", async (e) => {
+    const box = $("#pracVideo");
+    const b = e.target.closest("[data-vd]");
+    const rate = e.target.closest("[data-vrate]");
+    if (rate) {
+      pracStore().vrate = Number(rate.dataset.vrate);
+      saveData(); schedulePush(); V.rate(pracStore().vrate); vidPaint();
+      return;
+    }
+    if (!b) return;
+
+    if (b.dataset.vd === "yt") {
+      const raw = (box.querySelector("#vdUrl") || {}).value || "";
+      const vid = ytId(raw.trim());
+      if (!vid) { toast("Это не похоже на ссылку с YouTube"); return; }
+      pracStore().yt = vid;
+      await videoDrop(piece().id);          // файл и ссылка одновременно ни к чему
+      saveData(); schedulePush();
+      box.dataset.mode = ""; pracVideo(prac && prac.cur);
+      return;
+    }
+
+    if (b.dataset.vd === "pick") {
+      const inp = box.querySelector('input[type="file"]');
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0];
+        if (!f || vidBusy) return;
+        vidBusy = true;
+        try {
+          toast("Сохраняю видео…");
+          await videoSave(piece().id, f);
+          delete pracStore().yt;
+          saveData(); schedulePush();
+          box.dataset.mode = ""; pracVideo(prac && prac.cur);
+          toast("Готово — больше выбирать не придётся");
+        } catch { toast("Не поместилось — освободи место"); }
+        finally { vidBusy = false; }
+      };
+      inp.click();
+      return;
+    }
+
+    if (b.dataset.vd === "src") {
+      if (!confirm("Выбрать другое видео?\n\nРазметка по тактам останется.")) return;
+      delete pracStore().yt;
+      await videoDrop(piece().id);
+      videoUrls.set(piece().id, "");
+      saveData(); schedulePush();
+      clearInterval(vidTimer); ytPlayer = null; pracVidEl = null; vidKind = "";
+      box.dataset.mode = ""; pracVideo(prac && prac.cur);
+      return;
+    }
+
+    if (!V.ready()) return;
+
+    if (b.dataset.vd === "play") {
+      if (V.paused()) {
+        const sel = vidSel(V.dur());
+        const t = V.now();
+        if (t < sel.a || t >= sel.b - 0.15) V.seek(sel.a);
+        V.play(); vidTick();
+      } else V.pause();
+      vidPaint();
+    } else if (b.dataset.vd === "full") {
+      /* Разворачиваем обёртку, а не само видео: задание, дорожка и петля
+         должны остаться на экране. */
+      const wrap = box.querySelector(".vd-wrap");
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (wrap.requestFullscreen) await wrap.requestFullscreen();
+        else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
+      } catch {}
+    } else if (b.dataset.vd === "bind") {
+      const u = prac && prac.cur;
+      if (!u) { toast("Сейчас нет текущего задания"); return; }
+      const sel = vidSel(V.dur());
+      const list = vmarks().filter((m) => !(m.from === u.from && m.to === u.to));
+      list.push({ from: u.from, to: u.to, a: sel.a, b: sel.b });
+      pracStore().vmarks = list.sort((x, y) => x.from - y.from);
+      saveData(); schedulePush();
+      toast(`Кусок запомнен за тактами ${u.from}–${u.to}`);
+    } else if (b.dataset.vd === "all") {
+      pracStore().vloop = null;
+      saveData(); schedulePush(); vidPaint();
+    }
+  });
 
   $("#pracPlayer").addEventListener("click", (e) => {
     const retry = e.target.closest('[data-pl="retry"]');
