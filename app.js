@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 101";
+const APP_VERSION = "Кэйко 102";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6162,7 +6162,9 @@ function pracPlayer() {
     </div>
     </div>
     <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
-  box.classList.toggle("folded", !pracStore().plOpen);
+  const st0 = pracStore();
+  if (st0.plOpen === undefined) st0.plOpen = true;   // по умолчанию открыт
+  box.classList.toggle("folded", !st0.plOpen);
   pracAudioEl = box.querySelector("audio");
   pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
@@ -6414,27 +6416,69 @@ function vidAsk(which) {
                           : { a: cur.a, b: Math.max(t, cur.a + 0.3) });
 }
 
+/* Щипок двумя пальцами — то, как приближают везде. Кнопка остаётся для тех
+   случаев, когда рука одна занята инструментом. */
+const vidPinch = { two: false, d0: 0, z0: 1 };
+function vidPinchStart(box) {
+  const frame = box.querySelector(".vd-frame");
+  if (!frame || frame.dataset.pinch) return;
+  frame.dataset.pinch = "1";
+  const pts = new Map();
+  const dist = () => {
+    const [a, b] = [...pts.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  frame.addEventListener("pointerdown", (e) => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { vidPinch.two = true; vidPinch.d0 = dist(); vidPinch.z0 = pracStore().vzoom || 1; }
+  });
+  frame.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size !== 2 || !vidPinch.d0) return;
+    e.preventDefault();
+    const z = Math.max(1, Math.min(4, vidPinch.z0 * (dist() / vidPinch.d0)));
+    const st = pracStore();
+    st.vzoom = Math.round(z * 20) / 20;
+    if (st.vzoom <= 1.02) { st.vzoom = 1; st.vpan = 0; st.vpanY = 0; }
+    vidApplyZoom(box);
+  });
+  const drop = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2 && vidPinch.two) {
+      vidPinch.two = false; vidPinch.d0 = 0;
+      saveData(); schedulePush();
+    }
+  };
+  frame.addEventListener("pointerup", drop);
+  frame.addEventListener("pointercancel", drop);
+  frame.addEventListener("pointerleave", drop);
+}
+
 /* Приближение: руки крупным планом. Тянем картинку внутри рамки, поэтому
    двигать её можно и пальцем — при увеличении она больше рамки. */
 function vidZoom(box, step) {
   const st = pracStore();
-  const z = Math.max(1, Math.min(3, (st.vzoom || 1) + step));
-  st.vzoom = z; st.vpan = z === 1 ? 0 : (st.vpan || 0);
+  const z = Math.max(1, Math.min(3, (st.vzoom || 1) + step));   // −99 возвращает к единице
+  st.vzoom = z;
+  if (z === 1) { st.vpan = 0; st.vpanY = 0; }
   saveData(); schedulePush();
   vidApplyZoom(box);
 }
 
 function vidApplyZoom(box) {
+  vidPinchStart(box);
   const st = pracStore();
   const z = st.vzoom || 1, pan = st.vpan || 0;
   const wrap = box.querySelector(".vd-yt, video");
   if (!wrap) return;
-  wrap.style.transform = `scale(${z}) translateX(${pan}%)`;
+  const panY = st.vpanY || 0;
+  wrap.style.transform = `scale(${z}) translate(${pan}%, ${panY}%)`;
   wrap.style.transformOrigin = "center center";
   const frame = box.querySelector(".vd-frame");
   if (frame) frame.classList.toggle("zoomed", z > 1);
   const btn = box.querySelector('[data-vd="zoom"]');
-  if (btn) btn.textContent = z > 1 ? "×" + z : "🔍";
+  if (btn) btn.textContent = z > 1 ? "×" + (Math.round(z * 10) / 10) : "🔍";
 }
 
 // набор скоростей известен только после готовности плеера — перерисовываем ряд
@@ -6459,12 +6503,19 @@ function vidPaint() {
   A.style.left = pc(sel.a) + "%";
   B.style.left = pc(sel.b) + "%";
   P.style.left = pc(cur) + "%";
-  if (T) T.textContent = plClock(cur) + " · кусок " + plClock(sel.a) + "–" + plClock(sel.b);
+  if (T) T.textContent = plClock(cur) + " / " + plClock(dur);
   const play = q('[data-vd="play"]');
   if (play) play.textContent = V.paused() ? "▶︎" : "❚❚";
   const va = q('[data-vset="a"]'), vb = q('[data-vset="b"]');
   if (va) va.textContent = plClock(sel.a);
   if (vb) vb.textContent = plClock(sel.b);
+  const lt = q(".vd-loop-t");
+  if (lt) lt.textContent = plClock(sel.a) + "–" + plClock(sel.b) + " · " + plClock(sel.b - sel.a);
+
+  // отдельная полоса перемотки: за неё тянут, чтобы попасть куда угодно
+  const played = q(".vd-played"), knob = q(".vd-knob");
+  if (played) played.style.width = pc(cur) + "%";
+  if (knob) knob.style.left = pc(cur) + "%";
   const rate = pracStore().vrate || 1;
   box.querySelectorAll("[data-vrate]").forEach((b) => b.classList.toggle("on", Number(b.dataset.vrate) === rate));
 }
@@ -6497,18 +6548,44 @@ function vidSetSel(next) {
 function vidDrag(e) {
   const box = $("#pracVideo");
 
+  /* Перемотка: тянем за полосу, а не тыкаем. Попасть в нужное место пальцем
+     на узкой дорожке иначе нельзя, а это первое, чего от плеера ждут. */
+  const scrub = e.target.closest(".vd-scrub");
+  if (scrub && V.ready()) {
+    const dur = V.dur();
+    if (!dur) return;
+    e.preventDefault();
+    const at = (ev) => {
+      const r = scrub.getBoundingClientRect();
+      V.seek(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * dur);
+      vidPaint();
+    };
+    at(e);
+    const up = () => {
+      document.removeEventListener("pointermove", at);
+      document.removeEventListener("pointerup", up);
+    };
+    document.addEventListener("pointermove", at);
+    document.addEventListener("pointerup", up);
+    return;
+  }
+
+
   /* Приближённую картинку возят пальцем: иначе руки уезжают за край рамки
      и приближение теряет смысл. */
   const frame = e.target.closest(".vd-frame.zoomed");
-  if (frame) {
+  if (frame && !vidPinch.two) {
     const st = pracStore();
     const z = st.vzoom || 1;
     const lim = (z - 1) * 50;                 // дальше края уже видно пустоту
-    const x0 = e.clientX, p0 = st.vpan || 0;
+    const x0 = e.clientX, y0 = e.clientY;
+    const p0 = st.vpan || 0, q0 = st.vpanY || 0;
     e.preventDefault();
     const move = (ev) => {
       const dx = (ev.clientX - x0) / frame.clientWidth * 100 / z;
+      const dy = (ev.clientY - y0) / frame.clientHeight * 100 / z;
       st.vpan = Math.max(-lim, Math.min(lim, p0 + dx));
+      st.vpanY = Math.max(-lim, Math.min(lim, q0 + dy));
       vidApplyZoom(box);
     };
     const up = () => {
@@ -6571,43 +6648,53 @@ function ytReady() {
 function vidControlsHTML(task) {
   const rates = V.rates();
   return `
-    <div class="vd-bar">
-      <div class="vd-sel"></div>
-      <div class="vd-head"></div>
-      <div class="vd-h" data-vh="a"></div>
-      <div class="vd-h" data-vh="b"></div>
-    </div>
+    <div class="vd-scrub"><i class="vd-played"></i><b class="vd-knob"></b></div>
     <div class="vd-row">
       <button class="vd-btn" data-vd="play" type="button">▶︎</button>
+      <button class="vd-btn" data-vd="back" type="button" aria-label="Сначала">↺</button>
       <span class="vd-time">0:00</span>
       <button class="vd-btn" data-vd="zoom" type="button" aria-label="Приблизить">🔍</button>
       <button class="vd-btn" data-vd="full" type="button" aria-label="Во весь экран">⤢</button>
     </div>
-    <div class="vd-row edges">
-      <em>Начало</em>
-      <button data-vedge="a" data-vstep="-1" type="button">−</button>
-      <button class="vd-val" data-vset="a" type="button">0:00</button>
-      <button data-vedge="a" data-vstep="1" type="button">＋</button>
+
+    <div class="vd-loop">
+      <div class="vd-loop-head">
+        <b>Кусок по кругу</b>
+        <span class="vd-loop-t">0:00–0:00</span>
+      </div>
+      <div class="vd-bar">
+        <div class="vd-sel"></div>
+        <div class="vd-head"></div>
+        <div class="vd-h" data-vh="a"></div>
+        <div class="vd-h" data-vh="b"></div>
+      </div>
+      <div class="vd-row edges">
+        <em>Начало</em>
+        <button data-vedge="a" data-vstep="-1" type="button">−</button>
+        <button class="vd-val" data-vset="a" type="button">0:00</button>
+        <button data-vedge="a" data-vstep="1" type="button">＋</button>
+      </div>
+      <div class="vd-row edges">
+        <em>Конец</em>
+        <button data-vedge="b" data-vstep="-1" type="button">−</button>
+        <button class="vd-val" data-vset="b" type="button">0:00</button>
+        <button data-vedge="b" data-vstep="1" type="button">＋</button>
+      </div>
+      <div class="vd-row marks">
+        <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
+        <button class="btn" data-vd="all" type="button">Весь ролик</button>
+      </div>
     </div>
-    <div class="vd-row edges">
-      <em>Конец</em>
-      <button data-vedge="b" data-vstep="-1" type="button">−</button>
-      <button class="vd-val" data-vset="b" type="button">0:00</button>
-      <button data-vedge="b" data-vstep="1" type="button">＋</button>
-    </div>
+
     ${rates.length ? `
     <div class="vd-row rates">
       ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
     </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
-    <div class="vd-row marks">
-      <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
-      <button class="btn" data-vd="all" type="button">Весь ролик</button>
-    </div>
+
     <div class="vd-src">
       Источник: <b>${esc(vidWhat())}</b>
       <button class="th-link" data-vd="src" type="button">сменить</button>
-    </div>
-    <p class="vd-note">Кусок повторяется по кругу. «Это такты…» запоминает его за ними — в следующий раз откроется сам.</p>`;
+    </div>`;
 }
 
 function pracVideo(u) {
@@ -7328,22 +7415,26 @@ function pracRender() {
     stage = "Собираем пьесу целиком";
   }
 
+  /* Рабочий экран — одна длинная страница, а не тесная сцена с прибитыми
+     краями. Сверху задание и «Получилось», ниже видео, ещё ниже звук. Всё
+     прокручивается, ничего не прячется, кнопка ответа всегда рядом с тем,
+     что она подтверждает. */
   box.innerHTML = `
-    <div class="pr-mid">
-      <p class="pr-kind">${esc(top)}</p>
-      <p class="pr-stage">${esc(stage)}</p>
-      <div class="pr-big">${pracSpan(u)}</div>
-      <p class="pr-hand">${PRAC_HAND[u.hand]}</p>
-      ${after ? `<p class="pr-next">${esc(after)}</p>` : ""}
-      ${prac.hintOpen ? pracHintHTML(u) : ""}
-    </div>
-    <div class="pr-bot">
-      <button class="pr-go" data-prac="ok">Получилось</button>
-      <div class="pr-row">
-        <button class="pr-ghost" data-prac="list">Такты</button>
-        ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
-        ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
-        <button class="pr-ghost" data-prac="finish">Закончить</button>
+    <div class="wk">
+      <div class="wk-task">
+        <p class="wk-kind">${esc(top)}</p>
+        <div class="wk-big">${pracSpan(u)}</div>
+        <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
+        <p class="wk-stage">${esc(stage)}</p>
+        ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
+        <button class="pr-go" data-prac="ok">Получилось</button>
+        <div class="wk-row">
+          <button class="pr-ghost" data-prac="list">Такты</button>
+          ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
+          ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
+          <button class="pr-ghost" data-prac="finish">Закончить</button>
+        </div>
+        ${prac.hintOpen ? pracHintHTML(u) : ""}
       </div>
     </div>
     ${prac.listOpen ? `<div class="bl-wrap" id="pracList">${pracListHTML()}</div>` : ""}`;
@@ -7616,7 +7707,8 @@ function bindPractice() {
     if (!b) return;
 
     // приближение по кругу: 1 → 2 → 3 → снова 1
-    if (b.dataset.vd === "zoom") { vidZoom(box, (pracStore().vzoom || 1) >= 3 ? -2 : 1); return; }
+    if (b.dataset.vd === "zoom") { vidZoom(box, (pracStore().vzoom || 1) >= 3 ? -99 : 1); return; }
+    if (b.dataset.vd === "back") { V.seek(vidSel(V.dur()).a); vidPaint(); return; }
 
     if (b.dataset.vd === "link") {
       const raw = ((box.querySelector("#vdUrl") || {}).value || "").trim();

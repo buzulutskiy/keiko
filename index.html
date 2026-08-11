@@ -1336,11 +1336,35 @@
       border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--ink); font-size: 0.9rem; line-height: 1;
     }
-    #pracStage {
-      flex: 1 1 auto; min-height: 0; overflow-y: auto;
-      max-width: 460px; width: 100%; margin: 0 auto;
-      display: flex; flex-direction: column;
+    /* Экран занятия прокручивается целиком: задание, под ним видео, под ним
+       звук. Раньше сцена была прибита к краям и всё в неё не влезало —
+       кнопки уезжали за нижнюю границу. */
+    #prac { overflow-y: auto; overscroll-behavior: contain; }
+    #pracTop {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--bg); padding-bottom: 8px;
     }
+    #pracStage {
+      flex: 0 0 auto; max-width: 460px; width: 100%; margin: 0 auto;
+      display: block;
+    }
+
+    .wk { display: grid; gap: 0; }
+    .wk-task { padding: 10px 0 4px; text-align: center; }
+    .wk-kind {
+      font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--dim); margin: 0 0 10px;
+    }
+    .wk-big {
+      font-size: 2.4rem; font-weight: 300; line-height: 1.1; margin: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .wk-hand { margin: 8px 0 0; font-size: 1rem; color: var(--gold); }
+    .wk-stage { margin: 10px 0 0; font-size: 0.9rem; color: var(--muted); }
+    .wk-next { margin: 6px 0 0; font-size: 0.78rem; color: var(--dim); }
+    .wk-task .pr-go { margin-top: 16px; }
+    .wk-row { display: flex; gap: 8px; margin-top: 9px; }
+    .wk-row .pr-ghost { flex: 1; margin-top: 0; }
 
     .pr-mid {
       flex: 1 1 auto; display: flex; flex-direction: column;
@@ -1457,93 +1481,132 @@
     .bl-note { margin: 12px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
 
     /* ── Плеер разбора ── */
-    #pracVideo {
-      flex: 0 0 auto; max-width: 460px; width: 100%; margin: 10px auto 0;
+    #pracVideo, #pracPlayer {
+      flex: 0 0 auto; max-width: 460px; width: 100%; margin: 12px auto 0;
       background: var(--panel); border: 1px solid var(--glass-line);
-      border-radius: 15px; padding: 11px 13px;
+      border-radius: 15px; padding: 12px 13px;
     }
-    #pracVideo[hidden] { display: none; }
-    .vd-empty { display: grid; gap: 9px; justify-items: stretch; text-align: center; }
+    #pracVideo[hidden], #pracPlayer[hidden] { display: none; }
+    .vd-empty { display: grid; gap: 9px; text-align: center; }
     .vd-empty b { font-size: 0.86rem; }
     .vd-empty span { font-size: 0.74rem; color: var(--dim); line-height: 1.45; }
     .vd-pickrow { display: flex; gap: 8px; }
     .vd-pickrow .btn { flex: 1; }
 
-    .vd-wrap { display: grid; gap: 9px; }
-    /* Задание держим над видео — в том числе в полном экране, ради него всё. */
+    .vd-wrap { display: grid; gap: 10px; }
     .vd-task {
       font-size: 0.78rem; color: var(--dim);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .vd-task b { color: var(--ink); font-weight: 700; }
+
     /* Рамка держит размер, картинка внутри может быть крупнее — тогда её
-       двигают пальцем, чтобы разглядеть руки. */
+       двигают пальцем или разводят щипком, чтобы разглядеть руки. */
     .vd-frame {
       width: 100%; aspect-ratio: 16 / 9; border-radius: 11px;
-      overflow: hidden; background: #000; position: relative;
+      overflow: hidden; background: #000; position: relative; touch-action: none;
     }
-    .vd-frame.zoomed { touch-action: none; cursor: grab; }
+    .vd-frame.zoomed { cursor: grab; }
     #pracVideo video, .vd-yt {
       width: 100%; height: 100%; display: block; background: #000;
-      transition: transform 0.18s ease;
+      transition: transform 0.14s ease;
     }
     .vd-yt iframe { width: 100%; height: 100%; border: 0; display: block; }
 
+    /* Полоса перемотки — крупная и тянется. */
+    .vd-scrub {
+      position: relative; height: 22px; border-radius: 11px;
+      background: var(--track); touch-action: none; cursor: pointer;
+    }
+    .vd-played {
+      position: absolute; left: 0; top: 0; bottom: 0; border-radius: 11px;
+      background: rgba(255, 201, 77, 0.28); pointer-events: none;
+    }
+    .vd-knob {
+      position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px;
+      border-radius: 50%; background: var(--gold); pointer-events: none;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    }
+
+    .vd-row { display: flex; align-items: center; gap: 7px; }
+    .vd-btn {
+      width: 42px; height: 38px; flex: none; border-radius: 11px;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--ink); font-size: 0.9rem;
+    }
+    .vd-time { flex: 1; text-align: center; font-size: 0.74rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+    /* Петля живёт своим блоком: она про кусок, а не про воспроизведение. */
+    .vd-loop {
+      display: grid; gap: 8px; padding: 10px;
+      background: var(--glass); border: 1px solid var(--glass-line); border-radius: 12px;
+    }
+    .vd-loop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .vd-loop-head b { font-size: 0.78rem; }
+    .vd-loop-t { font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums; }
     .vd-bar {
-      position: relative; height: 28px; border-radius: 8px;
+      position: relative; height: 26px; border-radius: 8px;
       background: var(--track); touch-action: none;
     }
     .vd-sel { position: absolute; top: 0; bottom: 0; background: rgba(139, 124, 246, 0.35); border-radius: 8px; pointer-events: none; }
     .vd-head { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--gold); border-radius: 1px; pointer-events: none; }
-    .vd-h { position: absolute; top: -6px; bottom: -6px; width: 26px; margin-left: -13px; display: grid; place-items: center; cursor: ew-resize; touch-action: none; }
+    .vd-h { position: absolute; top: -8px; bottom: -8px; width: 30px; margin-left: -15px; display: grid; place-items: center; cursor: ew-resize; touch-action: none; }
     .vd-h::before { content: ""; width: 6px; height: 100%; border-radius: 3px; background: var(--violet); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); }
 
-    .vd-row { display: flex; align-items: center; gap: 7px; }
-    .vd-btn {
-      width: 40px; height: 34px; flex: none; border-radius: 10px;
-      border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--ink); font-size: 0.9rem;
-    }
-    .vd-time { flex: 1; text-align: center; font-size: 0.72rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-    .vd-row.edges em {
-      font-style: normal; font-size: 0.68rem; color: var(--dim); width: 52px; flex: none;
-    }
-    .vd-row.edges button {
-      flex: 1; min-width: 0; padding: 7px 3px;
-      border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--muted); font: inherit; font-size: 0.74rem; border-radius: 9px;
-      font-variant-numeric: tabular-nums;
-    }
-    .vd-row.edges .vd-val { flex: 2; color: var(--ink); border-color: rgba(139, 124, 246, 0.3); }
-    .vd-row.rates button, .vd-row.marks .btn {
+    .vd-row.edges em { font-style: normal; font-size: 0.68rem; color: var(--dim); width: 52px; flex: none; }
+    .vd-row.edges button, .vd-row.rates button, .vd-row.marks .btn {
       flex: 1; min-width: 0; padding: 8px 3px;
       border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--muted); font: inherit; font-size: 0.74rem; border-radius: 9px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
+    .vd-row.edges .vd-val { flex: 2; color: var(--ink); border-color: rgba(139, 124, 246, 0.3); }
     .vd-row.rates button.on { color: var(--ink); border-color: rgba(139, 124, 246, 0.5); background: rgba(139, 124, 246, 0.14); }
-    .vd-row.marks [data-vd="src"] { flex: 0 0 44px; }
+    .vd-slow { margin: 0; font-size: 0.72rem; color: var(--gold); line-height: 1.4; }
     .vd-src { display: flex; align-items: baseline; gap: 8px; font-size: 0.72rem; color: var(--dim); }
     .vd-src b { color: var(--muted); font-weight: 600; }
-    .vd-slow { margin: 0; font-size: 0.72rem; color: var(--gold); line-height: 1.4; }
-    .vd-note { margin: 2px 0 0; font-size: 0.68rem; color: var(--dim); line-height: 1.45; }
+    .vd-note { display: none; }
 
-    /* Полный экран: разворачиваем обёртку, поэтому задание и дорожка остаются. */
+    /* Полный экран — отдельный режим, а не та же страница покрупнее.
+       Видео занимает всё, снизу узкая панель: перемотка с видимой петлёй,
+       пуск, пауза, начало куска. Приближение щипком и таскание работают
+       здесь же — рамка та же самая. */
     .vd-wrap:fullscreen {
-      background: var(--bg); padding: max(14px, env(safe-area-inset-top)) 16px 20px;
-      align-content: center; gap: 12px;
+      background: #000; padding: 0; gap: 0;
+      display: flex; flex-direction: column;
     }
-    .vd-wrap:fullscreen .vd-frame { max-height: 62vh; margin: 0 auto; }
-    .vd-wrap:fullscreen .vd-task { font-size: 0.95rem; text-align: center; }
+    .vd-wrap:fullscreen .vd-task {
+      position: absolute; left: 0; right: 0; z-index: 2;
+      top: max(12px, env(safe-area-inset-top));
+      text-align: center; font-size: 0.86rem; color: rgba(255, 255, 255, 0.65);
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); pointer-events: none;
+    }
+    .vd-wrap:fullscreen .vd-task b { color: #fff; }
+    .vd-wrap:fullscreen .vd-frame {
+      flex: 1 1 auto; aspect-ratio: auto; height: auto; border-radius: 0; background: #000;
+    }
+    .vd-wrap:fullscreen video, .vd-wrap:fullscreen .vd-yt { object-fit: contain; }
 
-    /* плеер живёт отдельно от карточки: она перерисовывается на каждом шаге */
-    #pracPlayer {
-      flex: 0 0 auto; max-width: 460px; width: 100%; margin: 10px auto 0;
-      background: var(--panel); border: 1px solid var(--glass-line);
-      border-radius: 15px; padding: 11px 13px;
+    /* в полном экране оставляем только то, что нужно руками */
+    .vd-wrap:fullscreen .vd-row.edges,
+    .vd-wrap:fullscreen .vd-row.marks,
+    .vd-wrap:fullscreen .vd-row.rates,
+    .vd-wrap:fullscreen .vd-slow,
+    .vd-wrap:fullscreen .vd-src,
+    .vd-wrap:fullscreen .vd-loop-head { display: none; }
+
+    .vd-wrap:fullscreen .vd-scrub,
+    .vd-wrap:fullscreen .vd-row,
+    .vd-wrap:fullscreen .vd-loop { margin: 0 14px; }
+    .vd-wrap:fullscreen .vd-scrub { margin-top: 10px; }
+    .vd-wrap:fullscreen .vd-loop {
+      background: none; border: 0; padding: 0;
+      margin-bottom: calc(12px + env(safe-area-inset-bottom));
     }
-    #pracPlayer[hidden] { display: none; }
-    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
+    .vd-wrap:fullscreen .vd-row { margin-top: 8px; margin-bottom: 8px; }
+
+        /* Звук на этом экране — не главное    /* Звук на этом экране — не главное, поэтому по умолчанию он одной строкой.
        Нужен — развернул. */
     .pl-fold {
       display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
