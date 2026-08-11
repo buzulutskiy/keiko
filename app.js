@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 98";
+const APP_VERSION = "Кэйко 99";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6546,19 +6546,61 @@ async function yaResolve(share) {
   return href;
 }
 
+/* Играть прямо по ссылке Диска нельзя: файл приходит с пометкой «это
+   загрузка, а не воспроизведение» (Content-Disposition: attachment). Chrome
+   на неё закрывает глаза, Safari на айфоне отказывается наотрез, а попросить
+   иначе не выйдет — подпись в ссылке этого не разрешает, приходит 403.
+
+   Поэтому забираем файл один раз и кладём в то же хранилище, где лежат
+   выбранные вручную. Дальше он открывается мгновенно, работает офлайн и без
+   Диска вообще. Ссылку храним, чтобы на втором телефоне повторить это самому,
+   а не переносить файл руками. */
 function vidMountYa(box, id, share, task, u) {
   box.hidden = false;
-  if (box.dataset.mode !== "loading") {
-    box.dataset.mode = "loading"; box.dataset.for = "";
-    box.innerHTML = `<div class="vd-empty"><span>Ролик загружается…</span></div>`;
-  }
-  yaResolve(share)
-    .then((href) => {
-      if (!prac || pracStore().ya !== share) return;
-      box.dataset.mode = "";
-      vidMountFile(box, id, href, task, u);
-    })
-    .catch(() => vidFail(box, -3));
+  videoLoad(id).then((have) => {
+    if (have) { box.dataset.mode = ""; vidMountFile(box, id, have, task, u); return; }
+    yaFetch(box, id, share, task, u);
+  });
+}
+
+async function yaFetch(box, id, share, task, u) {
+  if (vidBusy) return;
+  vidBusy = true;
+  box.dataset.mode = "loading"; box.dataset.for = "";
+  const paint = (pct) => {
+    box.innerHTML = `
+      <div class="vd-empty">
+        <b>Забираю ролик с Диска</b>
+        <span>${pct == null ? "начинаю…" : pct + "%"} · потом он будет открываться сразу и без сети</span>
+        <span class="pl-wait-bar"><i style="width:${pct == null ? 6 : Math.max(4, pct)}%"></i></span>
+      </div>`;
+  };
+  paint(null);
+  try {
+    const href = await yaResolve(share);
+    const res = await withTimeout(fetch(href), 60000);
+    if (!res.ok) throw new Error("файл не отдался");
+    const len = +(res.headers.get("content-length") || 0);
+    let blob;
+    if (!res.body || !len) blob = await res.blob();
+    else {
+      const rd = res.body.getReader(), parts = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await rd.read();
+        if (done) break;
+        parts.push(value); got += value.length;
+        paint(Math.round((got / len) * 100));
+      }
+      blob = new Blob(parts, { type: res.headers.get("content-type") || "video/mp4" });
+    }
+    await videoSave(id, blob);
+    if (!prac || pracStore().ya !== share) return;
+    box.dataset.mode = "";
+    pracVideo(u);
+  } catch {
+    vidFail(box, -3);
+  } finally { vidBusy = false; }
 }
 
 /* ВК: официальный плеер во вставке плюс их же скрипт управления. Прямую
@@ -6655,7 +6697,7 @@ function vidMountYT(box, id, vid, task, u) {
 }
 
 const YT_WHY = {
-  "-3": "Яндекс.Диск не дал ссылку на файл — проверь, что доступ по ссылке открыт",
+  "-3": "с Яндекс.Диска не забрать — проверь, что доступ по ссылке открыт",
   "-2": "файл по ссылке не открылся — проверь адрес и что он отдаёт само видео",
   2: "ссылка не похожа на ролик",
   5: "этот ролик не играет во встроенном плеере",
@@ -7442,6 +7484,7 @@ function bindPractice() {
     if (b.dataset.vd === "src") {
       // спрашивать не о чем: разметка по тактам остаётся, файл при желании вернут
       delete pracStore().yt; delete pracStore().vk; delete pracStore().url; delete pracStore().ya;
+      yaHref.clear();                 // ссылки Диска временные, держать их незачем
       await videoDrop(piece().id);
       videoUrls.set(piece().id, "");
       saveData(); schedulePush();
