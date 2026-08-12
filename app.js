@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 105";
+const APP_VERSION = "Кэйко 106";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5858,16 +5858,18 @@ function pracQueue() {
 
 const pracMin = () => prac && prac.startedAt ? (Date.now() - prac.startedAt - prac.breakMs) / 60000 : 0;
 
+/* Раньше на двадцатой минуте занятие перебивалось экраном «передышка»
+   с кнопками, а на шестидесятой — «пора закругляться». Решать за играющего,
+   когда ему отдыхать, — не дело приложения: он и так чувствует руки. Осталась
+   короткая строчка снизу, которая сама уходит. */
 function pracWatch() {
   if (!prac || !prac.startedAt) return;
-  if (["break", "resting", "wrap"].includes(prac.screen)) return;
-  const m = pracMin();
-  if (m >= PRAC_STOP_AT && m - prac.askedAt >= PRAC_ASK_AGAIN) {
-    prac.askedAt = m; prac.back = prac.screen; prac.screen = "wrap"; pracRender(); return;
-  }
-  if (m >= PRAC_REST_AT && m - prac.askedAt >= PRAC_ASK_AGAIN) {
-    prac.askedAt = m; prac.back = prac.screen; prac.screen = "break"; pracRender();
-  }
+  const m = Math.floor(pracMin());
+  if (m < PRAC_REST_AT) return;
+  if (m % PRAC_REST_AT !== 0) return;             // отмечаем каждые двадцать минут
+  if (prac.saidAt === m) return;
+  prac.saidAt = m;
+  toast(m >= 60 ? "Уже час за инструментом" : "Уже " + m + " минут");
 }
 
 const pracSpan = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
@@ -5967,7 +5969,9 @@ function plSel(id, dur) {
    увеличение и шаг сетки. У каждой вещи свои. */
 /* Совсем медленно — чтобы успевать разбирать по нотам. Прежние значения
    оставлены как были: у кого что выбрано, то и останется. */
-const PL_RATES = [0.25, 0.4, 0.5, 0.75, 0.9, 1];
+/* И медленнее, и быстрее: медленно — чтобы успевать разбирать, быстро —
+   чтобы прослушать кусок целиком, не тратя на него полного времени. */
+const PL_RATES = [0.25, 0.5, 0.75, 0.9, 1, 1.25, 1.5];
 const PL_GRIDS = [1, 2, 5];
 const plOpt = (id) => (pracLoops[id] = pracLoops[id] || {});
 const plRate = (id) => PL_RATES.includes(plOpt(id).rate) ? plOpt(id).rate : 1;
@@ -6376,8 +6380,8 @@ const V = {
     if (vidKind === "vk") return [];
     if (vidKind !== "yt") return PL_RATES;
     try {
-      const list = (ytPlayer.getAvailablePlaybackRates() || []).filter((r) => r <= 1);
-      return list.length ? list : [0.25, 0.5, 0.75, 1];
+      const list = (ytPlayer.getAvailablePlaybackRates() || []).filter((r) => r <= 1.5);
+      return list.length ? list : [0.25, 0.5, 0.75, 1, 1.25, 1.5];
     } catch { return [0.25, 0.5, 0.75, 1]; }
   }
 };
@@ -6660,6 +6664,27 @@ function vidDrag(e) {
       document.removeEventListener("pointerup", up);
       vidMag = null;                 // отпустил — дорожка снова про весь ролик
       vidPaint();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    return;
+  }
+
+  /* Само выделение тянется целиком: длина куска сохраняется, едет только
+     место. Раньше приходилось двигать оба края по очереди, и кусок при этом
+     то растягивался, то сжимался. */
+  if (e.target.closest(".tl-sel")) {
+    const cur0 = vidSel(dur);
+    const len = cur0.b - cur0.a;
+    const grabAt = at(e) - cur0.a;
+    const move = (ev) => {
+      let a2 = at(ev) - grabAt;
+      a2 = Math.max(0, Math.min(a2, dur - len));
+      vidSetSel({ a: a2, b: a2 + len });
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
@@ -7386,7 +7411,6 @@ function pracRender() {
     $("#pracWhere").textContent = course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
     const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
     const vd = $("#pracVideo"); if (vd) vd.hidden = true;
-    if (["break", "resting", "wrap"].includes(prac.screen)) { /* общие экраны ниже */ }
     else { lessonRender($("#pracStage")); return; }
   }
   const w = pracWhere();
@@ -7420,51 +7444,6 @@ function pracRender() {
       <div class="pr-bot">
         <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить" : "Начать занятие"}</button>
         <div class="pr-row"><button class="pr-ghost" data-prac="reset">Начать пьесу заново</button></div>
-      </div>`;
-    return;
-  }
-
-  if (prac.screen === "break") {
-    box.innerHTML = `
-      <div class="pr-mid">
-        <p class="pr-kind">передышка</p>
-        <div class="pr-big">${m} мин</div>
-        <p class="pr-tail">дальше занятие идёт вхолостую</p>
-      </div>
-      <div class="pr-bot">
-        <button class="pr-main" data-rest="5">Перерыв 5 минут</button>
-        <div class="pr-row">
-          <button class="pr-ghost" data-rest="10">10 минут</button>
-          <button class="pr-ghost" data-rest="0">Ещё поиграю</button>
-        </div>
-      </div>`;
-    return;
-  }
-
-  if (prac.screen === "resting") {
-    const left = Math.max(0, prac.restUntil - Date.now());
-    box.innerHTML = `
-      <div class="pr-mid">
-        <p class="pr-kind">перерыв</p>
-        <div class="pr-big">${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}</div>
-        <p class="pr-tail">встань, разомни кисти</p>
-      </div>
-      <div class="pr-bot">
-        <button class="pr-main" data-prac="restDone">Продолжаем</button>
-      </div>`;
-    return;
-  }
-
-  if (prac.screen === "wrap") {
-    box.innerHTML = `
-      <div class="pr-mid">
-        <p class="pr-kind">пора закругляться</p>
-        <div class="pr-big">${m} мин</div>
-        <p class="pr-tail">незакрытое не пропадёт</p>
-      </div>
-      <div class="pr-bot">
-        <button class="pr-main" data-prac="finish">Завершить занятие</button>
-        <div class="pr-row"><button class="pr-ghost" data-rest="0">Ещё немного</button></div>
       </div>`;
     return;
   }
@@ -7550,8 +7529,8 @@ function openLesson() {
   clearInterval(pracTimer);
   pracTimer = setInterval(() => {
     if (!prac) return;
-    if (prac.screen === "resting") { pracRender(); if (Date.now() >= prac.restUntil) pracEndRest(); }
-    else { if (prac.taskAt) pracRender(); pracWatch(); }
+    if (prac.taskAt) pracRender();
+    pracWatch();
   }, 1000);
   keepAwake(true);
   pracRender();
@@ -7576,8 +7555,7 @@ function openPractice() {
   clearInterval(pracTimer);
   pracTimer = setInterval(() => {
     if (!prac) return;
-    if (prac.screen === "resting") { pracRender(); if (Date.now() >= prac.restUntil) pracEndRest(); }
-    else pracWatch();
+    pracWatch();
   }, 1000);
   keepAwake(true);
   prac.queue = pracQueue();
@@ -7603,14 +7581,6 @@ function closePractice() {
   document.body.classList.remove("prac-on");
   if (!zenOn) keepAwake(false);
   render();
-}
-
-function pracEndRest() {
-  if (prac.restFrom) prac.breakMs += Date.now() - prac.restFrom;
-  prac.restFrom = 0; prac.restUntil = 0;
-  prac.askedAt = pracMin();
-  prac.screen = prac.back || "work";
-  pracRender();
 }
 
 /* Время получения записывается в тот момент, когда награда открылась.
@@ -7977,13 +7947,6 @@ function bindPractice() {
       return pracNext();
     }
 
-    if (b.dataset.rest !== undefined) {
-      const min = +b.dataset.rest;
-      if (min) { prac.restFrom = Date.now(); prac.restUntil = prac.restFrom + min * 60000; prac.screen = "resting"; }
-      else prac.screen = prac.back || "work";
-      return pracRender();
-    }
-
     if (b.dataset.les) {
       const at = prac.at;
       const st = lessonStore();
@@ -8106,7 +8069,6 @@ function bindPractice() {
         saveData(); schedulePush();
         return pracRender();
 
-      case "restDone": return pracEndRest();
       case "finish": return pracFinish();
     }
   });

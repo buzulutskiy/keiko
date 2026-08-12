@@ -1529,8 +1529,10 @@
     .tl.mag { height: 46px; background: rgba(139, 124, 246, 0.12); overflow: visible; }
     .tl-sel {
       position: absolute; top: 0; bottom: 0;
-      background: rgba(139, 124, 246, 0.38); pointer-events: none;
+      background: rgba(139, 124, 246, 0.38);
+      cursor: grab; touch-action: none;      /* тянется целиком */
     }
+    .tl-sel:active { cursor: grabbing; background: rgba(139, 124, 246, 0.5); }
     .tl-head {
       position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px;
       background: var(--gold); border-radius: 1px; pointer-events: none;
