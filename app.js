@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 109";
+const APP_VERSION = "Кэйко 110";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3210,6 +3210,12 @@ function rangeStats(from, to) {
 /* ── Сколько ещё занятий до конца материала ──
    Считаем по последним сессиям: сколько единиц (тактов, страниц, уроков)
    прибавлялось за раз, и делим на остаток. */
+// медиана устойчивее среднего: один марафон на полкниги не должен задирать прогноз
+const median = (a) => {
+  const q = a.slice().sort((x, y) => x - y), m = Math.floor(q.length / 2);
+  return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2;
+};
+
 function paceForecast() {
   const list = entries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
   if (!list.length) return null;
@@ -3266,19 +3272,14 @@ function paceForecast() {
   }
   if (!all.length) return null;
 
-  // медиана устойчивее среднего: один марафон на полкниги не должен задирать прогноз
-  const med = (a) => {
-    const q = a.slice().sort((x, y) => x - y), m = Math.floor(q.length / 2);
-    return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2;
-  };
   const RECENT = 8;
-  const pace = med(all.slice(-RECENT));
+  const pace = median(all.slice(-RECENT));
   /* Каким темп был раньше — по всему, что осталось за окном последних заходов.
      Меньше трёх сравнивать не с чем: одна удачная суббота выдаст себя за
      разгон. Ноль означает «сравнить не с чем», а не «стоял на месте». */
   const older = all.slice(0, Math.max(0, all.length - RECENT));
-  const was = older.length >= 3 ? med(older) : 0;
-  return { left, pace, was, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+  const was = older.length >= 3 ? median(older) : 0;
+  return { left, pace, was, gains: all, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
 }
 
 /* ── Разогнался или сбавил ──
@@ -3301,27 +3302,119 @@ function humanSpan(d) {
 
 const numRu = (n) => (Math.round(n * 10) / 10).toString().replace(".", ",");
 
+const unitWord = (unit, n) => {
+  const w = UNIT_WORD[unit] || ["шаг", "шага", "шагов"];
+  // дробное число берёт родительный падеж единственного: «12,5 страницы»
+  return Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
+};
+
 function paceSpeed(f) {
   if (!f || f.done || !f.was || !f.pace) return null;
-  const w = UNIT_WORD[f.unit] || ["шаг", "шага", "шагов"];
-  // дробное число берёт родительный падеж единственного: «12,5 страницы»
-  const word = (n) => Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
-  const now = `${numRu(f.pace)} ${word(f.pace)} за раз`;
-
   const ratio = f.pace / f.was;
   // разница в седьмую часть — это шум недели, а не разгон
-  if (ratio > 1 / 1.15 && ratio < 1.15) return { text: `Темп ровный — ${now}, как и в начале` };
+  if (ratio > 1 / 1.15 && ratio < 1.15) return { text: "Темп ровный — как и в начале" };
 
   const up = ratio > 1;
   const k = up ? ratio : 1 / ratio;
-  const times = `в ${numRu(k)} ${Number.isInteger(Math.round(k * 10) / 10) ? plural(k, "раз", "раза", "раз") : "раза"}`;
+  const kk = Math.round(k * 10) / 10;
+  const times = `в ${numRu(k)} ${Number.isInteger(kk) ? plural(kk, "раз", "раза", "раз") : "раза"}`;
 
   /* Тот же счёт, что и у даты: занятие через день. Разница в том, сколько
      заходов осталось при прежнем темпе и при нынешнем. */
   const thenDays = Math.max(1, Math.ceil(f.left / f.was)) * 2;
   const diff = Math.abs(thenDays - f.sessions * 2);
   const shift = diff >= 3 ? ` — на ${humanSpan(diff)} ${up ? "раньше" : "позже"}` : "";
-  return { up, text: `${times} ${up ? "быстрее" : "медленнее"}: ${now} против ${numRu(f.was)}${shift}` };
+  return { up, text: `${times} ${up ? "быстрее" : "медленнее"}, чем в начале${shift}` };
+}
+
+/* ── Чем двинуть стрелку сегодня ──
+   Прибор показывает, где ты сейчас, но от него хочется действия. Считаем не
+   лозунг, а ровно то, что случится: темп берётся по последним восьми заходам,
+   значит сегодняшний в это окно войдёт и вытеснит самый старый. Перебираем
+   посильные цели и берём первую, которая и правда сдвигает срок. */
+function paceGoal(f) {
+  if (!f || f.done || !f.pace || !f.gains || f.gains.length < 4) return null;
+  const after = (x) => median(f.gains.concat([x]).slice(-8));
+
+  for (const k of [1.15, 1.35, 1.6, 2, 2.5, 3]) {
+    const x = Math.ceil(f.pace * k);
+    const p2 = after(x);
+    if (p2 <= f.pace) continue;
+    const left2 = Math.max(0, f.left - x);
+    const days2 = left2 ? Math.max(1, Math.ceil(left2 / p2)) * 2 : 0;
+    const gain = f.sessions * 2 - days2;
+    if (gain < 2) continue;               // сдвиг на день — не повод звать
+    if (!left2) return { x, text: `Сегодня ${x} ${unitWord(f.unit, x)} — и материал закрыт` };
+    const when = new Date(); when.setDate(when.getDate() + days2);
+    const tail = days2 <= 7 ? "уже на этой неделе"
+      : humanWhen(when, days2).replace("примерно к", "к");
+    return { x, text: `Сегодня ${x} ${unitWord(f.unit, x)} — и конец на ${humanSpan(gain)} ближе, ${tail}` };
+  }
+
+  /* Бывает, что одним заходом медиану не сдвинуть: если все заходы одинаковы,
+     любой рекордный день утонет среди них. Тогда зовём не на сегодня, а на
+     привычку — и целью берём то, что уже получалось. */
+  const best = paceBest(f);
+  const x = best > f.pace * 1.05 ? Math.round(best) : Math.ceil(f.pace * 1.35);
+  const days2 = Math.max(1, Math.ceil(f.left / x)) * 2;
+  const gain = f.sessions * 2 - days2;
+  if (gain < 3) return null;
+  const when = new Date(); when.setDate(when.getDate() + days2);
+  const tail = days2 <= 7 ? "закончишь уже на этой неделе"
+    : "закончишь " + humanWhen(when, days2);
+  return { x, hold: true,
+    text: `Держи ${x} ${unitWord(f.unit, x)} за раз — ${tail}, на ${humanSpan(gain)} раньше` };
+}
+
+/* ── Спидометр ──
+   Полукруг, стрелка на нынешнем темпе, засечки на прежнем и на рекорде. Шкала
+   у каждого материала своя: страницы с тактами сравнивать бессмысленно, а с
+   собой прежним — единственное сравнение, которое вообще что-то значит.
+   Сверху добавлен запас, иначе стрелка вечно упиралась бы в край. */
+/* Верх шкалы — не единственный рекорд, а девятая десятая всех заходов. Один
+   марафон на полкниги задрал бы шкалу так, что стрелка легла бы на треть при
+   отличном темпе — прибор врал бы в самую обидную сторону. «Лучшее» здесь
+   означает «твой хороший заход», а не «однажды случилось». */
+function paceBest(f) {
+  const q = f.gains.slice().sort((a, b) => a - b);
+  const p90 = q[Math.floor(0.9 * (q.length - 1))] || 0;
+  return Math.max(p90, f.pace, f.was || 0);
+}
+
+function gaugeSVG(f, uid) {
+  const rec = paceBest(f);
+  const top = rec * 1.15 || 1;
+  const W = 208, H = 108, cx = W / 2, cy = 96, r = 76;
+  const at = (v, rr) => {
+    const a = Math.PI * (1 - Math.min(1, Math.max(0, v / top)));
+    return [+(cx + rr * Math.cos(a)).toFixed(1), +(cy - rr * Math.sin(a)).toFixed(1)];
+  };
+  const arc = (from, to, rr) => {
+    const [x0, y0] = at(from, rr), [x1, y1] = at(to, rr);
+    return `M ${x0} ${y0} A ${rr} ${rr} 0 0 1 ${x1} ${y1}`;
+  };
+  const tick = (v, cls) => {
+    const [x0, y0] = at(v, r - 10), [x1, y1] = at(v, r + 6);
+    return `<path d="M ${x0} ${y0} L ${x1} ${y1}" class="${cls}"/>`;
+  };
+  const [nx, ny] = at(f.pace, r - 15);
+  const gid = "gz-" + uid;
+
+  return `
+    <svg class="gz-svg" viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">
+      <defs>
+        <linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="var(--gold-2)"/>
+          <stop offset="1" stop-color="var(--gold)"/>
+        </linearGradient>
+      </defs>
+      <path d="${arc(0, top, r)}" class="gz-track"/>
+      <path d="${arc(0, f.pace, r)}" class="gz-fill" stroke="url(#${gid})"/>
+      ${f.was ? tick(f.was, "gz-tick") : ""}
+      ${rec > f.pace * 1.05 ? tick(rec, "gz-rec") : ""}
+      <path d="M ${cx} ${cy} L ${nx} ${ny}" class="gz-needle"/>
+      <circle cx="${cx}" cy="${cy}" r="5.5" class="gz-hub"/>
+    </svg>`;
 }
 
 /* Чем дальше срок, тем грубее формулировка: точная дата через два месяца —
@@ -3466,7 +3559,7 @@ function forecastHTML() {
       const ds = entries().map((e) => e.date).sort();
       return ds[0] || "";
     });
-    rows.push({ icon, title, f, started });
+    rows.push({ icon, title, f, started, uid: rows.length });
   };
 
   for (const b of (data.book.books || []).filter((x) => !x.archived))
@@ -3479,8 +3572,8 @@ function forecastHTML() {
 
   return `
     <div class="panel">
-      <h3 class="blk-head">Когда закончу</h3>
-      <div class="fc-list">
+      <h3 class="blk-head">Как идёт</h3>
+      <div class="gz-list">
         ${rows.map((x) => {
           const { days, text } = paceWhen(x.f);
           /* Полоса — про дни, а не про материал: первые такты даются быстро,
@@ -3489,22 +3582,26 @@ function forecastHTML() {
           const gone = x.started ? daysBetween(x.started, todayStr()) + 1 : 0;
           const span = gone + days;
           const pct = span ? Math.round(gone / span * 100) : 0;
+          const sp = paceSpeed(x.f);
+          const goal = paceGoal(x.f);
+          const rec = paceBest(x.f);
+          const parts = [
+            x.f.was ? `в начале ${numRu(x.f.was)}` : "",
+            rec > x.f.pace * 1.05 ? `лучшее ${numRu(rec)}` : ""
+          ].filter(Boolean);
+          const ends = parts.length ? parts.join(" · ") : "идёшь на своём лучшем";
           return `
-            <div class="fc-row">
-              <span class="fc-ic">${x.icon}</span>
-              <span class="fc-body">
-                <b>${esc(x.title)}</b>
-                <span class="fc-when">${esc(text)}</span>
-                ${(() => {
-                  const sp = paceSpeed(x.f);
-                  if (!sp) return "";
-                  const mark = sp.up === undefined ? "" : sp.up ? "↑ " : "↓ ";
-                  const cls = sp.up === undefined ? "" : sp.up ? " up" : " down";
-                  return `<span class="fc-speed${cls}">${mark}${esc(sp.text)}</span>`;
-                })()}
-                <span class="fc-bar"><i style="width:${pct}%"></i></span>
-                <span class="fc-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</span>
-              </span>
+            <div class="gz-card">
+              <div class="gz-head"><span class="gz-ic">${x.icon}</span><b>${esc(x.title)}</b></div>
+              <div class="gz-dial">${gaugeSVG(x.f, x.uid)}</div>
+              <div class="gz-val">${numRu(x.f.pace)}<span> ${esc(unitWord(x.f.unit, x.f.pace))} за раз</span></div>
+              <div class="gz-ends">${esc(ends)}</div>
+              ${sp ? `<div class="gz-verdict${sp.up === undefined ? "" : sp.up ? " up" : " down"}">${
+                sp.up === undefined ? "" : sp.up ? "↑ " : "↓ "}${esc(sp.text)}</div>` : ""}
+              <div class="gz-when">${esc(text)}</div>
+              <div class="gz-bar"><i style="width:${pct}%"></i></div>
+              <div class="gz-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</div>
+              ${goal ? `<div class="gz-goal">${esc(goal.text)}</div>` : ""}
             </div>`;
         }).join("")}
       </div>
