@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 113";
+const APP_VERSION = "Кэйко 114";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3297,6 +3297,9 @@ const UNIT_WORD = {
   bar: ["проход", "прохода", "проходов"]
 };
 
+// последний день материала заслуживает своего слова, а не общего «закрыт»
+const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден", bar: "пьеса разобрана" };
+
 // чем длиннее срок, тем крупнее мера: «19 дней» человек всё равно читает как «три недели»
 function humanSpan(d) {
   if (d < 14) return d + " " + plural(d, "день", "дня", "дней");
@@ -3340,51 +3343,49 @@ function paceSpeed(f) {
 function paceGoal(f) {
   if (!f || f.done || !f.pace || !f.gains || f.gains.length < 3) return null;
 
-  /* Сколько сегодня, чтобы конец придвинулся. Счёт простой и честный: лишнее,
-     сделанное сегодня, — это остаток, которого завтра уже не будет. Дальше всё
-     тот же спокойный ритм через день.
+  /* ── Дневной минимум ──
+     Это твой же обычный шаг, поднятый самую малость. Выше не берём намеренно:
+     цель, ради которой надо садиться на два часа, — это вызов, а вызов каждый
+     день не выдерживают, и подсказка быстро становится тем, что хочется
+     закрыть не глядя. Потолок — четверть лучших заходов: столько ты и так
+     делаешь, просто не всегда.
 
-     Сравниваем не с бездельем, а с обычным днём: иначе в заслугу шло бы то,
-     что ты и так бы сделал.
+     Раньше цель искалась от обратного: перебирались всё большие числа, пока
+     одно из них не сдвинет срок на пару дней. Но срок двигается только целым
+     заходом, поэтому находилась всегда двойная норма — ровно то, чего не
+     хотелось. */
+  const t = f.todayGain || 0;                  // сколько уже сделано сегодня
+  const q = f.gains.slice(-12).sort((a, b) => a - b);
+  const p75 = q[Math.floor(0.75 * (q.length - 1))] || f.pace;
+  const soft = Math.max(Math.ceil(f.pace), Math.round(Math.min(f.pace * 1.15, p75)));
 
-     Прежний счёт шёл через сдвиг медианы темпа, и это была ошибка: один заход
-     медиану восьми не двигает почти никогда. Строка молчала ровно там, где
-     должна была звать, и на главной оставался прежний текст про занятия. */
-  const t = f.todayGain || 0;                 // сколько уже сделано сегодня
-  const daysIf = (total) => {
-    const rest = Math.max(0, f.left - Math.max(0, total - t));
-    return rest ? Math.ceil(rest / f.pace) * 2 : 0;
-  };
-  const usual = Math.max(t, f.pace);          // обычный день — вот с чем сравниваем
-  const base = daysIf(usual);
+  // конец близко — зовём добить целиком: дробить остаток на два дня обиднее
+  const x = f.left <= soft ? f.left + t : soft;
 
-  const ladder = [1.5, 2, 2.5, 3].map((k) => Math.ceil(f.pace * k));
-  // добить целиком — но только если конец и правда близко, иначе это издёвка
-  if (f.left <= f.pace * 4) ladder.push(f.left + t);
+  const rest = Math.max(0, f.left - Math.max(0, x - t));
+  const days = rest ? Math.ceil(rest / f.pace) * 2 : 0;
 
-  for (const x of ladder) {
-    if (x <= usual) continue;
-    const days = daysIf(x);
-    const gain = base - days;
-    if (gain < 2) continue;                   // сдвиг на день — не повод звать
-    const add = x - t;
-    const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
-                   : `Сегодня ${x} ${unitWord(f.unit, x)}`;
-    if (!days) {
-      const all = `${head} — и материал закрыт`;
-      return { x, add, text: all, short: all, hero: all };
-    }
-    const when = new Date(); when.setDate(when.getDate() + days);
-    const tail = days <= 7 ? "уже на этой неделе" : humanWhen(when, days).replace("примерно к", "к");
-    return { x, add,
-      text: `${head} — и конец на ${humanSpan(gain)} ближе, ${tail}`,
-      short: `${head} — и конец на ${humanSpan(gain)} ближе`,
-      /* На главной важнее не выигрыш в днях, а сам срок: строка стоит там, где
-         раньше стояло «в таком темпе примерно к тому-то», и отвечает на тот же
-         вопрос — только теперь при условии, что сегодня ты это сделаешь. */
-      hero: `${head} — и ${days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days)}` };
+  if (t >= x) {
+    const all = `Сегодня уже ${t} ${unitWord(f.unit, t)} — этого на день хватит`;
+    return { x, add: 0, enough: true, text: all, short: all, hero: all };
   }
-  return null;
+  const add = x - t;
+  const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
+                 : `Сегодня ${x} ${unitWord(f.unit, x)}`;
+  if (!days) {
+    const all = `${head} — и ${FINISH_WORD[f.unit] || "материал закрыт"}`;
+    return { x, add, text: all, short: all, hero: all };
+  }
+  const when = new Date(); when.setDate(when.getDate() + days);
+  /* На главной — сам срок: строка стоит там, где раньше было «в таком темпе
+     примерно к тому-то», и отвечает на тот же вопрос, только действием.
+     В прогрессе дата уже написана строкой выше, повторять её незачем —
+     там полезнее видеть остаток. */
+  const остаток = `${head} — и останется ${rest} ${unitWord(f.unit, rest)}`;
+  return { x, add,
+    text: остаток,
+    short: остаток,
+    hero: `${head} — и ${days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days)}` };
 }
 
 /* ── Спидометр ──
