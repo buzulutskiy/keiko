@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 111";
+const APP_VERSION = "Кэйко 112";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2830,13 +2830,9 @@ function renderHome() {
   const sub = heroSub(s);
 
   const freeze = activeFreeze();
-  /* Микрозадача на сегодня живёт там же, где заметка о паузе: под кнопкой,
-     тихим шрифтом. Это подсказка, а не требование, — заметил, хорошо; не
-     заметил, тоже ничего. Пауза важнее: когда она идёт, зовём отдыхать. */
-  const goal = freeze ? null : paceGoal(paceForecast());
   const nudge = freeze
     ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
-    : goal ? esc(goal.short) : "";
+    : "";
 
   $("#view").innerHTML = `
     <div class="hero">
@@ -3342,7 +3338,7 @@ function paceSpeed(f) {
    значит сегодняшний в это окно войдёт и вытеснит самый старый. Перебираем
    посильные цели и берём первую, которая и правда сдвигает срок. */
 function paceGoal(f) {
-  if (!f || f.done || !f.pace || !f.gains || f.gains.length < 4) return null;
+  if (!f || f.done || !f.pace || !f.gains || f.gains.length < 3) return null;
   /* Если день уже отмечен, сегодняшний заход в окне последний — и новая
      цифра его не дополнит, а заменит собой. */
   const t = f.todayGain || 0;
@@ -3361,13 +3357,20 @@ function paceGoal(f) {
     if (gain < 2) continue;               // сдвиг на день — не повод звать
     const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
                    : `Сегодня ${x} ${unitWord(f.unit, x)}`;
-    if (!left2) return { x, add, text: `${head} — и материал закрыт`, short: `${head} — и материал закрыт` };
+    if (!left2) {
+      const all = `${head} — и материал закрыт`;
+      return { x, add, text: all, short: all, hero: all };
+    }
     const when = new Date(); when.setDate(when.getDate() + days2);
     const tail = days2 <= 7 ? "уже на этой неделе"
       : humanWhen(when, days2).replace("примерно к", "к");
     return { x, add,
       text: `${head} — и конец на ${humanSpan(gain)} ближе, ${tail}`,
-      short: `${head} — и конец на ${humanSpan(gain)} ближе` };
+      short: `${head} — и конец на ${humanSpan(gain)} ближе`,
+      /* На главной важнее не выигрыш в днях, а сам срок: строка стоит там, где
+         раньше стояло «в таком темпе примерно к тому-то», и отвечает на тот же
+         вопрос — только теперь при условии, что сегодня ты это сделаешь. */
+      hero: `${head} — и ${days2 <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days2)}` };
   }
 
   /* Бывает, что одним заходом медиану не сдвинуть: если все заходы одинаковы,
@@ -3383,7 +3386,8 @@ function paceGoal(f) {
     : "закончишь " + humanWhen(when, days2);
   return { x, hold: true,
     text: `Держи ${x} ${unitWord(f.unit, x)} за раз — ${tail}, на ${humanSpan(gain)} раньше`,
-    short: `Держи ${x} ${unitWord(f.unit, x)} за раз — и на ${humanSpan(gain)} раньше` };
+    short: `Держи ${x} ${unitWord(f.unit, x)} за раз — и на ${humanSpan(gain)} раньше`,
+    hero: `Держи ${x} ${unitWord(f.unit, x)} за раз — и ${tail}` };
 }
 
 /* ── Спидометр ──
@@ -3471,6 +3475,12 @@ function paceHTML() {
   const f = paceForecast();
   if (!f) return "";
   if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
+  /* «≈ 38 занятий · в таком темпе примерно к концу октября» — правда, но
+     делать с ней нечего. Микрозадача отвечает на тот же вопрос действием:
+     вот столько сегодня — и вот когда. Темп остаётся, когда звать ещё нечем:
+     на новом материале сравнивать не с чем. */
+  const g = paceGoal(f);
+  if (g && g.hero) return `<span class="pace goal">${esc(g.hero)}</span>`;
   const w = paceWhen(f);
   return `<span class="pace">${subLine(
     `≈ ${f.sessions} ${plural(f.sessions, "занятие", "занятия", "занятий")}`,
