@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 108";
+const APP_VERSION = "Кэйко 109";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3256,19 +3256,72 @@ function paceForecast() {
   const left = Math.max(0, total - done);
   if (!left) return { left: 0, sessions: 0, pace: 0, unit, done: true };
 
-  // средний прирост за последние сессии (берём до пяти, нули не считаем)
-  const gains = [];
-  for (let i = marks.length - 1; i > 0 && gains.length < 8; i--) {
+  /* Прирост за каждый заход по порядку. Нули пропускаем: сессия, где ничего
+     не прибавилось, — это повторение, а не медленный шаг, и темп она не
+     характеризует. */
+  const all = [];
+  for (let i = 1; i < marks.length; i++) {
     const g = marks[i] - marks[i - 1];
-    if (g > 0) gains.push(g);
+    if (g > 0) all.push(g);
   }
-  if (!gains.length) return null;
+  if (!all.length) return null;
 
   // медиана устойчивее среднего: один марафон на полкниги не должен задирать прогноз
-  const sorted = gains.slice().sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const pace = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  return { left, pace, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+  const med = (a) => {
+    const q = a.slice().sort((x, y) => x - y), m = Math.floor(q.length / 2);
+    return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2;
+  };
+  const RECENT = 8;
+  const pace = med(all.slice(-RECENT));
+  /* Каким темп был раньше — по всему, что осталось за окном последних заходов.
+     Меньше трёх сравнивать не с чем: одна удачная суббота выдаст себя за
+     разгон. Ноль означает «сравнить не с чем», а не «стоял на месте». */
+  const older = all.slice(0, Math.max(0, all.length - RECENT));
+  const was = older.length >= 3 ? med(older) : 0;
+  return { left, pace, was, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+}
+
+/* ── Разогнался или сбавил ──
+   Скорость сама по себе мало о чём говорит: восемь страниц за раз — это много
+   или мало? Смысл появляется только в сравнении с собой прежним, и тогда же
+   становится видно главное: на сколько из-за этого сдвинулся срок. */
+const UNIT_WORD = {
+  page: ["страница", "страницы", "страниц"],
+  lesson: ["урок", "урока", "уроков"],
+  bar: ["проход", "прохода", "проходов"]
+};
+
+// чем длиннее срок, тем крупнее мера: «19 дней» человек всё равно читает как «три недели»
+function humanSpan(d) {
+  if (d < 14) return d + " " + plural(d, "день", "дня", "дней");
+  if (d < 60) { const w = Math.round(d / 7); return w + " " + plural(w, "неделю", "недели", "недель"); }
+  const m = Math.round(d / 30);
+  return m + " " + plural(m, "месяц", "месяца", "месяцев");
+}
+
+const numRu = (n) => (Math.round(n * 10) / 10).toString().replace(".", ",");
+
+function paceSpeed(f) {
+  if (!f || f.done || !f.was || !f.pace) return null;
+  const w = UNIT_WORD[f.unit] || ["шаг", "шага", "шагов"];
+  // дробное число берёт родительный падеж единственного: «12,5 страницы»
+  const word = (n) => Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
+  const now = `${numRu(f.pace)} ${word(f.pace)} за раз`;
+
+  const ratio = f.pace / f.was;
+  // разница в седьмую часть — это шум недели, а не разгон
+  if (ratio > 1 / 1.15 && ratio < 1.15) return { text: `Темп ровный — ${now}, как и в начале` };
+
+  const up = ratio > 1;
+  const k = up ? ratio : 1 / ratio;
+  const times = `в ${numRu(k)} ${Number.isInteger(Math.round(k * 10) / 10) ? plural(k, "раз", "раза", "раз") : "раза"}`;
+
+  /* Тот же счёт, что и у даты: занятие через день. Разница в том, сколько
+     заходов осталось при прежнем темпе и при нынешнем. */
+  const thenDays = Math.max(1, Math.ceil(f.left / f.was)) * 2;
+  const diff = Math.abs(thenDays - f.sessions * 2);
+  const shift = diff >= 3 ? ` — на ${humanSpan(diff)} ${up ? "раньше" : "позже"}` : "";
+  return { up, text: `${times} ${up ? "быстрее" : "медленнее"}: ${now} против ${numRu(f.was)}${shift}` };
 }
 
 /* Чем дальше срок, тем грубее формулировка: точная дата через два месяца —
@@ -3442,6 +3495,13 @@ function forecastHTML() {
               <span class="fc-body">
                 <b>${esc(x.title)}</b>
                 <span class="fc-when">${esc(text)}</span>
+                ${(() => {
+                  const sp = paceSpeed(x.f);
+                  if (!sp) return "";
+                  const mark = sp.up === undefined ? "" : sp.up ? "↑ " : "↓ ";
+                  const cls = sp.up === undefined ? "" : sp.up ? " up" : " down";
+                  return `<span class="fc-speed${cls}">${mark}${esc(sp.text)}</span>`;
+                })()}
                 <span class="fc-bar"><i style="width:${pct}%"></i></span>
                 <span class="fc-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</span>
               </span>

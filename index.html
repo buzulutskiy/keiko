@@ -1841,6 +1841,10 @@
     .fc-body { flex: 1; min-width: 0; display: grid; gap: 4px; }
     .fc-body b { font-size: 0.88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .fc-when { font-size: 0.8rem; color: var(--gold); font-weight: 600; }
+    .fc-speed { font-size: 0.72rem; line-height: 1.4; color: var(--muted); }
+    .fc-speed.up { color: var(--green); }
+    /* Сбавил — не провал, поэтому тёплый акцент, а не красный: стрелки хватает */
+    .fc-speed.down { color: var(--gold-2); }
     .fc-bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin-top: 2px; }
     .fc-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
     .fc-meta { font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
