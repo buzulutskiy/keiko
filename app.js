@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 115";
+const APP_VERSION = "Кэйко 116";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7107,6 +7107,12 @@ function vidMountFile(box, id, url, task, u) {
     vidJump(u);
     vidRates(box);
     vidPaint();
+    /* Заиграло по ссылке — значит файл достижим прямо сейчас. Забираем копию
+       себе, не мешая просмотру. Ссылка на чужом хранилище может кончиться
+       когда угодно: у Dropbox публичная ссылка отключается за трафик, у
+       Яндекса подпись протухает. Разбор к этому времени уже привычка, и
+       оставаться без него из-за чужого лимита незачем. */
+    if (/^https?:/i.test(url)) vidKeep(id, url);
   });
   pracVidEl.addEventListener("play", vidTick);
   /* Играть по ссылке выходит не везде: файл могут отдать с пометкой «это
@@ -7180,6 +7186,26 @@ function vidMountYa(box, id, share, task, u) {
   });
 }
 
+/* Тихая копия: без полосы и без вопросов — картинка уже идёт, ждать нечего.
+   Если хранилище не пускает чужую страницу забирать файл (нет CORS), просто
+   ничего не выйдет, и всё останется как было. */
+const vidKept = new Set();
+
+async function vidKeep(id, url) {
+  if (vidKept.has(id) || vidBusy) return;
+  vidKept.add(id);
+  try {
+    if (await videoLoad(id)) return;                 // копия уже есть
+    const res = await withTimeout(fetch(url), 180000);
+    if (!res.ok) return;
+    if (/text\/html/i.test(res.headers.get("content-type") || "")) return;
+    const blob = await res.blob();
+    if (!blob || blob.size < 100000) return;         // пришла страница, а не ролик
+    await videoSave(id, blob);
+    toast("Ролик сохранён — дальше откроется и без сети");
+  } catch {}
+}
+
 async function linkFetch(box, id, share, task, u) {
   if (vidBusy) return;
   vidBusy = true;
@@ -7197,6 +7223,11 @@ async function linkFetch(box, id, share, task, u) {
     const href = await yaResolve(share);
     const res = await withTimeout(fetch(href), 60000);
     if (!res.ok) throw new Error("файл не отдался");
+    /* Хранилище отвечает бодрым «200 ОК» и присылает страницу с извинениями:
+       так Dropbox гасит ссылку, перебравшую трафик. Отличить это от файла
+       можно только по типу — иначе в хранилище легла бы веб-страница под
+       видом ролика, и он «переставал открываться» уже навсегда. */
+    if (/text\/html/i.test(res.headers.get("content-type") || "")) { vidFail(box, -4); return; }
     const len = +(res.headers.get("content-length") || 0);
     let blob;
     if (!res.body || !len) blob = await res.blob();
@@ -7317,6 +7348,7 @@ function vidMountYT(box, id, vid, task, u) {
 }
 
 const YT_WHY = {
+  "-4": "по ссылке пришла страница, а не файл — ссылка закрылась или хранилище отключило её за трафик",
   "-3": "файл по ссылке не забрать — проверь, что доступ по ней открыт",
   "-2": "файл по ссылке не открылся — проверь адрес и что он отдаёт само видео",
   2: "ссылка не похожа на ролик",
