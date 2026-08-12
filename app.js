@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 106";
+const APP_VERSION = "Кэйко 107";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6810,7 +6810,15 @@ function pracVideo(u) {
     st.ya = st.url; delete st.url; saveData(); schedulePush();
   }
   if (st.ya) { vidMountYa(box, id, st.ya, task, u); return; }
-  if (st.url) { vidMountFile(box, id, st.url, task, u); return; }
+  /* Обычная ссылка играется потоком — ничего не скачивая. Если местная копия
+     уже завелась (браузер отказался играть и мы её забрали), она главнее:
+     открывается сразу и без сети. */
+  if (st.url) {
+    const have = videoUrls.get(id);
+    if (have === undefined) { videoLoad(id).then(() => { if (prac) pracVideo(u); }); return; }
+    vidMountFile(box, id, have || dbxUrl(st.url), task, u);
+    return;
+  }
   if (st.vk) { vidMountVK(box, id, st.vk, task, u); return; }
   if (st.yt) { vidMountYT(box, id, st.yt, task, u); return; }
 
@@ -6821,15 +6829,21 @@ function pracVideo(u) {
   box.hidden = false;
   if (box.dataset.mode === "pick") return;
   box.dataset.mode = "pick"; box.dataset.for = "";
-  /* Осталось одно действие. Ссылки умели то же самое, но только после
-     скачивания, а выбор из четырёх источников на пустом месте — лишний
-     разговор. Файл выбирается один раз и запоминается. */
+  /* Главное действие одно — выбрать файл. Ссылка убрана под раскладушку: она
+     нужна, чтобы не носить один и тот же ролик по телефонам руками, но с неё
+     начинать разговор незачем. */
   box.innerHTML = `
     <div class="vd-empty">
       <b>Разбор по видео</b>
       <span>Выбери файл — он останется на этом телефоне и дальше будет открываться сам.</span>
       <button class="btn gold" data-vd="pick" type="button">Выбрать видео</button>
       <input type="file" accept="video/*" hidden>
+      <details class="vd-more">
+        <summary>Или по ссылке</summary>
+        <input id="vdUrl" class="note-input" type="url" inputmode="url" autocapitalize="off"
+          autocorrect="off" spellcheck="false" placeholder="Dropbox, Яндекс.Диск, YouTube, ВК">
+        <button class="btn" data-vd="link" type="button">Взять по ссылке</button>
+      </details>
     </div>`;
 }
 
@@ -6851,7 +6865,14 @@ function vidMountFile(box, id, url, task, u) {
     vidPaint();
   });
   pracVidEl.addEventListener("play", vidTick);
-  pracVidEl.addEventListener("error", () => vidFail(box, -2));
+  /* Играть по ссылке выходит не везде: файл могут отдать с пометкой «это
+     загрузка» или вовсе не пустить с чужой страницы. Тогда молча забираем его
+     один раз к себе — дальше это обычное местное видео. */
+  pracVidEl.addEventListener("error", () => {
+    const link = pracStore().url;
+    if (link && /^https?:/i.test(url)) { linkFetch(box, id, link, task, u); return; }
+    vidFail(box, -2);
+  });
   pracVidEl.addEventListener("loadeddata", () => {
     if (vidWant == null) return;
     try { pracVidEl.currentTime = vidWant; } catch {}
@@ -6869,9 +6890,24 @@ function vidMountFile(box, id, url, task, u) {
    умеет браузер: любая скорость, петля по кадрам, полный экран. */
 const yaHref = new Map();
 
+/* Dropbox по ссылке «поделиться» открывает страницу с их плеером, а с dl=1
+   отдаёт файл как загрузку — Safari на айфоне такое не играет. Просишь raw —
+   и приходит обычное видео, потоком и с перемоткой. Хвост st опускаем: это
+   отметка времени, ключ доступа лежит в rlkey и не стареет. */
+function dbxUrl(u) {
+  if (!/\bdropbox\.com\//i.test(u)) return u;
+  try {
+    const a = new URL(u);
+    a.searchParams.delete("dl");
+    a.searchParams.delete("st");
+    a.searchParams.set("raw", "1");
+    return a.toString();
+  } catch { return u; }
+}
+
 async function yaResolve(share) {
-  // уже прямая ссылка на хранилище — спрашивать нечего
-  if (/storage\.yandex\.net|\/rdisk\//i.test(share)) return share;
+  // не Диск — значит ссылка и есть прямая, спрашивать не у кого
+  if (!/disk\.yandex\.[a-z]+\//i.test(share)) return dbxUrl(share);
   if (yaHref.has(share)) return yaHref.get(share);
   const api = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key="
     + encodeURIComponent(share);
@@ -6896,18 +6932,18 @@ function vidMountYa(box, id, share, task, u) {
   box.hidden = false;
   videoLoad(id).then((have) => {
     if (have) { box.dataset.mode = ""; vidMountFile(box, id, have, task, u); return; }
-    yaFetch(box, id, share, task, u);
+    linkFetch(box, id, share, task, u);
   });
 }
 
-async function yaFetch(box, id, share, task, u) {
+async function linkFetch(box, id, share, task, u) {
   if (vidBusy) return;
   vidBusy = true;
   box.dataset.mode = "loading"; box.dataset.for = "";
   const paint = (pct) => {
     box.innerHTML = `
       <div class="vd-empty">
-        <b>Забираю ролик с Диска</b>
+        <b>Забираю ролик к себе</b>
         <span>${pct == null ? "начинаю…" : pct + "%"} · потом он будет открываться сразу и без сети</span>
         <span class="pl-wait-bar"><i style="width:${pct == null ? 6 : Math.max(4, pct)}%"></i></span>
       </div>`;
@@ -6932,7 +6968,9 @@ async function yaFetch(box, id, share, task, u) {
       blob = new Blob(parts, { type: res.headers.get("content-type") || "video/mp4" });
     }
     await videoSave(id, blob);
-    if (!prac || pracStore().ya !== share) return;
+    // пока качали, пьесу могли сменить или ссылку переписать — тогда молчим
+    const st2 = prac && pracStore();
+    if (!st2 || (st2.ya !== share && st2.url !== share)) return;
     box.dataset.mode = "";
     pracVideo(u);
   } catch {
@@ -7035,7 +7073,7 @@ function vidMountYT(box, id, vid, task, u) {
 }
 
 const YT_WHY = {
-  "-3": "с Яндекс.Диска не забрать — проверь, что доступ по ссылке открыт",
+  "-3": "файл по ссылке не забрать — проверь, что доступ по ней открыт",
   "-2": "файл по ссылке не открылся — проверь адрес и что он отдаёт само видео",
   2: "ссылка не похожа на ролик",
   5: "этот ролик не играет во встроенном плеере",
@@ -7794,7 +7832,7 @@ function bindPractice() {
       const vk = !ya && /vk(?:video)?\.(?:com|ru)|video_ext\.php/.test(raw) ? vkParse(raw) : null;
       const yt = (ya || vk) ? null : ytId(raw);
       // не узнали площадку — считаем, что это прямая ссылка на файл
-      const direct = (!ya && !vk && !yt && /^https?:\/\/\S+$/i.test(raw)) ? raw : "";
+      const direct = (!ya && !vk && !yt && /^https?:\/\/\S+$/i.test(raw)) ? dbxUrl(raw) : "";
       if (!ya && !vk && !yt && !direct) { toast("Не разобрал ссылку"); return; }
       const st = pracStore();
       delete st.yt; delete st.vk; delete st.url; delete st.ya;
