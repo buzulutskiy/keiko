@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 112";
+const APP_VERSION = "Кэйко 113";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3339,55 +3339,52 @@ function paceSpeed(f) {
    посильные цели и берём первую, которая и правда сдвигает срок. */
 function paceGoal(f) {
   if (!f || f.done || !f.pace || !f.gains || f.gains.length < 3) return null;
-  /* Если день уже отмечен, сегодняшний заход в окне последний — и новая
-     цифра его не дополнит, а заменит собой. */
-  const t = f.todayGain || 0;
-  const base = t ? f.gains.slice(0, -1) : f.gains;
-  const after = (x) => median(base.concat([x]).slice(-8));
 
-  for (const k of [1.15, 1.35, 1.6, 2, 2.5, 3]) {
-    const x = Math.ceil(f.pace * k);
-    if (x <= t) continue;                 // столько за сегодня уже сделано
-    const p2 = after(x);
-    if (p2 <= f.pace) continue;
-    const add = x - t;                    // сколько осталось добрать сегодня
-    const left2 = Math.max(0, f.left - add);
-    const days2 = left2 ? Math.max(1, Math.ceil(left2 / p2)) * 2 : 0;
-    const gain = f.sessions * 2 - days2;
-    if (gain < 2) continue;               // сдвиг на день — не повод звать
+  /* Сколько сегодня, чтобы конец придвинулся. Счёт простой и честный: лишнее,
+     сделанное сегодня, — это остаток, которого завтра уже не будет. Дальше всё
+     тот же спокойный ритм через день.
+
+     Сравниваем не с бездельем, а с обычным днём: иначе в заслугу шло бы то,
+     что ты и так бы сделал.
+
+     Прежний счёт шёл через сдвиг медианы темпа, и это была ошибка: один заход
+     медиану восьми не двигает почти никогда. Строка молчала ровно там, где
+     должна была звать, и на главной оставался прежний текст про занятия. */
+  const t = f.todayGain || 0;                 // сколько уже сделано сегодня
+  const daysIf = (total) => {
+    const rest = Math.max(0, f.left - Math.max(0, total - t));
+    return rest ? Math.ceil(rest / f.pace) * 2 : 0;
+  };
+  const usual = Math.max(t, f.pace);          // обычный день — вот с чем сравниваем
+  const base = daysIf(usual);
+
+  const ladder = [1.5, 2, 2.5, 3].map((k) => Math.ceil(f.pace * k));
+  // добить целиком — но только если конец и правда близко, иначе это издёвка
+  if (f.left <= f.pace * 4) ladder.push(f.left + t);
+
+  for (const x of ladder) {
+    if (x <= usual) continue;
+    const days = daysIf(x);
+    const gain = base - days;
+    if (gain < 2) continue;                   // сдвиг на день — не повод звать
+    const add = x - t;
     const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
                    : `Сегодня ${x} ${unitWord(f.unit, x)}`;
-    if (!left2) {
+    if (!days) {
       const all = `${head} — и материал закрыт`;
       return { x, add, text: all, short: all, hero: all };
     }
-    const when = new Date(); when.setDate(when.getDate() + days2);
-    const tail = days2 <= 7 ? "уже на этой неделе"
-      : humanWhen(when, days2).replace("примерно к", "к");
+    const when = new Date(); when.setDate(when.getDate() + days);
+    const tail = days <= 7 ? "уже на этой неделе" : humanWhen(when, days).replace("примерно к", "к");
     return { x, add,
       text: `${head} — и конец на ${humanSpan(gain)} ближе, ${tail}`,
       short: `${head} — и конец на ${humanSpan(gain)} ближе`,
       /* На главной важнее не выигрыш в днях, а сам срок: строка стоит там, где
          раньше стояло «в таком темпе примерно к тому-то», и отвечает на тот же
          вопрос — только теперь при условии, что сегодня ты это сделаешь. */
-      hero: `${head} — и ${days2 <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days2)}` };
+      hero: `${head} — и ${days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days)}` };
   }
-
-  /* Бывает, что одним заходом медиану не сдвинуть: если все заходы одинаковы,
-     любой рекордный день утонет среди них. Тогда зовём не на сегодня, а на
-     привычку — и целью берём то, что уже получалось. */
-  const best = paceBest(f);
-  const x = best > f.pace * 1.05 ? Math.round(best) : Math.ceil(f.pace * 1.35);
-  const days2 = Math.max(1, Math.ceil(f.left / x)) * 2;
-  const gain = f.sessions * 2 - days2;
-  if (gain < 3) return null;
-  const when = new Date(); when.setDate(when.getDate() + days2);
-  const tail = days2 <= 7 ? "закончишь уже на этой неделе"
-    : "закончишь " + humanWhen(when, days2);
-  return { x, hold: true,
-    text: `Держи ${x} ${unitWord(f.unit, x)} за раз — ${tail}, на ${humanSpan(gain)} раньше`,
-    short: `Держи ${x} ${unitWord(f.unit, x)} за раз — и на ${humanSpan(gain)} раньше`,
-    hero: `Держи ${x} ${unitWord(f.unit, x)} за раз — и ${tail}` };
+  return null;
 }
 
 /* ── Спидометр ──
