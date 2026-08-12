@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 110";
+const APP_VERSION = "Кэйко 111";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2830,9 +2830,13 @@ function renderHome() {
   const sub = heroSub(s);
 
   const freeze = activeFreeze();
+  /* Микрозадача на сегодня живёт там же, где заметка о паузе: под кнопкой,
+     тихим шрифтом. Это подсказка, а не требование, — заметил, хорошо; не
+     заметил, тоже ничего. Пауза важнее: когда она идёт, зовём отдыхать. */
+  const goal = freeze ? null : paceGoal(paceForecast());
   const nudge = freeze
     ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
-    : "";
+    : goal ? esc(goal.short) : "";
 
   $("#view").innerHTML = `
     <div class="hero">
@@ -3279,7 +3283,12 @@ function paceForecast() {
      разгон. Ноль означает «сравнить не с чем», а не «стоял на месте». */
   const older = all.slice(0, Math.max(0, all.length - RECENT));
   const was = older.length >= 3 ? median(older) : 0;
-  return { left, pace, was, gains: all, sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+  /* Сегодняшний прирост нужен отдельно: если день уже отмечен, звать «сегодня
+     столько-то» бессмысленно — часть уже сделана, и считать надо остаток. */
+  const lastGain = marks[marks.length - 1] - marks[marks.length - 2];
+  const todayGain = list[list.length - 1].date === todayStr() && lastGain > 0 ? lastGain : 0;
+  return { left, pace, was, gains: all, todayGain,
+           sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
 }
 
 /* ── Разогнался или сбавил ──
@@ -3334,21 +3343,31 @@ function paceSpeed(f) {
    посильные цели и берём первую, которая и правда сдвигает срок. */
 function paceGoal(f) {
   if (!f || f.done || !f.pace || !f.gains || f.gains.length < 4) return null;
-  const after = (x) => median(f.gains.concat([x]).slice(-8));
+  /* Если день уже отмечен, сегодняшний заход в окне последний — и новая
+     цифра его не дополнит, а заменит собой. */
+  const t = f.todayGain || 0;
+  const base = t ? f.gains.slice(0, -1) : f.gains;
+  const after = (x) => median(base.concat([x]).slice(-8));
 
   for (const k of [1.15, 1.35, 1.6, 2, 2.5, 3]) {
     const x = Math.ceil(f.pace * k);
+    if (x <= t) continue;                 // столько за сегодня уже сделано
     const p2 = after(x);
     if (p2 <= f.pace) continue;
-    const left2 = Math.max(0, f.left - x);
+    const add = x - t;                    // сколько осталось добрать сегодня
+    const left2 = Math.max(0, f.left - add);
     const days2 = left2 ? Math.max(1, Math.ceil(left2 / p2)) * 2 : 0;
     const gain = f.sessions * 2 - days2;
     if (gain < 2) continue;               // сдвиг на день — не повод звать
-    if (!left2) return { x, text: `Сегодня ${x} ${unitWord(f.unit, x)} — и материал закрыт` };
+    const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
+                   : `Сегодня ${x} ${unitWord(f.unit, x)}`;
+    if (!left2) return { x, add, text: `${head} — и материал закрыт`, short: `${head} — и материал закрыт` };
     const when = new Date(); when.setDate(when.getDate() + days2);
     const tail = days2 <= 7 ? "уже на этой неделе"
       : humanWhen(when, days2).replace("примерно к", "к");
-    return { x, text: `Сегодня ${x} ${unitWord(f.unit, x)} — и конец на ${humanSpan(gain)} ближе, ${tail}` };
+    return { x, add,
+      text: `${head} — и конец на ${humanSpan(gain)} ближе, ${tail}`,
+      short: `${head} — и конец на ${humanSpan(gain)} ближе` };
   }
 
   /* Бывает, что одним заходом медиану не сдвинуть: если все заходы одинаковы,
@@ -3363,7 +3382,8 @@ function paceGoal(f) {
   const tail = days2 <= 7 ? "закончишь уже на этой неделе"
     : "закончишь " + humanWhen(when, days2);
   return { x, hold: true,
-    text: `Держи ${x} ${unitWord(f.unit, x)} за раз — ${tail}, на ${humanSpan(gain)} раньше` };
+    text: `Держи ${x} ${unitWord(f.unit, x)} за раз — ${tail}, на ${humanSpan(gain)} раньше`,
+    short: `Держи ${x} ${unitWord(f.unit, x)} за раз — и на ${humanSpan(gain)} раньше` };
 }
 
 /* ── Спидометр ──
