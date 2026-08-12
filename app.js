@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 107";
+const APP_VERSION = "Кэйко 108";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -260,6 +260,7 @@ function load() {
     } catch {}
   }
   data = migrate(raw);
+  try { pracStamp(false); } catch {}   // отпечатки на старте, без пометок
   try { eventsReset(); } catch {}      // разовая чистка выдуманных событий
   try { shortPracReset(); } catch {}   // и заходов короче двух минут
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem(LS.cfg)) || {}); } catch {}
@@ -269,6 +270,7 @@ function load() {
    не дожить до перезапуска. Сеть тут ни при чём — гист получит своё позже,
    а на устройстве всё уже лежит. */
 function saveData() {
+  pracStamp(true);            // разбор изменился — запоминаем когда
   const txt = JSON.stringify(data);
   try {
     localStorage.setItem(LS.data, txt);
@@ -5676,6 +5678,57 @@ const pracStore = () => {
   return data.practice[id];
 };
 
+/* Разбор — единственное, что живёт не списком, а свёрткой по пьесам, поэтому
+   общего слияния по updatedAt ему не досталось. Чтобы оно стало возможным,
+   нужна отметка времени. Ставить её в каждом месте, где разбор меняется, —
+   значит однажды забыть; смотрим на сохранение, оно и есть общее горлышко. */
+let pracSeen = Object.create(null);
+const pracPrint = (st) => {
+  const { at, ...rest } = st;      // сама отметка в отпечаток не входит
+  return JSON.stringify(rest);
+};
+
+function pracStamp(mark) {
+  const all = (data && data.practice) || null;
+  if (!all || typeof all !== "object") return;
+  for (const id of Object.keys(all)) {
+    const st = all[id];
+    if (!st || typeof st !== "object") continue;
+    const print = pracPrint(st);
+    const seen = pracSeen[id];
+    pracSeen[id] = print;
+    /* Первую встречу не помечаем: данные могли пролежать на устройстве неделю,
+       и выдавать их за свежие нечестно — на другом телефоне они бы победили. */
+    if (mark && seen !== undefined && seen !== print) st.at = now();
+  }
+}
+
+const VID_KEYS = ["url", "ya", "yt", "vk"];
+
+function mergePrac(mine, theirs) {
+  const out = {};
+  const ids = new Set([...Object.keys(mine || {}), ...Object.keys(theirs || {})]);
+  for (const id of ids) {
+    const a = (mine || {})[id], b = (theirs || {})[id];
+    if (!a || typeof a !== "object") { out[id] = b; continue; }
+    if (!b || typeof b !== "object") { out[id] = a; continue; }
+    // при равенстве отметок своё главнее: чужое тогда только заполняет пустоты
+    const fresh = (b.at || 0) > (a.at || 0) ? b : a;
+    const old = fresh === a ? b : a;
+    out[id] = { ...old, ...fresh };
+    /* Пройденное не выбирают, его складывают: иначе такты, закрытые на втором
+       телефоне, пропадут молча. */
+    out[id].done = Object.assign({}, old.done || {}, fresh.done || {});
+    out[id].session = Math.max(a.session || 0, b.session || 0);
+    out[id].at = Math.max(a.at || 0, b.at || 0);
+    /* Источник видео всегда один: если свежая запись его сменила, прежние
+       адреса воскресать не должны. */
+    if (VID_KEYS.some((k) => fresh[k]))
+      for (const k of VID_KEYS) if (!fresh[k]) delete out[id][k];
+  }
+  return out;
+}
+
 const pracKey = (u, hand) => u.size + ":" + u.from + "-" + u.to + ":" + hand;
 /* Последнее окно сдвигается назад, а не обрезается. Часть из пяти тактов
    на этапе «по 4 такта» давала окна 1–4 и 5–5 — одинокий такт противоречил
@@ -9156,6 +9209,7 @@ function restoreBackup(file) {
     data.gut = mergeLists(data.gut || [], d.gut || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
     data.freezes = mergeLists(data.freezes || [], d.freezes || []);
+    data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
 
     // материалы, которых у нас нет, тоже возвращаем
     for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -9969,6 +10023,7 @@ async function restoreArchive(file) {
   data.gut = mergeLists(data.gut || [], d.gut || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.freezes = mergeLists(data.freezes || [], d.freezes || []);
+  data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
   for (const b of (d.book.books || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
 
@@ -10362,6 +10417,11 @@ async function syncNow(manual) {
       }
       data.archive = mergeLists(data.archive, remote.archive);
       data.takes = mergeLists(data.takes || [], remote.takes || []);
+      /* Разбор уезжал в гист, но обратно не возвращался никогда. На чистом
+         устройстве он оставался пустым — и первой же записью затирал в гисте
+         и пройденные такты, и ссылку на видео. */
+      data.practice = mergePrac(data.practice, remote.practice);
+      pracStamp(false);        // слияние — не правка, отметки времени не трогаем
       // адрес гиста с файлами обязан жить в данных, а не в настройках устройства,
       // иначе на втором телефоне вложения просто неоткуда взять
       if (!data.takesId && remote.takesId) data.takesId = remote.takesId;
