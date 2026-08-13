@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 124";
+const APP_VERSION = "Кэйко 125";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1223,10 +1223,41 @@ function pracForgetDay(pieceId, ds) {
   return n;
 }
 
+/* Карточка дня в «Моментах» — отдельная запись с ключом ev:session:<материал>:
+   <дата>, и удаление отметки её не касалось: в ленте оставался пробег за день,
+   которого больше нет. Пока карточка появлялась только в день награды, это
+   почти не всплывало; теперь она есть у каждого дня, и призрак — у каждого
+   удаления. Убираем только если за этот день у материала не осталось живых
+   записей: заходов за день бывает несколько, а карточка одна. */
+function dropDayCard(track, key, ds) {
+  if (!key) return;
+  const id = "ev:session:" + key + ":" + ds;
+  const card = (data.thoughts || []).find((t) => t.id === id && !t.deleted);
+  if (!card) return;
+  card.deleted = true;
+  card.updatedAt = now();
+}
+
+function dayKeyOf(e, track) {
+  if (track === "piano") return e.pieceId || "bwv853";
+  if (track === "book") return e.bookId || "snow-1";
+  if (track === "pastel") return "pastel";
+  return "";                                   // у ролика своей карточки дня нет
+}
+
+function stillHasDay(track, key, ds) {
+  const list = track === "piano" ? data.piano.entries
+    : track === "book" ? data.book.entries
+    : track === "pastel" ? data.pastel.entries : [];
+  return (list || []).some((x) => !x.deleted && x.date === ds && dayKeyOf(x, track) === key);
+}
+
 function dropEntry(e, track) {
   e.deleted = true;
   e.updatedAt = now();
   if (track === "piano") pracForgetDay(e.pieceId || "bwv853", e.date);
+  const key = dayKeyOf(e, track);
+  if (key && !stillHasDay(track, key, e.date)) dropDayCard(track, key, e.date);
   saveData();
   schedulePush();
 }
@@ -2445,6 +2476,49 @@ async function takePull(id) {
   } catch {
     takePct.delete(id); takeFail.set(id, now());
   } finally { takeBusy.delete(id); }
+}
+
+/* Удаление вложения раньше не удаляло ничего: запись пропадала из ленты, а
+   файл оставался и на телефоне, и в гисте — навсегда. И за его содержимое
+   приходилось платить трафиком при каждом первом чтении описи. */
+async function takeDrop(id) {
+  if (!id) return;
+  try { (await takesBox()).delete(takeKey(id)); } catch {}
+  const u = takeUrls.get(id);
+  if (u) URL.revokeObjectURL(u);
+  takeUrls.delete(id); takePct.delete(id); takeFail.delete(id);
+
+  const gid = (data && data.takesId) || cfg.takesId;
+  if (!cfg.token || !gid) return;
+  try {
+    // гист удаляет файл, если прислать ему null вместо содержимого
+    await gh("/gists/" + gid, { method: "PATCH",
+      body: JSON.stringify({ files: { [TAKE_FILE(id)]: null } }) });
+    if (takeFiles) delete takeFiles[TAKE_FILE(id)];
+    takeEtag = "";
+  } catch {}
+}
+
+/* Разовая уборка сирот: файлы, на которые уже никто не ссылается. Копились они
+   всё время, пока удаление ничего не удаляло. Трогаем только хранилище на
+   телефоне — в гисте файл может быть нужен второму устройству, чьи записи сюда
+   ещё не доехали, и стирать его по здешнему неведению нельзя. */
+async function takesSweep() {
+  if (!window.caches || !data) return;
+  try {
+    const живые = new Set();
+    for (const t of (data.thoughts || [])) if (!t.deleted && t.mediaId) живые.add(t.mediaId);
+    for (const t of (data.takes || [])) if (!t.deleted) живые.add(t.id);
+    const box = await takesBox();
+    for (const req of await box.keys()) {
+      const id = decodeURIComponent(req.url.split("/").pop());
+      if (живые.has(id)) continue;
+      await box.delete(req);
+      const u = takeUrls.get(id);
+      if (u) URL.revokeObjectURL(u);
+      takeUrls.delete(id);
+    }
+  } catch {}
 }
 
 const takesFor = (srcId) => (data.takes || [])
@@ -4536,6 +4610,7 @@ function openShotSheet(id) {
   $("#shotDel").addEventListener("click", () => {
     if (!confirm("Удалить снимок?")) return;
     t.deleted = true; t.updatedAt = now();
+    if (t.mediaId) takeDrop(t.mediaId);
     saveData(); schedulePush(); closeSheet(); render();
   });
 }
@@ -5750,6 +5825,7 @@ function renderNotes() {
       const t = (data.thoughts || []).find(x => x.id === b.dataset.th);
       if (!t) return;
       t.deleted = true; t.updatedAt = now();
+      if (t.mediaId) takeDrop(t.mediaId);
       saveData(); schedulePush(); renderNotes();
     }));
 
@@ -10961,7 +11037,7 @@ function boot() {
 
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
-  takeLoadAll();                      // записи собственной игры
+  takeLoadAll().then(takesSweep);     // записи собственной игры, потом уборка сирот
   audioLoadAll().then(() => {
     audioSync();
     // не ждём касания, чтобы начать качать: к моменту жеста звук уже готов
