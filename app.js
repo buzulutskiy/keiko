@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 116";
+const APP_VERSION = "Кэйко 117";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1100,7 +1100,7 @@ function saveEntry() {
   // а промежуточные пропадали, хотя открылись честно
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
 
-  const stamped = stampProgress();
+  const stamped = stampProgress(fresh, freshFacts);
   if (stamped.ach.length || stamped.facts.length) {
     const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
     addEvent("session", curKey(), data.active, sessionText(data.active, ent || {}), {
@@ -7900,22 +7900,36 @@ function closePractice() {
 /* Время получения записывается в тот момент, когда награда открылась.
    Восстанавливать его задним числом было ошибкой: у наград, заработанных
    до появления этой записи, привязка выходила к случайной отметке. */
-function stampProgress() {
+/* Что открылось прямо сейчас, знает только тот, кто снял состояние до отметки,
+   — поэтому эти списки приходят снаружи. Без них здесь было «всё, у чего ещё
+   нет времени», а это совсем другое множество: награда могла открыться на
+   прошлой неделе, на другом устройстве или в другом материале и просто не
+   попасть под запись времени. Такая награда получала время нынешней отметки и
+   ехала в карточку сегодняшней сессии — хотя заработана была раньше.
+
+   Остальному ставим единицу — «получено когда-то». Соврать точным временем
+   хуже, чем честно расписаться в незнании: по единице лента ничего никуда не
+   привяжет, а по выдуманному «сейчас» привязала бы к последней сессии. */
+function stampProgress(justAch, justFacts) {
   data.achAt = data.achAt || {};
   data.factAt = data.factAt || {};
   const k = curKey();
+  const nowAch = new Set((justAch || []).map((a) => a.id));
+  const nowFacts = new Set((justFacts || []).map((f) => f.id));
   const fresh = { ach: [], facts: [] };
   /* Проверяем именно отсутствие ключа: ранее полученное помечено единицей
      как «время неизвестно», и ноль здесь считался бы пустым местом. */
   for (const a of achState())
     if (a.done && data.achAt[k + ":" + a.id] === undefined) {
-      data.achAt[k + ":" + a.id] = now();
-      fresh.ach.push({ id: a.id, icon: a.icon, name: a.name });
+      const сейчас = nowAch.has(a.id);
+      data.achAt[k + ":" + a.id] = сейчас ? now() : 1;
+      if (сейчас) fresh.ach.push({ id: a.id, icon: a.icon, name: a.name });
     }
   for (const f of factsState())
     if (f.open && data.factAt[k + ":" + f.id] === undefined) {
-      data.factAt[k + ":" + f.id] = now();
-      fresh.facts.push({ id: f.id, t: f.t });
+      const сейчас = nowFacts.has(f.id);
+      data.factAt[k + ":" + f.id] = сейчас ? now() : 1;
+      if (сейчас) fresh.facts.push({ id: f.id, t: f.t });
     }
   return fresh;
 }
@@ -7936,7 +7950,7 @@ function pracCelebrate() {
   const freshFacts = factsState().filter((f) => f.open && !prac.factsBefore.has(f.id));
   if (!freshAch.length && !freshFacts.length) return null;
 
-  const stamped = stampProgress();
+  const stamped = stampProgress(freshAch, freshFacts);
   prac.wonAwards = (prac.wonAwards || []).concat(stamped.ach);
   prac.wonFacts = (prac.wonFacts || []).concat(stamped.facts);
 
