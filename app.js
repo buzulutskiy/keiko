@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 120";
+const APP_VERSION = "Кэйко 121";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3284,23 +3284,32 @@ function paceForecast() {
   const lastGain = marks[marks.length - 1] - marks[marks.length - 2];
   const todayGain = list[list.length - 1].date === todayStr() && lastGain > 0 ? lastGain : 0;
   /* ── Как часто ты к этому возвращаешься ──
-     Раньше здесь стояла двойка: «занятие через день». Ровно половина расчёта
-     была выдумана — сколько делаешь за раз, приложение измеряло по твоим же
-     заходам, а как часто садишься, решало за тебя. Тому, кто читает каждый
-     вечер, оно обещало вдвое больший срок; тому, кто садится раз в неделю, —
-     вдвое меньший.
+     Считаем не промежутки между прошлыми заходами, а сколько их пришлось на
+     последние три недели. Разница принципиальная: промежутки между прошлыми
+     заходами ничего не знают о сегодняшней паузе — можно не открывать книгу
+     две недели, а срок будет стоять как вкопанный и врать в приятную сторону.
+     Окно включает сегодня, поэтому пока не заходишь, срок честно уезжает, а
+     как вернёшься — сам подтягивается обратно. Ничего не надо ни объявлять,
+     ни сбрасывать: буксуешь — видно, разогнался — тоже.
 
-     Считаем медиану промежутков: она переживает и отпуск, и внезапный
-     марафон. Потолок в две недели — на случай, когда материал забросили и
-     вернулись: считать по такому промежутку значит обещать десятилетия. */
-  const gaps = [];
-  for (let i = 1; i < list.length; i++) {
-    const g = daysBetween(list[i - 1].date, list[i].date);
-    if (g > 0) gaps.push(g);
+     Раньше здесь стояла просто двойка, «занятие через день», и половина
+     расчёта была выдумана.
+
+     Объявленную паузу из окна вычитаем: отпуск не повод портить оценку. */
+  const WINDOW = 21;
+  let every = 2;
+  if (list.length >= 3) {
+    const span = Math.min(WINDOW, daysBetween(list[0].date, todayStr()) + 1);
+    let dead = 0;
+    for (let i = 0; i < span; i++) if (isFrozen(dateStr(new Date(Date.now() - i * 864e5)))) dead++;
+    const live = Math.max(1, span - dead);
+    const from = dateStr(new Date(Date.now() - (span - 1) * 864e5));
+    // день считаем один раз: за вечер бывает два захода, ритм от этого не меняется
+    const hits = new Set(list.filter((e) => e.date >= from).map((e) => e.date)).size;
+    /* Потолок в две недели — на случай заброшенного и возобновлённого:
+       по настоящему промежутку вышли бы десятилетия. */
+    every = Math.min(14, Math.max(1, Math.round(hits ? live / hits : live)));
   }
-  const every = gaps.length >= 2
-    ? Math.min(14, Math.max(1, Math.round(median(gaps.slice(-10)))))
-    : 2;
 
   return { left, pace, was, gains: all, todayGain, at: done, total, every,
            sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
