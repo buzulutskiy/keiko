@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 130";
+const APP_VERSION = "Кэйко 131";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6240,7 +6240,11 @@ const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.b
    работал. Ручной механизм не дублируется, а кормится. */
 
 const PRAC_REST_AT = 20, PRAC_STOP_AT = 60, PRAC_ASK_AGAIN = 12, PRAC_REVIEW_N = 2;
-const PRAC_HAND = { left: "левая рука", right: "правая рука", both: "две руки" };
+/* Не «левая рука», а «басовый ключ». Рука — это про то, чем нажимаешь; ключ —
+   про то, что читаешь. Разбирают ноты, а не конечности, и в нотах написано
+   именно это. В данных по-прежнему left/right: переименовывать хранимое ради
+   подписи незачем, старые записи должны читаться как были. */
+const PRAC_HAND = { left: "басовый ключ", right: "скрипичный ключ", both: "оба ключа" };
 
 let prac = null;          // состояние идущего занятия
 let pracTimer = 0;
@@ -6339,7 +6343,10 @@ function mergePrac(mine, theirs) {
   return out;
 }
 
-const pracKey = (u, hand) => u.size + ":" + u.from + "-" + u.to + ":" + hand;
+/* Хвост «:read» дописывается только чтению. У игры ключ прежний, слово в слово,
+   поэтому весь разобранный раньше материал остаётся разобранным. */
+const pracKey = (u, hand, phase) =>
+  u.size + ":" + u.from + "-" + u.to + ":" + hand + (phase === "read" ? ":read" : "");
 /* Последнее окно сдвигается назад, а не обрезается. Часть из пяти тактов
    на этапе «по 4 такта» давала окна 1–4 и 5–5 — одинокий такт противоречил
    названию этапа. Теперь это 1–4 и 2–5: окно всегда той длины, что обещано,
@@ -6382,6 +6389,7 @@ function pracHands(u) {
 }
 
 const pracIsDone = (u, h) => !!pracStore().done[pracKey(u, h)];
+const pracReadDone = (u, h) => !!pracStore().done[pracKey(u, h, "read")];
 const pracUnitDone = (u) => pracHands(u).every((h) => pracIsDone(u, h));
 const pracStepDone = (p, size) => pracUnits(p.from, p.to, size).every(pracUnitDone);
 const pracPartDone = (p) => pracSteps(p).every((size) => pracStepDone(p, size));
@@ -6492,8 +6500,8 @@ function pracListHTML() {
               ${Array.from({ length: p.to - p.from + 1 }, (_, k) => {
                 const b = p.from + k, h = hands(b);
                 return `<i class="bl-b${h.firm ? " firm" : h.touched ? " part" : ""}"
-                  title="такт ${b}: правая ${h.r}/${FIRM_AT}, левая ${h.l}/${FIRM_AT}"
-                  data-barinfo="Такт ${b} · правая ${h.r} из ${FIRM_AT} · левая ${h.l} из ${FIRM_AT} · ${esc(ago(info.seen[b]))}">${b}</i>`;
+                  title="такт ${b}: скрипичный ${h.r}/${FIRM_AT}, басовый ${h.l}/${FIRM_AT}"
+                  data-barinfo="Такт ${b} · скрипичный ${h.r} из ${FIRM_AT} · басовый ${h.l} из ${FIRM_AT} · ${esc(ago(info.seen[b]))}">${b}</i>`;
               }).join("")}
             </div>
           </div>`;
@@ -6512,10 +6520,16 @@ function pracQueue() {
   const us = w.seam ? [w.seam]
     : w.part ? pracUnits(w.part.from, w.part.to, w.size)
     : (w.asm[w.assembly] || []).map(pracAsUnit);
+  /* Каждый ключ проходится дважды: сначала глазами, потом руками. Разбор
+     нот — отдельная работа, и делать её заодно с игрой не выходит: читаешь
+     такт и тут же пытаешься его сыграть, в итоге ни то ни другое. */
   for (const u of us)
-    for (const h of pracHands(u))
-      if (w.refresh) q.push({ from: u.from, to: u.to, size: u.size, hand: h, review: true, k: pracKey(u, h) });
-      else if (!pracIsDone(u, h)) q.push({ from: u.from, to: u.to, size: u.size, hand: h });
+    for (const h of pracHands(u)) {
+      const base = { from: u.from, to: u.to, size: u.size, hand: h };
+      if (w.refresh) { q.push({ ...base, review: true, k: pracKey(u, h) }); continue; }
+      if (!pracReadDone(u, h)) q.push({ ...base, phase: "read" });
+      if (!pracIsDone(u, h)) q.push({ ...base, phase: "play" });
+    }
   return q;
 }
 
@@ -8212,6 +8226,14 @@ function pracRender() {
     stage = "Собираем пьесу целиком";
   }
 
+  /* Чтение — это не «поиграй потише», а другая работа: понять, что написано.
+     Поэтому и заголовок, и кнопка, и подсказка у него свои. */
+  const reading = u.phase === "read";
+  if (reading) {
+    stage = "Читаем ноты";
+    after = "дальше: сыграть этот отрезок";
+  }
+
   /* Рабочий экран — одна длинная страница, а не тесная сцена с прибитыми
      краями. Сверху задание и «Получилось», ниже видео, ещё ниже звук. Всё
      прокручивается, ничего не прячется, кнопка ответа всегда рядом с тем,
@@ -8223,8 +8245,9 @@ function pracRender() {
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
         <p class="wk-stage">${esc(stage)}</p>
+        ${reading ? `<p class="wk-read">Разбери глазами: что за ноты, куда идёт голос, где неудобные места. Играть пока не надо.</p>` : ""}
         ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
-        <button class="pr-go" data-prac="ok">Получилось</button>
+        <button class="pr-go" data-prac="ok">${reading ? "Прочитал" : "Получилось"}</button>
         <div class="wk-row">
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
@@ -8494,14 +8517,17 @@ function pracFinish() {
      за инструментом — это занятие, а не пустое место, и серию оно рвать
      не должно. */
   // короткий заход занятием не считается: ни записи, ни серии, ни минут
-  if (prac && prac.startedAt && pracMin() >= PRAC_MIN_ENTRY && (prac.closed.length || pracEntry(false))) {
+  /* Час над нотами без единой сыгранной ноты — это занятие. Раньше запись
+     заводилась только от закрытого отрезка, и разбор глазами пропадал. */
+  if (prac && prac.startedAt && pracMin() >= PRAC_MIN_ENTRY
+      && (prac.closed.length || prac.reads || pracEntry(false))) {
     const e = pracCount();
     if (!e) { closePractice(); return; }
     pracStore().session++;
     saveData();
     schedulePush();
     won = pracCelebrate();
-    if (closed) addEvent("session", piece().id, "piano",
+    if (closed || prac.reads) addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин, "
       + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
       { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
@@ -8780,7 +8806,14 @@ function bindPractice() {
         const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
         pracNote(u, sec);            // копим, где сколько провозились
         if (u.review) { prac.reviewed.push(u.k); prac.undo = null; }
-        else {
+        else if (u.phase === "read") {
+          /* Прочитанное отмечаем, но в запись дня отрезком не пишем: сыграно
+             ничего не было, и в пройденные такты это идти не должно. Работой
+             оно при этом считается — время идёт, занятие записывается. */
+          pracStore().done[pracKey(u, u.hand, "read")] = todayStr();
+          prac.reads = (prac.reads || 0) + 1;
+          prac.undo = { u, key: pracKey(u, u.hand, "read"), added: 0 };
+        } else {
           pracStore().done[pracKey(u, u.hand)] = todayStr();
           prac.closed.push({ from: u.from, to: u.to, hand: u.hand });
           const added = pracLog(u);
@@ -8805,7 +8838,8 @@ function bindPractice() {
         pracStore().done[un.key] = 0;    // след отката, чтобы не воскрес из гиста
         const e = pracEntry(false);
         if (e && un.added) { e.spans.splice(-un.added, un.added); e.updatedAt = now(); }
-        prac.closed.pop();
+        if (un.u.phase === "read") prac.reads = Math.max(0, (prac.reads || 0) - 1);
+        else prac.closed.pop();
         prac.undo = null;
         prac.queue.unshift(un.u);
         saveData();
@@ -9565,7 +9599,7 @@ function bindBookSheet() {
 function pianoSheetUI() {
   return `
     <div class="hand-pick">
-      ${[["right", "𝄞 Правая"], ["left", "𝄢 Левая"], ["both", "🤲 Обе"]].map(([h, l]) =>
+      ${[["right", "𝄞 Скрипичный"], ["left", "𝄢 Басовый"], ["both", "🤲 Оба"]].map(([h, l]) =>
         `<button class="hp ${pickHand === h ? "on" : ""}" data-hand="${h}" type="button">${l}</button>`).join("")}
     </div>
     <div class="range">
@@ -10378,9 +10412,9 @@ function piecePageUI(pc) {
     </div>
 
     <div class="panel">
-      <div class="lib-hand">правая</div>
+      <div class="lib-hand">скрипичный</div>
       <div class="lib-map bars">${strip(st.passes.right)}</div>
-      <div class="lib-hand">левая</div>
+      <div class="lib-hand">басовый</div>
       <div class="lib-map bars">${strip(st.passes.left)}</div>
       <div class="lib-num">
         <div><b>${Math.round(shownPct(st) || 0)}%</b><span>выучено</span></div>
