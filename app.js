@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 131";
+const APP_VERSION = "Кэйко 132";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8231,7 +8231,11 @@ function pracRender() {
   const reading = u.phase === "read";
   if (reading) {
     stage = "Читаем ноты";
-    after = "дальше: сыграть этот отрезок";
+    /* Ни объяснения, что такое «читать ноты», ни анонса следующего шага.
+       Читающий и так знает, что делает, а строка «дальше: сыграть» отвлекает
+       от того, что перед глазами прямо сейчас. Остаётся: такты, ключ, «читаем
+       ноты» — и кнопка. */
+    after = "";
   }
 
   /* Рабочий экран — одна длинная страница, а не тесная сцена с прибитыми
@@ -8245,7 +8249,6 @@ function pracRender() {
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
         <p class="wk-stage">${esc(stage)}</p>
-        ${reading ? `<p class="wk-read">Разбери глазами: что за ноты, куда идёт голос, где неудобные места. Играть пока не надо.</p>` : ""}
         ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
         <button class="pr-go" data-prac="ok">${reading ? "Прочитал" : "Получилось"}</button>
         <div class="wk-row">
