@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 121";
+const APP_VERSION = "Кэйко 122";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1054,7 +1054,12 @@ function saveEntry() {
     if (isWatch()) { /* пересмотр: новых единиц нет, важна только сама дата */ }
     else if (isBook() && bookMode(book()) === "parts") {
       existing.spans = mergeSpans((existing.spans || []).concat(pickSpans));
-    } else if (isBook()) existing.page = Math.max(existing.page || 0, pickPage);
+    /* Максимум отсюда убран: он не пускал исправить опечатку в тот же день.
+       Отметил 250 вместо 205 — и до полуночи с этим ничего не сделать.
+       Возвращаться к прочитанному и перебирать страницы — нормальная часть
+       чтения, и запрещать это на полсуток незачем. Ноль по-прежнему не
+       принимаем: это не выбор, а неоткрытый выбор страницы. */
+    } else if (isBook()) existing.page = pickPage > 0 ? pickPage : (existing.page || 0);
     else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
     if (note) existing.note = existing.note ? existing.note + "; " + note : note;
@@ -1101,9 +1106,14 @@ function saveEntry() {
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
 
   const stamped = stampProgress(fresh, freshFacts);
-  if (stamped.ach.length || stamped.facts.length) {
-    const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
-    addEvent("session", curKey(), data.active, sessionText(data.active, ent || {}), {
+  /* Карточка дня пишется на каждую отметку, а не только когда что-то открылось.
+     Раньше addEvent стоял внутри проверки на награды — и день чтения не
+     оставлял в ленте следа вовсе, хотя у пианино карточка появлялась всегда.
+     Из-за этого промежуток «страницы 200–208» был виден по большим праздникам.
+     У ролика своя карточка «Досмотрел», второй такой же ни к чему. */
+  const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
+  if (ent && !isWatch()) {
+    addEvent("session", curKey(), data.active, sessionText(data.active, ent), {
       tag: curKey(), date: selectedDate,
       fields: { createdAt: now(), awards: stamped.ach, facts: stamped.facts },
     });
@@ -10723,8 +10733,18 @@ async function syncNow(manual) {
       // иначе на втором телефоне вложения просто неоткуда взять
       if (!data.takesId && remote.takesId) data.takesId = remote.takesId;
       if (data.takesId) { cfg.takesId = data.takesId; saveCfg(); }
-      if (remote.daily && (!data.daily || String(remote.daily.date || "") > String(data.daily.date || ""))) {
-        data.daily = remote.daily;                   // где-то уже показали сегодня — не повторяем
+      /* Показанное складываем, а не заменяем. Раньше более свежая дата тянула
+         за собой весь чужой список, и история просмотров с другого устройства
+         пропадала — те же мысли шли по второму кругу. Дата и выключатель
+         берутся у свежей стороны, список — общий. */
+      if (remote.daily) {
+        const mine = data.daily || { date: "", seen: [], off: false };
+        const theirs = remote.daily;
+        const newer = String(theirs.date || "") > String(mine.date || "") ? theirs : mine;
+        const seen = [...(mine.seen || [])];
+        const было = new Set(seen);
+        for (const id of (theirs.seen || [])) if (!было.has(id)) { было.add(id); seen.push(id); }
+        data.daily = { date: newer.date || "", off: !!newer.off, seen: seen.slice(-2000) };
       }
       normalizeActive();
       saveData();
