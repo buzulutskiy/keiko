@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 123";
+const APP_VERSION = "Кэйко 124";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -150,6 +150,7 @@ function emptyData() {
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     gut: [],       // отметки самочувствия — только в том профиле, где включено
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
+    goalAt: 0,     // когда её меняли: без этого чужая цель молча затирала свою
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
     takes: [],     // записи собственной игры: как звучало в тот день
@@ -224,8 +225,10 @@ function migrate(obj) {
 
   if (obj.shop) {
     if (typeof obj.shop.theme === "string") base.shop.theme = obj.shop.theme;
+    if (Number(obj.shop.themeAt) > 0) base.shop.themeAt = Number(obj.shop.themeAt);
   }
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
+  if (Number(obj.goalAt) > 0) base.goalAt = Number(obj.goalAt);
   /* Одиночные записи о наградах и карточках убраны навсегда: награда живёт
      внутри сессии, в которую открылась. Отсеиваем их прямо на входе — и то,
      что лежит в телефоне, и то, что приезжает из гиста. Иначе достаточно
@@ -1005,6 +1008,7 @@ function bindGoalUI() {
   document.querySelectorAll("[data-goal]").forEach(b =>
     b.addEventListener("click", () => {
       data.weekGoal = Number(b.dataset.goal);
+      data.goalAt = now();
       saveData(); schedulePush();
       openSettingsSheet();
       render();
@@ -2331,6 +2335,13 @@ function takeArrived(id) {
   });
 }
 
+/* Место кончается обязательно: ролик под тридцать мегабайт, записи игры,
+   обложки и звук лежат в одном хранилище, и никто ничего не вычищает.
+   Отличаем эту беду от прочих, иначе она выдаёт себя за что попало. */
+const noRoom = (e) => !!e && (e.name === "QuotaExceededError"
+  || e.name === "NS_ERROR_DOM_QUOTA_REACHED"
+  || /quota|exceeded|storage/i.test(String(e.message || "")));
+
 async function takesBox() { return await caches.open(TAKE_CACHE); }
 
 async function takeSave(id, blob) {
@@ -2379,6 +2390,30 @@ async function takePush(id, blob) {
     method: "PATCH",
     body: JSON.stringify({ files: { [TAKE_FILE(id)]: { content: uri } } })
   });
+  takeEtag = "";                                 // опись устарела: в гисте прибавилось
+}
+
+/* Опись вложений читаем один раз за сессию. Гист-апи на запрос одного файла
+   присылает содержимое всех разом — всё, что меньше мегабайта, а записи игры
+   в base64 как раз обычно меньше. Открыл «Моменты», где не хватает пяти
+   записей, — и это было пять полных скачиваний всей коллекции. Каталог давно
+   ходит правильно, сюда приём просто не доехал.
+
+   Содержимое из описи выбрасываем, как только файл лёг в хранилище: держать
+   мегабайты base64 в памяти незачем. */
+let takeFiles = null, takeEtag = "";
+
+async function takesIndex(force) {
+  const gid = (data && data.takesId) || cfg.takesId;
+  if (!cfg.token || !gid) return null;
+  if (takeFiles && !force) return takeFiles;
+  const cond = takeEtag && takeFiles ? { headers: { "If-None-Match": takeEtag } } : {};
+  const r = await gh("/gists/" + gid, cond);
+  if (r.status === 304) return takeFiles;
+  if (!r.ok) return takeFiles;                   // связи нет — работаем тем, что было
+  takeEtag = r.headers.get("etag") || "";
+  takeFiles = (await r.json()).files || {};
+  return takeFiles;
 }
 
 async function takePull(id) {
@@ -2389,9 +2424,10 @@ async function takePull(id) {
   takeBusy.add(id);
   takeProgress(id, 0);
   try {
-    const r = await gh("/gists/" + gid);
-    if (!r.ok) { takePct.delete(id); takeFail.set(id, now()); return; }
-    const f = (await r.json()).files[TAKE_FILE(id)];
+    let files = await takesIndex(false);
+    let f = files && files[TAKE_FILE(id)];
+    // нет в описи — могли положить с другого устройства уже после того, как мы её взяли
+    if (!f) { files = await takesIndex(true); f = files && files[TAKE_FILE(id)]; }
     if (!f) { takePct.delete(id); takeFail.set(id, now()); return; }
     let txt = f.content;
     if (f.truncated && f.raw_url) {
@@ -2402,6 +2438,7 @@ async function takePull(id) {
     if (!txt.startsWith("data:")) return;
     takeProgress(id, 1);
     await takeSave(id, await (await fetch(txt)).blob());
+    if (takeFiles && takeFiles[TAKE_FILE(id)]) takeFiles[TAKE_FILE(id)].content = "";
     takePct.delete(id);
     takeArrived(id);
     takeFail.delete(id);
@@ -5639,7 +5676,7 @@ function renderNotes() {
       const mid = pendingMedia.id, mblob = pendingMedia.blob;
       takeSave(mid, mblob)
         .then(() => { if (tab === "notes") renderNotes(); return takePush(mid, mblob); })
-        .catch(() => {});
+        .catch((e) => { if (noRoom(e)) toast("Не хватило места — вложение не сохранилось"); });
       pendingMedia = null;
     }
     data.thoughts.push(rec);
@@ -7287,7 +7324,10 @@ async function vidKeep(id, url) {
     if (!blob || blob.size < 100000) return;         // пришла страница, а не ролик
     await videoSave(id, blob);
     toast("Ролик сохранён — дальше откроется и без сети");
-  } catch {}
+  } catch (e) {
+    // молчать тут нельзя: человек будет думать, что копия есть, а её нет
+    if (noRoom(e)) toast("Не хватило места сохранить ролик — останется по ссылке");
+  }
 }
 
 async function linkFetch(box, id, share, task, u) {
@@ -7332,8 +7372,8 @@ async function linkFetch(box, id, share, task, u) {
     if (!st2 || (st2.ya !== share && st2.url !== share)) return;
     box.dataset.mode = "";
     pracVideo(u);
-  } catch {
-    vidFail(box, -3);
+  } catch (e) {
+    vidFail(box, noRoom(e) ? -5 : -3);
   } finally { vidBusy = false; }
 }
 
@@ -7432,6 +7472,7 @@ function vidMountYT(box, id, vid, task, u) {
 }
 
 const YT_WHY = {
+  "-5": "на телефоне кончилось место — освободи немного и попробуй снова",
   "-4": "по ссылке пришла страница, а не файл — ссылка закрылась или хранилище отключило её за трафик",
   "-3": "файл по ссылке не забрать — проверь, что доступ по ней открыт",
   "-2": "файл по ссылке не открылся — проверь адрес и что он отдаёт само видео",
@@ -9470,6 +9511,7 @@ function bindThemeUI() {
   document.querySelectorAll("[data-theme]").forEach(b =>
     b.addEventListener("click", () => {
       data.shop.theme = b.dataset.theme;
+      data.shop.themeAt = now();
       saveData(); schedulePush();
       applyTheme(data.shop.theme);
       closeSheet();
@@ -10635,7 +10677,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -10726,15 +10768,23 @@ async function syncNow(manual) {
       data.watch.videos = mergeLists(data.watch.videos, remote.watch.videos);
       data.watch.entries = mergeLists(data.watch.entries, remote.watch.entries);
       if (!data.watch.activeVideo && data.watch.videos[0]) data.watch.activeVideo = data.watch.videos[0].id;
-      if (remote.weekGoal && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.weekGoal = remote.weekGoal;
+      /* Цель и тема сравниваются по своей отметке, а не по штампу всего файла.
+         Раньше условием было «файл свежее последней синхронизации» — и любая
+         вчерашняя чужая правка побеждала твою сегодняшнюю: скачивание идёт
+         раньше отправки, чужое значение ложилось поверх и уезжало обратно уже
+         как твоё. У записей такого не бывает: там у каждой свой updatedAt. */
+      if (remote.weekGoal && (remote.goalAt || 0) > (data.goalAt || 0)) {
+        data.weekGoal = remote.weekGoal;
+        data.goalAt = remote.goalAt;
+      }
       data.freezes = mergeLists(data.freezes, remote.freezes);
       data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
-      if (remote.shop) {
-        if ((remote.savedAt || 0) > (cfg.lastSync || 0)) {
-          if (remote.shop.theme) data.shop.theme = remote.shop.theme;
-        }
+      if (remote.shop && remote.shop.theme
+          && (remote.shop.themeAt || 0) > (data.shop.themeAt || 0)) {
+        data.shop.theme = remote.shop.theme;
+        data.shop.themeAt = remote.shop.themeAt;
       }
       data.archive = mergeLists(data.archive, remote.archive);
       data.takes = mergeLists(data.takes || [], remote.takes || []);
