@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 129";
+const APP_VERSION = "Кэйко 130";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5119,10 +5119,13 @@ function gutStats() {
     if (Math.max(...h) - Math.min(...h) <= 1) { clock = true; break; }
   }
 
-  // две записи в пределах часа
-  let fast = false;
-  for (let i = 1; i < byTime.length; i++)
-    if (byTime[i].at - byTime[i - 1].at <= 3600e3) { fast = true; break; }
+  // две записи близко друг к другу
+  let fast = false, fast15 = false;
+  for (let i = 1; i < byTime.length; i++) {
+    const d = byTime[i].at - byTime[i - 1].at;
+    if (d <= 3600e3) fast = true;
+    if (d <= 15 * 60e3) fast15 = true;
+  }
 
   const part = (h) => h < 5 ? "ночь" : h < 12 ? "утро" : h < 18 ? "день" : "вечер";
   const parts = new Set(hours.map(part));
@@ -5137,7 +5140,9 @@ function gutStats() {
 
   return {
     total: list.length, days: dates.length, since, fullest,
-    months: months.size, parts: parts.size, clock, fast,
+    months: months.size, parts: parts.size, clock, fast, fast15,
+    thrice: Object.values(perDay).some((n) => n >= 3),
+    lates: hours.filter((h) => h >= 22).length,
     twice: Object.values(perDay).some((n) => n >= 2),
     twiceDays: Object.values(perDay).filter((n) => n >= 2).length,
     early: hours.some((h) => h < 8),
@@ -5240,6 +5245,32 @@ const GUT_ACH = [
     test: (s) => s.total >= 1 && s.since >= 100 },
   { id: "g29", icon: "🗺", name: "Три месяца на карте", hint: "записи в трёх разных месяцах",
     word: "Записи в трёх разных месяцах. Календарь заполняется.", test: (s) => s.months >= 3 },
+
+  /* Круглая компания: свои кивки, к тем же спокойным условиям. */
+  { id: "g30", icon: "🐰", name: "Прыг-скок", hint: "три записи за один день",
+    word: "Три раза за один день. Кто-то сегодня совсем не сидит на месте.",
+    test: (s) => s.thrice },
+  { id: "g31", icon: "🦔", name: "Всё по полочкам", hint: "сорок разных дней",
+    word: "Сорок разных дней разложено по датам. Аккуратность — тоже талант.",
+    test: (s) => s.days >= 40 },
+  { id: "g32", icon: "🐷", name: "Красота требует", hint: "тридцать записей",
+    word: "Тридцать записей. Уход за собой начинается с внимания к мелочам.",
+    test: (s) => s.total >= 30 },
+  { id: "g33", icon: "🐻", name: "Огородный сезон", hint: "записи в четырёх разных месяцах",
+    word: "Четыре месяца наблюдений. Урожай собирают терпеливые.",
+    test: (s) => s.months >= 4 },
+  { id: "g34", icon: "🦌", name: "Научный подход", hint: "пятьдесят разных дней",
+    word: "Пятьдесят разных дней. С такой выборкой уже можно делать выводы.",
+    test: (s) => s.days >= 50 },
+  { id: "g35", icon: "🐑", name: "Поздний вечер", hint: "пять записей после десяти вечера",
+    word: "Пять раз перед сном. Вечера бывают задумчивые.",
+    test: (s) => s.lates >= 5 },
+  { id: "g36", icon: "🦅", name: "Кругосветка", hint: "записи в шести разных месяцах",
+    word: "Шесть месяцев в дневнике. Полмира объехать — и то быстрее.",
+    test: (s) => s.months >= 6 },
+  { id: "g37", icon: "🐧", name: "Изобретатель", hint: "две записи за четверть часа",
+    word: "Две записи за пятнадцать минут. Механизм отлажен и работает.",
+    test: (s) => s.fast15 },
 ];
 
 const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ ...a, done: a.test(st) })); };
@@ -5517,16 +5548,27 @@ function renderGut() {
 
     ${(() => {
       const ach = gutAchState();
-      const open = ach.filter((a) => a.done).length;
+      const open = ach.filter((a) => a.done);
+      const shut = ach.length - open.length;
+      /* Закрытые не показываем вовсе: ни названия, ни условия. Список условий
+         превращает раздел в задание, которое надо выполнить, а тут не то место.
+         Пусть будет просто известно, что впереди ещё что-то есть. */
       return `
-        <div class="lib-group">Наградки · ${open} из ${ach.length}</div>
+        <div class="lib-group">Наградки · ${open.length} из ${ach.length}</div>
         <div class="gut-ach">
-          ${ach.map((a) => `
-            <span class="ga${a.done ? " on" : ""}" title="${esc(a.hint)}">
-              <i>${a.done ? a.icon : "🔒"}</i>
+          ${open.map((a) => `
+            <span class="ga on">
+              <i>${a.icon}</i>
               <b>${esc(a.name)}</b>
-              <em>${esc(a.done ? wordOf(a) : a.hint)}</em>
+              <em>${esc(wordOf(a))}</em>
             </span>`).join("")}
+          ${open.length ? "" : `<div class="ga-none">Первая появится с первой отметкой.</div>`}
+          ${shut ? `
+            <div class="ga-shut">
+              ${Array.from({ length: Math.min(shut, 12) }, () => `<i>🔒</i>`).join("")}
+              <span>Ещё ${shut} ${plural(shut, "наградка", "наградки", "наградок")} —
+                что за ними, узнаешь, когда откроются</span>
+            </div>` : ""}
         </div>`;
     })()}
 

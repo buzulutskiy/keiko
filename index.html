@@ -3099,6 +3099,15 @@
     .ga b { font-size: 0.84rem; font-weight: 700; color: var(--muted); }
     .ga em { font-style: normal; font-size: 0.72rem; line-height: 1.35; color: var(--dim); }
     .ga.on { background: rgba(255, 201, 77, 0.09); border-color: rgba(255, 201, 77, 0.22); }
+    .ga-none { padding: 12px; border-radius: 14px; background: var(--glass);
+      border: 1px solid var(--glass-line); font-size: 0.74rem; color: var(--dim); text-align: center; }
+    .ga-shut {
+      display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+      padding: 11px 12px; border-radius: 14px;
+      background: var(--glass); border: 1px dashed var(--glass-line);
+    }
+    .ga-shut i { font-style: normal; font-size: 0.95rem; line-height: 1; filter: grayscale(1) opacity(0.35); }
+    .ga-shut span { flex: 1 0 100%; font-size: 0.7rem; line-height: 1.4; color: var(--dim); }
     .ga.on i { filter: none; }
     .ga.on b { color: var(--ink); }
     .ga.on em { color: var(--muted); }
