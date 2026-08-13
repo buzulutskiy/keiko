@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 118";
+const APP_VERSION = "Кэйко 119";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3300,6 +3300,26 @@ const UNIT_WORD = {
 // последний день материала заслуживает своего слова, а не общего «закрыт»
 const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден", bar: "пьеса разобрана" };
 
+/* Сколько ещё идти. Дата отвечает «когда», а хочется знать «долго ли» — это
+   разные вопросы, и на второй числом не ответишь: «осталось 34 дня» надо
+   переводить в голове. Говорим так, как сказал бы человек, и нарочно
+   приблизительно: точность тут всё равно мнимая. */
+const MONTHS_WORD = ["", "один", "два", "три", "четыре", "пять", "шесть",
+  "семь", "восемь", "девять", "десять", "одиннадцать"];
+
+function humanLeft(d) {
+  if (d <= 2) return "остался день-другой";
+  if (d <= 5) return "осталось несколько дней";
+  if (d <= 10) return "ещё неделя";
+  if (d <= 18) return "ещё пара недель";
+  if (d <= 26) return "ещё недели три";
+  if (d <= 45) return "ещё примерно месяц";
+  const m = Math.round(d / 30);
+  if (m >= 12) return "ещё больше года";
+  // «месяца два» по-русски и значит «примерно два» — перестановка делает всю работу
+  return m <= 4 ? `ещё месяца ${MONTHS_WORD[m]}` : `ещё месяцев ${MONTHS_WORD[m]}`;
+}
+
 // чем длиннее срок, тем крупнее мера: «19 дней» человек всё равно читает как «три недели»
 function humanSpan(d) {
   if (d < 14) return d + " " + plural(d, "день", "дня", "дней");
@@ -3361,37 +3381,35 @@ function paceGoal(f) {
   const t = f.todayGain || 0;                     // сколько уже сделано сегодня
   const step = Math.max(1, Math.round(f.pace));   // обычный шаг
   const add = Math.max(0, step - t);              // сколько ещё до него
+  const rest = Math.max(0, f.left - add);
+  const идти = rest ? humanLeft(Math.ceil(rest / f.pace) * 2) : "";
 
   if (!add) {
     const over = t - step;
-    const all = over > 0
-      ? `Здорово — сегодня на ${over} ${unitWord(f.unit, over)} дальше обычного`
-      : "На сегодня достаточно — обычный шаг сделан";
-    return { x: step, add: 0, enough: true, text: all, short: all, hero: all };
+    const head = over > 0
+      ? `Здорово, на ${over} ${unitWord(f.unit, over)} дальше обычного`
+      : "На сегодня достаточно";
+    const all = идти ? `${head} · ${идти}` : head;
+    return { x: step, add: 0, enough: true, text: head, short: head, hero: all };
   }
 
-  const rest = Math.max(0, f.left - add);
   if (!rest) {
-    const all = `Хорошо бы сегодня добить остаток — и ${FINISH_WORD[f.unit] || "материал закрыт"}`;
+    const all = `Попробуй сегодня добить остаток — и ${FINISH_WORD[f.unit] || "материал закрыт"}`;
     return { x: step, add, text: all, short: all, hero: all };
   }
 
   // куда хорошо бы дойти: от того места, где был на утро, плюс обычный шаг
   const aim = (f.at || 0) - t + step;
-  const цель = f.unit === "page"
-    ? `дойти до ${aim}-й страницы`
-    : `сделать ${t ? "ещё " : ""}${add} ${unitWord(f.unit, add)}`;
-
-  const days = Math.ceil(rest / f.pace) * 2;
-  const when = new Date(); when.setDate(when.getDate() + days);
-  const срок = days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days);
+  const зов = f.unit === "page"
+    ? `Попробуй дочитать до ${aim}-й страницы`
+    : `Попробуй сегодня ${t ? "ещё " : ""}${add} ${unitWord(f.unit, add)}`;
 
   return { x: step, add, aim,
-    /* В прогрессе дата написана строкой выше, повторять её незачем —
+    /* В прогрессе срок уже написан строкой выше, повторять его незачем —
        там полезнее видеть остаток. */
-    text: `Хорошо бы сегодня ${цель} — останется ${rest} ${unitWord(f.unit, rest)}`,
-    short: `Хорошо бы сегодня ${цель} — останется ${rest} ${unitWord(f.unit, rest)}`,
-    hero: `Хорошо бы сегодня ${цель} — тогда ${срок}` };
+    text: `${зов} — останется ${rest} ${unitWord(f.unit, rest)}`,
+    short: `${зов} — останется ${rest} ${unitWord(f.unit, rest)}`,
+    hero: `${зов} · ${идти}` };
 }
 
 /* ── Спидометр ──
