@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 119";
+const APP_VERSION = "Кэйко 120";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3283,7 +3283,26 @@ function paceForecast() {
      столько-то» бессмысленно — часть уже сделана, и считать надо остаток. */
   const lastGain = marks[marks.length - 1] - marks[marks.length - 2];
   const todayGain = list[list.length - 1].date === todayStr() && lastGain > 0 ? lastGain : 0;
-  return { left, pace, was, gains: all, todayGain, at: done, total,
+  /* ── Как часто ты к этому возвращаешься ──
+     Раньше здесь стояла двойка: «занятие через день». Ровно половина расчёта
+     была выдумана — сколько делаешь за раз, приложение измеряло по твоим же
+     заходам, а как часто садишься, решало за тебя. Тому, кто читает каждый
+     вечер, оно обещало вдвое больший срок; тому, кто садится раз в неделю, —
+     вдвое меньший.
+
+     Считаем медиану промежутков: она переживает и отпуск, и внезапный
+     марафон. Потолок в две недели — на случай, когда материал забросили и
+     вернулись: считать по такому промежутку значит обещать десятилетия. */
+  const gaps = [];
+  for (let i = 1; i < list.length; i++) {
+    const g = daysBetween(list[i - 1].date, list[i].date);
+    if (g > 0) gaps.push(g);
+  }
+  const every = gaps.length >= 2
+    ? Math.min(14, Math.max(1, Math.round(median(gaps.slice(-10)))))
+    : 2;
+
+  return { left, pace, was, gains: all, todayGain, at: done, total, every,
            sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
 }
 
@@ -3320,6 +3339,19 @@ function humanLeft(d) {
   return m <= 4 ? `ещё месяца ${MONTHS_WORD[m]}` : `ещё месяцев ${MONTHS_WORD[m]}`;
 }
 
+// ритм словами: «через день» понятнее, чем «раз в 2 дня»
+function everyText(every) {
+  const e = every || 2;
+  if (e <= 1) return "почти каждый день";
+  if (e === 2) return "примерно через день";
+  if (e >= 7) {
+    const w = Math.round(e / 7);
+    return w === 1 ? "примерно раз в неделю"
+                   : `примерно раз в ${w} ${plural(w, "неделю", "недели", "недель")}`;
+  }
+  return `примерно раз в ${e} ${plural(e, "день", "дня", "дней")}`;
+}
+
 // чем длиннее срок, тем крупнее мера: «19 дней» человек всё равно читает как «три недели»
 function humanSpan(d) {
   if (d < 14) return d + " " + plural(d, "день", "дня", "дней");
@@ -3349,8 +3381,9 @@ function paceSpeed(f) {
 
   /* Тот же счёт, что и у даты: занятие через день. Разница в том, сколько
      заходов осталось при прежнем темпе и при нынешнем. */
-  const thenDays = Math.max(1, Math.ceil(f.left / f.was)) * 2;
-  const diff = Math.abs(thenDays - f.sessions * 2);
+  const шаг = f.every || 2;
+  const thenDays = Math.max(1, Math.ceil(f.left / f.was)) * шаг;
+  const diff = Math.abs(thenDays - f.sessions * шаг);
   const shift = diff >= 3 ? ` — на ${humanSpan(diff)} ${up ? "раньше" : "позже"}` : "";
   return { up, text: `${times} ${up ? "быстрее" : "медленнее"}, чем в начале${shift}` };
 }
@@ -3382,7 +3415,7 @@ function paceGoal(f) {
   const step = Math.max(1, Math.round(f.pace));   // обычный шаг
   const add = Math.max(0, step - t);              // сколько ещё до него
   const rest = Math.max(0, f.left - add);
-  const идти = rest ? humanLeft(Math.ceil(rest / f.pace) * 2) : "";
+  const идти = rest ? humanLeft(Math.ceil(rest / f.pace) * (f.every || 2)) : "";
 
   if (!add) {
     const over = t - step;
@@ -3487,7 +3520,7 @@ function humanWhen(d, days) {
    Пропустил — назавтра дата сдвинется, и это нормально. */
 function paceWhen(f) {
   if (!f || f.done) return null;
-  const days = f.sessions * 2;
+  const days = f.sessions * (f.every || 2);
   const when = new Date();
   when.setDate(when.getDate() + days);
   return { days, when, text: humanWhen(when, days) };
@@ -3652,12 +3685,12 @@ function forecastHTML() {
                 sp.up === undefined ? "" : sp.up ? "↑ " : "↓ "}${esc(sp.text)}</div>` : ""}
               <div class="gz-when">${esc(text)}</div>
               <div class="gz-bar"><i style="width:${pct}%"></i></div>
-              <div class="gz-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</div>
+              <div class="gz-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди · ${esc(everyText(x.f.every))}${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</div>
               ${goal ? `<div class="gz-goal">${esc(goal.text)}</div>` : ""}
             </div>`;
         }).join("")}
       </div>
-      <p class="fc-note">Прикидка от спокойного ритма — через день. Тот же счёт, что под кольцом на главной. Пропустил — назавтра дата сдвинется, и это нормально.</p>
+      <p class="fc-note">Считаем по твоему ритму: сколько делаешь за раз и как часто возвращаешься — и то и другое по последним заходам. Тот же счёт, что под кольцом на главной. Пропустил — назавтра дата сдвинется, и это нормально.</p>
     </div>
   `;
 }
