@@ -3088,6 +3088,21 @@
     .pk-hint { display: block; font-size: 0.62rem; color: var(--dim); margin-top: 2px; line-height: 1.25; }
     body.km-on { overflow: hidden; }
 
+    /* ── Наградки раздела ── */
+    .gut-ach { display: grid; gap: 8px; }
+    .ga {
+      display: grid; grid-template-columns: 34px 1fr; gap: 2px 11px; align-items: center;
+      padding: 10px 12px; border-radius: 14px;
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .ga i { grid-row: span 2; font-style: normal; font-size: 1.35rem; line-height: 1; text-align: center; filter: grayscale(1) opacity(0.45); }
+    .ga b { font-size: 0.84rem; font-weight: 700; color: var(--muted); }
+    .ga em { font-style: normal; font-size: 0.72rem; line-height: 1.35; color: var(--dim); }
+    .ga.on { background: rgba(255, 201, 77, 0.09); border-color: rgba(255, 201, 77, 0.22); }
+    .ga.on i { filter: none; }
+    .ga.on b { color: var(--ink); }
+    .ga.on em { color: var(--muted); }
+
     /* ── Заставка ── */
     #boot {
       position: fixed; inset: 0; z-index: 200;

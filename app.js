@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 127";
+const APP_VERSION = "Кэйко 128";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5096,8 +5096,199 @@ const gutOn = () => {
 const gutList = () => (data.gut || []).filter((g) => !g.deleted)
   .sort((a, b) => (b.at || 0) - (a.at || 0));
 
+/* ── Награды раздела ──
+   Считаются из самих отметок, ничего не хранится: удалил отметку — награда
+   честно закрывается обратно. Условия только на «сделала», ни одного на
+   «пропустила»: пропуск здесь не провинность, и напоминать о нём наградой —
+   последнее дело. */
+function gutStats() {
+  const list = gutList();
+  const dates = [...new Set(list.map((g) => g.date).filter(Boolean))].sort();
+
+  let best = 0, run = 0, prev = "";
+  for (const d of dates) {
+    run = prev && daysBetween(prev, d) === 1 ? run + 1 : 1;
+    prev = d;
+    if (run > best) best = run;
+  }
+
+  const perDay = {};
+  for (const g of list) perDay[g.date] = (perDay[g.date] || 0) + 1;
+
+  const hours = list.map((g) => new Date(g.at).getHours());
+  const wd = new Set(dates.map((d) => (fromStr(d).getDay() + 6) % 7));
+
+  // три раза подряд примерно в один и тот же час
+  const byTime = list.slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+  let clock = false;
+  for (let i = 2; i < byTime.length; i++) {
+    const h = [byTime[i - 2], byTime[i - 1], byTime[i]].map((g) => new Date(g.at).getHours());
+    if (Math.max(...h) - Math.min(...h) <= 1) { clock = true; break; }
+  }
+
+  // утром и вечером одного дня
+  const halves = {};
+  for (const g of list) {
+    const h = new Date(g.at).getHours();
+    const v = halves[g.date] || (halves[g.date] = {});
+    if (h < 12) v.am = true; else if (h >= 18) v.pm = true;
+  }
+
+  // суббота и воскресенье одних выходных
+  const has = new Set(dates);
+  const weekend = dates.some((d) => {
+    if (fromStr(d).getDay() !== 6) return false;          // суббота
+    const n = new Date(fromStr(d)); n.setDate(n.getDate() + 1);
+    return has.has(dateStr(n));
+  });
+
+  const months = new Set(dates.map((d) => d.slice(0, 7)));
+  const since = dates.length ? daysBetween(dates[0], todayStr()) : 0;
+
+  // три дня подряд, и в каждом не по одному разу
+  let dbl = 0, dblBest = 0, dblPrev = "";
+  for (const d of dates) {
+    if ((perDay[d] || 0) < 2) { dbl = 0; dblPrev = d; continue; }
+    dbl = dblPrev && daysBetween(dblPrev, d) === 1 && dbl ? dbl + 1 : 1;
+    dblPrev = d;
+    if (dbl > dblBest) dblBest = dbl;
+  }
+
+  // две отметки в пределах часа
+  let fast = false;
+  for (let i = 1; i < byTime.length; i++)
+    if (byTime[i].at - byTime[i - 1].at <= 3600e3) { fast = true; break; }
+
+  // все четыре части суток хотя бы раз
+  const part = (h) => h < 5 ? "ночь" : h < 12 ? "утро" : h < 18 ? "день" : "вечер";
+  const parts = new Set(hours.map(part));
+
+  return {
+    total: list.length, days: dates.length, best, since,
+    dblRow: dblBest, fast, parts: parts.size,
+    nights: hours.filter((h) => h < 5).length,
+    noons: hours.filter((h) => h >= 12 && h < 14).length,
+    twice: Object.values(perDay).some((n) => n >= 2),
+    thrice: Object.values(perDay).some((n) => n >= 3),
+    early: hours.some((h) => h < 8),
+    night: hours.some((h) => h < 5),
+    noon: hours.some((h) => h >= 12 && h < 14),
+    week: wd.size === 7,
+    months: months.size,
+    weekend,
+    halves: Object.values(halves).some((v) => v.am && v.pm),
+    clock
+  };
+}
+
+const GUT_ACH = [
+  { id: "g1", icon: "🌱", name: "Почин", hint: "первая отметка",
+    word: "Первая отметка. Теперь всё по-взрослому: с календарём и историей.",
+    test: (s) => s.total >= 1 },
+  { id: "g2", icon: "✌️", name: "Дубль", hint: "дважды за день",
+    word: "Два раза за один день. Кто-то сегодня очень старался.",
+    test: (s) => s.twice },
+  { id: "g3", icon: "🌅", name: "Ранняя пташка", hint: "до восьми утра",
+    word: "До восьми утра. Весь день впереди — и налегке.",
+    test: (s) => s.early },
+  { id: "g4", icon: "🦉", name: "Совушка", hint: "между полуночью и пятью",
+    word: "Глубокой ночью. У организма своё расписание, и спорить с ним бесполезно.",
+    test: (s) => s.night },
+  { id: "g5", icon: "🔁", name: "Три дня кряду", hint: "три дня подряд",
+    word: "Три дня подряд. Это уже похоже на ритм.",
+    test: (s) => s.best >= 3 },
+  { id: "g6", icon: "📅", name: "Неделя как по нотам", hint: "семь дней подряд",
+    word: "Семь дней подряд. Кишечник играет по нотам.",
+    test: (s) => s.best >= 7 },
+  { id: "g7", icon: "🧘", name: "Дзен", hint: "две недели подряд",
+    word: "Две недели без пропусков. Спокойствие, только спокойствие.",
+    test: (s) => s.best >= 14 },
+  { id: "g8", icon: "🏆", name: "Месяц как часы", hint: "тридцать дней подряд",
+    word: "Тридцать дней подряд. Швейцарские часы нервно курят в стороне.",
+    test: (s) => s.best >= 30 },
+  { id: "g9", icon: "🗓", name: "Полный комплект", hint: "все семь дней недели",
+    word: "Отмечено в каждый день недели — от понедельника до воскресенья.",
+    test: (s) => s.week },
+  { id: "g10", icon: "⏰", name: "По будильнику", hint: "трижды подряд в один час",
+    word: "Три раза подряд примерно в одно время. Организм завёл будильник и не опаздывает.",
+    test: (s) => s.clock },
+  { id: "g11", icon: "🔟", name: "Десятка", hint: "десять отметок",
+    word: "Десять отметок. Уже есть на что посмотреть в календаре.",
+    test: (s) => s.total >= 10 },
+  { id: "g12", icon: "💯", name: "Сотня", hint: "сто отметок",
+    word: "Сто отметок. Целая летопись.",
+    test: (s) => s.total >= 100 },
+  { id: "g13", icon: "🍀", name: "Пятидневка", hint: "пять дней подряд",
+    word: "Пять дней подряд — рабочая неделя закрыта без единого прогула.",
+    test: (s) => s.best >= 5 },
+  { id: "g14", icon: "⚡️", name: "Хет-трик", hint: "трижды за день",
+    word: "Три раза за один день. Это уже спорт высоких достижений.",
+    test: (s) => s.thrice },
+  { id: "g15", icon: "🌗", name: "И утром, и вечером", hint: "дважды за день, утром и вечером",
+    word: "Утром и вечером одного дня. Полный рабочий график.",
+    test: (s) => s.halves },
+  { id: "g16", icon: "🌤", name: "Выходные не пропали", hint: "суббота и воскресенье подряд",
+    word: "Суббота и воскресенье подряд. Отдыхать надо уметь.",
+    test: (s) => s.weekend },
+  { id: "g17", icon: "🌞", name: "Обеденный перерыв", hint: "между полуднем и двумя",
+    word: "Ровно в обед. Совмещать приятное с полезным — талант.",
+    test: (s) => s.noon },
+  { id: "g18", icon: "🧭", name: "Двадцать пять", hint: "двадцать пять отметок",
+    word: "Двадцать пять отметок. Четверть сотни, если считать красиво.",
+    test: (s) => s.total >= 25 },
+  { id: "g19", icon: "🎪", name: "Полсотни", hint: "пятьдесят отметок",
+    word: "Пятьдесят отметок. Половина пути до сотни пройдена.",
+    test: (s) => s.total >= 50 },
+  { id: "g20", icon: "🎂", name: "Месяц вместе", hint: "месяц с первой отметки",
+    word: "Месяц с первой отметки. С днём рождения, дневничок.",
+    test: (s) => s.total >= 1 && s.since >= 30 },
+  { id: "g21", icon: "🌸", name: "Сто дней истории", hint: "сто дней с первой отметки",
+    word: "Сто дней наблюдений. Есть что показать врачу и чем себя порадовать.",
+    test: (s) => s.total >= 1 && s.since >= 100 },
+  { id: "g22", icon: "🗺", name: "Три месяца на карте", hint: "отметки в трёх разных месяцах",
+    word: "Отметки в трёх разных месяцах. Календарь заполняется.",
+    test: (s) => s.months >= 3 },
+
+  /* Десяток с кивком в сторону мультфильмов: названия и мотивы, без цитат.
+     Хочется, чтобы открывшаяся награда была ещё и узнаванием. */
+  { id: "g23", icon: "🎈", name: "Дом на шариках", hint: "десять дней подряд",
+    word: "Десять дней подряд. Ещё немного — и дом оторвётся от земли.",
+    test: (s) => s.best >= 10 },
+  { id: "g24", icon: "🤖", name: "Уборщик года", hint: "двадцать дней подряд",
+    word: "Двадцать дней подряд. Планета прибрана, можно и на свидание.",
+    test: (s) => s.best >= 20 },
+  { id: "g25", icon: "🧅", name: "Слоями", hint: "три дня подряд по два раза",
+    word: "Три дня подряд, и каждый — не по одному разу. Как у лука: слой за слоем.",
+    test: (s) => s.dblRow >= 3 },
+  { id: "g26", icon: "🏚", name: "Своё болото", hint: "шестьдесят отметок",
+    word: "Шестьдесят отметок. Обжитое место, чужие не ходят.",
+    test: (s) => s.total >= 60 },
+  { id: "g27", icon: "🐀", name: "Высокая кухня", hint: "пять раз в обеденное время",
+    word: "Пять раз в обеденный час. Готовить может каждый — и кишечник тоже.",
+    test: (s) => s.noons >= 5 },
+  { id: "g28", icon: "🏎", name: "Молния", hint: "две отметки за час",
+    word: "Две отметки в пределах часа. Скорость — это тоже стиль.",
+    test: (s) => s.fast },
+  { id: "g29", icon: "👁", name: "Корпорация", hint: "пять ночных отметок",
+    word: "Пять раз посреди ночи. Смена сдана, дверь закрыта.",
+    test: (s) => s.nights >= 5 },
+  { id: "g30", icon: "🐜", name: "Муравьиная работа", hint: "сто пятьдесят отметок",
+    word: "Сто пятьдесят отметок. По одной, по одной — и вот целый муравейник.",
+    test: (s) => s.total >= 150 },
+  { id: "g31", icon: "🧠", name: "Все чувства сразу", hint: "ночь, утро, день и вечер",
+    word: "Ночь, утро, день и вечер — пульт управления освоен полностью.",
+    test: (s) => s.parts >= 4 },
+  { id: "g32", icon: "🐠", name: "Найдётся всё", hint: "двести отметок",
+    word: "Двести отметок. Даже в самом большом океане теперь ничего не потеряется.",
+    test: (s) => s.total >= 200 },
+];
+
+const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ ...a, done: a.test(st) })); };
+const gutOpenSet = () => new Set(gutAchState().filter((a) => a.done).map((a) => a.id));
+
 function gutAdd() {
   data.gut = data.gut || [];
+  const was = gutOpenSet();          // что было открыто до этой отметки
   const t = now();
   data.gut.push({ id: uid(), at: t, date: todayStr(), createdAt: t, updatedAt: t });
   saveData();
@@ -5106,6 +5297,11 @@ function gutAdd() {
   try { if (navigator.vibrate) navigator.vibrate([18, 40, 26]); } catch {}
   gutCheer();
   renderGut();
+  /* Что открылось этой отметкой — считаем от снимка ДО неё, а не «всё, что
+     открыто». Показываем после фейерверка: он и так секунда, перебивать его
+     экраном жалко. */
+  const fresh = gutAchState().filter((a) => a.done && !was.has(a.id));
+  if (fresh.length) setTimeout(() => showWon({ ach: fresh, facts: [] }), 900);
 }
 
 function gutDrop(id) {
@@ -5359,6 +5555,21 @@ function renderGut() {
       ${["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((d) => `<i class="gc-h">${d}</i>`).join("")}
       ${cells}
     </div>
+
+    ${(() => {
+      const ach = gutAchState();
+      const open = ach.filter((a) => a.done).length;
+      return `
+        <div class="lib-group">Наградки · ${open} из ${ach.length}</div>
+        <div class="gut-ach">
+          ${ach.map((a) => `
+            <span class="ga${a.done ? " on" : ""}" title="${esc(a.hint)}">
+              <i>${a.done ? a.icon : "🔒"}</i>
+              <b>${esc(a.name)}</b>
+              <em>${esc(a.done ? wordOf(a) : a.hint)}</em>
+            </span>`).join("")}
+        </div>`;
+    })()}
 
     ${today.length ? `
       <div class="lib-group">Сегодня · ${today.length}</div>
