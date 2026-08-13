@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 125";
+const APP_VERSION = "Кэйко 126";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1218,8 +1218,13 @@ function pracForgetDay(pieceId, ds) {
   const st = data.practice && data.practice[pieceId];
   if (!st || !st.done) return 0;
   let n = 0;
+  /* Не удаляем ключ, а гасим его нулём. Удалённый ключ при слиянии с гистом
+     воскресал: разбор сливается объединением, и то, чего нет у одной стороны,
+     просто берётся у другой — отличить «откатили» от «сюда ещё не доехало»
+     по пустому месту невозможно. Ноль — след отката, и он побеждает как
+     любое другое значение свежей стороны. */
   for (const [k, v] of Object.entries(st.done))
-    if (v === ds) { delete st.done[k]; n++; }
+    if (v === ds) { st.done[k] = 0; n++; }
   return n;
 }
 
@@ -1256,6 +1261,11 @@ function dropEntry(e, track) {
   e.deleted = true;
   e.updatedAt = now();
   if (track === "piano") pracForgetDay(e.pieceId || "bwv853", e.date);
+  /* У курса откат был забыт: удалишь день — записи нет, а уроки этого дня
+     по-прежнему числятся пройденными. Ровно то враньё, от которого пианино
+     защитили с самого начала. Ключи «нет» это не трогает: они значат
+     «задания в уроке не было», а не дату. */
+  if (track === "pastel") pracForgetDay("pastel", e.date);
   const key = dayKeyOf(e, track);
   if (key && !stillHasDay(track, key, e.date)) dropDayCard(track, key, e.date);
   saveData();
@@ -8580,7 +8590,7 @@ function bindPractice() {
            и из разбора, и из сегодняшней записи. */
         const un = prac.undo;
         if (!un) return;
-        delete pracStore().done[un.key];
+        pracStore().done[un.key] = 0;    // след отката, чтобы не воскрес из гиста
         const e = pracEntry(false);
         if (e && un.added) { e.spans.splice(-un.added, un.added); e.updatedAt = now(); }
         prac.closed.pop();
