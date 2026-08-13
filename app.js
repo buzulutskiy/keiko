@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 126";
+const APP_VERSION = "Кэйко 127";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10950,10 +10950,22 @@ function schedulePush() {
 
 /* ══════════ Запуск ══════════ */
 
+/* Заставка уходит, когда на экране уже есть что показать: и после обычного
+   запуска, и после экрана подключения, и после выбора профиля, и даже после
+   срыва — на пустой белый лист смотреть не должно доводиться ни в одном из
+   этих случаев. */
+function bootDone() {
+  const el = document.getElementById("boot");
+  if (!el) return;
+  el.classList.add("gone");
+  setTimeout(() => el.remove(), 320);
+}
+
 function init() {
   try {
     boot();
   } catch (e) { console.error(e); crashScreen(e); }
+  bootDone();
 }
 
 function boot() {
