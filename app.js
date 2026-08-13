@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 122";
+const APP_VERSION = "Кэйко 123";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -884,13 +884,18 @@ function archiveCurrent() {
     createdAt: now(), updatedAt: now()
   };
   data.archive.push(rec);
-  addEvent("done", rec.srcId, rec.track, "Завершил: " + rec.title, { tag: rec.srcId });
+  /* Раньше запись в ленту шла прямо здесь, до вопросов про следующий материал.
+     Откажешься от них — архив откатывался, флаг снимался, а карточка
+     «Завершил» оставалась в «Моментах» навсегда. Выходов с отказом пять, и ни
+     один её не убирал. Теперь она пишется только там, где завершение и правда
+     состоялось. */
+  const вЛенту = () => addEvent("done", rec.srcId, rec.track, "Завершил: " + rec.title, { tag: rec.srcId });
 
   if (isBook()) {
     const cur = book();
     cur.archived = true; cur.updatedAt = now();
     const next = data.book.books.find(b => !b.archived);
-    if (next) { data.book.activeBook = next.id; saveData(); schedulePush(); render(); openShelfSheet(rec.id); return; }
+    if (next) { data.book.activeBook = next.id; вЛенту(); saveData(); schedulePush(); render(); openShelfSheet(rec.id); return; }
 
     const title = prompt("Какую книгу читаешь теперь?", "");
     if (title === null || !title.trim()) { data.archive.pop(); cur.archived = false; return; }
@@ -931,6 +936,7 @@ function archiveCurrent() {
     }
   }
 
+  вЛенту();
   saveData(); schedulePush(); syncPickers(); render();
   openShelfSheet(rec.id);      // сразу предлагаем поставить оценку и написать отзыв
 }
@@ -1111,7 +1117,11 @@ function saveEntry() {
      оставлял в ленте следа вовсе, хотя у пианино карточка появлялась всегда.
      Из-за этого промежуток «страницы 200–208» был виден по большим праздникам.
      У ролика своя карточка «Досмотрел», второй такой же ни к чему. */
-  const ent = trackOf().entries.filter((x) => !x.deleted && x.date === selectedDate).slice(-1)[0];
+  /* Через entries(), а не по всему треку: фильтр по одной дате брал последнюю
+     добавленную запись — чью угодно. Отметил за день две книги, и в карточке
+     одной оказывался пробег другой. На экране это не всплывало, лента
+     пересобирает текст по своему материалу, но в данных и в гисте лежал чужой. */
+  const ent = entries().filter((x) => x.date === selectedDate).slice(-1)[0];
   if (ent && !isWatch()) {
     addEvent("session", curKey(), data.active, sessionText(data.active, ent), {
       tag: curKey(), date: selectedDate,
@@ -4273,10 +4283,14 @@ function withMaterial(view, fn) {
   if (view.track === "piano" && view.pieceId) data.piano.activePiece = view.pieceId;
   if (view.track === "book" && view.bookId) data.book.activeBook = view.bookId;
   if (view.track === "watch" && view.videoId) data.watch.activeVideo = view.videoId;
-  const res = fn();
-  data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
-  data.watch.activeVideo = saveVideo;
-  return res;
+  /* Через finally: без него исключение внутри оставляло приложение на чужом
+     материале молча. Соседний dayProgress свою подмену так и возвращает. */
+  try {
+    return fn();
+  } finally {
+    data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
+    data.watch.activeVideo = saveVideo;
+  }
 }
 
 // материал из achView мог остаться от другого профиля — тогда его тут нет
