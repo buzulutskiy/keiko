@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 117";
+const APP_VERSION = "Кэйко 118";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3283,7 +3283,7 @@ function paceForecast() {
      столько-то» бессмысленно — часть уже сделана, и считать надо остаток. */
   const lastGain = marks[marks.length - 1] - marks[marks.length - 2];
   const todayGain = list[list.length - 1].date === todayStr() && lastGain > 0 ? lastGain : 0;
-  return { left, pace, was, gains: all, todayGain,
+  return { left, pace, was, gains: all, todayGain, at: done, total,
            sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
 }
 
@@ -3349,49 +3349,49 @@ function paceGoal(f) {
      Есть дата — есть и шаг, из которого она получилась. */
   if (!f || f.done || !f.pace || !f.gains || !f.gains.length) return null;
 
-  /* ── Дневной минимум ──
-     Это твой же обычный шаг, поднятый самую малость. Выше не берём намеренно:
-     цель, ради которой надо садиться на два часа, — это вызов, а вызов каждый
-     день не выдерживают, и подсказка быстро становится тем, что хочется
-     закрыть не глядя. Потолок — четверть лучших заходов: столько ты и так
-     делаешь, просто не всегда.
+  /* ── Сколько сегодня ──
+     Ровно обычный шаг по последним заходам — ни страницей больше. Надбавка
+     была и оказалась лишней: глава бывает тяжёлой, и три страницы за вечер —
+     это нормальный вечер, а не провал. Подсказка не должна превращать чтение
+     в норму выработки, поэтому она называет привычное, а не желаемое.
 
-     Раньше цель искалась от обратного: перебирались всё большие числа, пока
-     одно из них не сдвинет срок на пару дней. Но срок двигается только целым
-     заходом, поэтому находилась всегда двойная норма — ровно то, чего не
-     хотелось. */
-  const t = f.todayGain || 0;                  // сколько уже сделано сегодня
-  const q = f.gains.slice(-12).sort((a, b) => a - b);
-  const p75 = q[Math.floor(0.75 * (q.length - 1))] || f.pace;
-  const soft = Math.max(Math.ceil(f.pace), Math.round(Math.min(f.pace * 1.15, p75)));
+     У книги называем не количество, а саму страницу: «до 214-й» — это место,
+     которое видно, когда откроешь. «Восемь страниц» пришлось бы считать в уме
+     от того, где остановился. */
+  const t = f.todayGain || 0;                     // сколько уже сделано сегодня
+  const step = Math.max(1, Math.round(f.pace));   // обычный шаг
+  const add = Math.max(0, step - t);              // сколько ещё до него
 
-  // конец близко — зовём добить целиком: дробить остаток на два дня обиднее
-  const x = f.left <= soft ? f.left + t : soft;
-
-  const rest = Math.max(0, f.left - Math.max(0, x - t));
-  const days = rest ? Math.ceil(rest / f.pace) * 2 : 0;
-
-  if (t >= x) {
-    const all = `Сегодня уже ${t} ${unitWord(f.unit, t)} — этого на день хватит`;
-    return { x, add: 0, enough: true, text: all, short: all, hero: all };
+  if (!add) {
+    const over = t - step;
+    const all = over > 0
+      ? `Здорово — сегодня на ${over} ${unitWord(f.unit, over)} дальше обычного`
+      : "На сегодня достаточно — обычный шаг сделан";
+    return { x: step, add: 0, enough: true, text: all, short: all, hero: all };
   }
-  const add = x - t;
-  const head = t ? `Ещё ${add} ${unitWord(f.unit, add)} сегодня`
-                 : `Сегодня ${x} ${unitWord(f.unit, x)}`;
-  if (!days) {
-    const all = `${head} — и ${FINISH_WORD[f.unit] || "материал закрыт"}`;
-    return { x, add, text: all, short: all, hero: all };
+
+  const rest = Math.max(0, f.left - add);
+  if (!rest) {
+    const all = `Хорошо бы сегодня добить остаток — и ${FINISH_WORD[f.unit] || "материал закрыт"}`;
+    return { x: step, add, text: all, short: all, hero: all };
   }
+
+  // куда хорошо бы дойти: от того места, где был на утро, плюс обычный шаг
+  const aim = (f.at || 0) - t + step;
+  const цель = f.unit === "page"
+    ? `дойти до ${aim}-й страницы`
+    : `сделать ${t ? "ещё " : ""}${add} ${unitWord(f.unit, add)}`;
+
+  const days = Math.ceil(rest / f.pace) * 2;
   const when = new Date(); when.setDate(when.getDate() + days);
-  /* На главной — сам срок: строка стоит там, где раньше было «в таком темпе
-     примерно к тому-то», и отвечает на тот же вопрос, только действием.
-     В прогрессе дата уже написана строкой выше, повторять её незачем —
-     там полезнее видеть остаток. */
-  const остаток = `${head} — и останется ${rest} ${unitWord(f.unit, rest)}`;
-  return { x, add,
-    text: остаток,
-    short: остаток,
-    hero: `${head} — и ${days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days)}` };
+  const срок = days <= 7 ? "закончишь уже на этой неделе" : "закончишь " + humanWhen(when, days);
+
+  return { x: step, add, aim,
+    /* В прогрессе дата написана строкой выше, повторять её незачем —
+       там полезнее видеть остаток. */
+    text: `Хорошо бы сегодня ${цель} — останется ${rest} ${unitWord(f.unit, rest)}`,
+    short: `Хорошо бы сегодня ${цель} — останется ${rest} ${unitWord(f.unit, rest)}`,
+    hero: `Хорошо бы сегодня ${цель} — тогда ${срок}` };
 }
 
 /* ── Спидометр ──
