@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 142";
+const APP_VERSION = "Кэйко 143";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5618,11 +5618,7 @@ function openDayEditor(rec) {
     <div class="de-nav">
       <button class="de-close" id="deClose" type="button" aria-label="Закрыть">✕</button>
       <span class="de-day">${esc(dayTitle)}</span>
-      <span class="de-side">
-        ${isNew && canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
-        ${isNew ? `<button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
-        <button class="de-ok" id="deSave" type="button" aria-label="${isNew ? "Добавить" : "Сохранить"}">✓</button>
-      </span>
+      <button class="de-ok" id="deSave" type="button" aria-label="${isNew ? "Добавить" : "Сохранить"}">✓</button>
     </div>
     <div class="de-tags" id="deTags">${deTagsHTML(rec)}</div>
     ${isNew && pendingMedia ? `
@@ -5632,22 +5628,30 @@ function openDayEditor(rec) {
           : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
         <button class="th-drop" id="deDrop" type="button" aria-label="Убрать вложение">✕</button>
       </div>` : ""}
-    <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>`;
+    <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>
+    ${isNew ? `
+      <div class="de-kb" id="deKb">
+        ${canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
+        <button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>
+      </div>` : ""}`;
   document.body.appendChild(box);
   /* Позади листа живёт прокручиваемая страница, и айфон тянул её резинкой
      сквозь лист. Всё, что не текст, прокрутку не получает. */
   box.addEventListener("touchmove", (e) => {
-    if (!e.target.closest(".de-area")) e.preventDefault();
+    if (!e.target.closest(".de-area, .de-kb")) e.preventDefault();
   }, { passive: false });
 
-  /* Панель с галочкой ездит вместе с клавиатурой: лист ужимается до видимой
-     части окна, и низ листа оказывается ровно над клавиатурой. Без этого
-     кнопки уезжали под неё, и лист выглядел глухим. */
+  const area = $("#deArea");
+  const kb = document.getElementById("deKb");
+  /* Лист не ужимается — он всегда во весь экран, чтобы за клавиатурой и
+     системной плашкой айфона был его тёмный фон, а не лента с фотографиями.
+     К клавиатуре поднимается только маленькая панель вложений; тексту
+     добавляется нижний отступ, чтобы строка не ныряла под клавиатуру. */
   const vv = window.visualViewport;
   const fit = vv ? () => {
-    // лист ровно в видимой части окна: клавиатура снизу его поджимает
-    box.style.height = vv.height + "px";
-    box.style.top = vv.offsetTop + "px";
+    const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    if (kb) kb.style.transform = "translateY(-" + inset + "px)";
+    area.style.paddingBottom = (inset + (kb ? 60 : 14)) + "px";
   } : null;
   if (fit) { fit(); vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); }
   const gone = () => {
@@ -5655,7 +5659,6 @@ function openDayEditor(rec) {
     box.remove();
   };
 
-  const area = $("#deArea");
   area.value = rec ? (rec.text || "") : dyDraft;
   bindPasteCleanup(area);
   /* Фокус — сразу и в том же жесте, которым открыли лист: отложенный фокус

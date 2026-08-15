@@ -3146,40 +3146,50 @@
       background: var(--bg);
       overscroll-behavior: contain;
     }
-    /* Шапка листа: закрыть · день по центру · вложения и галочка справа.
-       День — абсолютным центром, чтобы его не сдвигали кнопки по краям. */
+    /* Шапка листа: закрыть слева, день по центру, галочка справа. Иконки —
+       голые цветные знаки без обводок; отступы по краям те же, что у текста.
+       Шапка отделена от набора своим тоном и волосяной линией. */
     .de-nav {
-      position: relative; display: flex; align-items: center; gap: 8px;
-      padding: calc(var(--safe-t) + 10px) 14px 6px;
+      position: relative; display: flex; align-items: center;
+      /* env() напрямую: переменной --safe-t в проекте нет, а var() на
+         несуществующее имя рушит всё объявление padding целиком */
+      padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 10px;
+      background: var(--glass); border-bottom: 1px solid var(--glass-line);
     }
     .de-day {
       position: absolute; left: 60px; right: 60px; text-align: center;
-      font-size: 0.82rem; font-weight: 700; color: var(--muted);
+      font-size: 0.84rem; font-weight: 700; color: var(--muted);
       pointer-events: none;
     }
-    .de-side { margin-left: auto; display: flex; gap: 8px; align-items: center; }
     .de-close {
-      width: 38px; height: 38px; flex: none; border-radius: 12px;
-      background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink); font-size: 0.95rem;
+      padding: 4px 0; font-size: 1.05rem; line-height: 1; color: var(--muted);
+      background: none; border: 0;
     }
     .de-ok {
-      width: 40px; height: 40px; flex: none; border-radius: 50%;
-      background: linear-gradient(120deg, var(--gold), var(--gold-2));
-      color: #241a05; font-size: 1.1rem; font-weight: 900; line-height: 1;
+      margin-left: auto; padding: 2px 0;
+      font-size: 1.4rem; font-weight: 900; line-height: 1; color: var(--gold);
+      background: none; border: 0;
     }
     /* Место и погода — тихая строка, а не плашки: фон записи, не кнопки */
     .de-tags {
-      padding: 8px 20px 0; font-size: 0.72rem; line-height: 1.5; color: var(--dim);
+      padding: 18px 20px 0; font-size: 0.72rem; line-height: 1.5; color: var(--dim);
       min-height: 1.2em;
     }
     .de-area {
-      flex: 1; margin: 6px 18px 10px; padding: 0;
+      flex: 1; margin: 10px 20px 0; padding: 0 0 14px;
       background: none; border: 0; outline: none; resize: none;
       font: inherit; font-size: 1.05rem; line-height: 1.65; color: var(--ink);
       touch-action: pan-y; overscroll-behavior: contain;
     }
     .de-area::placeholder { color: var(--dim); }
-    .de-pending { margin: 8px 18px 0; }
+    .de-pending { margin: 10px 20px 0; }
+    /* Маленькая панель вложений — прижата к клавиатуре и ездит с ней */
+    .de-kb {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      display: flex; gap: 10px;
+      padding: 6px 20px calc(var(--safe-b) + 8px);
+      transition: transform 0.15s ease;
+    }
 
     .ga-none { padding: 12px; border-radius: 14px; background: var(--glass);
       border: 1px solid var(--glass-line); font-size: 0.74rem; color: var(--dim); text-align: center; }
