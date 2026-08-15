@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 133";
+const APP_VERSION = "Кэйко 134";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1713,8 +1713,13 @@ async function readWithProgress(res, id, report) {
    или встало. */
 const audioFail = new Map();
 
-async function pullAudio(id) {
+async function pullAudio(id, force) {
   if (!cfg.token || !cfg.catalogId || audioPulling.has(id) || audioUrls.has(id)) return;
+  /* Срыв больше не навсегда. Раньше одна неудача запрещала повтор до
+     перезапуска: у одной вещи звук был, у другой нет, и почему — не сказать.
+     Ждём полминуты и пробуем снова, как только до звука снова дойдёт дело. */
+  const failedAt = audioFail.get(id) && audioFail.get(id).at;
+  if (!force && failedAt && now() - failedAt < 30000) return;
   audioPulling.add(id);
   audioFail.delete(id);
   audioProgress(id, 0);
@@ -1735,7 +1740,7 @@ async function pullAudio(id) {
     audioNow = "";                                    // пусть audioSync подхватит заново
     audioSync();
   } catch (e) {
-    audioFail.set(id, (e && e.message) || (navigator.onLine ? "не получилось" : "нет сети"));
+    audioFail.set(id, { why: (e && e.message) || (navigator.onLine ? "не получилось" : "нет сети"), at: now() });
   } finally {
     audioPulling.delete(id);
     audioProgress(id, 1);
@@ -2728,7 +2733,7 @@ function coverSrc(id, fallback) {
   if (!c || !c.cover) return fallback || "";
   const have = coverCache.get(id);
   if (have) return have;
-  if (!coverCache.has(id)) { coverCache.set(id, ""); pullCover(id); }   // пока качаем — запасной файл
+  if (!coverCache.has(id)) { coverCache.set(id, ""); coverAsk(id); }   // пока качаем — запасной файл
   return fallback || "";
 }
 
@@ -3703,9 +3708,39 @@ function lineChartHTML(points) {
 
 // шапка «Прогресс»: неделя или месяц целиком
 
+/* ── Тот же кусок прошлого периода ──
+   Сравнивать идущую неделю с целой прошлой нечестно: во вторник ты всегда
+   «в минусе», хотя ничего не случилось. Берём столько же дней с начала
+   прошлого периода — среду с прошлой средой. */
+function prevSlice(r) {
+  const d = new Date();
+  if (period === "month") {
+    const from = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const last = new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate();
+    const to = new Date(from.getFullYear(), from.getMonth(), Math.min(d.getDate(), last));
+    return { from: dateStr(from), to: dateStr(to) };
+  }
+  const from = mondayOf(d); from.setDate(from.getDate() - 7);
+  const to = new Date(from); to.setDate(to.getDate() + ((d.getDay() + 6) % 7));
+  return { from: dateStr(from), to: dateStr(to) };
+}
+
+/* Цифра сама по себе ни о чём: тридцать девять страниц — это много или мало?
+   Смысл появляется рядом с прошлым разом. Вверх — оранжевым, вниз — серым:
+   ни красного, ни зелёного тут не нужно, меньше прошлой недели не провинность. */
+function chipHTML(val, prev, word) {
+  const d = (val || 0) - (prev || 0);
+  const tail = !d ? "" : d > 0
+    ? `<i class="up">↑ ${d}</i>`
+    : `<i class="down">↓ ${-d}</i>`;
+  return `<div class="sc"><b>${val || 0}</b><span>${esc(word)}</span>${tail}</div>`;
+}
+
 function summaryHTML() {
   const r = periodRange();
   const st = rangeStats(r.from, r.to);
+  const pv = prevSlice(r);
+  const was = rangeStats(pv.from, pv.to);
   const g = goalProgress();
   const now = new Date();
 
@@ -3755,10 +3790,10 @@ function summaryHTML() {
       <!-- Ни серии, ни числа дней: серия превращает пропуск в потерю, а дни
            уже написаны крупно в кольце — «5 из 4 дней цели». -->
       <div class="sum-chips">
-        <div class="sc"><b>${st.bars}</b><span>${plural(st.bars, "такт", "такта", "тактов")}</span></div>
-        <div class="sc"><b>${st.pages}</b><span>страниц</span></div>
-        <div class="sc"><b>${st.lessons}</b><span>${plural(st.lessons, "урок", "урока", "уроков")}</span></div>
-        ${st.watched ? `<div class="sc"><b>${st.watched}</b><span>${plural(st.watched, "ролик", "ролика", "роликов")}</span></div>` : ""}
+        ${chipHTML(st.bars, was.bars, plural(st.bars, "такт", "такта", "тактов"))}
+        ${chipHTML(st.pages, was.pages, "страниц")}
+        ${chipHTML(st.lessons, was.lessons, plural(st.lessons, "урок", "урока", "уроков"))}
+        ${st.watched || was.watched ? chipHTML(st.watched, was.watched, plural(st.watched, "ролик", "ролика", "роликов")) : ""}
       </div>
 
       ${lineChartHTML(periodSeries())}
@@ -6365,7 +6400,7 @@ function pracPlayer() {
   if (!url) {
     // записи у этой вещи нет вовсе — плеер просто не показываем
     if (audioUrls.get(id) === "") { box.hidden = true; return; }
-    if (!audioUrls.has(id) && !audioPulling.has(id) && !audioFail.has(id)) pullAudio(id);
+    if (!audioUrls.has(id) && !audioPulling.has(id)) pullAudio(id);
     pracAudioEl = null;
     box.hidden = false;
     box.innerHTML = `<div class="pl-wait">${plWaitHTML(id)}</div>`;
@@ -6432,7 +6467,7 @@ function pracPlayer() {
    менялась ни при успехе, ни при срыве. */
 function plWaitHTML(id) {
   if (audioFail.has(id)) return `
-    <span class="pl-wait-t">Запись не приехала — ${esc(audioFail.get(id))}</span>
+    <span class="pl-wait-t">Запись не приехала — ${esc((audioFail.get(id) || {}).why || "")}</span>
     <button class="pl-retry" data-pl="retry" type="button">Повторить</button>`;
   const pct = (audioPulling.has(id) && audioPct.id === id && audioPct.v > 0)
     ? Math.round(audioPct.v * 100) : null;
@@ -9548,7 +9583,20 @@ function profilesFromKeys(keys) {
    (оно помечено truncated) — докачиваем по своей ссылке. */
 let catFiles = null, catEtag = "";
 
-async function catalogFiles(force) {
+/* Опись просят все сразу: каждая обложка, каждый звук. Пока она не приехала,
+   catFiles пуст — и каждый спросивший заводил свой запрос. Пять материалов на
+   главной означали пять полных скачиваний каталога разом, и все они мешали
+   друг другу. Теперь запрос один, а ждут его все. */
+let catFlight = null;
+
+function catalogFiles(force) {
+  if (catFiles && !force) return Promise.resolve(catFiles);
+  if (catFlight) return catFlight;
+  catFlight = catalogFetch(force).finally(() => { catFlight = null; });
+  return catFlight;
+}
+
+async function catalogFetch(force) {
   if (catFiles && !force) return catFiles;
   if (!cfg.token) return null;
   const id = await ensureCatalogGist(false);
@@ -9621,6 +9669,31 @@ async function applyTaxonomy(files) {
 
 // обложки качаем по одной и только когда материал реально показан
 const coverPulling = new Set();
+/* Очередь по одной: обложки идут не толпой, а по порядку, и первой — та,
+   что сейчас на главной. Раньше порядок задавался разметкой, то есть
+   случайностью: активная книга стоит в середине ленты и ждала своей
+   очереди наравне со всеми. */
+const coverQueue = [];
+let coverBusy = false;
+
+function coverAsk(id) {
+  if (!id || coverPulling.has(id) || coverQueue.includes(id)) return;
+  if (id === curKey()) coverQueue.unshift(id); else coverQueue.push(id);
+  coverPump();
+}
+
+async function coverPump() {
+  if (coverBusy) return;
+  coverBusy = true;
+  try {
+    while (coverQueue.length) {
+      // активная могла смениться, пока шла очередь: каждый раз выбираем заново
+      const at = Math.max(0, coverQueue.indexOf(curKey()));
+      await pullCover(coverQueue.splice(at, 1)[0]);
+    }
+  } finally { coverBusy = false; }
+}
+
 async function pullCover(id) {
   if (!cfg.token || !cfg.catalogId || coverPulling.has(id)) return;
   coverPulling.add(id);

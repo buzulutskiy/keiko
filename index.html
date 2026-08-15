@@ -315,7 +315,10 @@
 
     /* ── Общий прогресс на вкладке «Прогресс» ── */
     .sum-panel { padding-bottom: 14px; }
-    .summary { display: grid; gap: 16px; justify-items: center; }
+    /* justify-items по центру ужимал плашки по содержимому — они выходили
+       узкой колонкой посреди панели. Центрируем только кольцо. */
+    .summary { display: grid; gap: 16px; }
+    .sum-ring { justify-self: center; }
 
     .sum-ring { position: relative; width: min(210px, 62vw); }
     .sum-ring svg { width: 100%; height: auto; transform: rotate(-90deg); display: block; }
@@ -330,7 +333,15 @@
     .sum-txt b { font-size: 3rem; font-weight: 850; line-height: 1; letter-spacing: -0.04em; }
     .sum-sub { font-size: 0.8rem; color: var(--dim); }
 
-    .sum-chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; width: 100%; }
+    /* Во всю ширину и поровну: сколько бы их ни осталось, они делят строку */
+    .sum-chips { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; width: 100%; }
+    .sc i {
+      font-style: normal; font-size: 0.62rem; font-weight: 800; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .sc i.up { color: var(--gold); }
+    /* Вниз — серым: меньше прошлой недели не провинность, красить незачем */
+    .sc i.down { color: var(--dim); }
     .sc {
       background: var(--glass);
       backdrop-filter: blur(10px);
