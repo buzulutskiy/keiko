@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 145";
+const APP_VERSION = "Кэйко 146";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1474,7 +1474,7 @@ function renderInner() {
     else if (tab === "home") renderHome();
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
-    else if (tab === "diary") { if (!gutOn()) renderDays(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
+    else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
     // профиль сменили — вкладки уже нет, уводим на главную
     else if (tab === "gut") { if (gutOn()) renderGut(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
@@ -1524,10 +1524,9 @@ function renderTabbar() {
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
-    /* Дневник — личная вкладка Антона: у Дианы вместо неё «Какуля».
-       Знак солнца — с селектором текстового начертания (U+FE0E): без него
-       айфон рисует цветное эмодзи, и оно выбивается из линейного ряда. */
-    ...(gutOn() ? [] : [["diary", "☀\ufe0e", T("tabDiary")]]),
+    /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
+       написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
+       можно одной строкой. */
     ["notes", ICON("notes", "✎"), T("tabNotes")],
     /* «Достижения» с нижней панели убраны: награды и карточки знаний теперь
        видно в «Моментах», внутри той сессии, где они открылись, а полку
@@ -4748,9 +4747,9 @@ function dueChipsHTML(cur, pref) {
       <button class="wi-pick ${!cur ? "on" : ""}" data-due="" type="button">Когда-нибудь</button>
       <button class="wi-pick ${cur === todayStr() ? "on" : ""}" data-due="${todayStr()}" type="button">Сегодня</button>
       <button class="wi-pick ${cur === tomorrowStr() ? "on" : ""}" data-due="${tomorrowStr()}" type="button">Завтра</button>
-      <label class="wi-pick date ${custom ? "on" : ""}">${
+      <span class="wi-pick date ${custom ? "on" : ""}">${
         custom ? esc(fmtD.format(fromStr(cur)).replace(".", "")) : "Дата…"}<input
-        type="date" data-dueinput="1" value="${esc(custom ? cur : "")}"></label>
+        type="date" data-dueinput="1" value="${esc(custom ? cur : "")}"></span>
     </div>`;
 }
 
@@ -5322,8 +5321,8 @@ function renderWishTriage() {
       <div class="wi-due">
         <button class="wi-pick ${w.due === today ? "on" : ""}" data-wt="${today}" type="button">Сегодня</button>
         <button class="wi-pick ${w.due === tomo ? "on" : ""}" data-wt="${tomo}" type="button">Завтра</button>
-        <label class="wi-pick date">Дата…<input type="date" id="wtDate"
-          value="${esc(w.due || "")}"></label>
+        <span class="wi-pick date">Дата…<input type="date" id="wtDate"
+          value="${esc(w.due || "")}"></span>
         <button class="wi-pick ${!w.due ? "on" : ""}" data-wt="" type="button">Когда-нибудь</button>
       </div>
       <button class="btn wt-skip" id="wtSkip" type="button">Оставить как есть</button>
@@ -11529,7 +11528,7 @@ function boot() {
   load();
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
-  if (["home", "progress", "ach", "notes", "diary", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
+  if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
   applyTheme(data.shop.theme);
   if (["week", "month"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
