@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 137";
+const APP_VERSION = "Кэйко 138";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3807,11 +3807,16 @@ function summaryHTML() {
 
       <!-- Ни серии, ни числа дней: серия превращает пропуск в потерю, а дни
            уже написаны крупно в кольце — «5 из 4 дней цели». -->
-      <div class="sum-chips">
-        ${chipHTML(st.bars, was.bars, plural(st.bars, "такт", "такта", "тактов"))}
-        ${chipHTML(st.pages, was.pages, "страниц")}
-        ${chipHTML(st.lessons, was.lessons, plural(st.lessons, "урок", "урока", "уроков"))}
-      </div>
+      ${(() => {
+        /* Нулевые плашки не показываются вовсе: у Дианы нет ни тактов, ни
+           уроков — ей достаточно страниц, а нули только занимали строку. */
+        const chips = [
+          st.bars ? chipHTML(st.bars, was.bars, plural(st.bars, "такт", "такта", "тактов")) : "",
+          st.pages ? chipHTML(st.pages, was.pages, "страниц") : "",
+          st.lessons ? chipHTML(st.lessons, was.lessons, plural(st.lessons, "урок", "урока", "уроков")) : "",
+        ].filter(Boolean).join("");
+        return chips ? `<div class="sum-chips">${chips}</div>` : "";
+      })()}
 
       ${lineChartHTML(periodSeries())}
       <div class="period-hint">${esc(hint)}</div>
@@ -3846,12 +3851,7 @@ function renderProgress() {
         </div>
       </div>
       <div class="cal-grid" id="calGrid"></div>
-      <div class="cal-legend">
-        <span><i class="dot p"></i> пианино</span>
-        <span><i class="dot b"></i> чтение</span>
-        <span><i class="dot c"></i> пастель</span>
-        <span><i class="dot f"></i> пауза</span>
-      </div>
+      <div class="cal-legend" id="calLegend"></div>
     </div>
 
     <div class="panel">
@@ -3938,10 +3938,12 @@ function renderCalendar() {
   let html = DOW.map(d => `<div class="dow">${d}</div>`).join("");
   for (let i = 0; i < lead; i++) html += `<div class="day blank"></div>`;
 
+  const monthTracks = new Set();
   for (let d = 1; d <= total; d++) {
     const ds = dateStr(new Date(calYear, calMonth, d));
     const on = allEntriesOn(ds);
     const tracks = new Set(on.map(x => x.track));
+    tracks.forEach(t => monthTracks.add(t));
     let cls = "day";
     if (on.length) cls += " has";
     if (isFrozen(ds)) cls += " frozen";
@@ -3952,6 +3954,12 @@ function renderCalendar() {
     html += `<div class="${cls}" data-date="${ds}"><b>${d}</b><span class="dots-row">${dots}</span></div>`;
   }
   $("#calGrid").innerHTML = html;
+  /* Легенда — только про то, что в этом месяце правда есть. Полный список
+     на пустом месяце выглядел инструкцией, а «пауза» не объясняла ничего. */
+  const L = { piano: ["p", "пианино"], book: ["b", "чтение"], pastel: ["c", "пастель"] };
+  const leg = $("#calLegend");
+  if (leg) leg.innerHTML = [...monthTracks].filter(t => L[t])
+    .map(t => `<span><i class="dot ${L[t][0]}"></i> ${L[t][1]}</span>`).join("");
 
   document.querySelectorAll(".day[data-date]").forEach(el =>
     el.addEventListener("click", () => goToDate(el.dataset.date)));
@@ -5366,7 +5374,396 @@ function dayProgress(track, key, day) {
 const NO_MAT = "-";
 const NO_MAT_ITEM = { icon: "✎", title: "Без материала", cover: "", ratio: "" };
 
+/* ══════════ Дневник: дни ══════════
+   Личные записи живут в том же списке, что и мысли, — с пометкой diary.
+   Хранилище одно (то же слияние, те же вложения, та же «мысль дня»),
+   а читаются они отдельной лентой: за мыслью о книге не хочется видеть
+   «сегодня был дождь», и наоборот. */
+const diaryList = () => (data.thoughts || []).filter((t) => !t.deleted && t.diary);
+
+/* Подсказка дня — не «как прошёл день», а одна точная деталь: общее «всё
+   хорошо» мозг не задевает, вес переживания несёт частность. Меняется раз
+   в сутки, по кругу. */
+const DAY_HINTS = [
+  "Одна точная деталь дня — за что зацепился взгляд?",
+  "Что ты видел сегодня такого, чего никто не заметил?",
+  "Самый тихий момент дня — какой он был?",
+  "Один звук, один запах или один жест — что запомнилось?",
+  "Что сегодня случилось впервые — пусть крошечное?",
+  "Пяточка из-под одеяла: маленькое, но всё про сегодня.",
+  "Кого ты сегодня рассмотрел по-настоящему?",
+  "Один кадр на весь день — что бы ты снял?",
+  "Какое мгновение ты бы оставил себе на зиму?",
+  "Не «как прошёл день» — что в нём было живого?",
+];
+const dayHint = () => DAY_HINTS[Math.floor(fromStr(todayStr()).getTime() / 864e5) % DAY_HINTS.length];
+
+const WMO = { 0: "ясно", 1: "почти ясно", 2: "переменная облачность", 3: "пасмурно",
+  45: "туман", 48: "туман", 51: "морось", 53: "морось", 55: "морось",
+  56: "ледяная морось", 57: "ледяная морось", 61: "небольшой дождь", 63: "дождь",
+  65: "сильный дождь", 66: "ледяной дождь", 67: "ледяной дождь", 71: "лёгкий снег",
+  73: "снег", 75: "сильный снег", 77: "снежная крупа", 80: "ливень", 81: "ливень",
+  82: "сильный ливень", 85: "снегопад", 86: "снегопад", 95: "гроза", 96: "гроза с градом", 99: "гроза с градом" };
+const wmoText = (c) => WMO[c] || "";
+const tempText = (t) => (t > 0 ? "+" : "") + Math.round(t) + "°";
+
+/* Координаты спрашиваются только когда открыт дневник, и округляются до
+   четырёх знаков — этого хватает на адрес до дома, но не на слежку за
+   точкой. В гист уезжает готовый текст места, а не маршрут. */
+let geoLast = null;
+function geoNow() {
+  if (geoLast && now() - geoLast.at < 600e3) return Promise.resolve(geoLast);
+  if (!navigator.geolocation) return Promise.resolve(null);
+  return new Promise((res) => {
+    navigator.geolocation.getCurrentPosition(
+      (p) => { geoLast = { lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), at: now() }; res(geoLast); },
+      () => res(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 600e3 });
+  });
+}
+
+/* Адрес — улица и город, а не просто «Волжский»: контекст записи в том,
+   где именно ты сидел. Номенклатура ОСМ отвечает по-русски и без ключей;
+   если она молчит, спасает второй сервис — там хотя бы город. */
+async function placeOf(lat, lon) {
+  try {
+    const r = await withTimeout(fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2"
+      + "&lat=" + lat + "&lon=" + lon + "&zoom=17&accept-language=ru"), 12000);
+    const a = (await r.json()).address || {};
+    const road = a.road || a.pedestrian || a.footway || a.suburb || "";
+    const num = a.house_number || "";
+    const city = a.city || a.town || a.village || a.municipality || "";
+    const street = road ? road + (num ? ", " + num : "") : "";
+    const out = [city, street].filter(Boolean).join(" · ");
+    if (out) return out;
+  } catch {}
+  try {
+    const r = await withTimeout(fetch("https://api.bigdatacloud.net/data/reverse-geocode-client"
+      + "?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=ru"), 12000);
+    const j = await r.json();
+    return [j.city || j.locality || "", j.principalSubdivision || ""].filter(Boolean)[0] || "";
+  } catch { return ""; }
+}
+
+/* Погода за нужный час. Сегодняшняя — текущая; вчерашняя и до недели назад
+   достаётся из того же прогноза с прошедшими днями: запись, сделанная без
+   сети, дозаполнится при следующем выходе в неё. */
+async function weatherFor(rec) {
+  const base = "https://api.open-meteo.com/v1/forecast?latitude=" + rec.lat
+    + "&longitude=" + rec.lon + "&timezone=auto";
+  if (rec.date === todayStr()) {
+    const j = await (await withTimeout(fetch(base + "&current=temperature_2m,weather_code"), 12000)).json();
+    return j && j.current ? { t: j.current.temperature_2m, c: j.current.weather_code } : null;
+  }
+  const j = await (await withTimeout(fetch(base + "&past_days=7&hourly=temperature_2m,weather_code"), 15000)).json();
+  const h = new Date(rec.createdAt || fromStr(rec.date).getTime() + 12 * 3600e3);
+  const key = rec.date + "T" + String(h.getHours()).padStart(2, "0") + ":00";
+  const i = j && j.hourly ? j.hourly.time.indexOf(key) : -1;
+  return i >= 0 ? { t: j.hourly.temperature_2m[i], c: j.hourly.weather_code[i] } : null;
+}
+
+async function diaryEnrich(rec) {
+  let ch = false;
+  if (rec.lat == null && rec.date === todayStr()) {
+    const g = await geoNow();
+    if (g) { rec.lat = g.lat; rec.lon = g.lon; ch = true; }
+  }
+  if (rec.lat != null && !rec.place) {
+    const p = await placeOf(rec.lat, rec.lon);
+    if (p) { rec.place = p; ch = true; }
+  }
+  if (rec.lat != null && rec.temp == null) {
+    const w = await weatherFor(rec).catch(() => null);
+    if (w && w.t != null) { rec.temp = w.t; rec.wc = w.c; ch = true; }
+  }
+  if (ch) {
+    rec.updatedAt = now();
+    saveData(); schedulePush();
+    if (tab === "notes" && (cfg.notesView || "days") === "days" && !editingThought) renderNotes();
+  }
+}
+
+/* Дозаполнение задним числом: писал без сети — место и погода приедут при
+   следующем открытии. Дальше недели назад погоду уже не достать, а место
+   без сохранённых координат восстанавливать нечестно — пропускаем. */
+let diaryFillBusy = false;
+async function diaryFill() {
+  if (diaryFillBusy || !data) return;
+  diaryFillBusy = true;
+  try {
+    const cut = dateStr(new Date(Date.now() - 7 * 864e5));
+    for (const t of diaryList()) {
+      if (t.date < cut) continue;
+      if (t.lat == null && t.date !== todayStr()) continue;
+      if (t.lat != null && t.place && t.temp != null) continue;
+      await diaryEnrich(t);
+    }
+  } finally { diaryFillBusy = false; }
+}
+
+/* Предпросмотр «что прикрепится»: место и погода готовятся, пока пишешь,
+   и в запись ложатся мгновенно. */
+let dyPreview = null;
+async function dyPreviewLoad() {
+  const el0 = document.getElementById("dyGeo");
+  if (dyPreview && now() - dyPreview.at < 300e3) { if (el0) el0.textContent = dyPreview.text; return; }
+  const g = await geoNow();
+  if (!g) {
+    const el = document.getElementById("dyGeo");
+    if (el) el.textContent = "Место не определилось — запись будет без него";
+    return;
+  }
+  const [pl, w] = await Promise.all([
+    placeOf(g.lat, g.lon),
+    weatherFor({ lat: g.lat, lon: g.lon, date: todayStr(), createdAt: now() }).catch(() => null),
+  ]);
+  const text = "📍 " + [pl || (g.lat + ", " + g.lon),
+    w && w.t != null ? tempText(w.t) + (wmoText(w.c) ? ", " + wmoText(w.c) : "") : ""].filter(Boolean).join(" · ");
+  dyPreview = { text, at: now(), lat: g.lat, lon: g.lon, place: pl, w };
+  const el = document.getElementById("dyGeo");
+  if (el) el.textContent = text;
+}
+
+function diaryAdd(text) {
+  const rec = {
+    id: uid(), diary: true, key: "", track: "",
+    text: (text || "").slice(0, 4000), date: todayStr(),
+    createdAt: now(), updatedAt: now(),
+  };
+  if (pendingMedia) {
+    rec.mediaId = pendingMedia.id; rec.mediaKind = pendingMedia.kind;
+    const mid = pendingMedia.id, mblob = pendingMedia.blob;
+    takeSave(mid, mblob)
+      .then(() => { if (tab === "notes") renderNotes(); return takePush(mid, mblob); })
+      .catch((e) => { if (noRoom(e)) toast("Не хватило места — вложение не сохранилось"); });
+    pendingMedia = null;
+  }
+  if (dyPreview && now() - dyPreview.at < 600e3) {
+    rec.lat = dyPreview.lat; rec.lon = dyPreview.lon;
+    if (dyPreview.place) rec.place = dyPreview.place;
+    if (dyPreview.w && dyPreview.w.t != null) { rec.temp = dyPreview.w.t; rec.wc = dyPreview.w.c; }
+  }
+  data.thoughts = data.thoughts || [];
+  data.thoughts.push(rec);
+  saveData(); schedulePush();
+  renderNotes();
+  toast("День записан");
+  diaryEnrich(rec);
+}
+
+function dnSegHTML(atv) {
+  return `
+    <div class="seg" id="dnSeg">
+      <button data-dn="days" class="${atv === "days" ? "on" : ""}" type="button">Дни</button>
+      <button data-dn="mind" class="${atv === "mind" ? "on" : ""}" type="button">Мысли</button>
+    </div>`;
+}
+function bindDnSeg() {
+  document.querySelectorAll("#dnSeg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      cfg.notesView = b.dataset.dn; saveCfg();
+      editingThought = null; pendingMedia = null;
+      renderNotes();
+    }));
+}
+
+let diaryCalShift = 0;   // на сколько месяцев назад смотрит календарь дневника
+
+function diaryCalHTML(list) {
+  const t0 = new Date();
+  const m = new Date(t0.getFullYear(), t0.getMonth() + diaryCalShift, 1);
+  const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+  const pad = (m.getDay() + 6) % 7;
+  const by = {};
+  for (const g of list) if (g.date) by[g.date] = (by[g.date] || 0) + 1;
+  const monthKey = dateStr(m).slice(0, 7);
+  const filled = Object.keys(by).filter((d) => d.startsWith(monthKey)).length;
+  const cells = Array.from({ length: pad }, () => `<i class="gc-pad"></i>`).concat(
+    Array.from({ length: days }, (_, i) => {
+      const ds = dateStr(new Date(m.getFullYear(), m.getMonth(), i + 1));
+      const n = by[ds] || 0;
+      return `<i class="gc-day${n ? " on" : ""}${ds > todayStr() ? " fut" : ""}${ds === todayStr() ? " now" : ""}"
+        style="${n ? `--k:${Math.min(1, 0.35 + n * 0.3)}` : ""}">${i + 1}</i>`;
+    })).join("");
+  return `
+    <div class="panel">
+      <div class="cal-head">
+        <div class="cal-title">${esc(new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" }).format(m).replace(" г.", ""))}</div>
+        <div class="cal-nav">
+          <button data-dycal="-1" type="button">‹</button>
+          <button data-dycal="1" type="button" ${diaryCalShift >= 0 ? "disabled" : ""}>›</button>
+        </div>
+      </div>
+      <div class="gut-cal">
+        ${["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((d) => `<i class="gc-h">${d}</i>`).join("")}
+        ${cells}
+      </div>
+      <div class="empty-note">${filled
+        ? `Записано ${filled} ${plural(filled, "день", "дня", "дней")} — пустые клетки и есть пропуски.`
+        : "В этом месяце записей не было."}</div>
+    </div>`;
+}
+
+function renderDays() {
+  const list = diaryList().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const dfmt = new Intl.DateTimeFormat("ru", { weekday: "long", day: "numeric", month: "long" });
+  const nowYear = new Date().getFullYear();
+  const dayName = (ds) => {
+    if (ds === todayStr()) return "Сегодня";
+    const d = fromStr(ds);
+    return dfmt.format(d) + (d.getFullYear() !== nowYear ? " " + d.getFullYear() : "");
+  };
+  const metaOf = (t) => [t.place || "",
+    t.temp != null ? tempText(t.temp) + (wmoText(t.wc) ? ", " + wmoText(t.wc) : "") : ""]
+    .filter(Boolean).join(" · ");
+
+  let feed = "", lastD = "";
+  if (!cfg.diaryCal) feed = list.map((t) => {
+    const head = t.date !== lastD ? `<div class="lib-group">${esc(dayName(t.date))}</div>` : "";
+    lastD = t.date;
+    const card = t.id === editingThought ? `
+      <article class="post thought editing">
+        <textarea class="note-input th-text" id="thEdit" rows="4">${esc(t.text)}</textarea>
+        <div class="th-edit-row">
+          <button class="btn gold" data-dysave="${t.id}" type="button">Сохранить</button>
+          <button class="btn" data-dycancel="1" type="button">Отмена</button>
+        </div>
+      </article>` : `
+      <article class="post thought">
+        <div class="th-head">
+          <span class="th-when">${clock.format(new Date(t.createdAt || fromStr(t.date)))}${t.editedAt ? " · изменено" : ""}</span>
+          <span class="th-acts">
+            <button class="th-act" data-copy="${t.id}" type="button" aria-label="Скопировать">⧉</button>
+            <button class="th-act like ${t.liked ? "on" : ""}" data-dylike="${t.id}" type="button"
+              aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
+            <button class="th-act" data-dyedit="${t.id}" type="button" aria-label="Изменить">✎</button>
+            <button class="th-act" data-dydrop="${t.id}" type="button" aria-label="Удалить">✕</button>
+          </span>
+        </div>
+        ${metaOf(t) ? `<div class="dy-meta">${esc(metaOf(t))}</div>` : ""}
+        ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
+        ${mediaHTML(t)}
+      </article>`;
+    return head + card;
+  }).join("");
+
+  $("#view").innerHTML = `
+    ${dnSegHTML("days")}
+    <div class="panel th-panel">
+      <textarea class="note-input th-text" id="dyText" rows="3" placeholder="${esc(dayHint())}"></textarea>
+      <div class="dy-geo" id="dyGeo">📍 определяю место и погоду…</div>
+      <div class="th-row">
+        <span class="dy-note">Хватит одной точной детали.</span>
+        <span class="th-attach">
+          ${canRecord() ? `<button class="th-clip" id="dyMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
+          <button class="th-clip" id="dyCam" type="button" aria-label="Приложить снимок">📷</button>
+        </span>
+      </div>
+      <button class="btn gold th-send" id="dySave" type="button">Записать день</button>
+      ${pendingMedia ? `
+        <div class="th-pending">
+          ${pendingMedia.kind === "photo"
+            ? `<img src="${esc(pendingMedia.url)}" alt="">`
+            : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
+          <button class="th-drop" id="dyDrop" type="button" aria-label="Убрать вложение">✕</button>
+        </div>` : ""}
+    </div>
+
+    <div class="seg" id="dyMode">
+      <button data-dymode="feed" class="${!cfg.diaryCal ? "on" : ""}" type="button">Лента</button>
+      <button data-dymode="cal" class="${cfg.diaryCal ? "on" : ""}" type="button">Календарь</button>
+    </div>
+
+    ${cfg.diaryCal
+      ? diaryCalHTML(list)
+      : (feed || `<div class="empty-note">Первый день можно записать прямо сейчас.<br>Дата, место и погода прикрепятся сами.</div>`)}`;
+
+  bindDnSeg();
+  dyPreviewLoad();
+
+  document.querySelectorAll("[data-dymode]").forEach((b) =>
+    b.addEventListener("click", () => { cfg.diaryCal = b.dataset.dymode === "cal"; saveCfg(); renderNotes(); }));
+  document.querySelectorAll("[data-dycal]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const next = diaryCalShift + Number(b.dataset.dycal);
+      if (next > 0) return;
+      diaryCalShift = next; renderNotes();
+    }));
+
+  const area = $("#dyText");
+  bindPasteCleanup(area);
+  $("#dySave").addEventListener("click", () => {
+    const text = fixHyphenBreaks(area.value || "").trim();
+    if (!text && !pendingMedia) { toast("Хватит одной точной детали — но хоть какой-нибудь"); return; }
+    diaryAdd(text);
+  });
+  const mic = $("#dyMic");
+  if (mic) mic.addEventListener("click", () => openTakeSheet(true, (blob, ms) => {
+    pendingMedia = { id: uid(), kind: "audio", blob, ms, url: URL.createObjectURL(blob) };
+    renderNotes();
+  }));
+  const cam = $("#dyCam");
+  if (cam) cam.addEventListener("click", async () => {
+    const f = await pickPhoto();
+    if (!f) return;
+    try {
+      const blob = await shrinkPhoto(f);
+      pendingMedia = { id: uid(), kind: "photo", blob, ms: 0, url: URL.createObjectURL(blob) };
+      renderNotes();
+    } catch { toast("Не получилось прочитать снимок"); }
+  });
+  const dr = $("#dyDrop");
+  if (dr) dr.addEventListener("click", () => { pendingMedia = null; renderNotes(); });
+
+  document.querySelectorAll("[data-copy]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find((x) => x.id === b.dataset.copy);
+      if (t) copyText(t.text || "");
+    }));
+  document.querySelectorAll("[data-dylike]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find((x) => x.id === b.dataset.dylike);
+      if (!t) return;
+      t.liked = !t.liked; t.updatedAt = now();
+      saveData(); schedulePush(); renderNotes();
+    }));
+  document.querySelectorAll("[data-dyedit]").forEach((b) =>
+    b.addEventListener("click", () => {
+      editingThought = b.dataset.dyedit; renderNotes();
+      const ed = $("#thEdit");
+      if (ed) setTimeout(() => { ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); }, 60);
+    }));
+  document.querySelectorAll("[data-dycancel]").forEach((b) =>
+    b.addEventListener("click", () => { editingThought = null; renderNotes(); }));
+  document.querySelectorAll("[data-dysave]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find((x) => x.id === b.dataset.dysave);
+      const ed = $("#thEdit");
+      if (!t || !ed) return;
+      t.text = fixHyphenBreaks(ed.value || "").trim().slice(0, 4000);
+      t.editedAt = now(); t.updatedAt = now();
+      editingThought = null;
+      saveData(); schedulePush(); renderNotes();
+      toast("Изменено");
+    }));
+  document.querySelectorAll("[data-dydrop]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (!confirm("Удалить эту запись дня?")) return;
+      const t = (data.thoughts || []).find((x) => x.id === b.dataset.dydrop);
+      if (!t) return;
+      t.deleted = true; t.updatedAt = now();
+      if (t.mediaId) takeDrop(t.mediaId);
+      saveData(); schedulePush(); renderNotes();
+    }));
+  document.querySelectorAll("[data-shot-src]").forEach((el) => {
+    el.dataset.bound = "1";
+    el.addEventListener("click", () => openShotFull(el.dataset.shotSrc, el.dataset.shotWhen));
+  });
+}
+
 function renderNotes() {
+  if ((cfg.notesView || "days") === "days") { renderDays(); return; }
   /* У событий, записанных до появления поля, метки награды нет — достаём
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
   const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
@@ -5416,7 +5813,7 @@ function renderNotes() {
     : (mats.some(m => keyOf(m) === currentKey()) ? currentKey() : NO_MAT);
   const cur = key === NO_MAT ? NO_MAT_ITEM : (mats.find(m => keyOf(m) === key) || mats[0] || NO_MAT_ITEM);
 
-  const all = thoughts().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const all = thoughts().filter((t) => !t.diary).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const liked = all.filter(t => t.liked);
   if (notesFilter === "liked" && !liked.length) notesFilter = "all";
   let list = notesFilter === "liked" ? liked : all;
@@ -5457,6 +5854,7 @@ function renderNotes() {
   };
 
   $("#view").innerHTML = `
+    ${dnSegHTML("mind")}
     <div class="panel th-panel">
       <textarea class="note-input th-text" id="thText" rows="3" placeholder="Что подумалось? Можно приложить запись или снимок"></textarea>
       <div class="th-row">
@@ -5500,6 +5898,7 @@ function renderNotes() {
             ${sourceHTML(t)}
             <span class="th-when">${esc(when(t))}${t.editedAt ? " · изменено" : ""}</span>
             <span class="th-acts">
+              <button class="th-act" data-copy="${t.id}" type="button" aria-label="Скопировать">⧉</button>
               ${t.event ? "" : `
               <button class="th-act like ${t.liked ? "on" : ""}" data-like="${t.id}" type="button"
                 aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
@@ -5569,6 +5968,7 @@ function renderNotes() {
     setTimeout(() => area.focus(), 60);
   }
 
+  bindDnSeg();
   $("#thMat").addEventListener("change", (e) => {
     cfg.thoughtKey = e.target.value; saveCfg();
     const text = area.value;
@@ -5663,6 +6063,11 @@ function renderNotes() {
       toast("Изменено");
     }));
 
+  document.querySelectorAll("[data-copy]").forEach(b =>
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find(x => x.id === b.dataset.copy);
+      if (t) copyText(textOf(t) || t.text || "");
+    }));
   document.querySelectorAll("[data-th]").forEach(b =>
     b.addEventListener("click", () => {
       if (!confirm("Удалить эту мысль?")) return;
@@ -5706,7 +6111,11 @@ function saveDaily(st) {
 
 function maybeDailyThought() {
   const st = dailyState();
-  if (st.off || st.date === todayStr()) return;
+  /* Два показа в день, а не один: открыл утром — приехала мысль из книги,
+     открыл вечером — день из дневника. Или наоборот: пул общий, выбор
+     случайный. Записи без n — со времён одного показа, считаем их одним. */
+  const shown = st.date === todayStr() ? (st.n != null ? st.n : 1) : 0;
+  if (st.off || shown >= 2) return;
   if (!data || !data.thoughts) return;
   if ($("#cheer")?.classList.contains("show")) return;   // не перебиваем награды
   if ($("#sheet")?.classList.contains("show")) return;
@@ -5728,18 +6137,19 @@ function maybeDailyThought() {
   }
 
   const pick = pool[Math.floor(Math.random() * pool.length)];
-  saveDaily({ ...st, date: todayStr(), seen: [...fresh, pick.id].slice(-2000) });
+  saveDaily({ ...st, date: todayStr(), n: shown + 1, seen: [...fresh, pick.id].slice(-2000) });
   showDailyThought(pick);
 }
 
 function showDailyThought(t) {
+  const dayMeta = t.diary ? [t.place || "", t.temp != null ? tempText(t.temp) : ""].filter(Boolean).join(" · ") : "";
   const mats = achMaterials();
   const m = t.key ? mats.find(x => keyOf(x) === t.key) : null;
   const a = t.key ? (data.archive || []).find(x => x.id === t.key) : null;
   const src = m || a || null;
   // мысль сама по себе — подписываем так же, как в ленте, а не «Архивом»
-  const icon = src ? (src.icon || "📖") : (t.key ? "📎" : NO_MAT_ITEM.icon);
-  const title = src ? src.title : (t.key ? "Архив" : NO_MAT_ITEM.title);
+  const icon = t.diary ? "🗓" : src ? (src.icon || "📖") : (t.key ? "📎" : NO_MAT_ITEM.icon);
+  const title = t.diary ? "Дневник" : src ? src.title : (t.key ? "Архив" : NO_MAT_ITEM.title);
   const cover = src && src.cover ? src.cover : "";
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
 
@@ -5749,7 +6159,7 @@ function showDailyThought(t) {
   $("#cheerText").innerHTML = `
     <span class="dt-src">
       <span class="th-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<i>${icon}</i>`}</span>
-      <span class="dt-src-txt"><b>${esc(title)}</b><em>${esc(fmt.format(fromStr(t.date)))}</em></span>
+      <span class="dt-src-txt"><b>${esc(title)}</b><em>${esc(fmt.format(fromStr(t.date)))}${dayMeta ? " · " + esc(dayMeta) : ""}</em></span>
     </span>
     <span class="dt-text">${esc(t.text)}</span>
     <button class="th-link dt-like ${t.liked ? "on" : ""}" id="dtLike" type="button">${t.liked ? "♥ В любимых" : "♡ Нравится"}</button>`;
@@ -8595,7 +9005,7 @@ const THEMES = [
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Моменты", tabWish: "Захотелось",
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Дневник", tabWish: "Захотелось",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
@@ -10812,7 +11222,7 @@ async function syncNow(manual) {
         const seen = [...(mine.seen || [])];
         const было = new Set(seen);
         for (const id of (theirs.seen || [])) if (!было.has(id)) { было.add(id); seen.push(id); }
-        data.daily = { date: newer.date || "", off: !!newer.off, seen: seen.slice(-2000) };
+        data.daily = { date: newer.date || "", off: !!newer.off, n: newer.n || 0, seen: seen.slice(-2000) };
       }
       normalizeActive();
       saveData();
@@ -10985,6 +11395,7 @@ function boot() {
   render();
   coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
   takeLoadAll().then(takesSweep);     // записи собственной игры, потом уборка сирот
+  setTimeout(diaryFill, 3500);        // место и погода для записей, сделанных без сети
   audioLoadAll().then(() => {
     audioSync();
     // не ждём касания, чтобы начать качать: к моменту жеста звук уже готов
