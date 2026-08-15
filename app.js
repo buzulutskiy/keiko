@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 141";
+const APP_VERSION = "Кэйко 142";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5588,24 +5588,19 @@ const spot = (t) => {
 let dyEditing = null;   // что правим (null — новая запись дня)
 let dyDraft = "";       // закрыл лист не сохранив — черновик ждёт возвращения
 
+/* Дата живёт в шапке листа; здесь — только место и погода, простым тихим
+   текстом без плашек: это фон записи, а не кнопки. */
 function deTagsHTML(rec) {
-  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
   const bits = [];
   if (rec) {
-    bits.push(fmtDay(rec.date) + ", " + clock.format(new Date(rec.createdAt || fromStr(rec.date))));
-    if (rec.diary) {
-      if (rec.place) bits.push("📍 " + rec.place);
-      if (rec.temp != null) bits.push(tempText(rec.temp) + (wmoText(rec.wc) ? ", " + wmoText(rec.wc) : ""));
-    }
-  } else {
-    bits.push("Сегодня, " + clock.format(new Date()));
-    if (dyPreview) {
-      if (dyPreview.place) bits.push("📍 " + dyPreview.place);
-      if (dyPreview.w && dyPreview.w.t != null)
-        bits.push(tempText(dyPreview.w.t) + (wmoText(dyPreview.w.c) ? ", " + wmoText(dyPreview.w.c) : ""));
-    } else bits.push("📍 …");
-  }
-  return bits.map((x) => `<span class="de-tag">${esc(x)}</span>`).join("");
+    if (rec.diary && rec.place) bits.push("📍 " + rec.place);
+    if (rec.diary && rec.temp != null) bits.push(tempText(rec.temp) + (wmoText(rec.wc) ? ", " + wmoText(rec.wc) : ""));
+  } else if (dyPreview) {
+    if (dyPreview.place) bits.push("📍 " + dyPreview.place);
+    if (dyPreview.w && dyPreview.w.t != null)
+      bits.push(tempText(dyPreview.w.t) + (wmoText(dyPreview.w.c) ? ", " + wmoText(dyPreview.w.c) : ""));
+  } else bits.push("📍 …");
+  return esc(bits.join("  ·  "));
 }
 
 function openDayEditor(rec) {
@@ -5613,14 +5608,23 @@ function openDayEditor(rec) {
   const was = document.getElementById("dyEd");
   if (was) was.remove();
   const isNew = !rec;
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const dayTitle = rec
+    ? fmtDay(rec.date) + ", " + clock.format(new Date(rec.createdAt || fromStr(rec.date)))
+    : "Сегодня, " + clock.format(new Date());
   const box = document.createElement("div");
   box.id = "dyEd";
   box.innerHTML = `
-    <div class="de-top">
+    <div class="de-nav">
       <button class="de-close" id="deClose" type="button" aria-label="Закрыть">✕</button>
-      <div class="de-tags" id="deTags">${deTagsHTML(rec)}</div>
+      <span class="de-day">${esc(dayTitle)}</span>
+      <span class="de-side">
+        ${isNew && canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
+        ${isNew ? `<button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
+        <button class="de-ok" id="deSave" type="button" aria-label="${isNew ? "Добавить" : "Сохранить"}">✓</button>
+      </span>
     </div>
-    <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>
+    <div class="de-tags" id="deTags">${deTagsHTML(rec)}</div>
     ${isNew && pendingMedia ? `
       <div class="th-pending de-pending">
         ${pendingMedia.kind === "photo"
@@ -5628,19 +5632,20 @@ function openDayEditor(rec) {
           : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
         <button class="th-drop" id="deDrop" type="button" aria-label="Убрать вложение">✕</button>
       </div>` : ""}
-    <div class="de-bot">
-      ${isNew && canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
-      ${isNew ? `<button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
-      <span class="de-sp"></span>
-      <button class="de-ok" id="deSave" type="button" aria-label="${isNew ? "Добавить" : "Сохранить"}">✓</button>
-    </div>`;
+    <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>`;
   document.body.appendChild(box);
+  /* Позади листа живёт прокручиваемая страница, и айфон тянул её резинкой
+     сквозь лист. Всё, что не текст, прокрутку не получает. */
+  box.addEventListener("touchmove", (e) => {
+    if (!e.target.closest(".de-area")) e.preventDefault();
+  }, { passive: false });
 
   /* Панель с галочкой ездит вместе с клавиатурой: лист ужимается до видимой
      части окна, и низ листа оказывается ровно над клавиатурой. Без этого
      кнопки уезжали под неё, и лист выглядел глухим. */
   const vv = window.visualViewport;
   const fit = vv ? () => {
+    // лист ровно в видимой части окна: клавиатура снизу его поджимает
     box.style.height = vv.height + "px";
     box.style.top = vv.offsetTop + "px";
   } : null;
