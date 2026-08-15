@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 135";
+const APP_VERSION = "Кэйко 136";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1712,6 +1712,7 @@ async function readWithProgress(res, id, report) {
    оставалась строка «Запись загружается…», и было не понять, идёт дело
    или встало. */
 const audioFail = new Map();
+let audioRecheck = false;   // опись уже переспрашивали ради пропавшего звука
 
 async function pullAudio(id, force) {
   if (!cfg.token || !cfg.catalogId || audioPulling.has(id) || audioUrls.has(id)) return;
@@ -1724,10 +1725,18 @@ async function pullAudio(id, force) {
   audioFail.delete(id);
   audioProgress(id, 0);
   try {
-    const files = await catalogFiles(false);
+    let files = await catalogFiles(false);
     if (!files) throw new Error("каталог недоступен");
-    const f = files[CAT_AUDIO_FILE(id)];
-    if (!f) { audioUrls.set(id, ""); return; }        // звука у материала нет — больше не спрашиваем
+    let f = files[CAT_AUDIO_FILE(id)];
+    /* Описи бывает столько же лет, сколько сессии: звук, добавленный после её
+       чтения, в ней отсутствует, и материал навсегда помечался «без звука».
+       Один раз за сессию переспрашиваем опись заново. */
+    if (!f && !audioRecheck) {
+      audioRecheck = true;
+      files = await catalogFiles(true);
+      f = files && files[CAT_AUDIO_FILE(id)];
+    }
+    if (!f) { audioUrls.set(id, ""); return; }        // звука у материала правда нет
     let txt = f.content;
     if (f.truncated && f.raw_url) {
       // большое качаем отдельно и с полосой: слушателю видно, сколько осталось
@@ -9607,7 +9616,10 @@ async function catalogFetch(force) {
   const id = await ensureCatalogGist(false);
   if (!id) return null;
   const cond = catEtag && catFiles ? { headers: { "If-None-Match": catEtag } } : {};
-  const r = await gh("/gists/" + id, cond);
+  /* Опись каталога тяжёлая: обложки лежат в ней содержимым. На мобильной сети
+     двенадцати секунд не хватало, запрос срывался по таймауту — и звук с
+     обложками «то грузится, то нет» ровно по погоде на канале. */
+  const r = await gh("/gists/" + id, cond, 45000);
   if (r.status === 304) return catFiles;
   if (!r.ok) return catFiles;                       // связи нет — работаем тем, что было
   const files = (await r.json()).files || {};
@@ -9617,7 +9629,7 @@ async function catalogFetch(force) {
     catFiles = null; catEtag = "";
     const again = await ensureCatalogGist(false);
     if (!again) return null;
-    const r2 = await gh("/gists/" + again);
+    const r2 = await gh("/gists/" + again, {}, 45000);
     if (!r2.ok) return null;
     catEtag = r2.headers.get("etag") || "";
     catFiles = (await r2.json()).files || {};
@@ -10596,13 +10608,13 @@ function renderSettingsSection(id) {
 
 function setSyncDot(state) { $("#syncDot").className = "sync-dot" + (state ? " " + state : ""); }
 
-function gh(path, opts = {}) {
+function gh(path, opts = {}, ms = 12000) {
   // свои заголовки добавляем к обязательным, а не вместо них
   const headers = Object.assign(
     { "Authorization": "Bearer " + cfg.token, "Accept": "application/vnd.github+json" },
     opts.headers || {});
   return withTimeout(fetch("https://api.github.com" + path,
-    Object.assign({}, opts, { headers })), 12000);
+    Object.assign({}, opts, { headers })), ms);
 }
 
 // без потолка по времени запрос в самолёте висит до системного таймаута — и всё приложение ждёт
@@ -10663,22 +10675,41 @@ function mergeLists(local, remote) {
    всеми мыслями, — хотя чаще всего там ничего не менялось. */
 let gistEtag = "", gistBox = null;
 
+// короткий отпечаток строки: сравнить «то же ли это», не храня саму строку
+const strHash = (s) => {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36) + ":" + s.length;
+};
+
 async function syncNow(manual) {
   if (!cfg.token || !cfg.gistId || syncing) { if (manual && !cfg.token) openSettingsSheet(); return; }
   if (!navigator.onLine) { online = false; setSyncDot("off"); renderBanner(); return; }
   syncing = true; setSyncDot("busy");
   const stampBefore = dataStamp();
   try {
-    const cond = gistEtag && gistBox ? { headers: { "If-None-Match": gistEtag } } : {};
+    /* Метка сверки живёт и в настройках, а не только в памяти: без этого
+       каждый перезапуск начинался с полного скачивания гиста — оранжевая
+       точка мигала подолгу на ровном месте. Теперь холодный старт спрашивает
+       «а изменилось ли», и чаще всего получает пустое 304. */
+    const condTag = gistEtag || cfg.gistEtag || "";
+    const cond = condTag ? { headers: { "If-None-Match": condTag } } : {};
     const r = await gh("/gists/" + cfg.gistId, cond);
     if (r.status !== 304 && !r.ok) throw new Error("Ошибка сети (" + r.status + ")");
 
-    let mine, remote, fresh = r.status !== 304 || !gistBox;
-    if (!fresh) {
+    /* cold: 304 при пустой памяти — гист не менялся с прошлой синхронизации,
+       но слепка в памяти нет (перезапуск). Скачивать нечего: на прошлой
+       сверке всё удалённое уже слито в местное. Осталось понять одно —
+       менялось ли местное с тех пор; это решает сохранённый отпечаток. */
+    let mine, remote, cold = false;
+    if (r.status === 304 && gistBox) {
       /* Ничего не изменилось — берём то, что уже разобрали. Сливать заново
          нечего: удалённая сторона ровно та же, что в прошлый раз. */
       mine = gistBox;
       remote = null;
+    } else if (r.status === 304) {
+      cold = true; mine = null; remote = null;
+      gistEtag = condTag;
     } else {
       const g = await r.json();
       gistEtag = r.headers.get("etag") || "";
@@ -10787,7 +10818,11 @@ async function syncNow(manual) {
     // сравниваем профиль целиком: раньше смотрели только занятия, и новые мысли,
     // книги на полке, паузы или цель могли навсегда остаться на одном устройстве
     const norm = (o) => JSON.stringify(migrate(o));
-    const changed = norm(mine) !== norm(exportData());
+    const myNorm = norm(exportData());
+    /* На холодном 304 сравнивать не с чем — сравниваем с отпечатком того, что
+       ушло в гист в прошлый раз. Совпал — не изменилось ничего нигде, и вся
+       сверка обошлась одним пустым запросом. */
+    const changed = cold ? strHash(myNorm) !== cfg.syncNorm : norm(mine) !== myNorm;
     if (changed) {
       // отправляем один файл — свой; чужие в гисте PATCH не трогает
       const payload = JSON.stringify(exportData());
@@ -10807,7 +10842,10 @@ async function syncNow(manual) {
       gistBox = JSON.parse(payload);
       mine = gistBox;
     }
-    cfg.lastSync = now(); saveCfg(); setSyncDot("ok");
+    cfg.lastSync = now();
+    cfg.gistEtag = gistEtag;
+    cfg.syncNorm = strHash(norm(exportData()));
+    saveCfg(); setSyncDot("ok");
     // снимок в архив кладём в прежней форме: восстановление читает её же
     maybeArchive({ v: 9, savedAt: now(), profiles: { [profileId]: mine || exportData() } });
     catalogPull(false).catch(() => {});  // каталог сверяем не чаще раза в сутки
