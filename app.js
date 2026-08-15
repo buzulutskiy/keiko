@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 136";
+const APP_VERSION = "Кэйко 137";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1738,9 +1738,12 @@ async function pullAudio(id, force) {
     }
     if (!f) { audioUrls.set(id, ""); return; }        // звука у материала правда нет
     let txt = f.content;
-    if (f.truncated && f.raw_url) {
-      // большое качаем отдельно и с полосой: слушателю видно, сколько осталось
-      const res = await withTimeout(fetch(f.raw_url), 90000);
+    if ((f.truncated || !txt) && f.raw_url) {
+      /* Большое качаем отдельно и с полосой. Гист отдаёт raw неторопливо —
+         мегабайт на хорошей сети идёт секунд пять, на мобильной кратно
+         дольше, и девяноста секунд файлам в пару мегабайт не хватало: загрузка
+         срывалась у самого конца, а звук выглядел «то есть, то нет». */
+      const res = await withTimeout(fetch(f.raw_url), 300000);
       txt = await readWithProgress(res, id);
     }
     txt = String(txt || "").trim();
