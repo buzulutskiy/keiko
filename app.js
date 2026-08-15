@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 146";
+const APP_VERSION = "Кэйко 147";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4757,7 +4757,20 @@ function bindDueChips(box, get, set) {
   box.querySelectorAll("[data-due]").forEach((b) =>
     b.addEventListener("click", () => { set(b.dataset.due); }));
   const inp = box.querySelector("[data-dueinput]");
-  if (inp) inp.addEventListener("change", () => { if (inp.value) set(inp.value); });
+  if (!inp) return;
+  /* Выбор применяется по закрытию календаря, а не по change: айфон шлёт
+     change в момент открытия колеса — и перерисовка по нему убивала ввод
+     вместе с только что открытым календарём. Пока колесо крутится, меняется
+     только подпись на чипе. */
+  let picked = "";
+  inp.addEventListener("change", () => {
+    picked = inp.value || "";
+    const chip = inp.closest(".wi-pick");
+    if (picked && chip) chip.childNodes[0].nodeValue =
+      new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" })
+        .format(fromStr(picked)).replace(".", "");
+  });
+  inp.addEventListener("blur", () => { if (picked) set(picked); });
 }
 
 function wishToggle(id) {
@@ -5338,7 +5351,9 @@ function renderWishTriage() {
   document.querySelectorAll("[data-wt]").forEach((b) =>
     b.addEventListener("click", () => setDue(b.dataset.wt)));
   const inp = $("#wtDate");
-  inp.addEventListener("change", () => { if (inp.value) setDue(inp.value); });
+  let picked = "";
+  inp.addEventListener("change", () => { picked = inp.value || ""; });
+  inp.addEventListener("blur", () => { if (picked) setDue(picked); });
   $("#wtSkip").addEventListener("click", next);
   $("#wtClose").addEventListener("click", () => { wishTriage = null; renderWishes(); });
 }
@@ -5420,13 +5435,14 @@ function renderWishes() {
       <button class="btn gold th-send" id="wiSave" type="button">Записать</button>
     </div>
 
-    <div class="seg" id="wishSeg">
-      <button data-wf="open" class="${wishFilter === "open" ? "on" : ""}" type="button">Хочется ${openN || ""}</button>
-      <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
+    <div class="wish-top">
+      <div class="seg" id="wishSeg">
+        <button data-wf="open" class="${wishFilter === "open" ? "on" : ""}" type="button">Хочется ${openN || ""}</button>
+        <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
+      </div>
+      ${wishFilter === "open" && openN > 1 ? `
+        <button class="wi-sort-ic" id="wiSort" type="button" aria-label="Раскидать по датам" title="Раскидать по датам">⇅</button>` : ""}
     </div>
-
-    ${wishFilter === "open" && openN > 1 ? `
-      <button class="wi-sort" id="wiSort" type="button">⇅ Раскидать по датам</button>` : ""}
 
     ${body}`;
 

@@ -2018,11 +2018,13 @@
     }
     .wi-due .wi-pick span { display: inline; }
     .wi-when.late { color: var(--gold-2); }
-    .wi-sort {
-      display: block; width: 100%; text-align: center; margin-bottom: 12px;
-      padding: 10px 14px; border-radius: 14px;
-      background: var(--glass); border: 1px dashed var(--glass-line);
-      color: var(--muted); font-size: 0.8rem;
+    /* Раскладка — маленькая иконка рядом с сегментом, а не широкая кнопка */
+    .wish-top { display: flex; gap: 8px; align-items: stretch; }
+    .wish-top .seg { flex: 1; }
+    .wi-sort-ic {
+      flex: none; width: 46px; border-radius: 14px;
+      background: var(--glass); border: 1px solid var(--glass-line);
+      color: var(--muted); font-size: 1.05rem;
     }
     .wt-card { display: grid; gap: 8px; }
     .wt-head { display: flex; align-items: center; justify-content: space-between;
