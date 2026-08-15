@@ -3141,7 +3141,7 @@
     /* Полноэкранная запись: ничего, кроме текста. Ниже шторки (90) —
        микрофонная шторка должна открываться поверх листа. */
     #dyEd {
-      position: fixed; inset: 0; z-index: 80;
+      position: fixed; left: 0; right: 0; top: 0; height: 100%; z-index: 80;
       display: flex; flex-direction: column;
       background: var(--bg);
     }
@@ -3163,8 +3163,17 @@
     }
     .de-area::placeholder { color: var(--dim); }
     .de-pending { margin: 0 18px 8px; }
-    .de-bot { display: flex; gap: 8px; align-items: center; padding: 8px 16px calc(var(--safe-b) + 12px); }
-    .de-save { flex: 1; margin: 0; }
+    .de-bot {
+      display: flex; gap: 10px; align-items: center;
+      padding: 8px 14px calc(var(--safe-b) + 10px);
+      border-top: 1px solid var(--glass-line); background: var(--bg);
+    }
+    .de-sp { flex: 1; }
+    .de-ok {
+      width: 46px; height: 46px; flex: none; border-radius: 50%;
+      background: linear-gradient(120deg, var(--gold), var(--gold-2));
+      color: #241a05; font-size: 1.25rem; font-weight: 900; line-height: 1;
+    }
 
     .ga-none { padding: 12px; border-radius: 14px; background: var(--glass);
       border: 1px solid var(--glass-line); font-size: 0.74rem; color: var(--dim); text-align: center; }

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 140";
+const APP_VERSION = "Кэйко 141";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1524,11 +1524,11 @@ function renderTabbar() {
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
-    ["notes", ICON("notes", "✎"), T("tabNotes")],
-    /* Дневник — личная вкладка Антона: у Дианы вместо неё «Какуля». */
-    /* Знак солнца — с селектором текстового начертания (U+FE0E): без него
+    /* Дневник — личная вкладка Антона: у Дианы вместо неё «Какуля».
+       Знак солнца — с селектором текстового начертания (U+FE0E): без него
        айфон рисует цветное эмодзи, и оно выбивается из линейного ряда. */
     ...(gutOn() ? [] : [["diary", "☀\ufe0e", T("tabDiary")]]),
+    ["notes", ICON("notes", "✎"), T("tabNotes")],
     /* «Достижения» с нижней панели убраны: награды и карточки знаний теперь
        видно в «Моментах», внутри той сессии, где они открылись, а полку
        и карту знаний перенесли в Библиотеку. Экран остался — просто без
@@ -5631,27 +5631,45 @@ function openDayEditor(rec) {
     <div class="de-bot">
       ${isNew && canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
       ${isNew ? `<button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
-      <button class="btn gold de-save" id="deSave" type="button">${isNew ? "Добавить" : "Сохранить"}</button>
+      <span class="de-sp"></span>
+      <button class="de-ok" id="deSave" type="button" aria-label="${isNew ? "Добавить" : "Сохранить"}">✓</button>
     </div>`;
   document.body.appendChild(box);
+
+  /* Панель с галочкой ездит вместе с клавиатурой: лист ужимается до видимой
+     части окна, и низ листа оказывается ровно над клавиатурой. Без этого
+     кнопки уезжали под неё, и лист выглядел глухим. */
+  const vv = window.visualViewport;
+  const fit = vv ? () => {
+    box.style.height = vv.height + "px";
+    box.style.top = vv.offsetTop + "px";
+  } : null;
+  if (fit) { fit(); vv.addEventListener("resize", fit); vv.addEventListener("scroll", fit); }
+  const gone = () => {
+    if (fit) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
+    box.remove();
+  };
 
   const area = $("#deArea");
   area.value = rec ? (rec.text || "") : dyDraft;
   bindPasteCleanup(area);
-  setTimeout(() => { area.focus(); area.setSelectionRange(area.value.length, area.value.length); }, 80);
+  /* Фокус — сразу и в том же жесте, которым открыли лист: отложенный фокус
+     айфон не считает продолжением нажатия и клавиатуру не выдвигает. */
+  area.focus();
+  try { area.setSelectionRange(area.value.length, area.value.length); } catch {}
   if (isNew) dyPreviewLoad();
 
   $("#deClose").addEventListener("click", () => {
     if (isNew) dyDraft = area.value;      // не выбрасываем начатое
     dyEditing = null;
-    box.remove();
+    gone();
   });
   $("#deSave").addEventListener("click", () => {
     const text = fixHyphenBreaks(area.value || "").trim();
     if (isNew) {
       if (!text && !pendingMedia) { toast("Пока пусто"); return; }
       dyDraft = ""; dyEditing = null;
-      box.remove();
+      gone();
       diaryAdd(text);
       return;
     }
@@ -5659,7 +5677,7 @@ function openDayEditor(rec) {
     rec.editedAt = now(); rec.updatedAt = now();
     dyEditing = null;
     saveData(); schedulePush();
-    box.remove();
+    gone();
     if (tab === "diary") renderDays(); else if (tab === "notes") renderNotes();
     toast("Сохранено");
   });
