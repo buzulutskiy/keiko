@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 138";
+const APP_VERSION = "Кэйко 139";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1474,6 +1474,7 @@ function renderInner() {
     else if (tab === "home") renderHome();
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
+    else if (tab === "diary") { if (!gutOn()) renderDays(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
     else if (tab === "wish") renderWishes();
     // профиль сменили — вкладки уже нет, уводим на главную
     else if (tab === "gut") { if (gutOn()) renderGut(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
@@ -1524,6 +1525,8 @@ function renderTabbar() {
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
     ["notes", ICON("notes", "✎"), T("tabNotes")],
+    /* Дневник — личная вкладка Антона: у Дианы вместо неё «Какуля». */
+    ...(gutOn() ? [] : [["diary", "☀", T("tabDiary")]]),
     /* «Достижения» с нижней панели убраны: награды и карточки знаний теперь
        видно в «Моментах», внутри той сессии, где они открылись, а полку
        и карту знаний перенесли в Библиотеку. Экран остался — просто без
@@ -5381,23 +5384,6 @@ const NO_MAT_ITEM = { icon: "✎", title: "Без материала", cover: ""
    «сегодня был дождь», и наоборот. */
 const diaryList = () => (data.thoughts || []).filter((t) => !t.deleted && t.diary);
 
-/* Подсказка дня — не «как прошёл день», а одна точная деталь: общее «всё
-   хорошо» мозг не задевает, вес переживания несёт частность. Меняется раз
-   в сутки, по кругу. */
-const DAY_HINTS = [
-  "Одна точная деталь дня — за что зацепился взгляд?",
-  "Что ты видел сегодня такого, чего никто не заметил?",
-  "Самый тихий момент дня — какой он был?",
-  "Один звук, один запах или один жест — что запомнилось?",
-  "Что сегодня случилось впервые — пусть крошечное?",
-  "Пяточка из-под одеяла: маленькое, но всё про сегодня.",
-  "Кого ты сегодня рассмотрел по-настоящему?",
-  "Один кадр на весь день — что бы ты снял?",
-  "Какое мгновение ты бы оставил себе на зиму?",
-  "Не «как прошёл день» — что в нём было живого?",
-];
-const dayHint = () => DAY_HINTS[Math.floor(fromStr(todayStr()).getTime() / 864e5) % DAY_HINTS.length];
-
 const WMO = { 0: "ясно", 1: "почти ясно", 2: "переменная облачность", 3: "пасмурно",
   45: "туман", 48: "туман", 51: "морось", 53: "морось", 55: "морось",
   56: "ледяная морось", 57: "ледяная морось", 61: "небольшой дождь", 63: "дождь",
@@ -5479,7 +5465,7 @@ async function diaryEnrich(rec) {
   if (ch) {
     rec.updatedAt = now();
     saveData(); schedulePush();
-    if (tab === "notes" && (cfg.notesView || "days") === "days" && !editingThought) renderNotes();
+    if (tab === "diary" && !dyEditing) renderDays();
   }
 }
 
@@ -5501,27 +5487,23 @@ async function diaryFill() {
   } finally { diaryFillBusy = false; }
 }
 
-/* Предпросмотр «что прикрепится»: место и погода готовятся, пока пишешь,
-   и в запись ложатся мгновенно. */
+/* Предпросмотр «что прикрепится»: место и погода готовятся заранее —
+   к моменту, когда запись сохраняют, они уже лежат готовыми. */
 let dyPreview = null;
 async function dyPreviewLoad() {
-  const el0 = document.getElementById("dyGeo");
-  if (dyPreview && now() - dyPreview.at < 300e3) { if (el0) el0.textContent = dyPreview.text; return; }
+  const paint = () => {
+    const el = document.getElementById("deTags");
+    if (el && !dyEditing) el.innerHTML = deTagsHTML(null);
+  };
+  if (dyPreview && now() - dyPreview.at < 300e3) { paint(); return; }
   const g = await geoNow();
-  if (!g) {
-    const el = document.getElementById("dyGeo");
-    if (el) el.textContent = "Место не определилось — запись будет без него";
-    return;
-  }
+  if (!g) { paint(); return; }
   const [pl, w] = await Promise.all([
     placeOf(g.lat, g.lon),
     weatherFor({ lat: g.lat, lon: g.lon, date: todayStr(), createdAt: now() }).catch(() => null),
   ]);
-  const text = "📍 " + [pl || (g.lat + ", " + g.lon),
-    w && w.t != null ? tempText(w.t) + (wmoText(w.c) ? ", " + wmoText(w.c) : "") : ""].filter(Boolean).join(" · ");
-  dyPreview = { text, at: now(), lat: g.lat, lon: g.lon, place: pl, w };
-  const el = document.getElementById("dyGeo");
-  if (el) el.textContent = text;
+  dyPreview = { at: now(), lat: g.lat, lon: g.lon, place: pl, w };
+  paint();
 }
 
 function diaryAdd(text) {
@@ -5546,25 +5528,9 @@ function diaryAdd(text) {
   data.thoughts = data.thoughts || [];
   data.thoughts.push(rec);
   saveData(); schedulePush();
-  renderNotes();
+  if (tab === "diary") renderDays();
   toast("День записан");
   diaryEnrich(rec);
-}
-
-function dnSegHTML(atv) {
-  return `
-    <div class="seg" id="dnSeg">
-      <button data-dn="days" class="${atv === "days" ? "on" : ""}" type="button">Дни</button>
-      <button data-dn="mind" class="${atv === "mind" ? "on" : ""}" type="button">Мысли</button>
-    </div>`;
-}
-function bindDnSeg() {
-  document.querySelectorAll("#dnSeg button").forEach((b) =>
-    b.addEventListener("click", () => {
-      cfg.notesView = b.dataset.dn; saveCfg();
-      editingThought = null; pendingMedia = null;
-      renderNotes();
-    }));
 }
 
 let diaryCalShift = 0;   // на сколько месяцев назад смотрит календарь дневника
@@ -5604,6 +5570,121 @@ function diaryCalHTML(list) {
     </div>`;
 }
 
+/* Короткое место для подписи под записью: улица, если она известна,
+   иначе город. Полный адрес живёт в самой записи и виден в редакторе. */
+const spot = (t) => {
+  if (!t.place) return "";
+  const parts = String(t.place).split(" · ");
+  return parts[1] || parts[0];
+};
+
+/* ── Полноэкранная запись ──
+   Нажал на поле — и не осталось ничего, кроме текста: сверху тонкие теги
+   с датой, местом и погодой, снизу одна кнопка. Тот же лист открывается
+   для правки — и дневника, и заметок: править в окошке в три строки
+   посреди ленты было негде развернуться. */
+let dyEditing = null;   // что правим (null — новая запись дня)
+let dyDraft = "";       // закрыл лист не сохранив — черновик ждёт возвращения
+
+function deTagsHTML(rec) {
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const bits = [];
+  if (rec) {
+    bits.push(fmtDay(rec.date) + ", " + clock.format(new Date(rec.createdAt || fromStr(rec.date))));
+    if (rec.diary) {
+      if (rec.place) bits.push("📍 " + rec.place);
+      if (rec.temp != null) bits.push(tempText(rec.temp) + (wmoText(rec.wc) ? ", " + wmoText(rec.wc) : ""));
+    }
+  } else {
+    bits.push("Сегодня, " + clock.format(new Date()));
+    if (dyPreview) {
+      if (dyPreview.place) bits.push("📍 " + dyPreview.place);
+      if (dyPreview.w && dyPreview.w.t != null)
+        bits.push(tempText(dyPreview.w.t) + (wmoText(dyPreview.w.c) ? ", " + wmoText(dyPreview.w.c) : ""));
+    } else bits.push("📍 …");
+  }
+  return bits.map((x) => `<span class="de-tag">${esc(x)}</span>`).join("");
+}
+
+function openDayEditor(rec) {
+  dyEditing = rec || null;
+  const was = document.getElementById("dyEd");
+  if (was) was.remove();
+  const isNew = !rec;
+  const box = document.createElement("div");
+  box.id = "dyEd";
+  box.innerHTML = `
+    <div class="de-top">
+      <button class="de-close" id="deClose" type="button" aria-label="Закрыть">✕</button>
+      <div class="de-tags" id="deTags">${deTagsHTML(rec)}</div>
+    </div>
+    <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>
+    ${isNew && pendingMedia ? `
+      <div class="th-pending de-pending">
+        ${pendingMedia.kind === "photo"
+          ? `<img src="${esc(pendingMedia.url)}" alt="">`
+          : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
+        <button class="th-drop" id="deDrop" type="button" aria-label="Убрать вложение">✕</button>
+      </div>` : ""}
+    <div class="de-bot">
+      ${isNew && canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
+      ${isNew ? `<button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
+      <button class="btn gold de-save" id="deSave" type="button">${isNew ? "Добавить" : "Сохранить"}</button>
+    </div>`;
+  document.body.appendChild(box);
+
+  const area = $("#deArea");
+  area.value = rec ? (rec.text || "") : dyDraft;
+  bindPasteCleanup(area);
+  setTimeout(() => { area.focus(); area.setSelectionRange(area.value.length, area.value.length); }, 80);
+  if (isNew) dyPreviewLoad();
+
+  $("#deClose").addEventListener("click", () => {
+    if (isNew) dyDraft = area.value;      // не выбрасываем начатое
+    dyEditing = null;
+    box.remove();
+  });
+  $("#deSave").addEventListener("click", () => {
+    const text = fixHyphenBreaks(area.value || "").trim();
+    if (isNew) {
+      if (!text && !pendingMedia) { toast("Пока пусто"); return; }
+      dyDraft = ""; dyEditing = null;
+      box.remove();
+      diaryAdd(text);
+      return;
+    }
+    rec.text = text.slice(0, 4000);
+    rec.editedAt = now(); rec.updatedAt = now();
+    dyEditing = null;
+    saveData(); schedulePush();
+    box.remove();
+    if (tab === "diary") renderDays(); else if (tab === "notes") renderNotes();
+    toast("Сохранено");
+  });
+
+  // вложение перерисовывает лист; текст при этом бережём в черновике
+  const reopen = () => { dyDraft = area.value; openDayEditor(); };
+  const mic = $("#deMic");
+  if (mic) mic.addEventListener("click", () => openTakeSheet(true, (blob, ms) => {
+    pendingMedia = { id: uid(), kind: "audio", blob, ms, url: URL.createObjectURL(blob) };
+    reopen();
+  }));
+  const cam = $("#deCam");
+  if (cam) cam.addEventListener("click", async () => {
+    const f = await pickPhoto();
+    if (!f) return;
+    try {
+      const blob = await shrinkPhoto(f);
+      pendingMedia = { id: uid(), kind: "photo", blob, ms: 0, url: URL.createObjectURL(blob) };
+      reopen();
+    } catch { toast("Не получилось прочитать снимок"); }
+  });
+  const dr = $("#deDrop");
+  if (dr) dr.addEventListener("click", () => { pendingMedia = null; reopen(); });
+}
+
+let dyMenu = null;   // запись, у которой раскрыты действия
+
 function renderDays() {
   const list = diaryList().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
@@ -5614,108 +5695,62 @@ function renderDays() {
     const d = fromStr(ds);
     return dfmt.format(d) + (d.getFullYear() !== nowYear ? " " + d.getFullYear() : "");
   };
-  const metaOf = (t) => [t.place || "",
-    t.temp != null ? tempText(t.temp) + (wmoText(t.wc) ? ", " + wmoText(t.wc) : "") : ""]
-    .filter(Boolean).join(" · ");
+  /* Подпись под записью — одна тихая строка: время, улица, градусы.
+     Кнопок не видно, пока не попросишь: троеточие раскрывает четыре действия. */
+  const foot = (t) => {
+    const bits = [clock.format(new Date(t.createdAt || fromStr(t.date)))];
+    const sp = spot(t);
+    if (sp) bits.push(sp);
+    if (t.temp != null) bits.push(tempText(t.temp));
+    return bits.join(" · ") + (t.editedAt ? " · изм." : "") + (t.liked ? " · ♥" : "");
+  };
 
   let feed = "", lastD = "";
   if (!cfg.diaryCal) feed = list.map((t) => {
     const head = t.date !== lastD ? `<div class="lib-group">${esc(dayName(t.date))}</div>` : "";
     lastD = t.date;
-    const card = t.id === editingThought ? `
-      <article class="post thought editing">
-        <textarea class="note-input th-text" id="thEdit" rows="4">${esc(t.text)}</textarea>
-        <div class="th-edit-row">
-          <button class="btn gold" data-dysave="${t.id}" type="button">Сохранить</button>
-          <button class="btn" data-dycancel="1" type="button">Отмена</button>
-        </div>
-      </article>` : `
-      <article class="post thought">
-        <div class="th-head">
-          <span class="th-when">${clock.format(new Date(t.createdAt || fromStr(t.date)))}${t.editedAt ? " · изменено" : ""}</span>
-          <span class="th-acts">
-            <button class="th-act" data-copy="${t.id}" type="button" aria-label="Скопировать">⧉</button>
-            <button class="th-act like ${t.liked ? "on" : ""}" data-dylike="${t.id}" type="button"
-              aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
-            <button class="th-act" data-dyedit="${t.id}" type="button" aria-label="Изменить">✎</button>
-            <button class="th-act" data-dydrop="${t.id}" type="button" aria-label="Удалить">✕</button>
-          </span>
-        </div>
-        ${metaOf(t) ? `<div class="dy-meta">${esc(metaOf(t))}</div>` : ""}
-        ${t.text ? `<p class="post-text">${esc(t.text)}</p>` : ""}
+    return head + `
+      <article class="dy-card">
+        ${t.text ? `<p class="dy-text">${esc(t.text)}</p>` : ""}
         ${mediaHTML(t)}
+        <div class="dy-foot">
+          <span class="dy-when">${esc(foot(t))}</span>
+          ${dyMenu === t.id ? `
+            <span class="dy-acts">
+              <button class="th-act" data-copy="${t.id}" type="button" aria-label="Скопировать">⧉</button>
+              <button class="th-act like ${t.liked ? "on" : ""}" data-dylike="${t.id}" type="button"
+                aria-label="${t.liked ? "Убрать из любимых" : "В любимые"}">${t.liked ? "♥" : "♡"}</button>
+              <button class="th-act" data-dyedit="${t.id}" type="button" aria-label="Изменить">✎</button>
+              <button class="th-act" data-dydrop="${t.id}" type="button" aria-label="Удалить">✕</button>
+            </span>`
+          : `<button class="dy-more" data-dymenu="${t.id}" type="button" aria-label="Действия">⋯</button>`}
+        </div>
       </article>`;
-    return head + card;
   }).join("");
 
   $("#view").innerHTML = `
-    ${dnSegHTML("days")}
-    <div class="panel th-panel">
-      <textarea class="note-input th-text" id="dyText" rows="3" placeholder="${esc(dayHint())}"></textarea>
-      <div class="dy-geo" id="dyGeo">📍 определяю место и погоду…</div>
-      <div class="th-row">
-        <span class="dy-note">Хватит одной точной детали.</span>
-        <span class="th-attach">
-          ${canRecord() ? `<button class="th-clip" id="dyMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
-          <button class="th-clip" id="dyCam" type="button" aria-label="Приложить снимок">📷</button>
-        </span>
-      </div>
-      <button class="btn gold th-send" id="dySave" type="button">Записать день</button>
-      ${pendingMedia ? `
-        <div class="th-pending">
-          ${pendingMedia.kind === "photo"
-            ? `<img src="${esc(pendingMedia.url)}" alt="">`
-            : `<audio controls src="${esc(pendingMedia.url)}"></audio>`}
-          <button class="th-drop" id="dyDrop" type="button" aria-label="Убрать вложение">✕</button>
-        </div>` : ""}
-    </div>
-
+    <button class="dy-open" id="dyOpen" type="button">Записать…</button>
     <div class="seg" id="dyMode">
       <button data-dymode="feed" class="${!cfg.diaryCal ? "on" : ""}" type="button">Лента</button>
       <button data-dymode="cal" class="${cfg.diaryCal ? "on" : ""}" type="button">Календарь</button>
     </div>
-
     ${cfg.diaryCal
       ? diaryCalHTML(list)
-      : (feed || `<div class="empty-note">Первый день можно записать прямо сейчас.<br>Дата, место и погода прикрепятся сами.</div>`)}`;
+      : (feed || `<div class="empty-note">Пока пусто. Нажми на поле выше —<br>дата, место и погода прикрепятся сами.</div>`)}`;
 
-  bindDnSeg();
-  dyPreviewLoad();
+  dyPreviewLoad();                       // к открытию листа место уже готово
 
+  $("#dyOpen").addEventListener("click", () => openDayEditor());
   document.querySelectorAll("[data-dymode]").forEach((b) =>
-    b.addEventListener("click", () => { cfg.diaryCal = b.dataset.dymode === "cal"; saveCfg(); renderNotes(); }));
+    b.addEventListener("click", () => { cfg.diaryCal = b.dataset.dymode === "cal"; saveCfg(); dyMenu = null; renderDays(); }));
   document.querySelectorAll("[data-dycal]").forEach((b) =>
     b.addEventListener("click", () => {
       const next = diaryCalShift + Number(b.dataset.dycal);
       if (next > 0) return;
-      diaryCalShift = next; renderNotes();
+      diaryCalShift = next; renderDays();
     }));
-
-  const area = $("#dyText");
-  bindPasteCleanup(area);
-  $("#dySave").addEventListener("click", () => {
-    const text = fixHyphenBreaks(area.value || "").trim();
-    if (!text && !pendingMedia) { toast("Хватит одной точной детали — но хоть какой-нибудь"); return; }
-    diaryAdd(text);
-  });
-  const mic = $("#dyMic");
-  if (mic) mic.addEventListener("click", () => openTakeSheet(true, (blob, ms) => {
-    pendingMedia = { id: uid(), kind: "audio", blob, ms, url: URL.createObjectURL(blob) };
-    renderNotes();
-  }));
-  const cam = $("#dyCam");
-  if (cam) cam.addEventListener("click", async () => {
-    const f = await pickPhoto();
-    if (!f) return;
-    try {
-      const blob = await shrinkPhoto(f);
-      pendingMedia = { id: uid(), kind: "photo", blob, ms: 0, url: URL.createObjectURL(blob) };
-      renderNotes();
-    } catch { toast("Не получилось прочитать снимок"); }
-  });
-  const dr = $("#dyDrop");
-  if (dr) dr.addEventListener("click", () => { pendingMedia = null; renderNotes(); });
-
+  document.querySelectorAll("[data-dymenu]").forEach((b) =>
+    b.addEventListener("click", () => { dyMenu = dyMenu === b.dataset.dymenu ? null : b.dataset.dymenu; renderDays(); }));
   document.querySelectorAll("[data-copy]").forEach((b) =>
     b.addEventListener("click", () => {
       const t = (data.thoughts || []).find((x) => x.id === b.dataset.copy);
@@ -5726,26 +5761,14 @@ function renderDays() {
       const t = (data.thoughts || []).find((x) => x.id === b.dataset.dylike);
       if (!t) return;
       t.liked = !t.liked; t.updatedAt = now();
-      saveData(); schedulePush(); renderNotes();
+      dyMenu = null;
+      saveData(); schedulePush(); renderDays();
     }));
   document.querySelectorAll("[data-dyedit]").forEach((b) =>
     b.addEventListener("click", () => {
-      editingThought = b.dataset.dyedit; renderNotes();
-      const ed = $("#thEdit");
-      if (ed) setTimeout(() => { ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); }, 60);
-    }));
-  document.querySelectorAll("[data-dycancel]").forEach((b) =>
-    b.addEventListener("click", () => { editingThought = null; renderNotes(); }));
-  document.querySelectorAll("[data-dysave]").forEach((b) =>
-    b.addEventListener("click", () => {
-      const t = (data.thoughts || []).find((x) => x.id === b.dataset.dysave);
-      const ed = $("#thEdit");
-      if (!t || !ed) return;
-      t.text = fixHyphenBreaks(ed.value || "").trim().slice(0, 4000);
-      t.editedAt = now(); t.updatedAt = now();
-      editingThought = null;
-      saveData(); schedulePush(); renderNotes();
-      toast("Изменено");
+      const t = (data.thoughts || []).find((x) => x.id === b.dataset.dyedit);
+      dyMenu = null;
+      if (t) openDayEditor(t);
     }));
   document.querySelectorAll("[data-dydrop]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -5754,7 +5777,8 @@ function renderDays() {
       if (!t) return;
       t.deleted = true; t.updatedAt = now();
       if (t.mediaId) takeDrop(t.mediaId);
-      saveData(); schedulePush(); renderNotes();
+      dyMenu = null;
+      saveData(); schedulePush(); renderDays();
     }));
   document.querySelectorAll("[data-shot-src]").forEach((el) => {
     el.dataset.bound = "1";
@@ -5763,7 +5787,6 @@ function renderDays() {
 }
 
 function renderNotes() {
-  if ((cfg.notesView || "days") === "days") { renderDays(); return; }
   /* У событий, записанных до появления поля, метки награды нет — достаём
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
   const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
@@ -5854,7 +5877,6 @@ function renderNotes() {
   };
 
   $("#view").innerHTML = `
-    ${dnSegHTML("mind")}
     <div class="panel th-panel">
       <textarea class="note-input th-text" id="thText" rows="3" placeholder="Что подумалось? Можно приложить запись или снимок"></textarea>
       <div class="th-row">
@@ -5968,7 +5990,6 @@ function renderNotes() {
     setTimeout(() => area.focus(), 60);
   }
 
-  bindDnSeg();
   $("#thMat").addEventListener("change", (e) => {
     cfg.thoughtKey = e.target.value; saveCfg();
     const text = area.value;
@@ -6044,8 +6065,13 @@ function renderNotes() {
       syncNotesFabs();
     }));
 
+  /* Править в маленьком окошке посреди ленты неудобно — правка открывает
+     тот же полноэкранный лист, что у дневника. */
   document.querySelectorAll("[data-edit]").forEach(b =>
-    b.addEventListener("click", () => { editingThought = b.dataset.edit; renderNotes(); }));
+    b.addEventListener("click", () => {
+      const t = (data.thoughts || []).find(x => x.id === b.dataset.edit);
+      if (t) openDayEditor(t);
+    }));
 
   document.querySelectorAll("[data-cancel]").forEach(b =>
     b.addEventListener("click", () => { editingThought = null; renderNotes(); }));
@@ -9005,7 +9031,7 @@ const THEMES = [
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Дневник", tabWish: "Захотелось",
+  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
@@ -11313,7 +11339,7 @@ function boot() {
   load();
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
-  if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
+  if (["home", "progress", "ach", "notes", "diary", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
   applyTheme(data.shop.theme);
   if (["week", "month"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
