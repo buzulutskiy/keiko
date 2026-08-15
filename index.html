@@ -2110,6 +2110,16 @@
       background: var(--glass); border-radius: 7px; padding: 2px 7px;
     }
     .mc-go { font-size: 1.2rem; color: var(--dim); }
+    /* Глазик поверх строки: строка сама кнопка, вложить в неё вторую нельзя */
+    .lib-cell { position: relative; display: block; }
+    .lib-cell .lib-row { padding-right: 44px; }
+    .lib-eye {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 2;
+      width: 30px; height: 30px; border-radius: 10px; font-size: 0.9rem; line-height: 1;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
+    }
+    .lib-eye.off { opacity: 0.5; }
+    .lib-cell:has(.lib-eye.off) .lib-row { opacity: 0.55; }
     .mc-bar { height: 6px; border-radius: 3px; background: var(--glass-2); overflow: hidden; }
     .mc-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
     .mc-num { font-size: 1.05rem; font-weight: 850; color: var(--gold); white-space: nowrap; }

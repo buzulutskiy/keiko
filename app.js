@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 132";
+const APP_VERSION = "Кэйко 133";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -145,6 +145,7 @@ function emptyData() {
     pastel: { course: null, entries: [] },
     watch:  { videos: [], activeVideo: "", entries: [] },
     practice: {},   // ход разбора по пьесам: { pieceId: { done, session } }
+    hidden: {},     // материалы, убранные с главной: { «bk:id»: 1 }
     shop: { theme: "dusk" },   // только оформление: покупать давно нечего
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
@@ -191,6 +192,7 @@ function migrate(obj) {
   }
 
   if (obj.practice && typeof obj.practice === "object") base.practice = obj.practice;
+  if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
   if (obj.eventsV) base.eventsV = obj.eventsV;
@@ -1602,7 +1604,30 @@ function railItems() {
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
   if ((data.pastel.course || { lessons: [] }).lessons.length) out.push({ track: "pastel" });
   for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
-  return out;
+  /* Материал можно убрать с главной, не отправляя в архив: читаю три книги,
+     а на ленте хочу одну. Если спрятать всё, лента опустела бы и приложению
+     нечего было бы показать — тогда прячем ничего. */
+  const shown = out.filter((i) => !matHidden(libKey(i)));
+  return shown.length ? shown : out;
+}
+
+/* Ключ материала — тот же, что у строки в библиотеке: «bk:id», «pf:id»,
+   «ps», «wt:id». Одно имя на оба места, чтобы глазик и лента говорили
+   об одном и том же. (Не путать с railKey — тот про звук.) */
+function libKey(i) {
+  if (i.track === "piano") return "pf:" + i.pieceId;
+  if (i.track === "book") return "bk:" + i.bookId;
+  if (i.track === "watch") return "wt:" + i.videoId;
+  return "ps";
+}
+const matHidden = (key) => !!(data.hidden || {})[key];
+function matToggle(key) {
+  data.hidden = data.hidden || {};
+  if (data.hidden[key]) delete data.hidden[key]; else data.hidden[key] = 1;
+  saveData(); schedulePush();
+  normalizeActive();
+  render();
+  toast(matHidden(key) ? "Убрано с главной" : "Вернулось на главную");
 }
 const hasMaterials = () => railItems().length > 0;
 
@@ -3489,55 +3514,6 @@ function humanLeft(d) {
   return m <= 4 ? `ещё месяца ${MONTHS_WORD[m]}` : `ещё месяцев ${MONTHS_WORD[m]}`;
 }
 
-// ритм словами: «через день» понятнее, чем «раз в 2 дня»
-function everyText(every) {
-  const e = every || 2;
-  if (e <= 1) return "почти каждый день";
-  if (e === 2) return "примерно через день";
-  if (e >= 7) {
-    const w = Math.round(e / 7);
-    return w === 1 ? "примерно раз в неделю"
-                   : `примерно раз в ${w} ${plural(w, "неделю", "недели", "недель")}`;
-  }
-  return `примерно раз в ${e} ${plural(e, "день", "дня", "дней")}`;
-}
-
-// чем длиннее срок, тем крупнее мера: «19 дней» человек всё равно читает как «три недели»
-function humanSpan(d) {
-  if (d < 14) return d + " " + plural(d, "день", "дня", "дней");
-  if (d < 60) { const w = Math.round(d / 7); return w + " " + plural(w, "неделю", "недели", "недель"); }
-  const m = Math.round(d / 30);
-  return m + " " + plural(m, "месяц", "месяца", "месяцев");
-}
-
-const numRu = (n) => (Math.round(n * 10) / 10).toString().replace(".", ",");
-
-const unitWord = (unit, n) => {
-  const w = UNIT_WORD[unit] || ["шаг", "шага", "шагов"];
-  // дробное число берёт родительный падеж единственного: «12,5 страницы»
-  return Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
-};
-
-function paceSpeed(f) {
-  if (!f || f.done || !f.was || !f.pace) return null;
-  const ratio = f.pace / f.was;
-  // разница в седьмую часть — это шум недели, а не разгон
-  if (ratio > 1 / 1.15 && ratio < 1.15) return { text: "Темп ровный — как и в начале" };
-
-  const up = ratio > 1;
-  const k = up ? ratio : 1 / ratio;
-  const kk = Math.round(k * 10) / 10;
-  const times = `в ${numRu(k)} ${Number.isInteger(kk) ? plural(kk, "раз", "раза", "раз") : "раза"}`;
-
-  /* Тот же счёт, что и у даты: занятие через день. Разница в том, сколько
-     заходов осталось при прежнем темпе и при нынешнем. */
-  const шаг = f.every || 2;
-  const thenDays = Math.max(1, Math.ceil(f.left / f.was)) * шаг;
-  const diff = Math.abs(thenDays - f.sessions * шаг);
-  const shift = diff >= 3 ? ` — на ${humanSpan(diff)} ${up ? "раньше" : "позже"}` : "";
-  return { up, text: `${times} ${up ? "быстрее" : "медленнее"}, чем в начале${shift}` };
-}
-
 /* ── Чем двинуть стрелку сегодня ──
    Прибор показывает, где ты сейчас, но от него хочется действия. Считаем не
    лозунг, а ровно то, что случится: темп берётся по последним восьми заходам,
@@ -3593,57 +3569,6 @@ function paceGoal(f) {
     text: `${зов} — останется ${rest} ${unitWord(f.unit, rest)}`,
     short: `${зов} — останется ${rest} ${unitWord(f.unit, rest)}`,
     hero: `${зов} · ${идти}` };
-}
-
-/* ── Спидометр ──
-   Полукруг, стрелка на нынешнем темпе, засечки на прежнем и на рекорде. Шкала
-   у каждого материала своя: страницы с тактами сравнивать бессмысленно, а с
-   собой прежним — единственное сравнение, которое вообще что-то значит.
-   Сверху добавлен запас, иначе стрелка вечно упиралась бы в край. */
-/* Верх шкалы — не единственный рекорд, а девятая десятая всех заходов. Один
-   марафон на полкниги задрал бы шкалу так, что стрелка легла бы на треть при
-   отличном темпе — прибор врал бы в самую обидную сторону. «Лучшее» здесь
-   означает «твой хороший заход», а не «однажды случилось». */
-function paceBest(f) {
-  const q = f.gains.slice().sort((a, b) => a - b);
-  const p90 = q[Math.floor(0.9 * (q.length - 1))] || 0;
-  return Math.max(p90, f.pace, f.was || 0);
-}
-
-function gaugeSVG(f, uid) {
-  const rec = paceBest(f);
-  const top = rec * 1.15 || 1;
-  const W = 208, H = 108, cx = W / 2, cy = 96, r = 76;
-  const at = (v, rr) => {
-    const a = Math.PI * (1 - Math.min(1, Math.max(0, v / top)));
-    return [+(cx + rr * Math.cos(a)).toFixed(1), +(cy - rr * Math.sin(a)).toFixed(1)];
-  };
-  const arc = (from, to, rr) => {
-    const [x0, y0] = at(from, rr), [x1, y1] = at(to, rr);
-    return `M ${x0} ${y0} A ${rr} ${rr} 0 0 1 ${x1} ${y1}`;
-  };
-  const tick = (v, cls) => {
-    const [x0, y0] = at(v, r - 10), [x1, y1] = at(v, r + 6);
-    return `<path d="M ${x0} ${y0} L ${x1} ${y1}" class="${cls}"/>`;
-  };
-  const [nx, ny] = at(f.pace, r - 15);
-  const gid = "gz-" + uid;
-
-  return `
-    <svg class="gz-svg" viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">
-      <defs>
-        <linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stop-color="var(--gold-2)"/>
-          <stop offset="1" stop-color="var(--gold)"/>
-        </linearGradient>
-      </defs>
-      <path d="${arc(0, top, r)}" class="gz-track"/>
-      <path d="${arc(0, f.pace, r)}" class="gz-fill" stroke="url(#${gid})"/>
-      ${f.was ? tick(f.was, "gz-tick") : ""}
-      ${rec > f.pace * 1.05 ? tick(rec, "gz-rec") : ""}
-      <path d="M ${cx} ${cy} L ${nx} ${ny}" class="gz-needle"/>
-      <circle cx="${cx}" cy="${cy}" r="5.5" class="gz-hub"/>
-    </svg>`;
 }
 
 /* Чем дальше срок, тем грубее формулировка: точная дата через два месяца —
@@ -3777,225 +3702,6 @@ function lineChartHTML(points) {
 }
 
 // шапка «Прогресс»: неделя или месяц целиком
-/* Цвета треков — те же, что у точек в календаре и у суточных циклов. */
-const TRACK_HUE = { piano: "var(--gold)", book: "var(--violet)", pastel: "#f0a3b5", watch: "#6ee7a8" };
-
-/* ── Когда закончу ──
-   Считаем ровно тем же, чем главная: paceForecast. Раньше здесь была своя
-   прикидка — по темпу последних четырёх недель и по «задетым» тактам, — и она
-   расходилась с главной на месяцы. Два разных ответа на один вопрос хуже, чем
-   один приблизительный: непонятно, какому верить. */
-function forecastHTML() {
-  const rows = [];
-  const add = (icon, title, view) => {
-    const f = withMaterial(view, paceForecast);
-    if (!f || f.done) return;
-    const started = withMaterial(view, () => {
-      const ds = entries().map((e) => e.date).sort();
-      return ds[0] || "";
-    });
-    rows.push({ icon, title, f, started, uid: rows.length });
-  };
-
-  for (const b of (data.book.books || []).filter((x) => !x.archived))
-    add("📖", b.title, { track: "book", bookId: b.id });
-  for (const pc of (data.piano.pieces || []).filter((x) => !x.archived))
-    add("🎹", pc.name, { track: "piano", pieceId: pc.id });
-  if (course().lessons.length) add("🎨", course().name, { track: "pastel" });
-
-  if (!rows.length) return "";
-
-  return `
-    <div class="panel">
-      <h3 class="blk-head">Как идёт</h3>
-      <div class="gz-list">
-        ${rows.map((x) => {
-          const { days, text } = paceWhen(x.f);
-          /* Полоса — про дни, а не про материал: первые такты даются быстро,
-             последние тянутся, и процент пройденного врал про то, много ли
-             осталось. Считаем от первой отметки до предполагаемого конца. */
-          const gone = x.started ? daysBetween(x.started, todayStr()) + 1 : 0;
-          const span = gone + days;
-          const pct = span ? Math.round(gone / span * 100) : 0;
-          const sp = paceSpeed(x.f);
-          const goal = paceGoal(x.f);
-          const rec = paceBest(x.f);
-          const parts = [
-            x.f.was ? `в начале ${numRu(x.f.was)}` : "",
-            rec > x.f.pace * 1.05 ? `лучшее ${numRu(rec)}` : ""
-          ].filter(Boolean);
-          const ends = parts.length ? parts.join(" · ") : "идёшь на своём лучшем";
-          return `
-            <div class="gz-card">
-              <div class="gz-head"><span class="gz-ic">${x.icon}</span><b>${esc(x.title)}</b></div>
-              <div class="gz-dial">${gaugeSVG(x.f, x.uid)}</div>
-              <div class="gz-val">${numRu(x.f.pace)}<span> ${esc(unitWord(x.f.unit, x.f.pace))} за раз</span></div>
-              <div class="gz-ends">${esc(ends)}</div>
-              ${sp ? `<div class="gz-verdict${sp.up === undefined ? "" : sp.up ? " up" : " down"}">${
-                sp.up === undefined ? "" : sp.up ? "↑ " : "↓ "}${esc(sp.text)}</div>` : ""}
-              <div class="gz-when">${esc(text)}</div>
-              <div class="gz-bar"><i style="width:${pct}%"></i></div>
-              <div class="gz-meta">${x.f.sessions} ${plural(x.f.sessions, "занятие", "занятия", "занятий")} впереди · ${esc(everyText(x.f.every))}${gone ? ` · идёт ${gone}-й день из ${span}` : ""}</div>
-              ${goal ? `<div class="gz-goal">${esc(goal.text)}</div>` : ""}
-            </div>`;
-        }).join("")}
-      </div>
-      <p class="fc-note">Считаем по твоему ритму: сколько делаешь за раз и как часто возвращаешься — и то и другое по последним заходам. Тот же счёт, что под кольцом на главной. Пропустил — назавтра дата сдвинется, и это нормально.</p>
-    </div>
-  `;
-}
-
-/* ── Из чего сложилась неделя ──
-   Полоса «куда ушли дни» отвечает про треки: пианино против чтения. А хочется
-   видеть сами вещи — какая книга, какая пьеса, — и видеть на глаз, не читая
-   чисел. Каждый материал здесь кружок, площадь которого равна числу дней:
-   площадь, а не радиус, иначе вдвое больше выглядит вчетверо.
-
-   Размер считаем по дням, а не по минутам: минуты знает только пианино и курс,
-   у книги и роликов их нет вовсе. Складывать известное с выдуманным нельзя,
-   а дни есть у всех и означают одно и то же. */
-let pileOff = 0;                       // на сколько недель (месяцев) назад смотрим
-
-function pileRange() {
-  const d = new Date();
-  if (period === "month") {
-    const m = new Date(d.getFullYear(), d.getMonth() + pileOff, 1);
-    const last = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-    return { from: dateStr(m), to: dateStr(last),
-      title: new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" })
-        .format(m).replace(" г.", "") };
-  }
-  const mon = mondayOf(d); mon.setDate(mon.getDate() + pileOff * 7);
-  const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
-  return { from: dateStr(mon), to: dateStr(sun), title: fmtRange(dateStr(mon), dateStr(sun)) };
-}
-
-function pileItems(from, to) {
-  const inR = (e) => !e.deleted && e.date >= from && e.date <= to;
-  const out = [];
-  const add = (icon, title, track, list, mins) => {
-    const days = new Set(list.map((e) => e.date)).size;
-    if (days) out.push({ icon, title, track, days, mins: mins || 0 });
-  };
-
-  for (const b of (data.book.books || [])) {
-    const list = bookEntriesOf(b.id).filter(inR);
-    add("📖", b.title, "book", list, 0);
-  }
-  for (const pc of (data.piano.pieces || [])) {
-    const list = pieceEntriesOf(pc.id).filter(inR);
-    add("🎹", pc.name, "piano", list, list.reduce((n, e) => n + (e.mins || 0), 0));
-  }
-  if (course().lessons.length) {
-    const list = courseTrack().entries.filter(inR);
-    add("🎨", course().name, "pastel", list, list.reduce((n, e) => n + (e.mins || 0), 0));
-  }
-  for (const v of videos()) {
-    add("🎬", v.title, "watch", watchEntriesOf(v.id).filter(inR), 0);
-  }
-  return out.sort((a, b) => b.days - a.days);
-}
-
-/* Раскладка «горкой»: крупное в середине, мелкое липнет по краям. Идём по
-   спирали от центра и садимся в первое место, где ни с кем не пересекаемся. */
-function pilePack(items, W, H) {
-  const put = [];
-  for (const it of items) {
-    for (let a = 0; a < 3000; a++) {
-      const t = a * 0.4, R = 2.2 * Math.sqrt(a);
-      const x = W / 2 + R * Math.cos(t), y = H / 2 + R * Math.sin(t) * 0.72;
-      if (x - it.r < 1 || x + it.r > W - 1 || y - it.r < 1 || y + it.r > H - 1) continue;
-      if (put.every((q) => Math.hypot(q.x - x, q.y - y) >= q.r + it.r + 2.5)) {
-        put.push({ ...it, x, y });
-        break;
-      }
-    }
-  }
-  return put;
-}
-
-function pileHTML() {
-  const r = pileRange();
-  const items = pileItems(r.from, r.to);
-  const W = 320, H = 190;
-  const max = items[0] ? items[0].days : 1;
-  /* Радиус — корень из доли: тогда ПЛОЩАДЬ пропорциональна дням, а глаз
-     считывает именно площадь. Нижнюю подпорку держим маленькой: чем она
-     больше, тем сильнее мелкое притворяется крупным. */
-  const sized = items.map((it) => ({ ...it, r: Math.max(13, 46 * Math.sqrt(it.days / max)) }));
-  /* Две пьесы одного цвета сливаются в одно пятно. Внутри трека делаем шаг
-     по прозрачности: цвет остаётся узнаваемым, а вещи различимы. */
-  const seen = {};
-  for (const it of sized) {
-    const n = (seen[it.track] = (seen[it.track] || 0) + 1) - 1;
-    it.dim = Math.max(0.5, 0.92 - n * 0.2);
-  }
-  const put = pilePack(sized, W, H);
-
-  const ahead = pileOff >= 0;
-  return `
-    <div class="panel">
-      <div class="pile-head">
-        <h3 class="blk-head">Из чего сложилась ${period === "month" ? "месяц" : "неделя"}</h3>
-        <div class="pile-nav">
-          <button data-pile="-1" type="button">‹</button>
-          <b>${esc(r.title)}</b>
-          <button data-pile="1" type="button" ${ahead ? "disabled" : ""}>›</button>
-        </div>
-      </div>
-      ${put.length ? `
-        <svg class="pile" viewBox="0 0 ${W} ${H}" role="img">
-          ${put.map((it) => `
-            <g class="pl-b" data-pileinfo="${esc(it.title + " · " + it.days + " " + plural(it.days, "день", "дня", "дней") + (it.mins ? " · " + it.mins + " мин" : ""))}">
-              <title>${esc(it.title)}</title>
-              <circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${it.r.toFixed(1)}"
-                fill="${TRACK_HUE[it.track] || "var(--gold)"}" opacity="${it.dim}"></circle>
-              <text x="${it.x.toFixed(1)}" y="${(it.y + it.r * 0.12).toFixed(1)}"
-                font-size="${(it.r * 0.72).toFixed(1)}" text-anchor="middle" dominant-baseline="middle">${it.icon}</text>
-              <text class="pl-n" x="${it.x.toFixed(1)}" y="${(it.y + it.r * 0.72).toFixed(1)}"
-                font-size="${Math.max(8, it.r * 0.3).toFixed(1)}" text-anchor="middle">${it.days}</text>
-            </g>`).join("")}
-        </svg>
-        <p class="pile-note">Размер — сколько дней ты к этому возвращался. Нажми на кружок, чтобы увидеть подробности.</p>`
-      : `<div class="empty-note">${pileOff ? "В этот раз ничего не отмечено." : "Пока пусто — но неделя ещё идёт."}</div>`}
-    </div>`;
-}
-
-/* ── Куда ушли дни ──
-   Один материал легко съедает всё внимание, а остальные тихо стоят. Полоса
-   показывает перекос сразу: видно, что заброшено, ещё до того, как заметишь. */
-function splitHTML() {
-  const r = periodRange();
-  const inRange = (e) => !e.deleted && e.date >= r.from && e.date <= r.to;
-  const parts = [
-    { key: "piano", name: "Пианино", color: TRACK_HUE.piano,
-      days: new Set(data.piano.entries.filter(inRange).map((e) => e.date)) },
-    { key: "book", name: "Чтение", color: TRACK_HUE.book,
-      days: new Set(data.book.entries.filter(inRange).map((e) => e.date)) },
-    { key: "pastel", name: "Пастель", color: TRACK_HUE.pastel,
-      days: new Set(data.pastel.entries.filter(inRange).map((e) => e.date)) },
-    { key: "watch", name: "Видео", color: TRACK_HUE.watch,
-      days: new Set(watchEntries().filter(inRange).map((e) => e.date)) }
-  ].filter((x) => x.days.size);
-
-  const total = parts.reduce((n, x) => n + x.days.size, 0);
-  if (parts.length < 2) return "";        // делить нечего
-
-  return `
-    <div class="panel">
-      <h3 class="blk-head">Куда ушли дни ${period === "month" ? "месяца" : "недели"}</h3>
-      <div class="sp-bar">
-        ${parts.map((x) => `<i style="width:${(x.days.size / total * 100).toFixed(1)}%;background:${x.color}"></i>`).join("")}
-      </div>
-      <div class="sp-keys">
-        ${parts.map((x) => `
-          <span class="sp-key">
-            <i style="background:${x.color}"></i>${esc(x.name)}
-            <b>${x.days.size}</b>
-          </span>`).join("")}
-      </div>
-    </div>`;
-}
 
 function summaryHTML() {
   const r = periodRange();
@@ -4026,7 +3732,6 @@ function summaryHTML() {
 
   const R = 78, C = 2 * Math.PI * R;
   const on = C * Math.min(1, ringMax ? ringVal / ringMax : 0);
-  const best = bestStreakAll();
 
   return `
     <div class="periods">
@@ -4047,9 +3752,9 @@ function summaryHTML() {
         </div>
       </div>
 
+      <!-- Ни серии, ни числа дней: серия превращает пропуск в потерю, а дни
+           уже написаны крупно в кольце — «5 из 4 дней цели». -->
       <div class="sum-chips">
-        <div class="sc ${best ? "hot" : ""}"><b>🔥 ${best}</b><span>${T("streak")}</span></div>
-        <div class="sc"><b>${st.days}</b><span>${plural(st.days, "день", "дня", "дней")}</span></div>
         <div class="sc"><b>${st.bars}</b><span>${plural(st.bars, "такт", "такта", "тактов")}</span></div>
         <div class="sc"><b>${st.pages}</b><span>страниц</span></div>
         <div class="sc"><b>${st.lessons}</b><span>${plural(st.lessons, "урок", "урока", "уроков")}</span></div>
@@ -4062,8 +3767,6 @@ function summaryHTML() {
 }
 
 // серия одна на всё приложение: важно заниматься каждый день, а чем — не важно
-const bestStreakAll = () => streakAll();
-
 function renderEmpty(title, text) {
   $("#view").innerHTML = `
     <div class="empty-state">
@@ -4074,102 +3777,6 @@ function renderEmpty(title, text) {
 }
 
 
-/* ── Дни недели: сколько дел приходится на день в среднем ──
-   Сумма по неделям обманывает: если в окне два воскресенья по одному делу,
-   а суббота была одна, но насыщенная, воскресенье выходит «активнее».
-   Поэтому делим на то, сколько раз этот день вообще случился. */
-function weekProfileHTML() {
-  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
-    .filter((e) => !e.deleted);
-  if (all.length < 4) return "";
-
-  const dates = [...new Set(all.map((e) => e.date))].sort();
-  const first = dates[0], last = dates[dates.length - 1];
-
-  const deeds = new Array(7).fill(0);
-  for (const e of all) deeds[(fromStr(e.date).getDay() + 6) % 7]++;
-
-  // сколько раз каждый день недели вообще выпал в окне наблюдения
-  const times = new Array(7).fill(0);
-  for (let d = fromStr(first); dateStr(d) <= last; d.setDate(d.getDate() + 1))
-    times[(d.getDay() + 6) % 7]++;
-
-  const avg = deeds.map((n, i) => times[i] ? n / times[i] : 0);
-  const max = Math.max(...avg);
-  if (!max) return "";
-  const best = avg.indexOf(max);
-  const days = daysBetween(first, last) + 1;
-  const fmt = (v) => (Math.round(v * 10) / 10).toString().replace(".", ",");
-
-  return `
-    <div class="panel">
-      <div class="sum-head">Дни недели</div>
-      <div class="wk-prof">
-        ${avg.map((v, i) => `
-          <div class="wk-col ${i === best ? "top" : ""}">
-            <span class="wk-bar" style="height:${Math.max(6, Math.round(v / max * 100))}%"></span>
-            <b>${fmt(v)}</b>
-            <em>${DOW[i]}</em>
-          </div>`).join("")}
-      </div>
-      <p class="wk-note">Чаще всего — <b>${DOW_FULL[best]}</b>.
-        <span style="color:var(--dim)">Сколько дел приходится на такой день в среднем.
-        ${days < 21 ? "Данных пока мало — за " + days + " " + plural(days, "день", "дня", "дней") + ", картина ещё пляшет."
-                    : "За " + days + " " + plural(days, "день", "дня", "дней") + "."}</span></p>
-    </div>`;
-}
-
-/* ── Суточные циклы: когда в течение дня ты обычно занимаешься ──
-   Берём время создания записи: отмечаешь обычно сразу после занятия,
-   так что это лучший доступный слепок реального ритма. */
-function dayCycleHTML() {
-  const rows = [
-    ["p", (data.piano.entries || [])],
-    ["b", (data.book.entries || [])],
-    ["c", (data.pastel.entries || [])],
-    ["w", watchEntries()]
-  ];
-  const hours = Array.from({ length: 24 }, () => ({ p: 0, b: 0, c: 0, all: 0 }));
-  let total = 0;
-  for (const [key, list] of rows)
-    for (const e of list) {
-      if (!e || !e.createdAt || e.deleted) continue;
-      const h = new Date(e.createdAt).getHours();
-      hours[h][key]++; hours[h].all++; total++;
-    }
-  if (total < 3) return "";                       // пока не о чем говорить
-
-  const max = Math.max(...hours.map(h => h.all)) || 1;
-  // самое частое время — по трёхчасовому окну, одиночный час слишком капризен
-  let bestH = 0, bestSum = -1;
-  for (let h = 0; h < 24; h++) {
-    const sum = hours[(h + 23) % 24].all + hours[h].all + hours[(h + 1) % 24].all;
-    if (sum > bestSum) { bestSum = sum; bestH = h; }
-  }
-  const part = bestH < 5 ? "ночью" : bestH < 12 ? "утром" : bestH < 17 ? "днём" : bestH < 22 ? "вечером" : "поздним вечером";
-
-  const bars = hours.map((h, i) => {
-    const pct = h.all ? Math.max(9, h.all / max * 100) : 0;
-    // цвет столбика — по тому треку, которого в этом часе больше
-    const top = h.p >= h.b && h.p >= h.c ? "p" : h.b >= h.c ? "b" : "c";
-    return `<i class="${h.all ? "on " + top : ""}" style="height:${pct}%"
-      title="${i}:00 — ${h.all || 0}"></i>`;
-  }).join("");
-
-  return `
-    <div class="panel">
-      <div class="cal-head"><h3 style="margin:0">Сутки</h3>
-        <span class="dc-note">чаще всего ${part}, около ${bestH}:00</span></div>
-      <div class="dc-chart">${bars}</div>
-      <div class="dc-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
-      <div class="cal-legend">
-        <span><i class="dot p"></i> пианино</span>
-        <span><i class="dot b"></i> чтение</span>
-        <span><i class="dot c"></i> пастель</span>
-      </div>
-    </div>`;
-}
-
 function renderProgress() {
   if (!hasMaterials()) { renderEmpty("Пока нечего показывать", "Как появятся материалы, здесь будет прогресс по неделям и месяцам."); return; }
   $("#view").innerHTML = `
@@ -4177,11 +3784,6 @@ function renderProgress() {
       ${summaryHTML()}
     </div>
 
-    ${pileHTML()}
-    ${forecastHTML()}
-    ${splitHTML()}
-    ${weekProfileHTML()}
-    ${dayCycleHTML()}
 
     <div class="panel">
       <div class="cal-head">
@@ -4219,19 +3821,8 @@ function renderProgress() {
     b.addEventListener("click", () => {
       period = b.dataset.p;
       cfg.period = period; saveCfg();
-      pileOff = 0;                    // сменили масштаб — возвращаемся к нынешнему
       renderProgress();
     }));
-
-  document.querySelectorAll("[data-pile]").forEach(b =>
-    b.addEventListener("click", () => {
-      const next = pileOff + Number(b.dataset.pile);
-      if (next > 0) return;           // вперёд дальше нынешнего смысла нет
-      pileOff = next;
-      renderProgress();
-    }));
-  document.querySelectorAll("[data-pileinfo]").forEach(g =>
-    g.addEventListener("click", () => toast(g.dataset.pileinfo)));
 
   $("#calPrev").addEventListener("click", () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
   $("#calNext").addEventListener("click", () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
@@ -5035,19 +4626,9 @@ function mediaHTML(t) {
    там мысли, их перечитывают, а не выполняют. Здесь у желания есть вид
    и одно-единственное состояние: пока хочется — или уже сбылось. */
 
-const WISH_KINDS = [
-  { id: "place",  icon: "🗺", name: "Съездить" },
-  { id: "read",   icon: "📚", name: "Прочитать" },
-  { id: "watch",  icon: "🎬", name: "Посмотреть" },
-  { id: "listen", icon: "🎧", name: "Послушать" },
-  { id: "buy",    icon: "🛒", name: "Купить" },
-  { id: "make",   icon: "✍️", name: "Сделать" }
-];
-const wishKind = (id) => WISH_KINDS.find(k => k.id === id) || WISH_KINDS[WISH_KINDS.length - 1];
 const wishes = () => (data.wishes || []).filter(w => !w.deleted);
 const wishOpenCount = () => wishes().filter(w => !w.done).length;
 
-let wishKindPick = "place";      // вид у нового желания
 let wishFilter = "open";         // «хочется» | «сбылось»
 let wishEditing = null;
 
@@ -5056,10 +4637,10 @@ function wishAdd(text) {
   if (!t) return false;
   data.wishes = data.wishes || [];
   data.wishes.push({
-    /* Источник не привязываем. Подставлялся активный материал, а желание
-       приходит откуда угодно — и подпись «Бах, BWV 853» под «съездить на косу»
-       не объясняла, а сбивала. Название и вид — всё, что нужно. */
-    id: uid(), text: t, kind: wishKindPick,
+    /* Ни источника, ни вида. Источник подставлялся активный, а желание
+       приходит откуда угодно; вид приходилось выбирать при каждой записи, и
+       ни разу не пригодился. Осталось только само желание. */
+    id: uid(), text: t,
     done: false, doneAt: 0, date: todayStr(), createdAt: now(), updatedAt: now()
   });
   saveData();
@@ -5606,7 +5187,6 @@ function renderWishes() {
   const when = (w) => fmt.format(fromStr(w.date));
 
   const rowHTML = (w) => {
-    const k = wishKind(w.kind);
     return `
       <article class="wish${w.done ? " done" : ""}">
         <button class="wi-check" data-wdone="${w.id}" type="button"
@@ -5620,7 +5200,6 @@ function renderWishes() {
                </div>`
             : `<p class="wi-text">${esc(w.text)}</p>
                <div class="wi-meta">
-                 <span class="wi-kind">${k.icon} ${esc(k.name)}</span>
                  <span class="wi-when">${esc(w.done ? "сбылось " + fmt.format(new Date(w.doneAt || now())) : when(w))}</span>
                </div>`}
         </div>
@@ -5643,12 +5222,8 @@ function renderWishes() {
   $("#view").innerHTML = `
     <div class="panel th-panel">
       <textarea class="note-input th-text" id="wiText" rows="2" placeholder="Чего захотелось?"></textarea>
-      <div class="wi-kinds">
-        ${WISH_KINDS.map(k => `
-          <button class="wi-pick ${wishKindPick === k.id ? "on" : ""}" data-wkind="${k.id}" type="button">
-            <i>${k.icon}</i><span>${esc(k.name)}</span>
-          </button>`).join("")}
-      </div>
+      <!-- Выбор вида убран: раскладывать желания по полкам приходилось при
+           каждой записи, а пользы от полок не было ни разу. Осталось поле. -->
       <button class="btn gold th-send" id="wiSave" type="button">Записать</button>
     </div>
 
@@ -5666,11 +5241,6 @@ function renderWishes() {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); }
   });
 
-  document.querySelectorAll("[data-wkind]").forEach(b =>
-    b.addEventListener("click", () => {
-      wishKindPick = b.dataset.wkind;
-      document.querySelectorAll("[data-wkind]").forEach(x => x.classList.toggle("on", x === b));
-    }));
   document.querySelectorAll("#wishSeg button").forEach(b =>
     b.addEventListener("click", () => { wishFilter = b.dataset.wf; wishEditing = null; renderWishes(); }));
   document.querySelectorAll("[data-wdone]").forEach(b =>
@@ -10128,6 +9698,10 @@ function libraryUI() {
   }
 
   const row = (key, cover, fallback, title, sub, pct, meta, wide) => `
+    <span class="lib-cell">
+    <button class="lib-eye${matHidden(key) ? " off" : ""}" data-eye="${esc(key)}" type="button"
+      aria-label="${matHidden(key) ? "Вернуть на главную" : "Убрать с главной"}"
+      title="${matHidden(key) ? "не показывается на главной" : "показывается на главной"}">${matHidden(key) ? "🙈" : "👁"}</button>
     <button class="lib-row" data-lib="${esc(key)}" type="button">
       <span class="lib-cover ${wide ? "wide" : ""}">${cover ? `<img src="${esc(cover)}" alt="" loading="lazy">` : `<i>${fallback}</i>`}</span>
       <span class="lib-body">
@@ -10137,7 +9711,8 @@ function libraryUI() {
         <span class="lib-meta">${meta}</span>
       </span>
       <span class="mc-go">›</span>
-    </button>`;
+    </button>
+    </span>`;
 
   const group = (name, rows) => rows.length
     ? `<div class="lib-group">${esc(name)}</div><div class="lib-list">${rows.join("")}</div>` : "";
@@ -10210,7 +9785,8 @@ function libraryUI() {
     + (shelfRows.length ? `<div class="lib-list">${shelfRows.join("")}</div>`
         : `<div class="empty-note">Здесь будет пройденное — с оценкой и отзывом.</div>`)
     + `<div class="lib-group">Добавить</div>`
-    + watchAddUI()
+    /* Добавление роликов с ютуба убрано: отмечать просмотр видео оказалось
+       занятием без смысла. Уже добавленные материалы остаются на месте. */
     + `<button class="btn add-book" id="libAddBook" type="button">＋ Прочитанную книгу</button>`;
 }
 
@@ -10297,19 +9873,6 @@ function bookPageUI(b) {
 }
 
 /* Видео — единственный материал, который заводится руками. */
-function watchAddUI() {
-  return `
-    <div class="freeze">
-      <div class="fz-head">🔗 <b>Добавить видео</b> — вставь ссылку с YouTube</div>
-      <div class="wt-add">
-        <input id="wtUrl" type="url" inputmode="url" autocomplete="off"
-               placeholder="https://youtu.be/…" ${watchBusy ? "disabled" : ""}>
-        <button class="btn" id="wtAdd" type="button" ${watchBusy ? "disabled" : ""}>${watchBusy ? "Гружу…" : "Добавить"}</button>
-      </div>
-      <div class="wt-hint">Название, автора и обложку возьмём с самого ютуба. Каждое видео — отдельный материал на главной.</div>
-    </div>`;
-}
-
 function watchPageUI(v) {
   const st = withMaterial({ track: "watch", videoId: v.id }, watchStats);
   const ent = watchEntriesOf(v.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
@@ -10493,6 +10056,8 @@ function pastelPageUI() {
 }
 
 function bindLibraryUI() {
+  document.querySelectorAll("[data-eye]").forEach(btn =>
+    btn.addEventListener("click", (e) => { e.stopPropagation(); matToggle(btn.dataset.eye); }));
   document.querySelectorAll("[data-lib]").forEach(btn =>
     btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
   const addBook = $("#libAddBook");
@@ -10516,16 +10081,6 @@ function bindLibraryUI() {
     }));
   const back = $("#libBack");
   if (back) back.addEventListener("click", () => { libBook = null; render(); $("#view").scrollTop = 0; });
-  const wtAdd = $("#wtAdd"), wtUrl = $("#wtUrl");
-  if (wtAdd && wtUrl) {
-    const go = async () => {
-      const v = wtUrl.value.trim();
-      if (!v) { toast("Вставь ссылку"); return; }
-      if (await watchAdd(v)) { wtUrl.value = ""; render(); }
-    };
-    wtAdd.addEventListener("click", go);
-    wtUrl.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-  }
   document.querySelectorAll("[data-wtcopy]").forEach(btn =>
     btn.addEventListener("click", () => copyText(btn.dataset.wtcopy)));
   document.querySelectorAll("[data-wtdone]").forEach(btn =>
@@ -11012,7 +10567,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -11127,6 +10682,8 @@ async function syncNow(manual) {
          устройстве он оставался пустым — и первой же записью затирал в гисте
          и пройденные такты, и ссылку на видео. */
       data.practice = mergePrac(data.practice, remote.practice);
+      // спрятанное — свойство взгляда, а не данных: берём то, что свежее целиком
+      if (remote.hidden && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.hidden = remote.hidden;
       pracStamp(false);        // слияние — не правка, отметки времени не трогаем
       // адрес гиста с файлами обязан жить в данных, а не в настройках устройства,
       // иначе на втором телефоне вложения просто неоткуда взять
