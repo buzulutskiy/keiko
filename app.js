@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 134";
+const APP_VERSION = "Кэйко 135";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3496,6 +3496,12 @@ const UNIT_WORD = {
   bar: ["проход", "прохода", "проходов"]
 };
 
+const unitWord = (unit, n) => {
+  const w = UNIT_WORD[unit] || ["шаг", "шага", "шагов"];
+  // дробное число берёт родительный падеж единственного: «12,5 страницы»
+  return Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
+};
+
 // последний день материала заслуживает своего слова, а не общего «закрыт»
 const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден", bar: "пьеса разобрана" };
 
@@ -3793,7 +3799,6 @@ function summaryHTML() {
         ${chipHTML(st.bars, was.bars, plural(st.bars, "такт", "такта", "тактов"))}
         ${chipHTML(st.pages, was.pages, "страниц")}
         ${chipHTML(st.lessons, was.lessons, plural(st.lessons, "урок", "урока", "уроков"))}
-        ${st.watched || was.watched ? chipHTML(st.watched, was.watched, plural(st.watched, "ролик", "ролика", "роликов")) : ""}
       </div>
 
       ${lineChartHTML(periodSeries())}
