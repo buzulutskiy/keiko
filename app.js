@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 143";
+const APP_VERSION = "Кэйко 144";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1533,7 +1533,7 @@ function renderTabbar() {
        видно в «Моментах», внутри той сессии, где они открылись, а полку
        и карту знаний перенесли в Библиотеку. Экран остался — просто без
        постоянной кнопки. */
-    ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}`],
+    ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}${wishesToday().length ? '<i class="tb-dot"></i>' : ""}`],
     ...(gutOn() ? [["gut", "💩", "Какуля"]] : [])
   ].map(([id, ic, nm]) =>
     `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
@@ -3022,7 +3022,13 @@ function renderHome() {
     ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
     : "";
 
+  const wt = wishesToday();
   $("#view").innerHTML = `
+    ${wt.length ? `
+      <button class="wish-banner" id="wishTodayGo" type="button">
+        <i>✧</i><span><b>${esc(wt[0].text)}${wt.length > 1 ? " · ещё " + (wt.length - 1) : ""}</b>
+        <em>хотел сегодня</em></span><span class="go">›</span>
+      </button>` : ""}
     <div class="hero">
       ${coverRailHTML()}
       ${ringHTML(shownPct(s))}
@@ -3043,6 +3049,12 @@ function renderHome() {
       <div class="nudge">${nudge}</div>
     </div>`;
 
+  const wtGo = $("#wishTodayGo");
+  if (wtGo) wtGo.addEventListener("click", () => {
+    tab = "wish"; cfg.tab = "wish"; saveCfg();
+    wishFilter = "open";
+    render();
+  });
   $("#ctaBtn").addEventListener("click", () => {
     if (!gistReady()) { openSettingsSheet(); return; }
     selectedDate = todayStr();
@@ -4696,21 +4708,60 @@ const wishOpenCount = () => wishes().filter(w => !w.done).length;
 
 let wishFilter = "open";         // «хочется» | «сбылось»
 let wishEditing = null;
+let wishDuePick = "";            // срок нового желания: пусто — когда-нибудь
+let wishEditDue = "";            // срок в открытой правке
+let wishTriage = null;           // раскладка по одной: { ids, at }
 
-function wishAdd(text) {
+/* У желания может быть срок, а может и не быть: «съездить в Выборг» живёт
+   без даты годами, и это нормально. Дата не обязанность, а полочка:
+   по ней список сам раскладывается на сегодня, завтра, позже и когда-нибудь. */
+const tomorrowStr = () => dateStr(new Date(Date.now() + 864e5));
+const wishesToday = () => wishes().filter((w) => !w.done && w.due && w.due <= todayStr());
+
+function wishAdd(text, due) {
   const t = String(text || "").trim();
   if (!t) return false;
   data.wishes = data.wishes || [];
   data.wishes.push({
     /* Ни источника, ни вида. Источник подставлялся активный, а желание
        приходит откуда угодно; вид приходилось выбирать при каждой записи, и
-       ни разу не пригодился. Осталось только само желание. */
-    id: uid(), text: t,
+       ни разу не пригодился. Осталось желание и, по желанию, срок. */
+    id: uid(), text: t, due: due || "",
     done: false, doneAt: 0, date: todayStr(), createdAt: now(), updatedAt: now()
   });
   saveData();
   schedulePush();
   return true;
+}
+
+/* Быстрый выбор срока: когда-нибудь · сегодня · завтра · календарь.
+   Одна и та же полоска в создании и в правке. */
+function dueChipsHTML(cur, pref) {
+  const fmtD = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
+  const custom = cur && cur !== todayStr() && cur !== tomorrowStr();
+  return `
+    <div class="wi-due" data-duebox="${pref}">
+      <button class="wi-pick ${!cur ? "on" : ""}" data-due="" type="button">Когда-нибудь</button>
+      <button class="wi-pick ${cur === todayStr() ? "on" : ""}" data-due="${todayStr()}" type="button">Сегодня</button>
+      <button class="wi-pick ${cur === tomorrowStr() ? "on" : ""}" data-due="${tomorrowStr()}" type="button">Завтра</button>
+      <button class="wi-pick ${custom ? "on" : ""}" data-duecal="1" type="button">${
+        custom ? esc(fmtD.format(fromStr(cur)).replace(".", "")) : "Дата…"}</button>
+      <input type="date" data-dueinput="1" hidden>
+    </div>`;
+}
+
+function bindDueChips(box, get, set) {
+  box.querySelectorAll("[data-due]").forEach((b) =>
+    b.addEventListener("click", () => { set(b.dataset.due); }));
+  const cal = box.querySelector("[data-duecal]");
+  const inp = box.querySelector("[data-dueinput]");
+  if (cal && inp) {
+    cal.addEventListener("click", () => {
+      inp.value = get() || todayStr();
+      try { inp.showPicker(); } catch { inp.click(); }
+    });
+    inp.addEventListener("change", () => { if (inp.value) set(inp.value); });
+  }
 }
 
 function wishToggle(id) {
@@ -5242,16 +5293,83 @@ function renderGut() {
     b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
 }
 
+/* ── Раскидать ──
+   Отдельный проход по всем открытым желаниям, по одному: сегодня, завтра,
+   дата, когда-нибудь или оставить как есть. Запускается сколько угодно раз —
+   это пересборка полочек, а не разовая настройка. */
+function renderWishTriage() {
+  const today = todayStr(), tomo = tomorrowStr();
+  // список зафиксирован на старте: пока раскладываешь, полочки под руками не ездят
+  const w = wishes().find((x) => x.id === wishTriage.ids[wishTriage.at] && !x.done);
+  if (!w) {
+    wishTriage.at++;
+    if (wishTriage.at >= wishTriage.ids.length) { wishTriage = null; toast("Разложено"); }
+    renderWishes();
+    return;
+  }
+  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
+  const cur = !w.due ? "когда-нибудь"
+    : w.due < today ? "с " + fmt.format(fromStr(w.due))
+    : w.due === today ? "сегодня"
+    : w.due === tomo ? "завтра"
+    : "к " + fmt.format(fromStr(w.due));
+
+  $("#view").innerHTML = `
+    <div class="panel wt-card">
+      <div class="wt-head">
+        <span>${wishTriage.at + 1} из ${wishTriage.ids.length}</span>
+        <button class="th-act" id="wtClose" type="button" aria-label="Закончить">✕</button>
+      </div>
+      <p class="wt-text">${esc(w.text)}</p>
+      <p class="wt-cur">сейчас: ${esc(cur)}</p>
+      <div class="wi-due">
+        <button class="wi-pick ${w.due === today ? "on" : ""}" data-wt="${today}" type="button">Сегодня</button>
+        <button class="wi-pick ${w.due === tomo ? "on" : ""}" data-wt="${tomo}" type="button">Завтра</button>
+        <button class="wi-pick" id="wtCal" type="button">Дата…</button>
+        <button class="wi-pick ${!w.due ? "on" : ""}" data-wt="" type="button">Когда-нибудь</button>
+        <input type="date" id="wtDate" hidden>
+      </div>
+      <button class="btn wt-skip" id="wtSkip" type="button">Оставить как есть</button>
+    </div>
+    <div class="empty-note">Полочки пересобираются на месте — пройди хоть весь список, хоть половину.</div>`;
+
+  const next = () => {
+    wishTriage.at++;
+    if (wishTriage.at >= wishTriage.ids.length) { wishTriage = null; toast("Разложено"); }
+    renderWishes();
+  };
+  const setDue = (v) => { w.due = v || ""; w.updatedAt = now(); saveData(); schedulePush(); next(); };
+  document.querySelectorAll("[data-wt]").forEach((b) =>
+    b.addEventListener("click", () => setDue(b.dataset.wt)));
+  const cal = $("#wtCal"), inp = $("#wtDate");
+  cal.addEventListener("click", () => {
+    inp.value = w.due || todayStr();
+    try { inp.showPicker(); } catch { inp.click(); }
+  });
+  inp.addEventListener("change", () => { if (inp.value) setDue(inp.value); });
+  $("#wtSkip").addEventListener("click", next);
+  $("#wtClose").addEventListener("click", () => { wishTriage = null; renderWishes(); });
+}
+
 function renderWishes() {
-  const list = wishes().filter(w => (wishFilter === "done" ? w.done : !w.done))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (wishTriage) { renderWishTriage(); return; }
+  const list = wishes().filter(w => (wishFilter === "done" ? w.done : !w.done));
   const openN = wishOpenCount();
   const doneN = wishes().length - openN;
+  const today = todayStr(), tomo = tomorrowStr();
 
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
-  const when = (w) => fmt.format(fromStr(w.date));
+  const fmtD = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
 
   const rowHTML = (w) => {
+    /* Срок на карточке: просрочка не краснеет, а тихо говорит «с 12 августа» —
+       это желание, а не дедлайн на работе. */
+    const dueTxt = w.done ? "сбылось " + fmt.format(new Date(w.doneAt || now()))
+      : !w.due ? ""
+      : w.due < today ? "с " + fmt.format(fromStr(w.due))
+      : w.due === today ? "сегодня"
+      : w.due === tomo ? "завтра"
+      : "к " + fmt.format(fromStr(w.due));
     return `
       <article class="wish${w.done ? " done" : ""}">
         <button class="wi-check" data-wdone="${w.id}" type="button"
@@ -5259,14 +5377,13 @@ function renderWishes() {
         <div class="wi-body">
           ${wishEditing === w.id
             ? `<textarea class="note-input wi-edit" id="wiEdit" rows="3">${esc(w.text)}</textarea>
+               ${dueChipsHTML(wishEditDue, "edit")}
                <div class="wi-edit-row">
                  <button class="btn gold" data-wsave="${w.id}" type="button">Сохранить</button>
                  <button class="btn" data-wcancel="1" type="button">Отмена</button>
                </div>`
             : `<p class="wi-text">${esc(w.text)}</p>
-               <div class="wi-meta">
-                 <span class="wi-when">${esc(w.done ? "сбылось " + fmt.format(new Date(w.doneAt || now())) : when(w))}</span>
-               </div>`}
+               ${dueTxt ? `<div class="wi-meta"><span class="wi-when${!w.done && w.due && w.due < today ? " late" : ""}">${esc(dueTxt)}</span></div>` : ""}`}
         </div>
         ${wishEditing === w.id ? "" : `
         <span class="wi-acts">
@@ -5276,19 +5393,38 @@ function renderWishes() {
       </article>`;
   };
 
-  /* Список сплошной: вид написан на самой карточке, и второй раз — заголовком
-     группы — он только дробил экран на шесть кусков по одной строке. */
-  const body = list.length
-    ? `<div class="wish-list">${list.map(rowHTML).join("")}</div>`
-    : wishFilter === "done"
-      ? `<div class="empty-note">Сбывшегося пока нет.<br>Отмечай галочкой — здесь будет видно, что из задуманного дошло до дела.</div>`
-      : `<div class="empty-note">Пока пусто.<br>Сюда — то, что захотелось по ходу: куда съездить, что прочитать, что попробовать сделать.</div>`;
+  /* Открытые раскладываются по сроку сами: сегодня (и всё просроченное),
+     завтра, позже — по датам, и когда-нибудь — без даты. Никакой кнопки
+     сортировки не нужно: полочки и есть сортировка. */
+  let body;
+  if (wishFilter === "done") {
+    const done = list.slice().sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+    body = done.length
+      ? `<div class="wish-list">${done.map(rowHTML).join("")}</div>`
+      : `<div class="empty-note">Сбывшегося пока нет.<br>Отмечай галочкой — здесь будет видно, что из задуманного дошло до дела.</div>`;
+  } else if (!list.length) {
+    body = `<div class="empty-note">Пока пусто.<br>Сюда — то, что захотелось по ходу: куда съездить, что прочитать, что попробовать сделать.</div>`;
+  } else {
+    const bag = { today: [], tomo: [], later: [], some: [] };
+    for (const w of list) {
+      if (!w.due) bag.some.push(w);
+      else if (w.due <= today) bag.today.push(w);
+      else if (w.due === tomo) bag.tomo.push(w);
+      else bag.later.push(w);
+    }
+    bag.today.sort((a, b) => (a.due < b.due ? -1 : 1));
+    bag.later.sort((a, b) => (a.due < b.due ? -1 : 1));
+    bag.some.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const grp = (name, arr) => arr.length
+      ? `<div class="lib-group">${name} · ${arr.length}</div><div class="wish-list">${arr.map(rowHTML).join("")}</div>` : "";
+    body = grp("Сегодня", bag.today) + grp("Завтра", bag.tomo)
+      + grp("Позже", bag.later) + grp("Когда-нибудь", bag.some);
+  }
 
   $("#view").innerHTML = `
     <div class="panel th-panel">
       <textarea class="note-input th-text" id="wiText" rows="2" placeholder="Чего захотелось?"></textarea>
-      <!-- Выбор вида убран: раскладывать желания по полкам приходилось при
-           каждой записи, а пользы от полок не было ни разу. Осталось поле. -->
+      ${dueChipsHTML(wishDuePick, "new")}
       <button class="btn gold th-send" id="wiSave" type="button">Записать</button>
     </div>
 
@@ -5297,28 +5433,52 @@ function renderWishes() {
       <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
     </div>
 
+    ${wishFilter === "open" && openN > 1 ? `
+      <button class="wi-sort" id="wiSort" type="button">⇅ Раскидать по датам</button>` : ""}
+
     ${body}`;
 
   const area = $("#wiText");
-  const save = () => { if (wishAdd(area.value)) { area.value = ""; renderWishes(); } };
+  const save = () => {
+    if (wishAdd(area.value, wishDuePick)) { area.value = ""; wishDuePick = ""; renderWishes(); }
+    else toast("Напиши пару слов");
+  };
   $("#wiSave").addEventListener("click", save);
+  const newBox = document.querySelector('[data-duebox="new"]');
+  if (newBox) bindDueChips(newBox,
+    () => wishDuePick,
+    (v) => { wishDuePick = v; const t = area.value; renderWishes(); $("#wiText").value = t; });
+  const editBox = document.querySelector('[data-duebox="edit"]');
+  if (editBox) bindDueChips(editBox,
+    () => wishEditDue,
+    (v) => { wishEditDue = v; const t = ($("#wiEdit") || {}).value; renderWishes(); if ($("#wiEdit") && t != null) $("#wiEdit").value = t; });
   area.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); }
   });
 
+  const srt = $("#wiSort");
+  if (srt) srt.addEventListener("click", () => {
+    wishTriage = { ids: wishes().filter((w) => !w.done).map((w) => w.id), at: 0 };
+    renderWishes();
+  });
   document.querySelectorAll("#wishSeg button").forEach(b =>
     b.addEventListener("click", () => { wishFilter = b.dataset.wf; wishEditing = null; renderWishes(); }));
   document.querySelectorAll("[data-wdone]").forEach(b =>
     b.addEventListener("click", () => wishToggle(b.dataset.wdone)));
   document.querySelectorAll("[data-wedit]").forEach(b =>
-    b.addEventListener("click", () => { wishEditing = b.dataset.wedit; renderWishes(); }));
+    b.addEventListener("click", () => {
+      wishEditing = b.dataset.wedit;
+      const w = (data.wishes || []).find(x => x.id === wishEditing);
+      wishEditDue = (w && w.due) || "";
+      renderWishes();
+    }));
   document.querySelectorAll("[data-wcancel]").forEach(b =>
     b.addEventListener("click", () => { wishEditing = null; renderWishes(); }));
   document.querySelectorAll("[data-wsave]").forEach(b =>
     b.addEventListener("click", () => {
       const w = (data.wishes || []).find(x => x.id === b.dataset.wsave);
       const t = ($("#wiEdit").value || "").trim();
-      if (w && t) { w.text = t; w.updatedAt = now(); saveData(); schedulePush(); }
+      if (w && t) { w.text = t; w.due = wishEditDue || ""; w.updatedAt = now(); saveData(); schedulePush(); }
       wishEditing = null; renderWishes();
     }));
   document.querySelectorAll("[data-wdrop]").forEach(b =>

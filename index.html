@@ -2007,6 +2007,42 @@
     /* Вид записи выбирают до текста, поэтому он и стоит под полем ввода:
        сначала «куда», потом «что». */
     .wi-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+    .wi-due { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+    .wi-due .wi-pick span { display: inline; }
+    .wi-when.late { color: var(--gold-2); }
+    .wi-sort {
+      display: block; width: 100%; text-align: center; margin-bottom: 12px;
+      padding: 10px 14px; border-radius: 14px;
+      background: var(--glass); border: 1px dashed var(--glass-line);
+      color: var(--muted); font-size: 0.8rem;
+    }
+    .wt-card { display: grid; gap: 8px; }
+    .wt-head { display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.72rem; color: var(--dim); }
+    .wt-text { margin: 0; font-size: 1.02rem; line-height: 1.5; font-weight: 600; }
+    .wt-cur { margin: 0; font-size: 0.72rem; color: var(--dim); }
+    .wt-skip { margin-top: 4px; }
+
+    /* Баннер «хотел сегодня» на главной */
+    .wish-banner {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      margin-bottom: 10px; padding: 10px 13px; border-radius: 15px; text-align: left;
+      background: rgba(255, 201, 77, 0.08); border: 1px solid rgba(255, 201, 77, 0.22);
+    }
+    .wish-banner i { font-style: normal; color: var(--gold); }
+    .wish-banner b { display: block; font-size: 0.8rem; font-weight: 700;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wish-banner em { font-style: normal; font-size: 0.66rem; color: var(--dim); }
+    .wish-banner span:nth-child(2) { flex: 1; min-width: 0; }
+    .wish-banner .go { color: var(--dim); }
+
+    /* Точка на вкладке: сегодня есть за чем зайти */
+    .tabbar button { position: relative; }
+    .tb-dot {
+      position: absolute; top: 3px; right: 50%; margin-right: -17px;
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--gold);
+    }
     .wi-pick {
       display: inline-flex; align-items: center; gap: 6px;
       border: 1px solid var(--glass-line); background: var(--glass);
