@@ -2018,14 +2018,7 @@
     }
     .wi-due .wi-pick span { display: inline; }
     .wi-when.late { color: var(--gold-2); }
-    /* Раскладка — маленькая иконка рядом с сегментом, а не широкая кнопка */
-    .wish-top { display: flex; gap: 8px; align-items: stretch; }
-    .wish-top .seg { flex: 1; }
-    .wi-sort-ic {
-      flex: none; width: 46px; border-radius: 14px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      color: var(--muted); font-size: 1.05rem;
-    }
+
     .wt-card { display: grid; gap: 8px; }
     .wt-head { display: flex; align-items: center; justify-content: space-between;
       font-size: 0.72rem; color: var(--dim); }
@@ -2093,6 +2086,9 @@
       margin-top: 6px; font-size: 0.72rem; color: var(--dim);
     }
     .wi-kind { color: var(--muted); }
+    .wi-kind-sel { margin: 10px 0 0; }
+    .wt-kinds .wi-pick.kind { padding: 6px 9px; }
+    .wt-kinds .wi-pick.kind i { font-style: normal; font-size: 1rem; }
     .wi-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .wi-acts { flex: none; display: flex; gap: 2px; }
     .wi-edit-row { display: flex; gap: 8px; margin-top: 8px; }
@@ -2902,6 +2898,7 @@
     .like-fab.on { background: #ff5f7e; border-color: transparent; color: #2a0d13; }
     .like-fab.on i { color: #2a0d13; }
     .dice-fab { padding: 0; }
+    .sort-fab { padding: 0; }
     body.picking .fabs { display: none; }
 
     /* ── Праздник ────────────────────── */
@@ -3342,6 +3339,7 @@
   <div class="fabs" id="fabs">
     <button class="fab like-fab" id="likeFab" type="button" aria-label="Только любимые"><i>♡</i><b>0</b></button>
     <button class="fab dice-fab" id="diceFab" type="button" aria-label="Случайная мысль"><i>🎲</i></button>
+    <button class="fab sort-fab" id="sortFab" type="button" aria-label="Раскидать по датам"><i>📅</i></button>
   </div>
 
   <div class="toast" id="toast"></div>

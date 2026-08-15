@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 147";
+const APP_VERSION = "Кэйко 148";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4709,23 +4709,50 @@ let wishFilter = "open";         // «хочется» | «сбылось»
 let wishEditing = null;
 let wishDuePick = "";            // срок нового желания: пусто — когда-нибудь
 let wishEditDue = "";            // срок в открытой правке
+let wishKindPick = "";           // категория нового: пусто — без полки
+let wishEditKind = "";           // категория в правке
 let wishTriage = null;           // раскладка по одной: { ids, at }
 
 /* У желания может быть срок, а может и не быть: «съездить в Выборг» живёт
    без даты годами, и это нормально. Дата не обязанность, а полочка:
    по ней список сам раскладывается на сегодня, завтра, позже и когда-нибудь. */
 const tomorrowStr = () => dateStr(new Date(Date.now() + 864e5));
+
+/* Категории вернулись — но по-новому: необязательные. По умолчанию желание
+   без полки, и это нормальное его состояние; полка добавляется селектом,
+   когда сама просится, или скопом в «Раскидать». */
+const WISH_KINDS = [
+  { id: "watch", icon: "🎬", name: "Посмотреть" },
+  { id: "read",  icon: "📚", name: "Прочитать" },
+  { id: "buy",   icon: "🛒", name: "Купить" },
+  { id: "dog",   icon: "🐕", name: "Титу" },
+  { id: "trip",  icon: "🗺", name: "Съездить" },
+  { id: "go",    icon: "🍴", name: "Сходить" },
+  { id: "gift",  icon: "🎁", name: "Подарить" },
+  { id: "make",  icon: "✍️", name: "Сделать" },
+];
+const wishKind = (id) => WISH_KINDS.find((k) => k.id === id) || null;
+
+function wishKindSelectHTML(cur, boxId) {
+  const k = wishKind(cur);
+  return `
+    <span class="th-select wi-kind-sel">
+      <span class="ts-label">${k ? k.icon + " " + esc(k.name) : "Без категории"}</span>
+      <span class="ts-arrow">▾</span>
+      <select id="${boxId}" aria-label="Категория">
+        <option value="" ${!k ? "selected" : ""}>Без категории</option>
+        ${WISH_KINDS.map((x) => `<option value="${x.id}" ${cur === x.id ? "selected" : ""}>${x.icon} ${esc(x.name)}</option>`).join("")}
+      </select>
+    </span>`;
+}
 const wishesToday = () => wishes().filter((w) => !w.done && w.due && w.due <= todayStr());
 
-function wishAdd(text, due) {
+function wishAdd(text, due, kind) {
   const t = String(text || "").trim();
   if (!t) return false;
   data.wishes = data.wishes || [];
   data.wishes.push({
-    /* Ни источника, ни вида. Источник подставлялся активный, а желание
-       приходит откуда угодно; вид приходилось выбирать при каждой записи, и
-       ни разу не пригодился. Осталось желание и, по желанию, срок. */
-    id: uid(), text: t, due: due || "",
+    id: uid(), text: t, due: due || "", kind: kind || "",
     done: false, doneAt: 0, date: todayStr(), createdAt: now(), updatedAt: now()
   });
   saveData();
@@ -5330,7 +5357,12 @@ function renderWishTriage() {
         <button class="th-act" id="wtClose" type="button" aria-label="Закончить">✕</button>
       </div>
       <p class="wt-text">${esc(w.text)}</p>
-      <p class="wt-cur">сейчас: ${esc(cur)}</p>
+      <p class="wt-cur">сейчас: ${esc(cur)}${wishKind(w.kind) ? " · " + wishKind(w.kind).icon + " " + esc(wishKind(w.kind).name) : ""}</p>
+      <div class="wi-due wt-kinds">
+        ${WISH_KINDS.map((k) => `
+          <button class="wi-pick kind ${w.kind === k.id ? "on" : ""}" data-wtkind="${k.id}"
+            type="button" title="${esc(k.name)}"><i>${k.icon}</i></button>`).join("")}
+      </div>
       <div class="wi-due">
         <button class="wi-pick ${w.due === today ? "on" : ""}" data-wt="${today}" type="button">Сегодня</button>
         <button class="wi-pick ${w.due === tomo ? "on" : ""}" data-wt="${tomo}" type="button">Завтра</button>
@@ -5348,6 +5380,15 @@ function renderWishTriage() {
     renderWishes();
   };
   const setDue = (v) => { w.due = v || ""; w.updatedAt = now(); saveData(); schedulePush(); next(); };
+  /* Категория не листает дальше: часто хочется поставить и полку, и срок
+     одной карточке. Полка — щёлк, осталась; срок — щёлк, поехали дальше. */
+  document.querySelectorAll("[data-wtkind]").forEach((b) =>
+    b.addEventListener("click", () => {
+      w.kind = w.kind === b.dataset.wtkind ? "" : b.dataset.wtkind;
+      w.updatedAt = now();
+      saveData(); schedulePush();
+      renderWishes();
+    }));
   document.querySelectorAll("[data-wt]").forEach((b) =>
     b.addEventListener("click", () => setDue(b.dataset.wt)));
   const inp = $("#wtDate");
@@ -5377,6 +5418,7 @@ function renderWishes() {
       : w.due === today ? "сегодня"
       : w.due === tomo ? "завтра"
       : "к " + fmt.format(fromStr(w.due));
+    const kd = wishKind(w.kind);
     return `
       <article class="wish${w.done ? " done" : ""}">
         <button class="wi-check" data-wdone="${w.id}" type="button"
@@ -5384,13 +5426,17 @@ function renderWishes() {
         <div class="wi-body">
           ${wishEditing === w.id
             ? `<textarea class="note-input wi-edit" id="wiEdit" rows="3">${esc(w.text)}</textarea>
+               ${wishKindSelectHTML(wishEditKind, "wiEditKind")}
                ${dueChipsHTML(wishEditDue, "edit")}
                <div class="wi-edit-row">
                  <button class="btn gold" data-wsave="${w.id}" type="button">Сохранить</button>
                  <button class="btn" data-wcancel="1" type="button">Отмена</button>
                </div>`
             : `<p class="wi-text">${esc(w.text)}</p>
-               ${dueTxt ? `<div class="wi-meta"><span class="wi-when${!w.done && w.due && w.due < today ? " late" : ""}">${esc(dueTxt)}</span></div>` : ""}`}
+               ${dueTxt || kd ? `<div class="wi-meta">
+                 ${kd ? `<span class="wi-kind">${kd.icon} ${esc(kd.name)}</span>` : ""}
+                 ${dueTxt ? `<span class="wi-when${!w.done && w.due && w.due < today ? " late" : ""}">${esc(dueTxt)}</span>` : ""}
+               </div>` : ""}`}
         </div>
         ${wishEditing === w.id ? "" : `
         <span class="wi-acts">
@@ -5431,27 +5477,37 @@ function renderWishes() {
   $("#view").innerHTML = `
     <div class="panel th-panel">
       <textarea class="note-input th-text" id="wiText" rows="2" placeholder="Чего захотелось?"></textarea>
+      ${wishKindSelectHTML(wishKindPick, "wiKind")}
       ${dueChipsHTML(wishDuePick, "new")}
       <button class="btn gold th-send" id="wiSave" type="button">Записать</button>
     </div>
 
-    <div class="wish-top">
-      <div class="seg" id="wishSeg">
-        <button data-wf="open" class="${wishFilter === "open" ? "on" : ""}" type="button">Хочется ${openN || ""}</button>
-        <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
-      </div>
-      ${wishFilter === "open" && openN > 1 ? `
-        <button class="wi-sort-ic" id="wiSort" type="button" aria-label="Раскидать по датам" title="Раскидать по датам">⇅</button>` : ""}
+    <div class="seg" id="wishSeg">
+      <button data-wf="open" class="${wishFilter === "open" ? "on" : ""}" type="button">Хочется ${openN || ""}</button>
+      <button data-wf="done" class="${wishFilter === "done" ? "on" : ""}" type="button">Сбылось ${doneN || ""}</button>
     </div>
 
     ${body}`;
 
   const area = $("#wiText");
   const save = () => {
-    if (wishAdd(area.value, wishDuePick)) { area.value = ""; wishDuePick = ""; renderWishes(); }
-    else toast("Напиши пару слов");
+    if (wishAdd(area.value, wishDuePick, wishKindPick)) {
+      area.value = ""; wishDuePick = ""; wishKindPick = "";
+      renderWishes();
+    } else toast("Напиши пару слов");
   };
   $("#wiSave").addEventListener("click", save);
+  const kindSel = $("#wiKind");
+  if (kindSel) kindSel.addEventListener("change", () => {
+    wishKindPick = kindSel.value;
+    const t = area.value; renderWishes(); $("#wiText").value = t;
+  });
+  const editKindSel = $("#wiEditKind");
+  if (editKindSel) editKindSel.addEventListener("change", () => {
+    wishEditKind = editKindSel.value;
+    const t = ($("#wiEdit") || {}).value; renderWishes();
+    if ($("#wiEdit") && t != null) $("#wiEdit").value = t;
+  });
   const newBox = document.querySelector('[data-duebox="new"]');
   if (newBox) bindDueChips(newBox,
     () => wishDuePick,
@@ -5464,11 +5520,6 @@ function renderWishes() {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); }
   });
 
-  const srt = $("#wiSort");
-  if (srt) srt.addEventListener("click", () => {
-    wishTriage = { ids: wishes().filter((w) => !w.done).map((w) => w.id), at: 0 };
-    renderWishes();
-  });
   document.querySelectorAll("#wishSeg button").forEach(b =>
     b.addEventListener("click", () => { wishFilter = b.dataset.wf; wishEditing = null; renderWishes(); }));
   document.querySelectorAll("[data-wdone]").forEach(b =>
@@ -5478,6 +5529,7 @@ function renderWishes() {
       wishEditing = b.dataset.wedit;
       const w = (data.wishes || []).find(x => x.id === wishEditing);
       wishEditDue = (w && w.due) || "";
+      wishEditKind = (w && w.kind) || "";
       renderWishes();
     }));
   document.querySelectorAll("[data-wcancel]").forEach(b =>
@@ -5486,7 +5538,7 @@ function renderWishes() {
     b.addEventListener("click", () => {
       const w = (data.wishes || []).find(x => x.id === b.dataset.wsave);
       const t = ($("#wiEdit").value || "").trim();
-      if (w && t) { w.text = t; w.due = wishEditDue || ""; w.updatedAt = now(); saveData(); schedulePush(); }
+      if (w && t) { w.text = t; w.due = wishEditDue || ""; w.kind = wishEditKind || ""; w.updatedAt = now(); saveData(); schedulePush(); }
       wishEditing = null; renderWishes();
     }));
   document.querySelectorAll("[data-wdrop]").forEach(b =>
@@ -6475,7 +6527,7 @@ function bindDailyUI() {
 
 // кнопки в углу ленты мыслей: счётчик любимых и кубик со случайной записью
 function syncNotesFabs() {
-  const like = $("#likeFab"), dice = $("#diceFab");
+  const like = $("#likeFab"), dice = $("#diceFab"), srt = $("#sortFab");
   if (!like || !dice) return;
   const here = tab === "notes" && !settingsOpen && data && data.thoughts;
   const total = here ? thoughts().length : 0;
@@ -6484,6 +6536,11 @@ function syncNotesFabs() {
   like.classList.toggle("on", notesFilter === "liked");
   like.innerHTML = `<i>${notesFilter === "liked" ? "♥" : "♡"}</i><b>${n}</b>`;
   dice.classList.toggle("show", total > 1);
+  /* Раскладка по датам — той же породы: закреплена в левом нижнем углу
+     на «Захотелось», пока есть что раскладывать. */
+  if (srt) srt.classList.toggle("show",
+    tab === "wish" && !settingsOpen && !wishTriage && wishFilter === "open"
+    && !!data && wishes().filter((w) => !w.done).length > 1);
 }
 
 // материал в том виде, в каком его понимает withMaterial
@@ -11590,6 +11647,13 @@ function boot() {
   if (diceFab) diceFab.addEventListener("click", () => {
     if (navigator.vibrate) navigator.vibrate(15);
     shuffleRandomThought();
+  });
+  const sortFab = $("#sortFab");
+  if (sortFab) sortFab.addEventListener("click", () => {
+    if (tab !== "wish") return;
+    wishTriage = { ids: wishes().filter((w) => !w.done).map((w) => w.id), at: 0 };
+    renderWishes();
+    syncNotesFabs();
   });
 
   window.addEventListener("online", () => {
