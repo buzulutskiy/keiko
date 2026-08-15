@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 144";
+const APP_VERSION = "Кэйко 145";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4736,6 +4736,10 @@ function wishAdd(text, due) {
 
 /* Быстрый выбор срока: когда-нибудь · сегодня · завтра · календарь.
    Одна и та же полоска в создании и в правке. */
+/* Чип «Дата…» — это НЕ кнопка, открывающая календарь: айфон не даёт открыть
+   скрытый ввод даты из кода — showPicker() там не работает, click() по
+   спрятанному полю нем. Поэтому сам системный ввод лежит прозрачным прямо
+   на чипе: палец попадает в него, и календарь открывает система. */
 function dueChipsHTML(cur, pref) {
   const fmtD = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
   const custom = cur && cur !== todayStr() && cur !== tomorrowStr();
@@ -4744,24 +4748,17 @@ function dueChipsHTML(cur, pref) {
       <button class="wi-pick ${!cur ? "on" : ""}" data-due="" type="button">Когда-нибудь</button>
       <button class="wi-pick ${cur === todayStr() ? "on" : ""}" data-due="${todayStr()}" type="button">Сегодня</button>
       <button class="wi-pick ${cur === tomorrowStr() ? "on" : ""}" data-due="${tomorrowStr()}" type="button">Завтра</button>
-      <button class="wi-pick ${custom ? "on" : ""}" data-duecal="1" type="button">${
-        custom ? esc(fmtD.format(fromStr(cur)).replace(".", "")) : "Дата…"}</button>
-      <input type="date" data-dueinput="1" hidden>
+      <label class="wi-pick date ${custom ? "on" : ""}">${
+        custom ? esc(fmtD.format(fromStr(cur)).replace(".", "")) : "Дата…"}<input
+        type="date" data-dueinput="1" value="${esc(custom ? cur : "")}"></label>
     </div>`;
 }
 
 function bindDueChips(box, get, set) {
   box.querySelectorAll("[data-due]").forEach((b) =>
     b.addEventListener("click", () => { set(b.dataset.due); }));
-  const cal = box.querySelector("[data-duecal]");
   const inp = box.querySelector("[data-dueinput]");
-  if (cal && inp) {
-    cal.addEventListener("click", () => {
-      inp.value = get() || todayStr();
-      try { inp.showPicker(); } catch { inp.click(); }
-    });
-    inp.addEventListener("change", () => { if (inp.value) set(inp.value); });
-  }
+  if (inp) inp.addEventListener("change", () => { if (inp.value) set(inp.value); });
 }
 
 function wishToggle(id) {
@@ -5325,9 +5322,9 @@ function renderWishTriage() {
       <div class="wi-due">
         <button class="wi-pick ${w.due === today ? "on" : ""}" data-wt="${today}" type="button">Сегодня</button>
         <button class="wi-pick ${w.due === tomo ? "on" : ""}" data-wt="${tomo}" type="button">Завтра</button>
-        <button class="wi-pick" id="wtCal" type="button">Дата…</button>
+        <label class="wi-pick date">Дата…<input type="date" id="wtDate"
+          value="${esc(w.due || "")}"></label>
         <button class="wi-pick ${!w.due ? "on" : ""}" data-wt="" type="button">Когда-нибудь</button>
-        <input type="date" id="wtDate" hidden>
       </div>
       <button class="btn wt-skip" id="wtSkip" type="button">Оставить как есть</button>
     </div>
@@ -5341,11 +5338,7 @@ function renderWishTriage() {
   const setDue = (v) => { w.due = v || ""; w.updatedAt = now(); saveData(); schedulePush(); next(); };
   document.querySelectorAll("[data-wt]").forEach((b) =>
     b.addEventListener("click", () => setDue(b.dataset.wt)));
-  const cal = $("#wtCal"), inp = $("#wtDate");
-  cal.addEventListener("click", () => {
-    inp.value = w.due || todayStr();
-    try { inp.showPicker(); } catch { inp.click(); }
-  });
+  const inp = $("#wtDate");
   inp.addEventListener("change", () => { if (inp.value) setDue(inp.value); });
   $("#wtSkip").addEventListener("click", next);
   $("#wtClose").addEventListener("click", () => { wishTriage = null; renderWishes(); });
@@ -5627,7 +5620,13 @@ async function diaryEnrich(rec) {
   if (ch) {
     rec.updatedAt = now();
     saveData(); schedulePush();
-    if (tab === "diary" && !dyEditing) renderDays();
+    /* Не вся лента, а одна строка: полная перерисовка на каждом дозаполнении
+       заметно дёргала экран и делала раздел «медленным» на ощупь. */
+    if (tab === "diary" && !dyEditing && !cfg.diaryCal) {
+      const el = document.querySelector('[data-dyid="' + rec.id + '"] .dy-when');
+      if (el) { el.textContent = dyFootText(rec); return; }
+      renderDays();
+    }
   }
 }
 
@@ -5873,6 +5872,16 @@ function openDayEditor(rec) {
 
 let dyMenu = null;   // запись, у которой раскрыты действия
 
+/* Подпись под записью — одна тихая строка: время, улица, градусы. */
+function dyFootText(t) {
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const bits = [clock.format(new Date(t.createdAt || fromStr(t.date)))];
+  const sp = spot(t);
+  if (sp) bits.push(sp);
+  if (t.temp != null) bits.push(tempText(t.temp));
+  return bits.join(" · ") + (t.editedAt ? " · изм." : "") + (t.liked ? " · ♥" : "");
+}
+
 function renderDays() {
   const list = diaryList().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
@@ -5883,22 +5892,14 @@ function renderDays() {
     const d = fromStr(ds);
     return dfmt.format(d) + (d.getFullYear() !== nowYear ? " " + d.getFullYear() : "");
   };
-  /* Подпись под записью — одна тихая строка: время, улица, градусы.
-     Кнопок не видно, пока не попросишь: троеточие раскрывает четыре действия. */
-  const foot = (t) => {
-    const bits = [clock.format(new Date(t.createdAt || fromStr(t.date)))];
-    const sp = spot(t);
-    if (sp) bits.push(sp);
-    if (t.temp != null) bits.push(tempText(t.temp));
-    return bits.join(" · ") + (t.editedAt ? " · изм." : "") + (t.liked ? " · ♥" : "");
-  };
+  const foot = dyFootText;
 
   let feed = "", lastD = "";
   if (!cfg.diaryCal) feed = list.map((t) => {
     const head = t.date !== lastD ? `<div class="lib-group">${esc(dayName(t.date))}</div>` : "";
     lastD = t.date;
     return head + `
-      <article class="dy-card">
+      <article class="dy-card" data-dyid="${t.id}">
         ${t.text ? `<p class="dy-text">${esc(t.text)}</p>` : ""}
         ${mediaHTML(t)}
         <div class="dy-foot">
@@ -5926,7 +5927,8 @@ function renderDays() {
       ? diaryCalHTML(list)
       : (feed || `<div class="empty-note">Пока пусто. Нажми на поле выше —<br>дата, место и погода прикрепятся сами.</div>`)}`;
 
-  dyPreviewLoad();                       // к открытию листа место уже готово
+  /* Сети в отрисовке нет вовсе: место и погода спрашиваются только когда
+     открыт лист записи. Вкладка листается мгновенно, а не после гео-опроса. */
 
   $("#dyOpen").addEventListener("click", () => openDayEditor());
   document.querySelectorAll("[data-dymode]").forEach((b) =>
