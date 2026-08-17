@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 148";
+const APP_VERSION = "Кэйко 149";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6394,11 +6394,10 @@ function saveDaily(st) {
 
 function maybeDailyThought() {
   const st = dailyState();
-  /* Два показа в день, а не один: открыл утром — приехала мысль из книги,
-     открыл вечером — день из дневника. Или наоборот: пул общий, выбор
-     случайный. Записи без n — со времён одного показа, считаем их одним. */
-  const shown = st.date === todayStr() ? (st.n != null ? st.n : 1) : 0;
-  if (st.off || shown >= 2) return;
+  /* Один показ в день. Второй заводился под дневник — утром мысль, вечером
+     день, — но дневник спрятан, а мысль, выпрыгивающая второй раз при
+     переходе по вкладкам, ощущается сбоем, не подарком. */
+  if (st.off || st.date === todayStr()) return;
   if (!data || !data.thoughts) return;
   if ($("#cheer")?.classList.contains("show")) return;   // не перебиваем награды
   if ($("#sheet")?.classList.contains("show")) return;
@@ -6420,7 +6419,7 @@ function maybeDailyThought() {
   }
 
   const pick = pool[Math.floor(Math.random() * pool.length)];
-  saveDaily({ ...st, date: todayStr(), n: shown + 1, seen: [...fresh, pick.id].slice(-2000) });
+  saveDaily({ ...st, date: todayStr(), seen: [...fresh, pick.id].slice(-2000) });
   showDailyThought(pick);
 }
 
