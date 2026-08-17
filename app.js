@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 149";
+const APP_VERSION = "Кэйко 150";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5025,6 +5025,31 @@ function gutAdd() {
      экраном жалко. */
   const fresh = gutAchState().filter((a) => a.done && !was.has(a.id));
   if (fresh.length) setTimeout(() => showWon({ ach: fresh, facts: [] }), 900);
+  /* Пасхалка: в дни без наград иногда заглядывает сам Канье. Не каждый раз —
+     иначе через неделю перестанет смешить. */
+  else if (Math.random() < 0.35) setTimeout(showKanye, 900);
+}
+
+/* Строчки свои, в его духе — настоящий текст песни сюда нельзя,
+   да и «Скути-пуп» по-русски смешнее. */
+const KANYE_LINES = [
+  "Скути-пуп! Так держать.",
+  "Скути-пуп. Величие не ждёт.",
+  "Скути-пуп! Я бы поставил это в альбом.",
+  "Ты только что сделала то, о чём другие лишь мечтают. Скути-пуп.",
+  "Скути-пуп. Гений — это ежедневная практика.",
+  "Скути-пуп! Даже мои кроссовки не настолько регулярны.",
+];
+
+function showKanye() {
+  if ($("#cheer").classList.contains("show")) return;   // награду не перебиваем
+  $("#cheerStep").hidden = true;
+  $("#cheerIc").textContent = "🕶";
+  $("#cheerTitle").textContent = "Канье Уэст";
+  $("#cheerText").textContent = rnd(KANYE_LINES);
+  $("#cheerOk").textContent = "Скути-пуп!";
+  $("#cheer").classList.remove("fact");
+  $("#cheer").classList.add("show");
 }
 
 function gutDrop(id) {
