@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 153";
+const APP_VERSION = "Кэйко 154";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1394,8 +1394,12 @@ function crashScreen(e) {
           await Promise.all(regs.map(r => r.unregister()));
         }
         if (window.caches) {
+          /* Только оболочка (keiko-v*): в остальных хранилищах живут видео,
+             звук, обложки и записи — обновление их не касается. Раньше
+             стиралось всё подряд, и каждое обновление уносило выбранный
+             видеофайл: приходилось выбирать заново. */
           const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
+          await Promise.all(keys.filter(k => /^keiko-v\d/.test(k)).map(k => caches.delete(k)));
         }
       } catch {}
       location.replace(location.origin + location.pathname + "?v=" + Date.now());
@@ -8616,10 +8620,13 @@ function pracRender() {
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
         <p class="wk-stage">${esc(stage)}</p>
+        ${u.revisit ? `<p class="wk-passed">✓ ${reading ? "уже прочитано" : "уже пройдено — повтор засчитается попыткой"}</p>` : ""}
         ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
         <button class="pr-go" data-prac="ok">${reading ? "Прочитал" : "Получилось"}</button>
         <div class="wk-row">
-          ${!u.review && w.part ? `<button class="pr-ghost" data-prac="stepback">‹ Шаг</button>` : ""}
+          ${!u.review && w.part ? `
+            <button class="pr-ghost" data-prac="stepback" aria-label="Шаг назад">‹</button>
+            <button class="pr-ghost" data-prac="stepfwd" aria-label="Шаг вперёд">›</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
@@ -9207,18 +9214,19 @@ function bindPractice() {
           prac.undo = { u, key: pracKey(u, u.hand), added };   // на случай промаха
         }
         saveData();
-        // ступень могла сомкнуться — очередь пересобираем под новое место
-        const w = pracWhere();
-        const nn = prac.queue.find((x) => !x.review);
-        if (nn && nn.size !== w.size) prac.queue = pracQueue();
+        /* Очередь пересобирается после каждого подтверждения: после свободных
+           прогулок вперёд-назад только отметки говорят правду о том, что
+           дальше. Занятие само возвращается на передний край. */
+        prac.queue = pracQueue();
         return pracNext();
       }
-      case "stepback": {
-        /* Назад по лестнице — на любой шаг, даже давно пройденный. Отметки
-           не трогаем: пройденное остаётся пройденным в статистике. Шаг просто
-           открывается заново как повтор, текущая задача возвращается в
-           очередь следом. Каждое нажатие — ещё на шаг глубже, и путь вперёд
-           пройдётся заново; повтор игры засчитывается новой попыткой. */
+      case "stepback":
+      case "stepfwd": {
+        /* Свободная прогулка по лестнице: назад и вперёд, на любой шаг,
+           ничего не отмечая самим движением. Отметки целы — пройденное
+           остаётся пройденным и показывается галочкой; его подтверждение
+           идёт повтором-попыткой. Непройденное открывается как обычно. */
+        const dir = b.dataset.prac === "stepback" ? -1 : 1;
         const wb = pracWhere();
         if (!wb.part || !prac.cur) return;
         const lad = pracLadder(wb.part);
@@ -9226,12 +9234,14 @@ function bindPractice() {
         const c = prac.cur;
         let i = lad.findIndex((t) => keyOfT(t) ===
           c.size + ":" + c.from + "-" + c.to + ":" + c.hand + ":" + (c.phase || "play"));
-        if (i < 0) i = lad.length;          // сборка части: назад — в конец лестницы
-        if (i === 0) { toast("Это самый первый шаг"); return; }
-        const prev = lad[i - 1];
-        prac.queue.unshift({ ...c });       // текущий шаг вернётся следом
-        prac.cur = { from: prev.u.from, to: prev.u.to, size: prev.u.size,
-                     hand: prev.hand, phase: prev.phase, revisit: true };
+        if (i < 0) i = lad.length;          // сборка части — за концом лестницы
+        const j = i + dir;
+        if (j < 0) { toast("Это самый первый шаг"); return; }
+        if (j >= lad.length) { toast("Дальше — сборка части"); return; }
+        const t2 = lad[j];
+        const passed = t2.phase === "read" ? pracReadDone(t2.u, t2.hand) : pracIsDone(t2.u, t2.hand);
+        prac.cur = { from: t2.u.from, to: t2.u.to, size: t2.u.size,
+                     hand: t2.hand, phase: t2.phase, revisit: passed };
         prac.unitAt = Date.now();
         prac.undo = null;
         return pracRender();
@@ -10163,8 +10173,9 @@ async function forceUpdate() {
         await Promise.all(regs.map(r => r.unregister()));
       }
       if (window.caches) {
+        // только оболочка: видео, звук и записи обновления не касаются
         const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
+        await Promise.all(keys.filter(k => /^keiko-v\d/.test(k)).map(k => caches.delete(k)));
       }
       // главное для iOS: заставить браузер перекачать сами файлы, а не отдать их из своего кэша
       await Promise.all(["index.html", "app.js", "sw.js", "manifest.webmanifest"].map(
