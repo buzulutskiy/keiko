@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 156";
+const APP_VERSION = "Кэйко 157";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -193,6 +193,9 @@ function migrate(obj) {
   }
 
   if (obj.practice && typeof obj.practice === "object") base.practice = obj.practice;
+  // след недолгой «ровной сетки» видео: идея не прижилась, поле вычищаем
+  for (const k of Object.keys(base.practice || {}))
+    if (base.practice[k] && base.practice[k].vmap !== undefined) delete base.practice[k].vmap;
   if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
@@ -7341,25 +7344,6 @@ const vmarkFor = (from, to) =>
   vmarks().find((m) => m.from <= from && m.to >= to)
   || vmarks().find((m) => m.from === from) || null;
 
-/* ── Линейка тактов ──
-   Достаточно разметить один такт — где он в ролике начинается и кончается, —
-   и все остальные считаются сами: такт N стоит на «начало + (N−1) × длина».
-   Ровная сетка — приближение (в живом разборе темп гуляет), поэтому ручная
-   привязка куска к тактам всегда главнее линейки. Прелюдия Баха размечена
-   сразу: первый такт в её разборе идёт с 31-й по 47-ю секунду. */
-function vmapOf(st) {
-  return st.vmap || null;
-}
-
-function vmapSel(u, dur) {
-  const st = pracStore();
-  const m = vmapOf(st);
-  if (!m || !m.len) return null;
-  const a = m.at1 + (u.from - 1) * m.len;
-  if (a >= dur) return null;                       // линейка кончилась раньше ролика
-  return { a: Math.max(0, a), b: Math.min(dur, m.at1 + u.to * m.len) };
-}
-
 /* ── Плеер разбора ──
    Ролик, где вещь разбирают медленно и видно руки, объясняет больше записи
    целиком. Источника два, и оба ничего не публикуют: ссылка на ютуб — играет
@@ -7782,7 +7766,6 @@ function vidJump(u) {
     if (mA && mB) sel = { a: mA.a, b: mB.b };
     else if (mA) sel = { a: mA.a, b: mA.b };
   }
-  if (!sel) sel = vmapSel(u, V.dur());
   if (!sel) return;
   vidSetSel(sel);
   /* Кусок не просто выделен — бегунок уже стоит на его начале: сменился такт,
@@ -7855,7 +7838,6 @@ function vidControlsHTML(task) {
       </div>
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
-        <button class="btn" data-vd="paste" type="button">Вставить разметку</button>
       </div>
       ${rates.length ? `
       <div class="vd-row rates">
@@ -9031,36 +9013,6 @@ function bindPractice() {
       saveData(); schedulePush();
       clearInterval(vidTimer); ytPlayer = null; vkPlayer = null; pracVidEl = null; vidKind = "";
       box.dataset.mode = ""; pracVideo(prac && prac.cur);
-      return;
-    }
-
-    if (b.dataset.vd === "paste") {
-      /* Разметка делается в отдельном сервисе — на большом экране, с нотами
-         и клавиатурой. Сюда она приезжает готовой строкой; плеер для этого
-         не нужен, поэтому кейс стоит до охраны «плеер не готов». */
-      const raw = prompt("Вставь разметку из сервиса:");
-      if (raw == null) return;
-      let list;
-      try {
-        list = JSON.parse(raw.trim());
-        if (!Array.isArray(list)) throw 0;
-        list = list
-          .filter((m) => m && Number(m.from) >= 1 && isFinite(m.a) && isFinite(m.b) && m.b > m.a)
-          .map((m) => ({ from: Math.round(m.from), to: Math.round(m.to || m.from),
-                         a: Math.round(m.a * 10) / 10, b: Math.round(m.b * 10) / 10 }))
-          .sort((x, y) => x.from - y.from);
-        if (!list.length) throw 0;
-      } catch { toast("Не похоже на разметку — скопируй её из сервиса целиком"); return; }
-      const st2 = pracStore();
-      st2.vmarks = list;
-      st2.vmap = null;                  // ровная сетка уступает размеченному слухом
-      saveData(); schedulePush();
-      if (V.ready()) {
-        const u2 = prac && prac.cur;
-        if (u2) vidJump(u2);
-        vidPaint();
-      }
-      toast(`Принято: ${list.length} ${plural(list.length, "такт", "такта", "тактов")}`);
       return;
     }
 
