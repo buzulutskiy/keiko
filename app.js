@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 155";
+const APP_VERSION = "Кэйко 156";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7347,14 +7347,13 @@ const vmarkFor = (from, to) =>
    Ровная сетка — приближение (в живом разборе темп гуляет), поэтому ручная
    привязка куска к тактам всегда главнее линейки. Прелюдия Баха размечена
    сразу: первый такт в её разборе идёт с 31-й по 47-ю секунду. */
-function vmapOf(st, id) {
-  if (!st.vmap && id === "bwv853") st.vmap = { at1: 31, len: 16 };
+function vmapOf(st) {
   return st.vmap || null;
 }
 
 function vmapSel(u, dur) {
   const st = pracStore();
-  const m = vmapOf(st, piece().id);
+  const m = vmapOf(st);
   if (!m || !m.len) return null;
   const a = m.at1 + (u.from - 1) * m.len;
   if (a >= dur) return null;                       // линейка кончилась раньше ролика
@@ -7771,10 +7770,128 @@ function vidDrag(e) {
 }
 
 // у этих тактов уже есть запомненный кусок — подставляем его
+/* ── Ручная разметка тактов по ролику ──
+   Ровная сетка не выжила: в живом разборе темп гуляет, преподаватель
+   останавливается и повторяет. Границы такта слышит только человек — вот
+   экран, где он их и отбивает: ролик играет, рядом ноты текущего такта,
+   одна большая кнопка на каждую границу. */
+let vmkS = null;
+
+function openVidMark() {
+  const id = piece().id;
+  const url = videoUrls.get(id);
+  if (!url) { toast("Разметка идёт по сохранённому файлу — сначала выбери видео"); return; }
+  const bars = piece().bars;
+  const doc = pracDoc();
+  const old = document.getElementById("vmk");
+  if (old) old.remove();
+  vmkS = { marks: [] };
+  const box = document.createElement("div");
+  box.id = "vmk";
+  box.innerHTML = `
+    <div class="de-nav">
+      <button class="de-close" id="vmkClose" type="button" aria-label="Закрыть">✕</button>
+      <span class="de-day">Разметка тактов</span>
+      <button class="btn gold vmk-done" id="vmkDone" type="button">Готово</button>
+    </div>
+    <div class="vmk-frame"><video playsinline preload="metadata" src="${esc(url)}"></video></div>
+    <div class="vmk-rate">
+      ${[0.5, 0.75, 1].map((r) => `<button data-vmr="${r}" class="${r === 1 ? "on" : ""}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
+      <span class="vmk-clock" id="vmkClock">0:00</span>
+    </div>
+    <div class="vmk-hint" id="vmkHint"></div>
+    <div class="vmk-row">
+      <button class="vd-btn" id="vmkPlay" type="button" aria-label="Играть или пауза">▶︎</button>
+      <button class="vd-btn" id="vmkBack5" type="button" aria-label="На пять секунд назад">↺</button>
+      <button class="vd-btn" id="vmkUndo" type="button" aria-label="Убрать последнюю отметку">⌫</button>
+      <button class="btn gold vmk-mark" id="vmkMark" type="button"></button>
+    </div>`;
+  document.body.appendChild(box);
+  const v = box.querySelector("video");
+
+  const hintFor = (b) => {
+    const h = doc && doc.hints && doc.hints[b];
+    if (!h) return "подсказки к такту нет — размечай по слуху";
+    return [h.r ? "пр.  " + h.r : "", h.l ? "лев. " + h.l : ""].filter(Boolean).join("\n");
+  };
+  const paint = () => {
+    const n = vmkS.marks.length;
+    const mark = $("#vmkMark"), hint = $("#vmkHint");
+    mark.disabled = false;
+    if (n < bars) {
+      mark.textContent = `Такт ${n + 1} начинается здесь`;
+      hint.innerHTML = `<b>Такт ${n + 1}</b><span>${esc(hintFor(n + 1))}</span>
+        <em>${n ? `отмечено ${n} из ${bars}` : "запусти ролик и жми в момент первой ноты такта"}</em>`;
+    } else if (n === bars) {
+      mark.textContent = `Конец такта ${bars} — здесь`;
+      hint.innerHTML = `<b>Последний такт</b><span>${esc(hintFor(bars))}</span><em>осталась одна отметка — где он кончается</em>`;
+    } else {
+      mark.textContent = "Все такты отмечены";
+      mark.disabled = true;
+      hint.innerHTML = `<b>Готово</b><em>размечены все ${bars} — жми «Готово» сверху</em>`;
+    }
+  };
+  paint();
+
+  const tick = setInterval(() => {
+    const c = document.getElementById("vmkClock");
+    if (c) c.textContent = plClock(v.currentTime);
+  }, 250);
+  const shut = () => { clearInterval(tick); try { v.pause(); } catch {} box.remove(); vmkS = null; };
+
+  $("#vmkPlay").addEventListener("click", () => {
+    if (v.paused) { v.play(); $("#vmkPlay").textContent = "❚❚"; }
+    else { v.pause(); $("#vmkPlay").textContent = "▶︎"; }
+  });
+  $("#vmkBack5").addEventListener("click", () => { v.currentTime = Math.max(0, v.currentTime - 5); });
+  box.querySelectorAll("[data-vmr]").forEach((b) => b.addEventListener("click", () => {
+    v.playbackRate = +b.dataset.vmr;
+    box.querySelectorAll("[data-vmr]").forEach((x) => x.classList.toggle("on", x === b));
+  }));
+  $("#vmkMark").addEventListener("click", () => {
+    if (vmkS.marks.length > bars) return;
+    vmkS.marks.push(Math.round(v.currentTime * 10) / 10);
+    if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
+    paint();
+  });
+  $("#vmkUndo").addEventListener("click", () => {
+    if (!vmkS.marks.length) return;
+    const t = vmkS.marks.pop();
+    v.currentTime = Math.max(0, t - 2);        // возвращаемся чуть раньше снятой границы
+    paint();
+  });
+  $("#vmkClose").addEventListener("click", shut);
+  $("#vmkDone").addEventListener("click", () => {
+    const m = vmkS.marks;
+    if (m.length < 2) { toast("Отметь хотя бы начала первых двух тактов"); return; }
+    const st = pracStore();
+    const list = [];
+    for (let i = 0; i + 1 < m.length && i < bars; i++)
+      list.push({ from: i + 1, to: i + 1, a: m[i], b: m[i + 1] });
+    st.vmarks = list;
+    st.vmap = null;                            // ровная сетка уступает слуху
+    saveData(); schedulePush();
+    shut();
+    const u = prac && prac.cur;
+    if (u) vidJump(u);
+    vidPaint();
+    toast(`Размечено тактов: ${list.length}${list.length < bars ? " — можно продолжить позже" : ""}`);
+  });
+}
+
 function vidJump(u) {
   if (!u || !V.ready()) return;
+  /* Ручные метки по одному такту склеиваются в диапазон: задание «такты 6–7»
+     берёт начало шестой метки и конец седьмой. */
+  let sel = null;
   const m = vmarkFor(u.from, u.to);
-  const sel = m ? { a: m.a, b: m.b } : vmapSel(u, V.dur());
+  if (m && m.to >= u.to) sel = { a: m.a, b: m.b };
+  else {
+    const mA = vmarkFor(u.from, u.from), mB = vmarkFor(u.to, u.to);
+    if (mA && mB) sel = { a: mA.a, b: mB.b };
+    else if (mA) sel = { a: mA.a, b: mA.b };
+  }
+  if (!sel) sel = vmapSel(u, V.dur());
   if (!sel) return;
   vidSetSel(sel);
   /* Кусок не просто выделен — бегунок уже стоит на его начале: сменился такт,
@@ -7847,7 +7964,7 @@ function vidControlsHTML(task) {
       </div>
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
-        <button class="btn" data-vd="ruler" type="button">Выделен 1-й такт — разметить все</button>
+        <button class="btn" data-vd="mark" type="button">Разметить такты по ролику</button>
       </div>
       ${rates.length ? `
       <div class="vd-row rates">
@@ -9038,17 +9155,8 @@ function bindPractice() {
       vidPaint();
     } else if (b.dataset.vd === "full") {
       vidFull(!box.classList.contains("full"));
-    } else if (b.dataset.vd === "ruler") {
-      /* Выдели в ролике ПЕРВЫЙ такт и нажми — линейка построится на все:
-         начало первого и его длина задают сетку целиком. */
-      const sel = vidSel(V.dur());
-      if (!sel || sel.b - sel.a < 2) { toast("Сначала выдели первый такт в ролике"); return; }
-      pracStore().vmap = { at1: Math.round(sel.a * 10) / 10, len: Math.round((sel.b - sel.a) * 10) / 10 };
-      saveData(); schedulePush();
-      const u2 = prac && prac.cur;
-      if (u2) vidJump(u2);
-      vidPaint();
-      toast(`Размечено: такт 1 с ${plClock(sel.a)}, по ${Math.round(sel.b - sel.a)} с на такт`);
+    } else if (b.dataset.vd === "mark") {
+      openVidMark();
       return;
     } else if (b.dataset.vd === "bind") {
       const u = prac && prac.cur;

@@ -3248,6 +3248,29 @@
     .ga.on b { color: var(--ink); }
     .ga.on em { color: var(--muted); }
 
+    /* ── Разметка тактов по ролику ── */
+    #vmk {
+      position: fixed; inset: 0; z-index: 85;
+      display: flex; flex-direction: column;
+      background: var(--bg);
+    }
+    #vmk .vmk-frame { background: #000; flex: none; }
+    #vmk video { display: block; width: 100%; max-height: 38vh; }
+    .vmk-done { width: auto; margin: 0 0 0 auto; padding: 8px 14px; border-radius: 12px; font-size: 0.84rem; }
+    .vmk-rate { display: flex; gap: 6px; align-items: center; padding: 8px 16px 0; }
+    .vmk-rate button {
+      min-width: 46px; padding: 7px 0; border-radius: 10px;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted); font-size: 0.8rem;
+    }
+    .vmk-rate button.on { color: var(--ink); border-color: rgba(255, 201, 77, 0.45); background: rgba(255, 201, 77, 0.1); }
+    .vmk-clock { margin-left: auto; font-size: 0.78rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .vmk-hint { flex: 1; overflow-y: auto; padding: 10px 18px; }
+    .vmk-hint b { display: block; font-size: 0.9rem; margin-bottom: 5px; }
+    .vmk-hint span { white-space: pre-wrap; font-size: 0.86rem; line-height: 1.55; color: var(--muted); }
+    .vmk-hint em { display: block; margin-top: 10px; font-style: normal; font-size: 0.72rem; color: var(--dim); }
+    .vmk-row { display: flex; gap: 8px; align-items: stretch; padding: 8px 16px calc(var(--safe-b) + 12px); flex: none; }
+    .vmk-mark { flex: 1; margin: 0; }
+
     /* ── Заставка ── */
     #boot {
       position: fixed; inset: 0; z-index: 200;
