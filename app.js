@@ -7770,115 +7770,6 @@ function vidDrag(e) {
 }
 
 // у этих тактов уже есть запомненный кусок — подставляем его
-/* ── Ручная разметка тактов по ролику ──
-   Ровная сетка не выжила: в живом разборе темп гуляет, преподаватель
-   останавливается и повторяет. Границы такта слышит только человек — вот
-   экран, где он их и отбивает: ролик играет, рядом ноты текущего такта,
-   одна большая кнопка на каждую границу. */
-let vmkS = null;
-
-function openVidMark() {
-  const id = piece().id;
-  const url = videoUrls.get(id);
-  if (!url) { toast("Разметка идёт по сохранённому файлу — сначала выбери видео"); return; }
-  const bars = piece().bars;
-  const doc = pracDoc();
-  const old = document.getElementById("vmk");
-  if (old) old.remove();
-  vmkS = { marks: [] };
-  const box = document.createElement("div");
-  box.id = "vmk";
-  box.innerHTML = `
-    <div class="de-nav">
-      <button class="de-close" id="vmkClose" type="button" aria-label="Закрыть">✕</button>
-      <span class="de-day">Разметка тактов</span>
-      <button class="btn gold vmk-done" id="vmkDone" type="button">Готово</button>
-    </div>
-    <div class="vmk-frame"><video playsinline preload="metadata" src="${esc(url)}"></video></div>
-    <div class="vmk-rate">
-      ${[0.5, 0.75, 1].map((r) => `<button data-vmr="${r}" class="${r === 1 ? "on" : ""}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
-      <span class="vmk-clock" id="vmkClock">0:00</span>
-    </div>
-    <div class="vmk-hint" id="vmkHint"></div>
-    <div class="vmk-row">
-      <button class="vd-btn" id="vmkPlay" type="button" aria-label="Играть или пауза">▶︎</button>
-      <button class="vd-btn" id="vmkBack5" type="button" aria-label="На пять секунд назад">↺</button>
-      <button class="vd-btn" id="vmkUndo" type="button" aria-label="Убрать последнюю отметку">⌫</button>
-      <button class="btn gold vmk-mark" id="vmkMark" type="button"></button>
-    </div>`;
-  document.body.appendChild(box);
-  const v = box.querySelector("video");
-
-  const hintFor = (b) => {
-    const h = doc && doc.hints && doc.hints[b];
-    if (!h) return "подсказки к такту нет — размечай по слуху";
-    return [h.r ? "пр.  " + h.r : "", h.l ? "лев. " + h.l : ""].filter(Boolean).join("\n");
-  };
-  const paint = () => {
-    const n = vmkS.marks.length;
-    const mark = $("#vmkMark"), hint = $("#vmkHint");
-    mark.disabled = false;
-    if (n < bars) {
-      mark.textContent = `Такт ${n + 1} начинается здесь`;
-      hint.innerHTML = `<b>Такт ${n + 1}</b><span>${esc(hintFor(n + 1))}</span>
-        <em>${n ? `отмечено ${n} из ${bars}` : "запусти ролик и жми в момент первой ноты такта"}</em>`;
-    } else if (n === bars) {
-      mark.textContent = `Конец такта ${bars} — здесь`;
-      hint.innerHTML = `<b>Последний такт</b><span>${esc(hintFor(bars))}</span><em>осталась одна отметка — где он кончается</em>`;
-    } else {
-      mark.textContent = "Все такты отмечены";
-      mark.disabled = true;
-      hint.innerHTML = `<b>Готово</b><em>размечены все ${bars} — жми «Готово» сверху</em>`;
-    }
-  };
-  paint();
-
-  const tick = setInterval(() => {
-    const c = document.getElementById("vmkClock");
-    if (c) c.textContent = plClock(v.currentTime);
-  }, 250);
-  const shut = () => { clearInterval(tick); try { v.pause(); } catch {} box.remove(); vmkS = null; };
-
-  $("#vmkPlay").addEventListener("click", () => {
-    if (v.paused) { v.play(); $("#vmkPlay").textContent = "❚❚"; }
-    else { v.pause(); $("#vmkPlay").textContent = "▶︎"; }
-  });
-  $("#vmkBack5").addEventListener("click", () => { v.currentTime = Math.max(0, v.currentTime - 5); });
-  box.querySelectorAll("[data-vmr]").forEach((b) => b.addEventListener("click", () => {
-    v.playbackRate = +b.dataset.vmr;
-    box.querySelectorAll("[data-vmr]").forEach((x) => x.classList.toggle("on", x === b));
-  }));
-  $("#vmkMark").addEventListener("click", () => {
-    if (vmkS.marks.length > bars) return;
-    vmkS.marks.push(Math.round(v.currentTime * 10) / 10);
-    if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
-    paint();
-  });
-  $("#vmkUndo").addEventListener("click", () => {
-    if (!vmkS.marks.length) return;
-    const t = vmkS.marks.pop();
-    v.currentTime = Math.max(0, t - 2);        // возвращаемся чуть раньше снятой границы
-    paint();
-  });
-  $("#vmkClose").addEventListener("click", shut);
-  $("#vmkDone").addEventListener("click", () => {
-    const m = vmkS.marks;
-    if (m.length < 2) { toast("Отметь хотя бы начала первых двух тактов"); return; }
-    const st = pracStore();
-    const list = [];
-    for (let i = 0; i + 1 < m.length && i < bars; i++)
-      list.push({ from: i + 1, to: i + 1, a: m[i], b: m[i + 1] });
-    st.vmarks = list;
-    st.vmap = null;                            // ровная сетка уступает слуху
-    saveData(); schedulePush();
-    shut();
-    const u = prac && prac.cur;
-    if (u) vidJump(u);
-    vidPaint();
-    toast(`Размечено тактов: ${list.length}${list.length < bars ? " — можно продолжить позже" : ""}`);
-  });
-}
-
 function vidJump(u) {
   if (!u || !V.ready()) return;
   /* Ручные метки по одному такту склеиваются в диапазон: задание «такты 6–7»
@@ -7964,7 +7855,7 @@ function vidControlsHTML(task) {
       </div>
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
-        <button class="btn" data-vd="mark" type="button">Разметить такты по ролику</button>
+        <button class="btn" data-vd="paste" type="button">Вставить разметку</button>
       </div>
       ${rates.length ? `
       <div class="vd-row rates">
@@ -9143,6 +9034,36 @@ function bindPractice() {
       return;
     }
 
+    if (b.dataset.vd === "paste") {
+      /* Разметка делается в отдельном сервисе — на большом экране, с нотами
+         и клавиатурой. Сюда она приезжает готовой строкой; плеер для этого
+         не нужен, поэтому кейс стоит до охраны «плеер не готов». */
+      const raw = prompt("Вставь разметку из сервиса:");
+      if (raw == null) return;
+      let list;
+      try {
+        list = JSON.parse(raw.trim());
+        if (!Array.isArray(list)) throw 0;
+        list = list
+          .filter((m) => m && Number(m.from) >= 1 && isFinite(m.a) && isFinite(m.b) && m.b > m.a)
+          .map((m) => ({ from: Math.round(m.from), to: Math.round(m.to || m.from),
+                         a: Math.round(m.a * 10) / 10, b: Math.round(m.b * 10) / 10 }))
+          .sort((x, y) => x.from - y.from);
+        if (!list.length) throw 0;
+      } catch { toast("Не похоже на разметку — скопируй её из сервиса целиком"); return; }
+      const st2 = pracStore();
+      st2.vmarks = list;
+      st2.vmap = null;                  // ровная сетка уступает размеченному слухом
+      saveData(); schedulePush();
+      if (V.ready()) {
+        const u2 = prac && prac.cur;
+        if (u2) vidJump(u2);
+        vidPaint();
+      }
+      toast(`Принято: ${list.length} ${plural(list.length, "такт", "такта", "тактов")}`);
+      return;
+    }
+
     if (!V.ready()) return;
 
     if (b.dataset.vd === "play") {
@@ -9155,9 +9076,6 @@ function bindPractice() {
       vidPaint();
     } else if (b.dataset.vd === "full") {
       vidFull(!box.classList.contains("full"));
-    } else if (b.dataset.vd === "mark") {
-      openVidMark();
-      return;
     } else if (b.dataset.vd === "bind") {
       const u = prac && prac.cur;
       if (!u) { toast("Сейчас нет текущего задания"); return; }
