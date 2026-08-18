@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 154";
+const APP_VERSION = "Кэйко 155";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7341,6 +7341,26 @@ const vmarkFor = (from, to) =>
   vmarks().find((m) => m.from <= from && m.to >= to)
   || vmarks().find((m) => m.from === from) || null;
 
+/* ── Линейка тактов ──
+   Достаточно разметить один такт — где он в ролике начинается и кончается, —
+   и все остальные считаются сами: такт N стоит на «начало + (N−1) × длина».
+   Ровная сетка — приближение (в живом разборе темп гуляет), поэтому ручная
+   привязка куска к тактам всегда главнее линейки. Прелюдия Баха размечена
+   сразу: первый такт в её разборе идёт с 31-й по 47-ю секунду. */
+function vmapOf(st, id) {
+  if (!st.vmap && id === "bwv853") st.vmap = { at1: 31, len: 16 };
+  return st.vmap || null;
+}
+
+function vmapSel(u, dur) {
+  const st = pracStore();
+  const m = vmapOf(st, piece().id);
+  if (!m || !m.len) return null;
+  const a = m.at1 + (u.from - 1) * m.len;
+  if (a >= dur) return null;                       // линейка кончилась раньше ролика
+  return { a: Math.max(0, a), b: Math.min(dur, m.at1 + u.to * m.len) };
+}
+
 /* ── Плеер разбора ──
    Ролик, где вещь разбирают медленно и видно руки, объясняет больше записи
    целиком. Источника два, и оба ничего не публикуют: ссылка на ютуб — играет
@@ -7754,7 +7774,12 @@ function vidDrag(e) {
 function vidJump(u) {
   if (!u || !V.ready()) return;
   const m = vmarkFor(u.from, u.to);
-  if (m) vidSetSel({ a: m.a, b: m.b });
+  const sel = m ? { a: m.a, b: m.b } : vmapSel(u, V.dur());
+  if (!sel) return;
+  vidSetSel(sel);
+  /* Кусок не просто выделен — бегунок уже стоит на его начале: сменился такт,
+     и видео готово показывать именно его. */
+  try { V.seek(sel.a); } catch {}
 }
 
 /* Библиотека ютуба грузится один раз и только когда понадобилась: офлайн она
@@ -7822,6 +7847,7 @@ function vidControlsHTML(task) {
       </div>
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
+        <button class="btn" data-vd="ruler" type="button">Выделен 1-й такт — разметить все</button>
       </div>
       ${rates.length ? `
       <div class="vd-row rates">
@@ -7841,10 +7867,11 @@ function pracVideo(u) {
   const st = pracStore();
   const task = u ? `такты ${u.from}–${u.to}` : "";
 
-  // уже собран для этой пьесы — меняем только строку задания
+  // уже собран для этой пьесы — меняем строку задания и подставляем его кусок
   if (box.dataset.mode === "play" && box.dataset.for === id) {
     const t = box.querySelector(".vd-task b");
     if (t) t.textContent = task;
+    if (u) vidJump(u);
     vidPaint();
     return;
   }
@@ -9011,6 +9038,18 @@ function bindPractice() {
       vidPaint();
     } else if (b.dataset.vd === "full") {
       vidFull(!box.classList.contains("full"));
+    } else if (b.dataset.vd === "ruler") {
+      /* Выдели в ролике ПЕРВЫЙ такт и нажми — линейка построится на все:
+         начало первого и его длина задают сетку целиком. */
+      const sel = vidSel(V.dur());
+      if (!sel || sel.b - sel.a < 2) { toast("Сначала выдели первый такт в ролике"); return; }
+      pracStore().vmap = { at1: Math.round(sel.a * 10) / 10, len: Math.round((sel.b - sel.a) * 10) / 10 };
+      saveData(); schedulePush();
+      const u2 = prac && prac.cur;
+      if (u2) vidJump(u2);
+      vidPaint();
+      toast(`Размечено: такт 1 с ${plClock(sel.a)}, по ${Math.round(sel.b - sel.a)} с на такт`);
+      return;
     } else if (b.dataset.vd === "bind") {
       const u = prac && prac.cur;
       if (!u) { toast("Сейчас нет текущего задания"); return; }
