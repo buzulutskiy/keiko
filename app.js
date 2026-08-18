@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 152";
+const APP_VERSION = "Кэйко 153";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6739,6 +6739,20 @@ function pracHands(u) {
 }
 
 const pracIsDone = (u, h) => !!pracStore().done[pracKey(u, h)];
+
+/* Вся лестница части по порядку — каждая ступень, каждый ключ, чтение и
+   игра. Нужна одному делу: отматывать назад. Очередь смотрит вперёд и
+   пройденное пропускает, а «шаг назад» должен уметь вернуться и в него. */
+function pracLadder(part) {
+  const out = [];
+  for (const size of pracSteps(part))
+    for (const u of pracUnits(part.from, part.to, size))
+      for (const h of pracHands(u)) {
+        out.push({ u: { ...u }, hand: h, phase: "read" });
+        out.push({ u: { ...u }, hand: h, phase: "play" });
+      }
+  return out;
+}
 const pracReadDone = (u, h) => !!pracStore().done[pracKey(u, h, "read")];
 const pracUnitDone = (u) => pracHands(u).every((h) => pracIsDone(u, h));
 const pracStepDone = (p, size) => pracUnits(p.from, p.to, size).every(pracUnitDone);
@@ -8605,6 +8619,7 @@ function pracRender() {
         ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
         <button class="pr-go" data-prac="ok">${reading ? "Прочитал" : "Получилось"}</button>
         <div class="wk-row">
+          ${!u.review && w.part ? `<button class="pr-ghost" data-prac="stepback">‹ Шаг</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
@@ -9168,6 +9183,16 @@ function bindPractice() {
         const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
         pracNote(u, sec);            // копим, где сколько провозились
         if (u.review) { prac.reviewed.push(u.k); prac.undo = null; }
+        else if (u.revisit) {
+          /* Повтор после «шага назад»: отметки уже стоят, их не трогаем.
+             Сыгранный повтор — честная попытка: уходит отрезком в запись дня
+             и в счёт проходов. Прочитанный — просто прочитан ещё раз. */
+          if (u.phase !== "read") {
+            prac.closed.push({ from: u.from, to: u.to, hand: u.hand });
+            pracLog(u);
+          }
+          prac.undo = null;
+        }
         else if (u.phase === "read") {
           /* Прочитанное отмечаем, но в запись дня отрезком не пишем: сыграно
              ничего не было, и в пройденные такты это идти не должно. Работой
@@ -9187,6 +9212,29 @@ function bindPractice() {
         const nn = prac.queue.find((x) => !x.review);
         if (nn && nn.size !== w.size) prac.queue = pracQueue();
         return pracNext();
+      }
+      case "stepback": {
+        /* Назад по лестнице — на любой шаг, даже давно пройденный. Отметки
+           не трогаем: пройденное остаётся пройденным в статистике. Шаг просто
+           открывается заново как повтор, текущая задача возвращается в
+           очередь следом. Каждое нажатие — ещё на шаг глубже, и путь вперёд
+           пройдётся заново; повтор игры засчитывается новой попыткой. */
+        const wb = pracWhere();
+        if (!wb.part || !prac.cur) return;
+        const lad = pracLadder(wb.part);
+        const keyOfT = (t) => t.u.size + ":" + t.u.from + "-" + t.u.to + ":" + t.hand + ":" + (t.phase || "play");
+        const c = prac.cur;
+        let i = lad.findIndex((t) => keyOfT(t) ===
+          c.size + ":" + c.from + "-" + c.to + ":" + c.hand + ":" + (c.phase || "play"));
+        if (i < 0) i = lad.length;          // сборка части: назад — в конец лестницы
+        if (i === 0) { toast("Это самый первый шаг"); return; }
+        const prev = lad[i - 1];
+        prac.queue.unshift({ ...c });       // текущий шаг вернётся следом
+        prac.cur = { from: prev.u.from, to: prev.u.to, size: prev.u.size,
+                     hand: prev.hand, phase: prev.phase, revisit: true };
+        prac.unitAt = Date.now();
+        prac.undo = null;
+        return pracRender();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
       case "list": prac.listOpen = !prac.listOpen; return pracRender();
