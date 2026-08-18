@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 150";
+const APP_VERSION = "Кэйко 151";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -150,6 +150,7 @@ function emptyData() {
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     gut: [],       // отметки самочувствия — только в том профиле, где включено
+    kanyeAt: 0,    // когда Канье заходил впервые: первый визит гарантирован
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     goalAt: 0,     // когда её меняли: без этого чужая цель молча затирала свою
     freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
@@ -238,6 +239,7 @@ function migrate(obj) {
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
   if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
   if (Array.isArray(obj.gut)) base.gut = obj.gut;
+  if (Number(obj.kanyeAt) > 0) base.kanyeAt = Number(obj.kanyeAt);
   if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
@@ -5025,9 +5027,13 @@ function gutAdd() {
      экраном жалко. */
   const fresh = gutAchState().filter((a) => a.done && !was.has(a.id));
   if (fresh.length) setTimeout(() => showWon({ ach: fresh, facts: [] }), 900);
-  /* Пасхалка: в дни без наград иногда заглядывает сам Канье. Не каждый раз —
-     иначе через неделю перестанет смешить. */
-  else if (Math.random() < 0.35) setTimeout(showKanye, 900);
+  /* Пасхалка: в дни без наград иногда заглядывает сам Канье. Первый визит
+     гарантирован — пасхалка, которую можно никогда не встретить, не пасхалка.
+     Дальше не каждый раз: иначе через неделю перестанет смешить. */
+  else if (!data.kanyeAt || Math.random() < 0.35) {
+    data.kanyeAt = now(); saveData();
+    setTimeout(showKanye, 900);
+  }
 }
 
 /* Строчки свои, в его духе — настоящий текст песни сюда нельзя,
@@ -6864,15 +6870,18 @@ function pracQueue() {
   const us = w.seam ? [w.seam]
     : w.part ? pracUnits(w.part.from, w.part.to, w.size)
     : (w.asm[w.assembly] || []).map(pracAsUnit);
-  /* Каждый ключ проходится дважды: сначала глазами, потом руками. Разбор
-     нот — отдельная работа, и делать её заодно с игрой не выходит: читаешь
-     такт и тут же пытаешься его сыграть, в итоге ни то ни другое. */
+  /* Каждый ключ проходится дважды: сначала глазами, потом руками. Но чтение —
+     подготовка к игре, а не самостоятельная повинность: сыгранному ключу
+     читать нечего. Без этой оговорки у тактов, сыгранных до появления чтения,
+     очередь выглядела бессмыслицей: прочитай басовый, прочитай скрипичный —
+     а играть не предлагали, обе игры давно зачтены. */
   for (const u of us)
     for (const h of pracHands(u)) {
       const base = { from: u.from, to: u.to, size: u.size, hand: h };
       if (w.refresh) { q.push({ ...base, review: true, k: pracKey(u, h) }); continue; }
+      if (pracIsDone(u, h)) continue;                  // сыграно — и читать нечего
       if (!pracReadDone(u, h)) q.push({ ...base, phase: "read" });
-      if (!pracIsDone(u, h)) q.push({ ...base, phase: "play" });
+      q.push({ ...base, phase: "play" });
     }
   return q;
 }
@@ -11382,7 +11391,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
