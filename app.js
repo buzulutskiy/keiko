@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 159";
+const APP_VERSION = "Кэйко 160";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8276,16 +8276,30 @@ function lessonRender(box) {
       : (nextAt && nextAt !== st.at) ? st.at + "–" + nextAt : "с " + st.at;
     /* Тип шага решает всё: смотри — просто гляди у себя, пауза — останови ролик
        и повтори за автором, делай — своя работа без подсказки. */
-    const KIND = { watch: ["👀", "Смотри"], pause: ["⏸", "Пауза — повтори за автором"],
-                   do: ["✍️", "Делай сам"], read: ["📋", "Подготовь"] };
+    /* Тип шага делит на «смотри» и «делай». Деятельных большинство: ты
+       учишься повтором, а не просмотром. У действия своя кнопка «Получилось»
+       и напоминание не спешить — как в пианино. */
+    const KIND = {
+      watch: ["👀", "Смотри", false],
+      pause: ["🖐", "Повтори за автором", true],
+      do:    ["✍️", "Сделай сам", true],
+      read:  ["📋", "Подготовь", false],
+    };
     const kind = KIND[st.k] || KIND.pause;
+    const doing = kind[2];
+    const last = at.step + 1 >= steps.length;
+    const goLabel = st.k === "read"
+      ? (last ? "Готово — урок пройден" : "Готово, дальше")
+      : doing ? (last ? "Получилось — урок пройден" : "Получилось")
+              : (last ? "Посмотрел — урок пройден" : "Посмотрел, дальше");
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task">
           <p class="wk-kind">урок ${at.i + 1} из ${ls.length} · шаг ${at.step + 1} из ${steps.length}</p>
           <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` · ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
-          <button class="pr-go" data-les="stepOk">${at.step + 1 < steps.length ? "Готово, дальше" : "Готово — урок пройден"}</button>
+          ${doing ? `<p class="ls-slow">Посмотри кусок, останови ролик и повтори медленно. Отметь, когда получилось — спешить некуда.</p>` : ""}
+          <button class="pr-go" data-les="stepOk">${esc(goLabel)}</button>
           <div class="wk-row">
             ${at.step > 0 ? `<button class="pr-ghost" data-les="stepBack">‹ Шаг назад</button>` : ""}
             <button class="pr-ghost" data-les="stepList">Шаги</button>
