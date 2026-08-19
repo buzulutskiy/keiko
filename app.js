@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 163";
+const APP_VERSION = "Кэйко 164";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8306,9 +8306,11 @@ function lessonRender(box) {
       ? (last ? "\u0413\u043e\u0442\u043e\u0432\u043e \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u0413\u043e\u0442\u043e\u0432\u043e, \u0434\u0430\u043b\u044c\u0448\u0435")
       : doing ? (last ? "\u041f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u041f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c")
               : (last ? "\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043b \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043b, \u0434\u0430\u043b\u044c\u0448\u0435");
-    /* Конспект этапа виден всегда, без кнопки: он объясняет, зачем этот кусок,
-       и читается вместе с шагом. Ходить между шагами можно свободно — стрелки
-       и списки ничего не отмечают, отметку ставит только большая кнопка. */
+    /* Конспект этапа виден всегда, без кнопки, но стоит под кнопками: сверху
+       должно быть само действие, а объяснение — фоном под ним, для тех минут,
+       когда захочется понять, зачем этот кусок. Ходить между шагами можно
+       свободно — стрелки и списки ничего не отмечают, отметку ставит только
+       большая кнопка. */
     const stage = st.g || "";
     const stageSum = (l.stages && l.stages[stage]) || (stage ? "" : l.summary || "");
     const stepDone = lessonDone(at.i, "s" + at.step);
@@ -8322,7 +8324,6 @@ function lessonRender(box) {
         <div class="wk-task">
           <p class="wk-kind">${esc(l.title || "\u0443\u0440\u043e\u043a " + (at.i + 1))} \u00b7 \u0448\u0430\u0433 ${at.step + 1} \u0438\u0437 ${steps.length}${done ? " \u00b7 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e " + done : ""}</p>
           ${stage ? `<p class="ls-stage">${esc(stage)}</p>` : ""}
-          ${stageSum ? `<div class="ls-sum">${sumHTML(stageSum)}</div>` : ""}
           <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` \u00b7 ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
           ${stepDone ? `<p class="wk-passed">\u2713 \u0443\u0436\u0435 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e \u2014 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044c</p>` : ""}
@@ -8335,6 +8336,7 @@ function lessonRender(box) {
             <button class="pr-ghost" data-les="stepPick">\u0423\u0440\u043e\u043a\u0438</button>
             <button class="pr-ghost" data-prac="finish">\u0417\u0430\u043a\u043e\u043d\u0447\u0438\u0442\u044c</button>
           </div>
+          ${stageSum ? `<div class="ls-sum">${sumHTML(stageSum)}</div>` : ""}
           ${prac.pickOpen ? `<div class="ls-list">${ls.map((x, n) => {
             const total = (x.steps || []).length;
             const d = total ? (x.steps || []).filter((_, m) => lessonDone(n, "s" + m)).length : 0;
