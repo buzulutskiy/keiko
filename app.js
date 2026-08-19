@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 162";
+const APP_VERSION = "Кэйко 163";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -606,11 +606,33 @@ function pastelStats() {
     prev = e.date;
   }
 
+  /* Шаги и этапы — чтобы награда могла цепляться не только за урок целиком.
+     Этап считается пройденным, когда закрыты все его шаги. */
+  const st = (data.practice && data.practice.pastel && data.practice.pastel.done) || {};
+  const isDone = (i, n) => !!st["L" + i + ":s" + n];
+  let stepsDone = 0;
+  const stageSet = new Set(), lessonSet = new Set();
+  c.lessons.forEach((l, i) => {
+    const steps = Array.isArray(l.steps) ? l.steps : [];
+    const byStage = new Map();
+    steps.forEach((x, n) => {
+      if (isDone(i, n)) stepsDone++;
+      const g = x.g || "";
+      if (!g) return;
+      const cur = byStage.get(g) || { all: 0, ok: 0 };
+      cur.all++; if (isDone(i, n)) cur.ok++;
+      byStage.set(g, cur);
+    });
+    for (const [g, v] of byStage) if (v.all && v.ok >= v.all) stageSet.add(g);
+    if (steps.length && steps.every((_, n) => isDone(i, n))) lessonSet.add(i);
+  });
+
   const next = c.lessons.findIndex((l, i) => !l.hidden && !done.has(i));
   const shown = c.lessons.reduce((n, l) => n + (l.hidden ? 0 : 1), 0);
   const doneShown = c.lessons.reduce((n, l, i) => n + (!l.hidden && done.has(i) ? 1 : 0), 0);
   return {
     lessons: shown, done: doneShown, doneSet: done,
+    stepsDone, stages: stageSet.size, stageSet, lessonSet,
     pct: shown ? doneShown / shown * 100 : 0,
     totalSec, doneSec, minutes: Math.round(doneSec / 60),
     days: list.length, streak: streak(), streakAll: streakAll(),
@@ -9235,7 +9257,11 @@ function bindPractice() {
         case "stepOk": {
           const steps = lessonSteps(at.i) || [];
           st.done["L" + at.i + ":s" + at.step] = todayStr();
-          lessonMark(at.i);
+          /* Урок засчитывается пройденным только когда закрыты ВСЕ его шаги —
+             иначе награда за урок прилетала бы с первого же шага. Время и
+             подход считаются всегда. */
+          const all = steps.length && steps.every((_, n) => lessonDone(at.i, "s" + n));
+          if (all) lessonMark(at.i); else { lessonCount(); saveData(); }
           prac.taskAt = Date.now();
           if (at.step + 1 < steps.length) prac.at = { i: at.i, phase: "step", step: at.step + 1 };
           else prac.at = lessonNext();
