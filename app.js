@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 160";
+const APP_VERSION = "Кэйко 161";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8303,8 +8303,15 @@ function lessonRender(box) {
           <div class="wk-row">
             ${at.step > 0 ? `<button class="pr-ghost" data-les="stepBack">‹ Шаг назад</button>` : ""}
             <button class="pr-ghost" data-les="stepList">Шаги</button>
+            ${l.summary ? `<button class="pr-ghost" data-les="stepSum">${prac.sumOpen ? "Скрыть конспект" : "Конспект"}</button>` : ""}
             <button class="pr-ghost" data-prac="finish">Закончить</button>
           </div>
+          ${prac.sumOpen && l.summary ? `<div class="ls-sum">${
+            l.summary.split("\n").map((line) => {
+              const t = line.trim();
+              if (!t) return "";
+              return t.startsWith("•") ? `<li>${esc(t.slice(1).trim())}</li>` : `<p>${esc(t)}</p>`;
+            }).join("")}</div>` : ""}
           ${prac.listOpen ? `<div class="ls-list">${steps.map((x, n) => {
             const d = lessonDone(at.i, "s" + n), now = n === at.step;
             const ic = { watch: "👀", pause: "⏸", do: "✍️", read: "📋" }[x.k] || "•";
@@ -9224,6 +9231,7 @@ function bindPractice() {
           prac.at = { i: at.i, phase: "step", step: Math.max(0, at.step - 1) };
           break;
         case "stepList": prac.listOpen = !prac.listOpen; break;
+        case "stepSum": prac.sumOpen = !prac.sumOpen; break;
         case "watched":
           st.done["L" + at.i + ":watch"] = todayStr();
           lessonNote(at.i, "watch", sec);
