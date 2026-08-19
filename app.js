@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 158";
+const APP_VERSION = "Кэйко 159";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8265,6 +8265,15 @@ function lessonRender(box) {
     const steps = l.steps || [];
     const st = steps[at.step] || {};
     const done = steps.filter((_, n) => lessonDone(at.i, "s" + n)).length;
+    /* Конец шага — это начало следующего с таймкодом. У последнего конца нет,
+       значит «с такого-то и до конца ролика». Так «0:00» превращается в
+       «0:00–5:53» — понятно, докуда смотреть. */
+    const nextAt = (() => {
+      for (let n = at.step + 1; n < steps.length; n++) if (steps[n].at) return steps[n].at;
+      return "";
+    })();
+    const span = (st.k === "read" || !st.at) ? ""
+      : (nextAt && nextAt !== st.at) ? st.at + "–" + nextAt : "с " + st.at;
     /* Тип шага решает всё: смотри — просто гляди у себя, пауза — останови ролик
        и повтори за автором, делай — своя работа без подсказки. */
     const KIND = { watch: ["👀", "Смотри"], pause: ["⏸", "Пауза — повтори за автором"],
@@ -8274,7 +8283,7 @@ function lessonRender(box) {
       <div class="wk">
         <div class="wk-task">
           <p class="wk-kind">урок ${at.i + 1} из ${ls.length} · шаг ${at.step + 1} из ${steps.length}</p>
-          <div class="ls-kind">${kind[0]} ${esc(kind[1])}${st.at ? ` · ${esc(st.at)}` : ""}</div>
+          <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` · ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
           <button class="pr-go" data-les="stepOk">${at.step + 1 < steps.length ? "Готово, дальше" : "Готово — урок пройден"}</button>
           <div class="wk-row">
@@ -8285,8 +8294,11 @@ function lessonRender(box) {
           ${prac.listOpen ? `<div class="ls-list">${steps.map((x, n) => {
             const d = lessonDone(at.i, "s" + n), now = n === at.step;
             const ic = { watch: "👀", pause: "⏸", do: "✍️", read: "📋" }[x.k] || "•";
+            let e = "";
+            for (let m = n + 1; m < steps.length; m++) if (steps[m].at) { e = steps[m].at; break; }
+            const rng = (x.k === "read" || !x.at) ? "" : (e && e !== x.at) ? x.at + "–" + e : x.at;
             return `<button class="ls-li${now ? " now" : ""}${d ? " done" : ""}" data-lstep="${n}" type="button">
-              <span>${d ? "✓" : ic}</span><b>${esc((x.t || "").slice(0, 60))}</b>${x.at ? `<em>${esc(x.at)}</em>` : ""}</button>`;
+              <span>${d ? "✓" : ic}</span><b>${esc((x.t || "").slice(0, 60))}</b>${rng ? `<em>${esc(rng)}</em>` : ""}</button>`;
           }).join("")}</div>` : ""}
         </div>
       </div>`;
