@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 161";
+const APP_VERSION = "Кэйко 162";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8265,61 +8265,68 @@ function lessonRender(box) {
     const steps = l.steps || [];
     const st = steps[at.step] || {};
     const done = steps.filter((_, n) => lessonDone(at.i, "s" + n)).length;
-    /* Конец шага — это начало следующего с таймкодом. У последнего конца нет,
-       значит «с такого-то и до конца ролика». Так «0:00» превращается в
-       «0:00–5:53» — понятно, докуда смотреть. */
     const nextAt = (() => {
       for (let n = at.step + 1; n < steps.length; n++) if (steps[n].at) return steps[n].at;
       return "";
     })();
     const span = (st.k === "read" || !st.at) ? ""
-      : (nextAt && nextAt !== st.at) ? st.at + "–" + nextAt : "с " + st.at;
-    /* Тип шага решает всё: смотри — просто гляди у себя, пауза — останови ролик
-       и повтори за автором, делай — своя работа без подсказки. */
-    /* Тип шага делит на «смотри» и «делай». Деятельных большинство: ты
-       учишься повтором, а не просмотром. У действия своя кнопка «Получилось»
-       и напоминание не спешить — как в пианино. */
+      : (nextAt && nextAt !== st.at) ? st.at + "\u2013" + nextAt : "\u0441 " + st.at;
     const KIND = {
-      watch: ["👀", "Смотри", false],
-      pause: ["🖐", "Повтори за автором", true],
-      do:    ["✍️", "Сделай сам", true],
-      read:  ["📋", "Подготовь", false],
+      watch: ["\u{1F440}", "\u0421\u043c\u043e\u0442\u0440\u0438", false],
+      pause: ["\u{1F590}", "\u041f\u043e\u0432\u0442\u043e\u0440\u0438 \u0437\u0430 \u0430\u0432\u0442\u043e\u0440\u043e\u043c", true],
+      do:    ["\u270D\uFE0F", "\u0421\u0434\u0435\u043b\u0430\u0439 \u0441\u0430\u043c", true],
+      read:  ["\u{1F4CB}", "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u044c", false],
     };
     const kind = KIND[st.k] || KIND.pause;
     const doing = kind[2];
     const last = at.step + 1 >= steps.length;
     const goLabel = st.k === "read"
-      ? (last ? "Готово — урок пройден" : "Готово, дальше")
-      : doing ? (last ? "Получилось — урок пройден" : "Получилось")
-              : (last ? "Посмотрел — урок пройден" : "Посмотрел, дальше");
+      ? (last ? "\u0413\u043e\u0442\u043e\u0432\u043e \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u0413\u043e\u0442\u043e\u0432\u043e, \u0434\u0430\u043b\u044c\u0448\u0435")
+      : doing ? (last ? "\u041f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u041f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c")
+              : (last ? "\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043b \u2014 \u0443\u0440\u043e\u043a \u043f\u0440\u043e\u0439\u0434\u0435\u043d" : "\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043b, \u0434\u0430\u043b\u044c\u0448\u0435");
+    /* Конспект этапа виден всегда, без кнопки: он объясняет, зачем этот кусок,
+       и читается вместе с шагом. Ходить между шагами можно свободно — стрелки
+       и списки ничего не отмечают, отметку ставит только большая кнопка. */
+    const stage = st.g || "";
+    const stageSum = (l.stages && l.stages[stage]) || (stage ? "" : l.summary || "");
+    const stepDone = lessonDone(at.i, "s" + at.step);
+    const sumHTML = (txt) => txt.split("\n").map((line) => {
+      const t = line.trim();
+      if (!t) return "";
+      return t.startsWith("\u2022") ? `<li>${esc(t.slice(1).trim())}</li>` : `<p>${esc(t)}</p>`;
+    }).join("");
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task">
-          <p class="wk-kind">урок ${at.i + 1} из ${ls.length} · шаг ${at.step + 1} из ${steps.length}</p>
-          <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` · ${esc(span)}` : ""}</div>
+          <p class="wk-kind">${esc(l.title || "\u0443\u0440\u043e\u043a " + (at.i + 1))} \u00b7 \u0448\u0430\u0433 ${at.step + 1} \u0438\u0437 ${steps.length}${done ? " \u00b7 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e " + done : ""}</p>
+          ${stage ? `<p class="ls-stage">${esc(stage)}</p>` : ""}
+          ${stageSum ? `<div class="ls-sum">${sumHTML(stageSum)}</div>` : ""}
+          <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` \u00b7 ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
-          ${doing ? `<p class="ls-slow">Посмотри кусок, останови ролик и повтори медленно. Отметь, когда получилось — спешить некуда.</p>` : ""}
+          ${stepDone ? `<p class="wk-passed">\u2713 \u0443\u0436\u0435 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e \u2014 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044c</p>` : ""}
+          ${doing && !stepDone ? `<p class="ls-slow">\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0438 \u043a\u0443\u0441\u043e\u043a, \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0440\u043e\u043b\u0438\u043a \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438 \u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e. \u041e\u0442\u043c\u0435\u0442\u044c, \u043a\u043e\u0433\u0434\u0430 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0441\u043f\u0435\u0448\u0438\u0442\u044c \u043d\u0435\u043a\u0443\u0434\u0430.</p>` : ""}
           <button class="pr-go" data-les="stepOk">${esc(goLabel)}</button>
           <div class="wk-row">
-            ${at.step > 0 ? `<button class="pr-ghost" data-les="stepBack">‹ Шаг назад</button>` : ""}
-            <button class="pr-ghost" data-les="stepList">Шаги</button>
-            ${l.summary ? `<button class="pr-ghost" data-les="stepSum">${prac.sumOpen ? "Скрыть конспект" : "Конспект"}</button>` : ""}
-            <button class="pr-ghost" data-prac="finish">Закончить</button>
+            <button class="pr-ghost" data-les="stepBack" aria-label="\u0428\u0430\u0433 \u043d\u0430\u0437\u0430\u0434"${at.step ? "" : " disabled"}>\u2039</button>
+            <button class="pr-ghost" data-les="stepFwd" aria-label="\u0428\u0430\u0433 \u0432\u043f\u0435\u0440\u0451\u0434"${last ? " disabled" : ""}>\u203A</button>
+            <button class="pr-ghost" data-les="stepList">\u0428\u0430\u0433\u0438</button>
+            <button class="pr-ghost" data-les="stepPick">\u0423\u0440\u043e\u043a\u0438</button>
+            <button class="pr-ghost" data-prac="finish">\u0417\u0430\u043a\u043e\u043d\u0447\u0438\u0442\u044c</button>
           </div>
-          ${prac.sumOpen && l.summary ? `<div class="ls-sum">${
-            l.summary.split("\n").map((line) => {
-              const t = line.trim();
-              if (!t) return "";
-              return t.startsWith("•") ? `<li>${esc(t.slice(1).trim())}</li>` : `<p>${esc(t)}</p>`;
-            }).join("")}</div>` : ""}
+          ${prac.pickOpen ? `<div class="ls-list">${ls.map((x, n) => {
+            const total = (x.steps || []).length;
+            const d = total ? (x.steps || []).filter((_, m) => lessonDone(n, "s" + m)).length : 0;
+            return `<button class="ls-li${n === at.i ? " now" : ""}${total && d >= total ? " done" : ""}" data-lpick="${n}" type="button">
+              <span>${total && d >= total ? "\u2713" : "\u2022"}</span><b>${esc(x.title || "\u0443\u0440\u043e\u043a " + (n + 1))}</b>${total ? `<em>${d}/${total}</em>` : ""}</button>`;
+          }).join("")}</div>` : ""}
           ${prac.listOpen ? `<div class="ls-list">${steps.map((x, n) => {
             const d = lessonDone(at.i, "s" + n), now = n === at.step;
-            const ic = { watch: "👀", pause: "⏸", do: "✍️", read: "📋" }[x.k] || "•";
+            const ic = { watch: "\u{1F440}", pause: "\u{1F590}", do: "\u270D\uFE0F", read: "\u{1F4CB}" }[x.k] || "\u2022";
             let e = "";
             for (let m = n + 1; m < steps.length; m++) if (steps[m].at) { e = steps[m].at; break; }
-            const rng = (x.k === "read" || !x.at) ? "" : (e && e !== x.at) ? x.at + "–" + e : x.at;
+            const rng = (x.k === "read" || !x.at) ? "" : (e && e !== x.at) ? x.at + "\u2013" + e : x.at;
             return `<button class="ls-li${now ? " now" : ""}${d ? " done" : ""}" data-lstep="${n}" type="button">
-              <span>${d ? "✓" : ic}</span><b>${esc((x.t || "").slice(0, 60))}</b>${rng ? `<em>${esc(rng)}</em>` : ""}</button>`;
+              <span>${d ? "\u2713" : ic}</span><b>${esc((x.t || "").slice(0, 60))}</b>${rng ? `<em>${esc(rng)}</em>` : ""}</button>`;
           }).join("")}</div>` : ""}
         </div>
       </div>`;
@@ -9203,6 +9210,15 @@ function bindPractice() {
       return pracNext();
     }
 
+    if (b.dataset.lpick !== undefined) {
+      const n = +b.dataset.lpick, steps = lessonSteps(n) || [];
+      if (!steps.length) { toast("\u0412 \u044d\u0442\u043e\u043c \u0443\u0440\u043e\u043a\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0448\u0430\u0433\u043e\u0432"); return; }
+      /* Начинаем урок с первого непройденного шага, а не с нуля. */
+      let at0 = steps.findIndex((_, m) => !lessonDone(n, "s" + m));
+      prac.at = { i: n, phase: "step", step: at0 < 0 ? 0 : at0 };
+      prac.pickOpen = false; prac.listOpen = false;
+      return pracRender();
+    }
     if (b.dataset.lstep !== undefined) {
       prac.at = { i: prac.at.i, phase: "step", step: +b.dataset.lstep };
       prac.listOpen = false;
@@ -9230,8 +9246,15 @@ function bindPractice() {
              просто возвращаемся на него — перечитать или переделать. */
           prac.at = { i: at.i, phase: "step", step: Math.max(0, at.step - 1) };
           break;
-        case "stepList": prac.listOpen = !prac.listOpen; break;
-        case "stepSum": prac.sumOpen = !prac.sumOpen; break;
+        case "stepFwd": {
+          /* Вперёд без отметки: шаг можно посмотреть и вернуться. Отметку
+             ставит только большая кнопка. */
+          const steps = lessonSteps(at.i) || [];
+          prac.at = { i: at.i, phase: "step", step: Math.min(steps.length - 1, at.step + 1) };
+          break;
+        }
+        case "stepList": prac.listOpen = !prac.listOpen; prac.pickOpen = false; break;
+        case "stepPick": prac.pickOpen = !prac.pickOpen; prac.listOpen = false; break;
         case "watched":
           st.done["L" + at.i + ":watch"] = todayStr();
           lessonNote(at.i, "watch", sec);
