@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 157";
+const APP_VERSION = "Кэйко 158";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8225,9 +8225,18 @@ const LESSON_STEPS = [
   { k: "own",    name: "Делаю своё",          go: "Сделал" },
 ];
 
+const lessonSteps = (i) => { const l = lessons()[i]; return (l && Array.isArray(l.steps)) ? l.steps : null; };
+
 function lessonNext() {
   const ls = lessons();
   for (let i = 0; i < ls.length; i++) {
+    const steps = lessonSteps(i);
+    if (steps) {
+      // урок-лестница: идём по шагам, старые фазы для него не применяются
+      for (let n = 0; n < steps.length; n++)
+        if (!lessonDone(i, "s" + n)) return { i, phase: "step", step: n };
+      continue;
+    }
     if (!lessonDone(i, "watch")) return { i, phase: "watch" };
     if (!lessonDone(i, "task")) return { i, phase: "ask" };
     if (lessonStore().done["L" + i + ":task"] === "нет") continue;
@@ -8251,6 +8260,38 @@ function lessonRender(box) {
   }
   const l = ls[at.i] || {};
   const mins = Math.round((l.dur || 0) / 60);
+
+  if (at.phase === "step") {
+    const steps = l.steps || [];
+    const st = steps[at.step] || {};
+    const done = steps.filter((_, n) => lessonDone(at.i, "s" + n)).length;
+    /* Тип шага решает всё: смотри — просто гляди у себя, пауза — останови ролик
+       и повтори за автором, делай — своя работа без подсказки. */
+    const KIND = { watch: ["👀", "Смотри"], pause: ["⏸", "Пауза — повтори за автором"],
+                   do: ["✍️", "Делай сам"], read: ["📋", "Подготовь"] };
+    const kind = KIND[st.k] || KIND.pause;
+    box.innerHTML = `
+      <div class="wk">
+        <div class="wk-task">
+          <p class="wk-kind">урок ${at.i + 1} из ${ls.length} · шаг ${at.step + 1} из ${steps.length}</p>
+          <div class="ls-kind">${kind[0]} ${esc(kind[1])}${st.at ? ` · ${esc(st.at)}` : ""}</div>
+          <p class="ls-text">${esc(st.t || "")}</p>
+          <button class="pr-go" data-les="stepOk">${at.step + 1 < steps.length ? "Готово, дальше" : "Готово — урок пройден"}</button>
+          <div class="wk-row">
+            ${at.step > 0 ? `<button class="pr-ghost" data-les="stepBack">‹ Шаг назад</button>` : ""}
+            <button class="pr-ghost" data-les="stepList">Шаги</button>
+            <button class="pr-ghost" data-prac="finish">Закончить</button>
+          </div>
+          ${prac.listOpen ? `<div class="ls-list">${steps.map((x, n) => {
+            const d = lessonDone(at.i, "s" + n), now = n === at.step;
+            const ic = { watch: "👀", pause: "⏸", do: "✍️", read: "📋" }[x.k] || "•";
+            return `<button class="ls-li${now ? " now" : ""}${d ? " done" : ""}" data-lstep="${n}" type="button">
+              <span>${d ? "✓" : ic}</span><b>${esc((x.t || "").slice(0, 60))}</b>${x.at ? `<em>${esc(x.at)}</em>` : ""}</button>`;
+          }).join("")}</div>` : ""}
+        </div>
+      </div>`;
+    return;
+  }
 
   if (at.phase === "watch") {
     box.innerHTML = `
@@ -8548,9 +8589,13 @@ function pracRender() {
   if (!prac) return;
   if (prac.kind === "lesson") {
     $("#pracWhere").textContent = course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
+    /* Урок — не пьеса: прячем плеер и видео и рисуем свою лестницу. Раньше
+       здесь была опечатка (else цеплялся к видео, а не к kind), и урок
+       проваливался в код пианино, где падал на piece(). */
     const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
     const vd = $("#pracVideo"); if (vd) vd.hidden = true;
-    else { lessonRender($("#pracStage")); return; }
+    lessonRender($("#pracStage"));
+    return;
   }
   const w = pracWhere();
   const m = Math.floor(pracMin());
@@ -9125,6 +9170,11 @@ function bindPractice() {
       return pracNext();
     }
 
+    if (b.dataset.lstep !== undefined) {
+      prac.at = { i: prac.at.i, phase: "step", step: +b.dataset.lstep };
+      prac.listOpen = false;
+      return pracRender();
+    }
     if (b.dataset.les) {
       const at = prac.at;
       const st = lessonStore();
@@ -9133,6 +9183,21 @@ function bindPractice() {
       const stepSec = () => prac.taskAt ? Math.round((Date.now() - prac.taskAt) / 1000) : 0;
 
       switch (b.dataset.les) {
+        case "stepOk": {
+          const steps = lessonSteps(at.i) || [];
+          st.done["L" + at.i + ":s" + at.step] = todayStr();
+          lessonMark(at.i);
+          prac.taskAt = Date.now();
+          if (at.step + 1 < steps.length) prac.at = { i: at.i, phase: "step", step: at.step + 1 };
+          else prac.at = lessonNext();
+          break;
+        }
+        case "stepBack":
+          /* Назад по лестнице без потери: пройденный шаг не сбрасываем,
+             просто возвращаемся на него — перечитать или переделать. */
+          prac.at = { i: at.i, phase: "step", step: Math.max(0, at.step - 1) };
+          break;
+        case "stepList": prac.listOpen = !prac.listOpen; break;
         case "watched":
           st.done["L" + at.i + ":watch"] = todayStr();
           lessonNote(at.i, "watch", sec);

@@ -3248,6 +3248,22 @@
     .ga.on b { color: var(--ink); }
     .ga.on em { color: var(--muted); }
 
+    /* ── Урок по шагам ── */
+    .ls-kind { font-size: 0.78rem; color: var(--gold); font-weight: 700; margin: 2px 0 8px; }
+    .ls-text { font-size: 1.02rem; line-height: 1.55; margin: 0 0 14px; }
+    .ls-list { margin-top: 12px; display: grid; gap: 6px; }
+    .ls-li {
+      display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center;
+      text-align: left; padding: 9px 11px; border-radius: 12px;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
+    }
+    .ls-li span { font-style: normal; text-align: center; }
+    .ls-li b { font-weight: 600; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ls-li em { font-style: normal; font-size: 0.68rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .ls-li.now { border-color: rgba(255,201,77,.5); background: rgba(255,201,77,.1); color: var(--ink); }
+    .ls-li.done span { color: var(--green); }
+    .ls-li.done b { color: var(--dim); text-decoration: line-through; }
+
     /* ── Заставка ── */
     #boot {
       position: fixed; inset: 0; z-index: 200;
