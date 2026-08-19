@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 164";
+const APP_VERSION = "Кэйко 165";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2818,19 +2818,23 @@ function coverOf(item) {
   }
   if (item.track === "pastel") {
     const c = data.pastel.course;
+    /* На обложке вместо слова «курс» — сколько всего уроков: материал один и
+       пополняется, и полезнее видеть его размер, а не подпись «Первый курс». */
+    const n = (c.lessons || []).filter(l => !l.hidden).length;
+    const sub = n ? n + " " + plural(n, "урок", "урока", "уроков") : "";
     // у курса обложка тоже может лежать в каталоге — раньше эту ветку пропускали
     const csrc = coverSrc("pastel", c.cover || "");
     if (csrc) return `
       <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
         <img src="${esc(csrc)}" alt="" loading="lazy" decoding="async">
         <div class="cv-over">
-          <div class="cv-author">${esc(c.author || "курс")}</div>
+          <div class="cv-author">${esc(sub)}</div>
           <div class="cv-title">${esc(c.name)}</div>
         </div>
       </div>`;
     return `
       <div class="cover pastel">
-        <div><div class="cv-author">${esc(c.author || "")}</div></div>
+        <div><div class="cv-author">${esc(sub)}</div></div>
         <div class="smears"><i></i><i></i><i></i><i></i></div>
         <div>
           <div class="cv-title">${esc(c.name)}</div>
