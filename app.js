@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 166";
+const APP_VERSION = "Кэйко 167";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9951,7 +9951,6 @@ function openLogSheet() {
     <h3>${title}</h3>
     <p class="sub">${sub}</p>
     <div id="sheetBody"></div>
-    <input class="note-input" id="noteInput" type="text" maxlength="80" placeholder="Заметка (необязательно)" autocomplete="off">
     <div class="sheet-actions">
       <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
       <button class="btn" id="sheetCancel" type="button">Отмена</button>
