@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 165";
+const APP_VERSION = "Кэйко 166";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10166,7 +10166,10 @@ function bookSheetUI() {
         <button class="st-btn" data-d="1" type="button">＋</button>
       </div>
     </div>
-    <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}</div>
+    <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
+      ${pickPage < book().pages
+        ? `<button class="qbtn fin" data-fin="1" type="button">Прочитана</button>`
+        : `<button class="qbtn fin on" data-fin="0" type="button">✓ Прочитана</button>`}</div>
     <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>`;
 }
 
@@ -10176,8 +10179,15 @@ function bindBookSheet() {
      поправлять промах — дело обычное. Ограничение здесь было лишним. */
   document.querySelectorAll(".st-btn").forEach(b =>
     b.addEventListener("click", () => { pickPage = Math.min(pages, Math.max(0, pickPage + Number(b.dataset.d))); renderSheetBody(); }));
-  document.querySelectorAll(".qbtn").forEach(b =>
+  document.querySelectorAll(".qbtn[data-add]").forEach(b =>
     b.addEventListener("click", () => { pickPage = Math.min(pages, pickPage + Number(b.dataset.add)); renderSheetBody(); }));
+  /* Дочитать можно в любой момент — не отщёлкивая страницы до последней.
+     Повторное нажатие снимает отметку и возвращает на то место, где был. */
+  document.querySelectorAll(".qbtn[data-fin]").forEach(b =>
+    b.addEventListener("click", () => {
+      pickPage = b.dataset.fin === "1" ? pages : Math.min(pages, bookProgress());
+      renderSheetBody();
+    }));
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;

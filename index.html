@@ -2416,6 +2416,15 @@
       font-weight: 750; color: var(--gold);
     }
 
+    /* «Прочитана» — отдельной строкой во всю ширину: это не такой же шаг,
+       как «+10 страниц», а решение закрыть книгу. */
+    .qbtn.fin { grid-column: 1 / -1; color: var(--muted); font-weight: 700; }
+    .qbtn.fin.on {
+      background: rgba(74, 222, 128, 0.14);
+      border-color: rgba(74, 222, 128, 0.35);
+      color: var(--green);
+    }
+
     .pending { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
     .pchip {
       min-height: 34px; padding: 0 12px; border-radius: 17px;
