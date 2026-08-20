@@ -580,6 +580,11 @@
     }
 
     /* карусель обложек */
+    /* Один материал — листать нечего: прокрутку и притяжение выключаем,
+       обложка просто стоит по центру. */
+    .rail.one { overflow-x: hidden; scroll-snap-type: none; justify-content: center; }
+    .rail.one .slot { scroll-snap-align: none; }
+
     .rail {
       width: 100%;
       display: flex;
