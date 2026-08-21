@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 171";
+const APP_VERSION = "Кэйко 172";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10726,6 +10726,18 @@ async function catText(files, name, ms) {
   return await (await withTimeout(fetch(f.raw_url), ms || 20000)).text();
 }
 
+/* Есть ли материал, которого нет в кэше каталога. Каталог сверяется раз в
+   сутки, и добавленная сегодня книга приезжала бы к завтрашнему дню: без
+   записи в каталоге у неё нет ни обложки, ни наград, ни карточек — выглядит
+   как поломка. Увидели незнакомый материал — тянем каталог сразу. */
+function catalogMissing() {
+  const keys = [];
+  for (const b of (data.book.books || [])) if (!b.archived) keys.push(b.id);
+  for (const p of (data.piano.pieces || [])) if (!p.archived) keys.push(p.id);
+  if ((data.pastel.course || { lessons: [] }).lessons.length) keys.push("pastel");
+  return keys.some((k) => k && !CATALOG[k]);
+}
+
 async function catalogPull(force) {
   if (!cfg.token) return;
   if (!force && now() - (cfg.catalogAt || 0) < CAT_EVERY) return;
@@ -11930,7 +11942,8 @@ async function syncNow(manual) {
     saveCfg(); setSyncDot("ok");
     // снимок в архив кладём в прежней форме: восстановление читает её же
     maybeArchive({ v: 9, savedAt: now(), profiles: { [profileId]: mine || exportData() } });
-    catalogPull(false).catch(() => {});  // каталог сверяем не чаще раза в сутки
+    // раз в сутки — но незнакомый материал ждать сутки не должен
+    catalogPull(catalogMissing()).catch(() => {});
     syncError = "";
     syncPickers();
     if (stampBefore !== dataStamp()) render(true);   // тихо и только если данные правда изменились
