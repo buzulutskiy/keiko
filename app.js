@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 180";
+const APP_VERSION = "Кэйко 181";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6778,7 +6778,9 @@ function pracParts() {
     const out = [];
     for (const p of doc.parts) {
       if (p.from > bars) break;
-      out.push({ i: out.length, from: p.from, to: Math.min(p.to, bars), why: p.why || "" });
+      // note — объяснение части своими словами; собирали часть заново и теряли его
+      out.push({ i: out.length, from: p.from, to: Math.min(p.to, bars),
+                 why: p.why || "", note: p.note || "" });
     }
     if (out.length && out[out.length - 1].to < bars) out[out.length - 1].to = bars;
     if (out.length) return out;
@@ -6905,7 +6907,35 @@ function pracHands(u) {
   return u.size >= 4 ? ["both"] : ["left", "right", "both"];
 }
 
-const pracIsDone = (u, h) => !!pracStore().done[pracKey(u, h)];
+/* Покрытие: какие такты уже сыграны этой рукой окнами не меньше заданного
+   размера. Ключ отметки хранит границы окна, поэтому при смене разбора
+   прежние ключи перестают совпадать с новыми — «по два такта» было нарезано
+   как 2–3 и 4–5, а стало 3–4 и 5–6. Сама работа при этом никуда не делась.
+   Чтение (:read) сюда не идёт: прочитанное не заменяет сыгранного. */
+let pracCovCache = { key: "", map: null };
+function pracCoverage(h, minSize) {
+  const done = pracStore().done;
+  const ck = piece().id + "|" + Object.keys(done).length;
+  if (pracCovCache.key !== ck) pracCovCache = { key: ck, map: new Map() };
+  const mk = h + "|" + minSize;
+  if (pracCovCache.map.has(mk)) return pracCovCache.map.get(mk);
+  const set = new Set();
+  for (const key of Object.keys(done)) {
+    const m = /^(\d+):(\d+)-(\d+):([a-z]+)$/.exec(key);
+    if (!m || m[4] !== h || Number(m[1]) < minSize) continue;
+    for (let b = Number(m[2]); b <= Number(m[3]); b++) set.add(b);
+  }
+  pracCovCache.map.set(mk, set);
+  return set;
+}
+
+const pracIsDone = (u, h) => {
+  if (pracStore().done[pracKey(u, h)]) return true;
+  // окно с другими границами, но той же длины — работа та же
+  const cov = pracCoverage(h, u.size);
+  for (let b = u.from; b <= u.to; b++) if (!cov.has(b)) return false;
+  return true;
+};
 
 /* Вся лестница части по порядку — каждая ступень, каждый ключ, чтение и
    игра. Нужна одному делу: отматывать назад. Очередь смотрит вперёд и
@@ -6978,16 +7008,22 @@ const termsIn = (text) => {
   return out;
 };
 
-function openTermsSheet(list) {
+/* Справка про то, что сейчас играешь. Сначала — что происходит именно в
+   этом куске прелюдии, обычными словами. Разбор слов идёт ниже и мелким:
+   заучивать термины никто не просит, но если попалось незнакомое — оно
+   объяснено рядом, а не в отдельном учебнике. */
+function openTermsSheet(list, про) {
   sheetMode = "term";
   openSheet(`
     <div class="ach-sheet">
       <div class="big open">🎼</div>
-      <h3>${list.length > 1 ? "Что это за слова" : esc(list[0].t)}</h3>
-      ${list.length > 1
-        ? `<div class="dig">${list.map((тм) => `
-            <div class="dig-item"><b>${esc(тм.t)}</b><br>${esc(тм.x)}</div>`).join("")}</div>`
-        : `<p style="max-width:340px">${esc(list[0].x)}</p>`}
+      <h3>${esc((про && про.title) || "Что это за слова")}</h3>
+      ${про && про.note ? `<p style="max-width:340px">${esc(про.note)}</p>` : ""}
+      ${list.length ? `
+        <div class="dig">
+          <div class="dig-head">Если по словам</div>
+          ${list.map((тм) => `<div class="dig-item"><b>${esc(тм.t)}</b> — ${esc(тм.x)}</div>`).join("")}
+        </div>` : ""}
     </div>
     <div class="sheet-actions">
       <button class="btn" id="termClose" type="button">Понятно</button>
@@ -8979,7 +9015,7 @@ function pracRender() {
   box.innerHTML = `
     <div class="wk">
       <div class="wk-task">
-        <p class="wk-kind">${esc(top)}${termsIn(top + " " + stage).length
+        <p class="wk-kind">${esc(top)}${(w.run || w.seam || (w.part && (w.part.note || termsIn(top + " " + stage).length)))
           ? ` <button class="wk-q" data-prac="terms" type="button" aria-label="Что это значит">?</button>` : ""}</p>
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
@@ -9647,11 +9683,20 @@ function bindPractice() {
       }
       case "terms": {
         const w2 = pracWhere();
-        const где = w2.run ? "прогон от первого такта"
-          : w2.seam ? "стык двух частей"
-          : (w2.part && w2.part.why) || "";
-        const list = termsIn(где + " " + (w2.part ? pracStepName(w2.size, w2.part) : ""));
-        if (list.length) openTermsSheet(list); else toast("Здесь особых терминов нет");
+        let про;
+        if (w2.run) про = { title: "Прогон от первого такта",
+          note: "Куски по отдельности можно знать назубок и всё равно спотыкаться, когда играешь целиком: "
+              + "память на связки нарабатывается только так. Отсюда и рубежи — они стоят на концах разделов, "
+              + "чтобы каждый раз собиралось что-то законченное." };
+        else if (w2.seam) про = { title: "Стык двух частей",
+          note: "Обе части уже звучат порознь, но шов между ними всегда самое слабое место: пальцы знают "
+              + "начало и конец, а переход между ними — нет. Поэтому его играют отдельно, конец одной "
+              + "и начало другой подряд, не останавливаясь." };
+        else if (w2.part) про = { title: "Такты " + w2.part.from + "–" + w2.part.to,
+          note: w2.part.note || w2.part.why || "" };
+        const list = termsIn((про && про.note ? про.note + " " : "") + ((w2.part && w2.part.why) || ""));
+        if (про && (про.note || list.length)) openTermsSheet(list, про);
+        else toast("Про это место пояснений пока нет");
         return;
       }
       case "stepback":
