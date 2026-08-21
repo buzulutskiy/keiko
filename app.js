@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 175";
+const APP_VERSION = "Кэйко 176";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1150,11 +1150,6 @@ function saveEntry() {
     if (pickDone && !bk.done) {
       bk.done = true; bk.doneAt = todayStr(); bk.updatedAt = now();
       justClosed = bk;
-      /* Книга уходит с главной — и это событие: иначе она просто исчезает,
-         и в ленте не остаётся следа, что ты её закрыл. Итог кладём в само
-         событие, чтобы его можно было открыть из заметок ещё раз. */
-      addEvent("book", bk.id, "book", "Закрыл книгу: " + bk.title,
-        { tag: bk.id, date: selectedDate, fields: { createdAt: now(), farewell: bookFarewell(bk) } });
     } else if (!pickDone && bk.done) { bk.done = false; bk.doneAt = ""; bk.updatedAt = now(); }
   }
 
@@ -1200,9 +1195,16 @@ function saveEntry() {
      одной оказывался пробег другой. На экране это не всплывало, лента
      пересобирает текст по своему материалу, но в данных и в гисте лежал чужой. */
   if (entNow && !ctx.watch) {
-    addEvent("session", keyNow, trackNow, sessionText(trackNow, entNow), {
+    /* Закрыл книгу в этот заход — карточка дня и есть след: отдельный пост
+       «закрыл книгу» рядом с «читал» дублировал бы одно и то же. Меняем
+       глагол и кладём итог внутрь, к нему ведёт кнопка в ленте. */
+    const текст = justClosed
+      ? sessionText(trackNow, entNow).replace(/^Читал:/, "Дочитал:")
+      : sessionText(trackNow, entNow);
+    addEvent("session", keyNow, trackNow, текст, {
       tag: keyNow, date: selectedDate,
-      fields: { createdAt: now(), awards: stamped.ach, facts: stamped.facts },
+      fields: Object.assign({ createdAt: now(), awards: stamped.ach, facts: stamped.facts },
+        justClosed ? { farewell: bookFarewell(justClosed) } : {}),
     });
   }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
@@ -6238,7 +6240,11 @@ function renderNotes() {
   const textOf = (t) => {
     if (t.event !== "session" || !t.key) return t.text;
     const e = dayEntry(t);
-    return e ? sessionText(t.track, e) : t.text;
+    const текст = e ? sessionText(t.track, e) : t.text;
+    /* Текст пересобирается по живой записи дня — иначе он врал бы после
+       правки страницы. Но глагол закрытия в записи не хранится, и «Дочитал»
+       превращалось обратно в «Читал»: держим его по сохранённому итогу. */
+    return t.farewell ? String(текст).replace(/^Читал:/, "Дочитал:") : текст;
   };
 
   // один материал за день считаем один раз: событий в ленте много, а дней мало
@@ -6361,7 +6367,7 @@ function renderNotes() {
             </span>
           </div>
           ${((x) => x ? `<p class="post-text">${esc(x)}</p>` : "")(textOf(t))}
-          ${t.event === "book" && t.farewell ? `
+          ${t.farewell ? `
             <div class="ev-awards">
               <button class="ev-aw" type="button" data-ev-book="${esc(t.key)}"><i>📕</i><span>Показать итог</span></button>
             </div>` : ""}
@@ -6420,9 +6426,9 @@ function renderNotes() {
     el.addEventListener("click", () => {
       const id = el.dataset.evBook;
       const bk = (data.book.books || []).find((b) => b.id === id);
-      const ev = thoughts().find((t) => t.event === "book" && t.key === id);
+      const ev = thoughts().find((t) => t.farewell && t.key === id);
       if (bk) { overlayQueue = []; showBookDone(bk); }
-      else if (ev && ev.farewell) { overlayQueue = []; showBookDone({ title: (ev.text || "").replace(/^Закрыл книгу: /, "") }, ev.farewell); }
+      else if (ev && ev.farewell) { overlayQueue = []; showBookDone({ title: (ev.text || "").replace(/^\S+:\s*/, "").split(" · ")[0] }, ev.farewell); }
       else toast("Итог не нашёлся — книги уже нет");
     }));
 
@@ -11005,7 +11011,14 @@ function libraryUI() {
       <span class="lib-body">
         <b>${esc(a.title)}</b>
         <em>${esc(a.sub || "")}</em>
-        <span class="lib-meta">${esc(fmtY.format(fromStr(a.finishedAt)).replace(" г.", ""))}
+        <span class="lib-meta">${esc(((н, к) => {
+            /* Даты начала и конца лежали в записи с самого импорта, но на
+               экран выходила только дата завершения — и было не понять, сколько
+               книга шла. Совпали — показываем одну. */
+            const д = (x) => x ? fmtY.format(fromStr(x)).replace(" г.", "") : "";
+            const a1 = д(н), a2 = д(к);
+            return a1 && a2 && a1 !== a2 ? a1 + " — " + a2 : (a2 || a1 || "");
+          })(a.startedAt, a.finishedAt))}
           ${a.rating ? " · " + "★".repeat(a.rating) : ""}${a.review ? "" : " · без отзыва"}</span>
       </span>
       <span class="mc-go">›</span>
@@ -11016,18 +11029,18 @@ function libraryUI() {
      а шесть заголовков превращали список в лестницу. */
   const work = [...bookRows, ...pieceRows, ...pastelRows, ...watchRows];
 
+  /* Закрытые книги и полка — это одно и то же: прочитанное. Делить их на
+     «Прочитано» и «Архив» значило заставлять вспоминать, написан ли отзыв,
+     чтобы понять, где искать книгу. Свежезакрытые идут первыми. */
+  const прочитано = [...doneBookRows, ...shelfRows];
+
   return `
-    <div class="lib-group">В работе · ${work.length}</div>`
+    <div class="lib-group">Сейчас · ${work.length}</div>`
     + (work.length ? `<div class="lib-list">${work.join("")}</div>`
         : `<div class="empty-note">Пока ничего не добавлено.</div>`)
-    /* Закрытые книги — отдельной секцией: они не в работе, но и не в архиве,
-       пока к ним не написан отзыв. Раньше висели среди читаемых. */
-    + (doneBookRows.length
-        ? `<div class="lib-group">Прочитано · ${doneBookRows.length}</div><div class="lib-list">${doneBookRows.join("")}</div>`
-        : "")
-    + `<div class="lib-group">Архив · ${shelf.length}</div>`
-    + (shelfRows.length ? `<div class="lib-list">${shelfRows.join("")}</div>`
-        : `<div class="empty-note">Здесь будет пройденное — с оценкой и отзывом.</div>`)
+    + `<div class="lib-group">Прочитано · ${прочитано.length}</div>`
+    + (прочитано.length ? `<div class="lib-list">${прочитано.join("")}</div>`
+        : `<div class="empty-note">Здесь копится пройденное — с датами, оценкой и отзывом.</div>`)
     + `<div class="lib-group">Добавить</div>`
     /* Добавление роликов с ютуба убрано: отмечать просмотр видео оказалось
        занятием без смысла. Уже добавленные материалы остаются на месте. */
