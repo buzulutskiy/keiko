@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 174";
+const APP_VERSION = "Кэйко 175";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10889,6 +10889,27 @@ async function catalogUpload(file) {
    там отмечают рассказы, а не «докуда дошёл». */
 const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
 
+/* Процент книги считается от той части, которую читаешь в приложении. Книгу
+   можно завести с середины — «Снег на траве» начат со 183-й страницы, — и
+   тогда первые страницы не покроются никогда: потолок был 49%, сколько ни
+   читай. Закрытая книга — сто процентов по определению: это решение, а не
+   расчёт. */
+function bookPct(b) {
+  if (!b || !b.pages) return 0;
+  if (b.done) return 100;
+  const всего = Math.max(1, b.pages - (b.startPage || 0));
+  return Math.min(100, Math.round(Math.min(b.pages, bookCovered(b)) / всего * 100));
+}
+
+// «3 августа — 21 августа»: когда книгу открыли и когда закрыли
+function bookSpanDates(b) {
+  const ent = bookEntriesOf(b.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+  if (!ent.length) return "";
+  const с = fmtDay(ent[0].date);
+  const по = b.done ? fmtDay(b.doneAt || ent[ent.length - 1].date) : fmtDay(ent[ent.length - 1].date);
+  return с === по ? с : с + " — " + по;
+}
+
 /* ── Библиотека: все материалы, у каждого своя страница со всем, что известно ── */
 function libraryUI() {
   const books  = (data.book.books || []).filter(b => !b.archived);
@@ -10929,13 +10950,19 @@ function libraryUI() {
   const group = (name, rows) => rows.length
     ? `<div class="lib-group">${esc(name)}</div><div class="lib-list">${rows.join("")}</div>` : "";
 
-  const bookRows = books.map(b => {
+  const bookRow = (b) => {
     const ent = bookEntriesOf(b.id);
     const cov = Math.min(b.pages || 0, bookCovered(b));
-    const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
-    return row("bk:" + b.id, coverSrc(b.id, b.cover || ""), "📖", b.title, b.author, pct,
-      `${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`);
-  });
+    const pct = bookPct(b);
+    const когда = bookSpanDates(b);
+    const meta = b.done
+      ? `прочитана${когда ? " · " + когда : ""} · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`
+      : `${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`
+        + (когда ? " · " + когда : "");
+    return row("bk:" + b.id, coverSrc(b.id, b.cover || ""), "📖", b.title, b.author, pct, meta);
+  };
+  const bookRows = books.filter(b => !b.done).map(bookRow);
+  const doneBookRows = books.filter(b => b.done).map(bookRow);
 
   const pieceRows = pieces.map(pc => {
     const st = withMaterial({ track: "piano", pieceId: pc.id }, pianoStats);
@@ -10993,6 +11020,11 @@ function libraryUI() {
     <div class="lib-group">В работе · ${work.length}</div>`
     + (work.length ? `<div class="lib-list">${work.join("")}</div>`
         : `<div class="empty-note">Пока ничего не добавлено.</div>`)
+    /* Закрытые книги — отдельной секцией: они не в работе, но и не в архиве,
+       пока к ним не написан отзыв. Раньше висели среди читаемых. */
+    + (doneBookRows.length
+        ? `<div class="lib-group">Прочитано · ${doneBookRows.length}</div><div class="lib-list">${doneBookRows.join("")}</div>`
+        : "")
     + `<div class="lib-group">Архив · ${shelf.length}</div>`
     + (shelfRows.length ? `<div class="lib-list">${shelfRows.join("")}</div>`
         : `<div class="empty-note">Здесь будет пройденное — с оценкой и отзывом.</div>`)
@@ -11006,7 +11038,7 @@ function bookPageUI(b) {
   const ent = bookEntriesOf(b.id).slice().sort((x, y) => x.date < y.date ? -1 : 1);
   const spans = mergeSpans(bookSpans(b));
   const cov = Math.min(b.pages || 0, bookCovered(b));
-  const pct = b.pages ? Math.round(cov / b.pages * 100) : 0;
+  const pct = bookPct(b);
   const parts = bookParts(b);
   const notes = ent.filter(e => e.note).length;
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === b.id).length;
