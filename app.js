@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 168";
+const APP_VERSION = "Кэйко 169";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3000,10 +3000,11 @@ function coverRailHTML() {
   const items = railItems();
   const n = items.length;
   const idx = activeRailIndex(items);
-  /* Копии нужны только для бесшовного цикла. Когда материал один, листать
-     нечего: пять копий одной обложки выглядели как карусель, которой нет. */
-  const copies = n > 1 ? RAIL_COPIES : 1;
-  const mid = n > 1 ? RAIL_MID : 0;
+  /* Копии нужны только для бесшовного цикла, а цикл имеет смысл от трёх
+     материалов. При одном листать нечего, при двух это просто «туда-сюда»:
+     копии там показывали одни и те же обложки по кругу и сбивали с толку. */
+  const copies = n > 2 ? RAIL_COPIES : 1;
+  const mid = n > 2 ? RAIL_MID : 0;
   let html = "";
   for (let copy = 0; copy < copies; copy++) {
     items.forEach((it, i) => {
@@ -3144,6 +3145,7 @@ function setupRail() {
 
   const items = railItems();
   const n = items.length;
+  const loop = n > 2;   // цикл с копиями — только от трёх материалов
 
   const pad = Math.max(0, (rail.clientWidth - slots[0].offsetWidth) / 2);
   rail.style.paddingLeft = pad + "px";
@@ -3168,6 +3170,7 @@ function setupRail() {
   // переносимся в среднюю копию, только когда подошли к краю ленты:
   // каждый лишний перенос сдвигает scrollLeft и сбивает доводку свайпа
   const normalize = (pos) => {
+    if (!loop) return pos;                       // без копий переносить некуда
     if (pos >= n && pos < slots.length - n) return pos;
     const target = RAIL_MID * n + ((pos % n) + n) % n;
     if (target !== pos) {
@@ -3267,14 +3270,14 @@ function setupRail() {
   };
 
   railApi = {
-    centerOn: (baseIdx, smooth) => centerOn(baseIdx + (n > 1 ? RAIL_MID * n : 0), smooth),
+    centerOn: (baseIdx, smooth) => centerOn(baseIdx + (loop ? RAIL_MID * n : 0), smooth),
     spinTo,
     indexOfTrack: (track) => items.findIndex(it => it.track === track),
     indexOf: (track, id) => items.findIndex(it =>
       it.track === track && (!id || it.pieceId === id || it.bookId === id))
   };
 
-  centerOn(activeRailIndex(items) + (n > 1 ? RAIL_MID * n : 0), false);
+  centerOn(activeRailIndex(items) + (loop ? RAIL_MID * n : 0), false);
   if (n < 2) return;
 
   // фон догоняет обложку прямо в движении, но не чаще кадра и только при смене обложки —
