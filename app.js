@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 181";
+const APP_VERSION = "Кэйко 182";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7120,6 +7120,53 @@ function pracBarInfo() {
   return { right: p.right, left: p.left, seen };
 }
 
+/* Весь путь по пьесе одним списком: шаги внутри частей, швы между ними,
+   прогоны от начала и сборка. Раньше в списке были только части — видно,
+   что выучено, но не видно дороги: где соединяем, где возвращаемся назад,
+   что будет после. Порядок здесь тот же, что у очереди занятия. */
+function pracRoute() {
+  const parts = pracParts();
+  const runs = (pracDoc() || {}).runs || [];
+  const first = parts.length ? parts[0].from : 1;
+  const out = [];
+  const прогон = (край) => {
+    const u = { from: first, to: край, size: край - first + 1 };
+    out.push({ kind: "run", u, done: pracUnitDone(u) });
+  };
+
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    for (const край of runs)
+      if (p.from === край + 1 && parts.some((x) => x.to <= край)) прогон(край);
+    for (const size of pracSteps(p))
+      out.push({ kind: "step", p, size, done: pracStepDone(p, size) });
+    if (i > 0) {
+      const seam = seamUnit(parts[i - 1], p);
+      out.push({ kind: "seam", a: parts[i - 1], b: p, u: seam, done: pracUnitDone(seam) });
+    }
+  }
+  // рубеж на самом конце пьесы в цикл не попадает: за ним частей уже нет
+  for (const край of runs) if (!parts.some((x) => x.from === край + 1)) прогон(край);
+
+  const asm = pracAssembly(parts).slice(1);
+  asm.forEach((lvl, i) => out.push({
+    kind: "asm", lvl, i, done: lvl.map(pracAsUnit).every(pracUnitDone),
+  }));
+  return out;
+}
+
+// как называется этап в списке пути
+function routeName(r) {
+  if (r.kind === "step") return pracStepName(r.size, r.p);
+  if (r.kind === "seam") return "Стык: конец " + (r.a.i + 1) + "-й части и начало " + (r.b.i + 1) + "-й";
+  if (r.kind === "run") return "Прогон с начала до " + r.u.to + "-го такта";
+  return r.lvl.length > 1 ? "Сборка: " + r.lvl.length + " " + plural(r.lvl.length, "кусок", "куска", "кусков")
+    : "Вся пьеса целиком";
+}
+const routeSpan = (r) => r.kind === "step" ? "такты " + r.p.from + "–" + r.p.to
+  : r.kind === "asm" ? r.lvl.map((x) => x.from + "–" + x.to).join(" · ")
+  : "такты " + r.u.from + "–" + r.u.to;
+
 function pracListHTML() {
   const info = pracBarInfo();
   const parts = pracParts();
@@ -7140,6 +7187,18 @@ function pracListHTML() {
       <b>Такты</b>
       <button class="th-link" data-prac="listClose" type="button">закрыть</button>
     </div>
+    ${(() => {
+      const route = pracRoute();
+      const сейчас = route.findIndex((r) => !r.done);
+      return `
+        <div class="rt-head">Путь по пьесе · пройдено ${route.filter((r) => r.done).length} из ${route.length}</div>
+        <div class="rt-list">${route.map((r, i) => `
+          <div class="rt-row${r.done ? " done" : ""}${i === сейчас ? " now" : ""}">
+            <i>${r.done ? "✓" : i === сейчас ? "▸" : "·"}</i>
+            <b>${esc(routeName(r))}</b>
+            <em>${esc(routeSpan(r))}</em>
+          </div>`).join("")}</div>`;
+    })()}
     <div class="bl-list">
       ${parts.map((p) => {
         const done = pracPartDone(p);

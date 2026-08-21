@@ -1505,6 +1505,29 @@
       border-top: 1px solid rgba(255, 255, 255, 0.07);
     }
 
+    /* Путь по пьесе: вся дорога от первого такта до целой вещи. */
+    .rt-head {
+      margin: 18px 0 8px; font-size: 0.72rem; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--dim); font-weight: 700;
+    }
+    .rt-list { display: grid; gap: 3px; }
+    .rt-row {
+      display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: baseline;
+      padding: 7px 10px; border-radius: 10px;
+      background: var(--glass); border: 1px solid transparent;
+      font-size: 0.8rem; color: var(--muted);
+    }
+    .rt-row i { font-style: normal; text-align: center; color: var(--dim); }
+    .rt-row b { font-weight: 600; }
+    .rt-row em { font-style: normal; font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .rt-row.done i { color: var(--green); }
+    .rt-row.done b { color: var(--dim); }
+    .rt-row.now {
+      border-color: rgba(255, 201, 77, .45); background: rgba(255, 201, 77, .1);
+      color: var(--ink);
+    }
+    .rt-row.now i { color: var(--gold); }
+
     /* ── Список тактов ── */
     .bl-wrap {
       position: fixed; inset: 0; z-index: 75; background: var(--bg);
