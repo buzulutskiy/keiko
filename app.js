@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 169";
+const APP_VERSION = "Кэйко 170";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11678,7 +11678,12 @@ async function syncNow(manual) {
        каждый перезапуск начинался с полного скачивания гиста — оранжевая
        точка мигала подолгу на ровном месте. Теперь холодный старт спрашивает
        «а изменилось ли», и чаще всего получает пустое 304. */
-    const condTag = gistEtag || cfg.gistEtag || "";
+    /* Метка сверки принадлежит ПРОФИЛЮ, а не устройству. Раньше она лежала
+       общей: сверился в одном профиле — получил свежий etag; переключился на
+       второй — сервер отвечал 304 «не менялось», и файл второго профиля не
+       читался вовсе. Локальная старая копия считалась верной и первой же
+       правкой затирала в гисте то, что там появилось. */
+    const condTag = gistEtag || (cfg.gistEtagBy || {})[profileId] || "";
     const cond = condTag ? { headers: { "If-None-Match": condTag } } : {};
     const r = await gh("/gists/" + cfg.gistId, cond);
     if (r.status !== 304 && !r.ok) throw new Error("Ошибка сети (" + r.status + ")");
@@ -11808,7 +11813,7 @@ async function syncNow(manual) {
     /* На холодном 304 сравнивать не с чем — сравниваем с отпечатком того, что
        ушло в гист в прошлый раз. Совпал — не изменилось ничего нигде, и вся
        сверка обошлась одним пустым запросом. */
-    const changed = cold ? strHash(myNorm) !== cfg.syncNorm : norm(mine) !== myNorm;
+    const changed = cold ? strHash(myNorm) !== (cfg.syncNormBy || {})[profileId] : norm(mine) !== myNorm;
     if (changed) {
       // отправляем один файл — свой; чужие в гисте PATCH не трогает
       const payload = JSON.stringify(exportData());
@@ -11829,8 +11834,9 @@ async function syncNow(manual) {
       mine = gistBox;
     }
     cfg.lastSync = now();
-    cfg.gistEtag = gistEtag;
-    cfg.syncNorm = strHash(norm(exportData()));
+    cfg.gistEtagBy = { ...(cfg.gistEtagBy || {}), [profileId]: gistEtag };
+    cfg.syncNormBy = { ...(cfg.syncNormBy || {}), [profileId]: strHash(norm(exportData())) };
+    delete cfg.gistEtag; delete cfg.syncNorm;   // общие метки больше не в ходу
     saveCfg(); setSyncDot("ok");
     // снимок в архив кладём в прежней форме: восстановление читает её же
     maybeArchive({ v: 9, savedAt: now(), profiles: { [profileId]: mine || exportData() } });
