@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 170";
+const APP_VERSION = "Кэйко 171";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -38,6 +38,8 @@ const FIRM_AT = 3;
 const DONE_TITLES = ["Молодец!", "Красавчик!", "Есть!", "Сделано!"];
 const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const DOW_FULL = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
+// «чаще по вторникам» — падеж списком, а не цепочкой замен
+const DOW_BY = ["понедельникам", "вторникам", "средам", "четвергам", "пятницам", "субботам", "воскресеньям"];
 
 /* ── Состояние ── */
 let data = null;
@@ -58,6 +60,7 @@ let calYear, calMonth;
 let selectedDate = todayStr();
 let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
 let pickPage = 0;
+let pickDone = false;    // нажата ли «Прочитана» в открытой шторке
 let pickLessons = [];
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
@@ -470,6 +473,21 @@ function mergeSpans(list) {
 }
 
 const bookCovered = (b) => mergeSpans(bookSpans(b)).reduce((n, sp) => n + (sp.to - sp.from + 1), 0);
+
+/* Дочитана ли книга по страницам. Не путать с отметкой «Прочитана»: уйти с
+   главной книга должна по решению, а не по вычисленному проценту — иначе
+   исчезала бы сама, стоило доотметить последнюю страницу. */
+function bookDone(b) {
+  const bk = b || book();
+  if (!bk || !bk.pages) return false;
+  if (bookMode(bk) === "parts") return bookCovered(bk) >= bk.pages;
+  let page = bk.startPage || 0;
+  for (const e of bookEntriesOf(bk.id)) {
+    page = Math.max(page, e.page || 0);
+    for (const sp of e.spans || []) page = Math.max(page, sp.to || 0);
+  }
+  return page >= bk.pages;
+}
 
 // «докуда дошёл» — для линейных книг и для подписи «осталось столько-то»
 function bookProgress() {
@@ -1123,6 +1141,18 @@ function saveEntry() {
     }
   }
 
+  /* Решение «книга завершена» применяем к самой книге: она уйдёт с главной,
+     но останется в библиотеке, в наградах и в истории. Снятие возвращает её
+     на ленту. */
+  let justClosed = null;
+  if (isBook()) {
+    const bk = book();
+    if (pickDone && !bk.done) {
+      bk.done = true; bk.doneAt = todayStr(); bk.updatedAt = now();
+      justClosed = bk;
+    } else if (!pickDone && bk.done) { bk.done = false; bk.doneAt = ""; bk.updatedAt = now(); }
+  }
+
   pending = [];
   pickLessons = [];
   pickSpans = [];
@@ -1140,6 +1170,8 @@ function saveEntry() {
   render();
 
   overlayQueue = [];
+  // итог по книге идёт первым: он про саму книгу, награды и карточки — после
+  if (justClosed) overlayQueue.push({ type: "bookDone", book: justClosed });
   // каждая награда — свой экран: раньше показывалась только последняя,
   // а промежуточные пропадали, хотя открылись честно
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
@@ -1173,6 +1205,7 @@ function showNextOverlay() {
   const item = overlayQueue.shift();
   if (!item) return;
   if (item.type === "ach") showCheer(item.a, item.i, item.n);
+  else if (item.type === "bookDone") showBookDone(item.book);
   else showFacts(item.list);
 }
 
@@ -1194,6 +1227,61 @@ function showFacts(list) {
         ? `<span class="cheer-dig"><b>Копнуть глубже</b>${(list[0].more || []).map(m => `<i>${esc(m)}</i>`).join("")}</span>`
         : "");
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Интересно!";
+  $("#cheer").classList.add("show", "fact");
+}
+
+/* Итог по завершённой книге: не оценка и не поздравление с процентом, а
+   след, который она оставила — сколько дней, вечеров, страниц и заметок.
+   Считаем только то, что действительно записано: выдумывать цифры нельзя. */
+function bookFarewell(bk) {
+  const es = bookEntriesOf(bk.id).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  const days = new Set(es.map(e => e.date)).size;
+  const mins = es.reduce((n, e) => n + (e.mins || 0), 0);
+  const first = es.length ? es[0].date : "";
+  const last = es.length ? es[es.length - 1].date : "";
+  const span = first && last ? daysBetween(first, last) + 1 : 0;
+  const pages = bookMode(bk) === "parts" ? bookCovered(bk) : (() => {
+    let p = bk.startPage || 0;
+    for (const e of es) { p = Math.max(p, e.page || 0);
+      for (const sp of e.spans || []) p = Math.max(p, sp.to || 0); }
+    return Math.max(0, Math.min(p, bk.pages) - (bk.startPage || 0));
+  })();
+  const notes = thoughtsOf(bk.id).filter(t => !t.event);
+  const words = notes.reduce((n, t) => n + String(t.text || "").trim().split(/\s+/).filter(Boolean).length, 0);
+  // самый частый день недели — «чаще всего садился за неё по средам»
+  const byDow = new Array(7).fill(0);
+  for (const d of new Set(es.map(e => e.date))) byDow[(fromStr(d).getDay() + 6) % 7]++;
+  const top = byDow.indexOf(Math.max(...byDow));
+  const dow = byDow[top] >= 2 ? DOW_BY[top] : "";
+  return { days, mins, first, last, span, pages, notes: notes.length, words, dow, dowN: byDow[top] };
+}
+
+function showBookDone(bk) {
+  const f = bookFarewell(bk);
+  const hours = Math.floor(f.mins / 60), rest = f.mins % 60;
+  const время = f.mins >= 60
+    ? hours + " " + plural(hours, "час", "часа", "часов") + (rest ? " " + rest + " мин" : "")
+    : f.mins + " " + plural(f.mins, "минута", "минуты", "минут");
+  const строки = [];
+  if (f.days) строки.push([f.days + " " + plural(f.days, "вечер", "вечера", "вечеров"),
+    f.span > f.days ? "растянулись на " + f.span + " " + plural(f.span, "день", "дня", "дней") : "подряд"]);
+  if (f.mins) строки.push([время, "чистого чтения"]);
+  if (f.pages) строки.push([f.pages + " " + plural(f.pages, "страница", "страницы", "страниц"), "позади"]);
+  if (f.notes) строки.push([f.notes + " " + plural(f.notes, "заметка", "заметки", "заметок"),
+    f.words ? f.words + " " + plural(f.words, "слово", "слова", "слов") + " своими руками" : "на полях"]);
+  if (f.dow) строки.push(["Чаще по " + f.dow, "так сложилось"]);
+
+  $("#cheerStep").hidden = true;
+  $("#cheerIc").textContent = "📕";
+  $("#cheerTitle").textContent = "«" + (bk.title || "Книга") + "» закрыта";
+  $("#cheerText").innerHTML = `<span class="cheer-list">${строки.map(([a, b]) => `
+      <span class="cheer-item"><b>${esc(a)}</b><i>${esc(b)}</i></span>`).join("")}</span>`
+    + (f.first ? `<span class="cheer-dig"><b>${
+        f.last === todayStr() ? "Началась " + fmtDay(f.first)
+        : f.first === f.last ? "Всё за один день, " + fmtDay(f.first)
+        : "С " + fmtDay(f.first) + " по " + fmtDay(f.last)
+      }</b><i>Книга осталась в библиотеке — вместе с наградами и заметками</i></span>` : "");
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Спасибо ей";
   $("#cheer").classList.add("show", "fact");
 }
 
@@ -1338,7 +1426,7 @@ function syncPickers() {
      что «Подтвердить» ничего не записало: день отмечался, награда за серию
      выпадала, а прогресс стоял на месте. */
   if (sheetMode === "log" && sheetOpen()) return;
-  if (isBook()) pickPage = bookProgress();
+  if (isBook()) { pickPage = bookProgress(); pickDone = !!book().done; }
   else if (isPiano() && piece()) {
     const bars = piece().bars;
     pickFrom = Math.min(pickFrom, bars); pickTo = Math.min(pickTo, bars);
@@ -1639,11 +1727,15 @@ function railItems() {
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
   if ((data.pastel.course || { lessons: [] }).lessons.length) out.push({ track: "pastel" });
   for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
+  /* Завершённая книга уходит с ленты: место тем, что читаешь сейчас. Но если
+     завершено вообще всё, показывать пустоту хуже, чем показать закрытое. */
+  const live = out.filter((i) => !(i.track === "book" && i.book.done));
+  const base = live.length ? live : out;
   /* Материал можно убрать с главной, не отправляя в архив: читаю три книги,
      а на ленте хочу одну. Если спрятать всё, лента опустела бы и приложению
      нечего было бы показать — тогда прячем ничего. */
-  const shown = out.filter((i) => !matHidden(libKey(i)));
-  return shown.length ? shown : out;
+  const shown = base.filter((i) => !matHidden(libKey(i)));
+  return shown.length ? shown : base;
 }
 
 /* Ключ материала — тот же, что у строки в библиотеке: «bk:id», «pf:id»,
@@ -10173,9 +10265,9 @@ function bookSheetUI() {
       </div>
     </div>
     <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
-      ${pickPage < book().pages
-        ? `<button class="qbtn fin" data-fin="1" type="button">Прочитана</button>`
-        : `<button class="qbtn fin on" data-fin="0" type="button">✓ Прочитана</button>`}</div>
+      ${pickDone
+        ? `<button class="qbtn fin on" data-fin="0" type="button">✓ Завершена — уйдёт в библиотеку</button>`
+        : `<button class="qbtn fin" data-fin="1" type="button">Завершить книгу</button>`}</div>
     <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>`;
 }
 
@@ -10187,13 +10279,11 @@ function bindBookSheet() {
     b.addEventListener("click", () => { pickPage = Math.min(pages, Math.max(0, pickPage + Number(b.dataset.d))); renderSheetBody(); }));
   document.querySelectorAll(".qbtn[data-add]").forEach(b =>
     b.addEventListener("click", () => { pickPage = Math.min(pages, pickPage + Number(b.dataset.add)); renderSheetBody(); }));
-  /* Дочитать можно в любой момент — не отщёлкивая страницы до последней.
-     Повторное нажатие снимает отметку и возвращает на то место, где был. */
+  /* Завершение — решение, а не страница. Отметил, докуда дошёл, и закрыл
+     книгу: хоть на половине, хоть на последней странице. Прогресс остаётся
+     тем, какой есть — врать про «100%» из-за закрытия книги незачем. */
   document.querySelectorAll(".qbtn[data-fin]").forEach(b =>
-    b.addEventListener("click", () => {
-      pickPage = b.dataset.fin === "1" ? pages : Math.min(pages, bookProgress());
-      renderSheetBody();
-    }));
+    b.addEventListener("click", () => { pickDone = b.dataset.fin === "1"; renderSheetBody(); }));
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;
