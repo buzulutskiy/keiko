@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 173";
+const APP_VERSION = "Кэйко 174";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1150,8 +1150,21 @@ function saveEntry() {
     if (pickDone && !bk.done) {
       bk.done = true; bk.doneAt = todayStr(); bk.updatedAt = now();
       justClosed = bk;
+      /* Книга уходит с главной — и это событие: иначе она просто исчезает,
+         и в ленте не остаётся следа, что ты её закрыл. Итог кладём в само
+         событие, чтобы его можно было открыть из заметок ещё раз. */
+      addEvent("book", bk.id, "book", "Закрыл книгу: " + bk.title,
+        { tag: bk.id, date: selectedDate, fields: { createdAt: now(), farewell: bookFarewell(bk) } });
     } else if (!pickDone && bk.done) { bk.done = false; bk.doneAt = ""; bk.updatedAt = now(); }
   }
+
+  /* Запись и материал запоминаем СЕЙЧАС, пока активен тот, что отмечали.
+     Ниже идут schedulePush и render: закрытая книга уходит с ленты, активным
+     становится сосед — и карточка дня писалась бы уже про него, а чаще не
+     писалась вовсе, потому что записи за этот день у соседа нет. */
+  const entNow = entries().filter((x) => x.date === selectedDate).slice(-1)[0];
+  const keyNow = curKey();
+  const trackNow = data.active;
 
   pending = [];
   pickLessons = [];
@@ -1186,10 +1199,9 @@ function saveEntry() {
      добавленную запись — чью угодно. Отметил за день две книги, и в карточке
      одной оказывался пробег другой. На экране это не всплывало, лента
      пересобирает текст по своему материалу, но в данных и в гисте лежал чужой. */
-  const ent = entries().filter((x) => x.date === selectedDate).slice(-1)[0];
-  if (ent && !isWatch()) {
-    addEvent("session", curKey(), data.active, sessionText(data.active, ent), {
-      tag: curKey(), date: selectedDate,
+  if (entNow && !ctx.watch) {
+    addEvent("session", keyNow, trackNow, sessionText(trackNow, entNow), {
+      tag: keyNow, date: selectedDate,
       fields: { createdAt: now(), awards: stamped.ach, facts: stamped.facts },
     });
   }
@@ -1256,8 +1268,8 @@ function bookFarewell(bk) {
   return { days, mins, first, last, span, pages, notes: notes.length, words, dow, dowN: byDow[top] };
 }
 
-function showBookDone(bk) {
-  const f = bookFarewell(bk);
+function showBookDone(bk, ready) {
+  const f = ready || bookFarewell(bk);
   const hours = Math.floor(f.mins / 60), rest = f.mins % 60;
   const время = f.mins >= 60
     ? hours + " " + plural(hours, "час", "часа", "часов") + (rest ? " " + rest + " мин" : "")
@@ -6349,6 +6361,10 @@ function renderNotes() {
             </span>
           </div>
           ${((x) => x ? `<p class="post-text">${esc(x)}</p>` : "")(textOf(t))}
+          ${t.event === "book" && t.farewell ? `
+            <div class="ev-awards">
+              <button class="ev-aw" type="button" data-ev-book="${esc(t.key)}"><i>📕</i><span>Показать итог</span></button>
+            </div>` : ""}
           ${((p) => p.ach.length || p.facts.length ? `
             <div class="ev-awards">
               ${p.ach.map((a) => `
@@ -6395,6 +6411,19 @@ function renderNotes() {
       const words = withMaterial(view, () => achWords());
       if (a) openAchSheet(a, false, words);
       else toast("Награда не нашлась — материал изменился");
+    }));
+
+  /* Итог по закрытой книге можно открыть из ленты ещё раз: пересчитываем по
+     живым данным, а если книги уже нет — показываем то, что сохранилось в
+     самом событии. */
+  document.querySelectorAll("[data-ev-book]").forEach(el =>
+    el.addEventListener("click", () => {
+      const id = el.dataset.evBook;
+      const bk = (data.book.books || []).find((b) => b.id === id);
+      const ev = thoughts().find((t) => t.event === "book" && t.key === id);
+      if (bk) { overlayQueue = []; showBookDone(bk); }
+      else if (ev && ev.farewell) { overlayQueue = []; showBookDone({ title: (ev.text || "").replace(/^Закрыл книгу: /, "") }, ev.farewell); }
+      else toast("Итог не нашёлся — книги уже нет");
     }));
 
   const area = $("#thText");
