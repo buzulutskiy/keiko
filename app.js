@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 176";
+const APP_VERSION = "Кэйко 177";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9161,17 +9161,23 @@ function pracFinish() {
   // короткий заход занятием не считается: ни записи, ни серии, ни минут
   /* Час над нотами без единой сыгранной ноты — это занятие. Раньше запись
      заводилась только от закрытого отрезка, и разбор глазами пропадал. */
-  if (prac && prac.startedAt && pracMin() >= PRAC_MIN_ENTRY
-      && (prac.closed.length || prac.reads || pracEntry(false))) {
+  /* Условие «был закрытый отрезок или уже есть запись за день» противоречило
+     тому, что обещано строкой выше, и съедало занятия целиком: сел, разбирал
+     пятнадцать минут, ничего не отметил, закрыл крестиком — и ни минут, ни
+     записи, ни серии. Время за инструментом — уже занятие; отметки решают
+     только, что писать в тексте. */
+  if (prac && prac.startedAt && pracMin() >= PRAC_MIN_ENTRY) {
     const e = pracCount();
     if (!e) { closePractice(); return; }
     pracStore().session++;
     saveData();
     schedulePush();
     won = pracCelebrate();
-    if (closed || prac.reads) addEvent("session", piece().id, "piano",
-      "Занимался: " + piece().name + " · " + e.mins + " мин, "
-      + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков"),
+    // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
+    addEvent("session", piece().id, "piano",
+      "Занимался: " + piece().name + " · " + e.mins + " мин"
+      + (closed ? ", " + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков")
+         : prac.reads ? ", разбирал ноты" : ", без закрытых отрезков"),
       { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
     toast(closed
       ? "Занятие записано: " + e.mins + " мин за день"
