@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 178";
+const APP_VERSION = "Кэйко 179";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6959,8 +6959,20 @@ function pracWhere() {
     return { parts, part: p, size: whole.size, picked: true, refresh: true };
   }
 
+  const runs = (pracDoc() || {}).runs || [];
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
+    /* Дошли до рубежа — сначала прогон от первого такта, потом дальше. Если
+       проверять рубежи после всего цикла, прогон «с начала до восьмого»
+       предлагался бы только когда вся пьеса разобрана, то есть никогда
+       вовремя. */
+    for (const край of runs) {
+      if (p.from !== край + 1) continue;
+      const доКрая = parts.filter((x) => x.to <= край);
+      if (!доКрая.length || !доКрая.every(pracPartDone)) continue;
+      const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1 };
+      if (!pracUnitDone(u)) return { parts, run: u };
+    }
     if (!pracPartDone(p)) {
       for (const size of pracSteps(p)) if (!pracStepDone(p, size)) return { parts, part: p, size };
     }
@@ -6969,6 +6981,15 @@ function pracWhere() {
       if (!pracUnitDone(seam)) return { parts, seam, a: parts[i - 1], b: p };
     }
   }
+  /* Последний рубеж лежит на конце пьесы: за ним частей уже нет, и в цикле
+     он не встретится. */
+  for (const край of runs) {
+    const доКрая = parts.filter((x) => x.to <= край);
+    if (!доКрая.length || !доКрая.every(pracPartDone)) break;
+    const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1 };
+    if (!pracUnitDone(u)) return { parts, run: u };
+  }
+
   /* Крупная сборка идёт дальше швов: пары соседних частей уже пройдены,
      поэтому первый уровень пропускаем. */
   const asm = pracAssembly(parts).slice(1);
@@ -7048,7 +7069,8 @@ function pracQueue() {
      подсовывались самые первые такты. Со стороны это выглядело как «опять
      сначала» и раздражало заслуженно: продолжать надо с того, на чём встал,
      а вернуться к старому — дело добровольное, для этого есть список тактов. */
-  const us = w.seam ? [w.seam]
+  const us = w.run ? [w.run]
+    : w.seam ? [w.seam]
     : w.part ? pracUnits(w.part.from, w.part.to, w.size)
     : (w.asm[w.assembly] || []).map(pracAsUnit);
   /* Каждый ключ проходится дважды: сначала глазами, потом руками. Но чтение —
@@ -8815,7 +8837,11 @@ function pracRender() {
     box.innerHTML = `
       <div class="pr-mid">
         <p class="pr-kind">занятие ${pracStore().session + 1}</p>
-        ${w.seam ? `
+        ${w.run ? `
+          <div class="pr-big sm">такты ${w.run.from}–${w.run.to}</div>
+          <p class="pr-hand">прогон от начала</p>
+          <p class="pr-tail">всё до этого места уже разобрано — играем подряд</p>`
+          : w.seam ? `
           <div class="pr-big sm">такты ${w.seam.from}–${w.seam.to}</div>
           <p class="pr-hand">шов · части ${w.a.i + 1} и ${w.b.i + 1}</p>
           <p class="pr-tail">обе части уже звучат порознь</p>`
@@ -8844,6 +8870,10 @@ function pracRender() {
   if (u.review) {
     top = "повторяем пройденное";
     stage = "Освежаем то, что делали раньше";
+  } else if (w.run) {
+    top = "с начала до такта " + w.run.to;
+    stage = "Прогон от первого такта";
+    after = "куски уже сыграны порознь — теперь подряд, не останавливаясь";
   } else if (w.seam) {
     top = (w.a.why || "часть " + (w.a.i + 1)) + " + " + (w.b.why || "часть " + (w.b.i + 1));
     stage = "Стык двух частей";
