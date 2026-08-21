@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 177";
+const APP_VERSION = "Кэйко 178";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8931,6 +8931,7 @@ function openLesson() {
   clearInterval(pracTimer);
   pracTimer = setInterval(() => {
     if (!prac) return;
+    pracClock();
     if (prac.taskAt) pracRender();
     pracWatch();
   }, 1000);
@@ -8957,11 +8958,24 @@ function openPractice() {
   clearInterval(pracTimer);
   pracTimer = setInterval(() => {
     if (!prac) return;
+    pracClock();
     pracWatch();
   }, 1000);
   keepAwake(true);
   prac.queue = pracQueue();
   pracNext();
+}
+
+/* Минуты в шапке идут сами. Раньше строка обновлялась только вместе со всем
+   экраном — то есть на переходе к следующему такту: сидишь над одним местом
+   двадцать минут, а вверху всё те же «0 мин». Перерисовывать целиком раз в
+   секунду нельзя — схлопнутся раскрытые списки и собьётся прокрутка, поэтому
+   трогаем ровно одну строку. */
+function pracClock() {
+  const el = $("#pracWhere");
+  if (!el || !prac) return;
+  const имя = prac.kind === "lesson" ? course().name : (piece() ? piece().name : "");
+  el.textContent = имя + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
 }
 
 function closePractice() {
