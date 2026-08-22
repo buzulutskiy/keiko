@@ -1532,8 +1532,12 @@
       display: inline-block; margin-bottom: 5px; font-size: 0.68rem;
       color: var(--gold); font-variant-numeric: tabular-nums; font-weight: 700;
     }
-    .bn-item b { display: block; margin-bottom: 4px; font-size: 0.88rem; }
-    .bn-item p { margin: 0; font-size: 0.84rem; line-height: 1.5; color: var(--muted); }
+    /* Комментарии читают подолгу, а не проглядывают: размер как у книжной
+       страницы, строки просторнее, цвет ближе к основному тексту. */
+    .bn-item { padding: 14px 15px; }
+    .bn-item b { display: block; margin-bottom: 6px; font-size: 1.02rem; }
+    .bn-item p { margin: 0; font-size: 1rem; line-height: 1.62; color: var(--ink); }
+    .bn-list { gap: 14px; }
 
     /* Путь по пьесе: вся дорога от первого такта до целой вещи. */
     .rt-head {
