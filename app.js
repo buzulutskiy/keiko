@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 189";
+const APP_VERSION = "Кэйко 190";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -514,6 +514,19 @@ function chapterIndexAt(b, page) {
   let idx = -1;
   list.forEach((c, i) => { if (page >= c.from) idx = i; });
   return idx;
+}
+
+// главы, к которым есть комментарии — по ним и ходим в шторке
+function bookNotesChapters(b) {
+  const bk = b || book();
+  const есть = new Set(bookNotes(bk).map((n) => Number(n.ch)).filter(Boolean));
+  return (bk.chapters || []).map((c, i) => ({ ...c, i, n: есть.has(i + 1) ? 1 : 0 }))
+    .filter((c) => c.n);
+}
+
+function bookNotesOfChapter(b, i) {
+  const все = bookNotes(b || book()).filter((n) => Number(n.ch) === i + 1);
+  return все.sort((a, x) => (parseInt(a.line) || 0) - (parseInt(x.line) || 0));
 }
 
 function bookNotesHere(b, page) {
@@ -3232,13 +3245,10 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
+        ${isBook() && bookNotes(book()).length
+          ? `<button class="cta-side" id="bookNotesBtn" type="button"
+               aria-label="Комментарии" title="Комментарии">📑</button>` : ""}
       </div>
-      ${(() => {
-        if (!isBook()) return "";
-        const n = bookNotesHere(book(), bookProgress()).length;
-        return n ? `<button class="pace-link" id="bookNotesBtn" type="button">
-          Комментарии к главе · ${n}</button>` : "";
-      })()}
       <div class="nudge">${nudge}</div>
     </div>`;
 
@@ -4563,13 +4573,37 @@ function renderAchMaterial(view) {
 // Шторка с карточкой знания
 /* Комментарии к главе одним списком: заголовок, строка, текст. Читаются
    по ходу, не отвлекая от самой книги — открыл, глянул, закрыл. */
+let notesAt = -1;      // какая песнь открыта в шторке комментариев
+
 function openBookNotesSheet(b, page) {
-  const list = bookNotesHere(b, page);
-  const глава = chapterAt(page);
+  const bk = b || book();
+  const главы = bookNotesChapters(bk);
+  if (!главы.length) { toast("Комментариев пока нет"); return; }
+  /* Открываемся там, где читаешь. Ещё не начал — на первой прокомментированной
+     главе: смотреть комментарии до чтения совершенно нормально. */
+  if (notesAt < 0 || !главы.some((c) => c.i === notesAt)) {
+    const тут = chapterIndexAt(bk, page);
+    notesAt = главы.some((c) => c.i === тут) ? тут : главы[0].i;
+  }
+  рисуйКомментарии(bk);
+}
+
+function рисуйКомментарии(bk) {
+  const главы = bookNotesChapters(bk);
+  const место = главы.findIndex((c) => c.i === notesAt);
+  const глава = главы[место] || главы[0];
+  const list = bookNotesOfChapter(bk, глава.i);
   sheetMode = "booknotes";
   openSheet(`
-    <h3>${esc(глава.name || "Комментарии")}</h3>
-    <p class="sub">${list.length} ${plural(list.length, "комментарий", "комментария", "комментариев")}</p>
+    <div class="bn-head">
+      <button class="bn-nav" data-bn="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
+      <div>
+        <h3>${esc(глава.name || "Комментарии")}</h3>
+        <p class="sub">${list.length} ${plural(list.length, "комментарий", "комментария", "комментариев")}
+          · ${место + 1} из ${главы.length}</p>
+      </div>
+      <button class="bn-nav" data-bn="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
+    </div>
     <div class="bn-list">
       ${list.map((n) => `
         <div class="bn-item">
@@ -4581,6 +4615,14 @@ function openBookNotesSheet(b, page) {
     <div class="sheet-actions">
       <button class="btn" id="bnClose" type="button">Закрыть</button>
     </div>`);
+  document.querySelectorAll("[data-bn]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const шаг = el.dataset.bn === "next" ? 1 : -1;
+      const сл = главы[место + шаг];
+      if (!сл) return;
+      notesAt = сл.i;
+      рисуйКомментарии(bk);
+    }));
   $("#bnClose").addEventListener("click", closeSheet);
 }
 
