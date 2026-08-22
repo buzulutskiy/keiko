@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 182";
+const APP_VERSION = "Кэйко 183";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4782,11 +4782,34 @@ function cleanPastedText(raw) {
   // колонтитулы и номера страниц отдельной строкой
   t = t.split("\n").filter(line => !/^\s*\d{1,4}\s*$/.test(line)).join("\n");
 
-  // строки одного абзаца склеиваем пробелом; пустая строка — граница абзаца,
-  // строка с тире — реплика, её перенос сохраняем
-  t = t.replace(/\n{2,}/g, "\u0000")
-       .replace(/\n[ \t]*(?![—–-])/g, " ")
-       .replace(/\u0000/g, "\n\n");
+  /* Пустая строка — явная граница абзаца, её держим всегда. Сложнее, когда
+     абзацы разделены одиночным переносом: раньше они сшивались в один кусок.
+     Отличаем по вёрстке. Если строки длинные, перенос стоит редко — значит
+     каждая строка и есть абзац. Если строки короткие и ровные, это перенос
+     вёрстки, и склеивать надо — кроме тех мест, где строка кончается точкой
+     и заметно не дотягивает до общей ширины: так выглядит последняя строка
+     абзаца. */
+  const строки = t.split("\n").filter((x) => x.trim());
+  const длины = строки.map((x) => x.trim().length);
+  const ширина = длины.length ? Math.max(...длины) : 0;
+  const средняя = длины.length ? длины.reduce((a2, b2) => a2 + b2, 0) / длины.length : 0;
+  const вёрстка = строки.length > 2 && ширина <= 200 && средняя >= ширина * 0.6;
+
+  t = t.replace(/\n{2,}/g, "\u0000");
+  if (вёрстка) {
+    const части = t.split("\n");
+    t = части.reduce((acc, line, i) => {
+      if (!i) return line;
+      const пред = части[i - 1].trim();
+      const кончилась = /[.!?…»"”)]$/.test(пред) && пред.length < ширина * 0.85;
+      const реплика = /^[ \t]*[—–-]/.test(line);
+      return acc + (кончилась || реплика ? "\u0000" : " ") + line.replace(/^[ \t]+/, "");
+    }, "");
+  } else {
+    // строки длинные: перенос сам по себе и есть граница абзаца
+    t = t.replace(/\n/g, "\u0000");
+  }
+  t = t.replace(/\u0000+/g, "\n\n");
 
   return t.replace(/[ \t]{2,}/g, " ")
           .replace(/ ([,.;:!?»])/g, "$1")
@@ -6865,7 +6888,8 @@ function mergePrac(mine, theirs) {
 /* Хвост «:read» дописывается только чтению. У игры ключ прежний, слово в слово,
    поэтому весь разобранный раньше материал остаётся разобранным. */
 const pracKey = (u, hand, phase) =>
-  u.size + ":" + u.from + "-" + u.to + ":" + hand + (phase === "read" ? ":read" : "");
+  u.size + ":" + u.from + "-" + u.to + ":" + hand
+  + (u.run ? ":run" : "") + (phase === "read" ? ":read" : "");
 /* Последнее окно сдвигается назад, а не обрезается. Часть из пяти тактов
    на этапе «по 4 такта» давала окна 1–4 и 5–5 — одинокий такт противоречил
    названию этапа. Теперь это 1–4 и 2–5: окно всегда той длины, что обещано,
@@ -6929,11 +6953,28 @@ function pracCoverage(h, minSize) {
   return set;
 }
 
+/* Звучит ли рука на этом такте. В начале прелюдии левая молчит три такта, и
+   окно «3–4» захватывает границу молчания: требовать на третьем такте левую
+   бессмысленно — там для неё нот нет. Без этой проверки такой этап нельзя
+   было пройти никаким способом. */
+function barHasHand(b, h) {
+  const doc = pracDoc();
+  const x = doc && doc.hints && doc.hints[b];
+  if (!x) return true;                       // разбора нет — считаем, что звучит
+  // «обе руки» имеют смысл только там, где обе и играют
+  return h === "left" ? !!x.l : h === "right" ? !!x.r : (!!x.l && !!x.r);
+}
+
 const pracIsDone = (u, h) => {
   if (pracStore().done[pracKey(u, h)]) return true;
+  /* Прогон засчитывается только сам собой. Он покрывает те же такты, что уже
+     разобраны по кускам, и без этой оговорки закрывался бы автоматически —
+     а смысл его именно в том, чтобы сыграть всё подряд. */
+  if (u.run) return false;
   // окно с другими границами, но той же длины — работа та же
   const cov = pracCoverage(h, u.size);
-  for (let b = u.from; b <= u.to; b++) if (!cov.has(b)) return false;
+  for (let b = u.from; b <= u.to; b++)
+    if (barHasHand(b, h) && !cov.has(b)) return false;
   return true;
 };
 
@@ -7075,7 +7116,7 @@ function pracWhere() {
       if (p.from !== край + 1) continue;
       const доКрая = parts.filter((x) => x.to <= край);
       if (!доКрая.length || !доКрая.every(pracPartDone)) continue;
-      const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1 };
+      const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1, run: true };
       if (!pracUnitDone(u)) return { parts, run: u };
     }
     if (!pracPartDone(p)) {
@@ -7091,7 +7132,7 @@ function pracWhere() {
   for (const край of runs) {
     const доКрая = parts.filter((x) => x.to <= край);
     if (!доКрая.length || !доКрая.every(pracPartDone)) break;
-    const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1 };
+    const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1, run: true };
     if (!pracUnitDone(u)) return { parts, run: u };
   }
 
@@ -7130,7 +7171,7 @@ function pracRoute() {
   const first = parts.length ? parts[0].from : 1;
   const out = [];
   const прогон = (край) => {
-    const u = { from: first, to: край, size: край - first + 1 };
+    const u = { from: first, to: край, size: край - first + 1, run: true };
     out.push({ kind: "run", u, done: pracUnitDone(u) });
   };
 
@@ -7138,8 +7179,16 @@ function pracRoute() {
     const p = parts[i];
     for (const край of runs)
       if (p.from === край + 1 && parts.some((x) => x.to <= край)) прогон(край);
-    for (const size of pracSteps(p))
-      out.push({ kind: "step", p, size, done: pracStepDone(p, size) });
+    for (const size of pracSteps(p)) {
+      /* Шаг «по 2 такта» — это не один заход, а несколько окон: 5–6, потом
+         7–8. Занятие показывает окно, список показывал часть — и выглядело
+         так, будто это разные места. Держим оба числа. */
+      const окна = pracUnits(p.from, p.to, size);
+      const готово = окна.filter(pracUnitDone).length;
+      const сейчас = окна.find((u) => !pracUnitDone(u));
+      out.push({ kind: "step", p, size, окна, готово, сейчас,
+                 done: pracStepDone(p, size) });
+    }
     if (i > 0) {
       const seam = seamUnit(parts[i - 1], p);
       out.push({ kind: "seam", a: parts[i - 1], b: p, u: seam, done: pracUnitDone(seam) });
@@ -7192,12 +7241,19 @@ function pracListHTML() {
       const сейчас = route.findIndex((r) => !r.done);
       return `
         <div class="rt-head">Путь по пьесе · пройдено ${route.filter((r) => r.done).length} из ${route.length}</div>
-        <div class="rt-list">${route.map((r, i) => `
-          <div class="rt-row${r.done ? " done" : ""}${i === сейчас ? " now" : ""}">
-            <i>${r.done ? "✓" : i === сейчас ? "▸" : "·"}</i>
-            <b>${esc(routeName(r))}</b>
+        <div class="rt-list">${route.map((r, i) => {
+          const тут = i === сейчас;
+          const хвост = r.kind === "step" && r.окна.length > 1
+            ? (тут && r.сейчас ? "сейчас " + r.сейчас.from + "–" + r.сейчас.to
+               : r.готово + " из " + r.окна.length)
+            : "";
+          return `
+          <div class="rt-row${r.done ? " done" : ""}${тут ? " now" : ""}">
+            <i>${r.done ? "✓" : тут ? "▸" : "·"}</i>
+            <b>${esc(routeName(r))}${хвост ? ` <u>${esc(хвост)}</u>` : ""}</b>
             <em>${esc(routeSpan(r))}</em>
-          </div>`).join("")}</div>`;
+          </div>`;
+        }).join("")}</div>`;
     })()}
     <div class="bl-list">
       ${parts.map((p) => {
