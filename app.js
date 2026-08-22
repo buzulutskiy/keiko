@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 191";
+const APP_VERSION = "Кэйко 192";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4614,7 +4614,7 @@ function рисуйКомментарии(bk) {
     </div>
     <div class="sheet-actions">
       <button class="btn" id="bnClose" type="button">Закрыть</button>
-    </div>`);
+    </div>`, true);
   document.querySelectorAll("[data-bn]").forEach((el) =>
     el.addEventListener("click", () => {
       const шаг = el.dataset.bn === "next" ? 1 : -1;
@@ -10293,8 +10293,13 @@ function openShelfSheet(id) {
 
 /* ══════════ Шторка ══════════ */
 
-function openSheet(html) {
+function openSheet(html, full) {
   const sheet = $("#sheet");
+  /* Обычная шторка живёт снизу и не закрывает экран. Но там, где сидишь
+     подолгу — комментарии к главе, — половина экрана только мешает: текст
+     идёт узкой лентой и всё время прокручивается. Такую разворачиваем во
+     весь рост. */
+  sheet.classList.toggle("full", !!full);
   sheet.innerHTML = `<div class="grab-zone"><div class="grabber"></div></div>` +
     `<div class="sheet-body">${html}</div>`;
   sheet.classList.add("show");
@@ -10357,6 +10362,7 @@ function closeSheet() {
   sheet.style.transform = "";
   $("#sheetBg").style.opacity = "";
   sheet.classList.remove("show");
+  sheet.classList.remove("full");
   $("#sheetBg").classList.remove("show");
   sheetMode = null;
 }

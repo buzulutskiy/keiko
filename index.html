@@ -2422,6 +2422,15 @@
       overflow: hidden;                       /* вбок ничего не ездит */
     }
     .sheet.show { transform: translateX(-50%) translateY(0); }
+
+    /* Развёрнутая шторка: во весь экран, без скруглений снизу. Нужна там,
+       где читают подолгу — комментарии к главе. */
+    .sheet.full {
+      top: 0; bottom: 0; height: 100%; max-height: 100%;
+      border-radius: 0; width: 100%;
+    }
+    .sheet.full .sheet-body { flex: 1 1 auto; min-height: 0; }
+    .sheet.full .bn-list { max-height: none; flex: 1 1 auto; }
     /* зона захвата: тянешь её — уезжает вся шторка */
     .grab-zone {
       flex-shrink: 0;
