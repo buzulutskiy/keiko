@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 188";
+const APP_VERSION = "Кэйко 189";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -499,6 +499,32 @@ function bookProgress() {
   }
   return Math.min(page, b.pages);
 }
+/* Комментарии к книге. Лежат в каталоге материала: {ch, line, t, x} —
+   номер главы, строка (необязательно), заголовок и текст. Показываем те,
+   что относятся к главе, в которой ты сейчас: читаешь песнь V — видишь
+   комментарии к песни V, остальные не мешают. */
+function bookNotes(b) {
+  const c = catOf((b || book()).id);
+  return (c && Array.isArray(c.notes)) ? c.notes : [];
+}
+
+// в какой главе страница — по порядковому номеру, а не по названию
+function chapterIndexAt(b, page) {
+  const list = (b || book()).chapters || [];
+  let idx = -1;
+  list.forEach((c, i) => { if (page >= c.from) idx = i; });
+  return idx;
+}
+
+function bookNotesHere(b, page) {
+  const bk = b || book();
+  const i = chapterIndexAt(bk, page);
+  if (i < 0) return [];
+  const все = bookNotes(bk);
+  const мои = все.filter((n) => Number(n.ch) === i + 1);
+  return мои.sort((a, x) => (Number(a.line) || 0) - (Number(x.line) || 0));
+}
+
 function chapterAt(page) {
   const list = book().chapters || [];
   let cur = list[0] || { name: "", from: 0 };
@@ -3207,8 +3233,17 @@ function renderHome() {
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
       </div>
+      ${(() => {
+        if (!isBook()) return "";
+        const n = bookNotesHere(book(), bookProgress()).length;
+        return n ? `<button class="pace-link" id="bookNotesBtn" type="button">
+          Комментарии к главе · ${n}</button>` : "";
+      })()}
       <div class="nudge">${nudge}</div>
     </div>`;
+
+  const bn = $("#bookNotesBtn");
+  if (bn) bn.addEventListener("click", () => openBookNotesSheet(book(), bookProgress()));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4526,6 +4561,29 @@ function renderAchMaterial(view) {
 }
 
 // Шторка с карточкой знания
+/* Комментарии к главе одним списком: заголовок, строка, текст. Читаются
+   по ходу, не отвлекая от самой книги — открыл, глянул, закрыл. */
+function openBookNotesSheet(b, page) {
+  const list = bookNotesHere(b, page);
+  const глава = chapterAt(page);
+  sheetMode = "booknotes";
+  openSheet(`
+    <h3>${esc(глава.name || "Комментарии")}</h3>
+    <p class="sub">${list.length} ${plural(list.length, "комментарий", "комментария", "комментариев")}</p>
+    <div class="bn-list">
+      ${list.map((n) => `
+        <div class="bn-item">
+          ${n.line ? `<span class="bn-line">строка ${esc(String(n.line))}</span>` : ""}
+          ${n.t ? `<b>${esc(n.t)}</b>` : ""}
+          <p>${esc(n.x || "")}</p>
+        </div>`).join("")}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="bnClose" type="button">Закрыть</button>
+    </div>`);
+  $("#bnClose").addEventListener("click", closeSheet);
+}
+
 function openFactSheet(f) {
   sheetMode = "fact";
   openSheet(`
