@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 184";
+const APP_VERSION = "Кэйко 185";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3722,6 +3722,16 @@ function humanLeft(d) {
    лозунг, а ровно то, что случится: темп берётся по последним восьми заходам,
    значит сегодняшний в это окно войдёт и вытеснит самый старый. Перебираем
    посильные цели и берём первую, которая и правда сдвигает срок. */
+/* Когда это кончится при нынешнем темпе. Функция была потеряна вместе с
+   вырезанной микрозадачей — они стояли рядом, и удаление задело соседа. */
+function paceWhen(f) {
+  if (!f || f.done) return null;
+  const days = f.sessions * (f.every || 2);
+  const when = new Date();
+  when.setDate(when.getDate() + days);
+  return { days, when, text: humanWhen(when, days) };
+}
+
 function paceHTML() {
   const f = paceForecast();
   if (!f) return "";
