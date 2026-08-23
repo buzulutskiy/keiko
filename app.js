@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 193";
+const APP_VERSION = "Кэйко 194";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -514,6 +514,34 @@ function chapterIndexAt(b, page) {
   let idx = -1;
   list.forEach((c, i) => { if (page >= c.from) idx = i; });
   return idx;
+}
+
+/* ══════════ Разговор о главе ══════════
+   Не сноски: сноска отвечает, что написано, а здесь вопросы, у которых
+   больше одного обоснованного ответа. Варианты — не тест с правильной
+   клеточкой, а версии: выбираешь ближнюю и читаешь, чем она сильна и что
+   упускает. Ответ сохраняется, чтобы через месяц увидеть, что думал. */
+const bookTalks = (b) => {
+  const c = catOf((b || book()).id);
+  return (c && Array.isArray(c.talks)) ? c.talks : [];
+};
+const talkOfChapter = (b, i) => bookTalks(b).filter((t) => Number(t.ch) === i + 1);
+const talkChapters = (b) => {
+  const bk = b || book();
+  const есть = new Set(bookTalks(bk).map((t) => Number(t.ch)).filter(Boolean));
+  return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
+};
+
+const talkKey = (bk, ch, n) => bk.id + ":" + ch + ":" + n;
+const talkPick = (bk, ch, n) => (data.talks || {})[talkKey(bk, ch, n)];
+function talkChoose(bk, ch, n, opt) {
+  data.talks = data.talks || {};
+  const k = talkKey(bk, ch, n);
+  data.talks[k] = data.talks[k] === opt ? undefined : opt;   // повторный тык снимает выбор
+  if (data.talks[k] === undefined) delete data.talks[k];
+  data.talksAt = now();
+  saveData();
+  schedulePush();
 }
 
 // главы, к которым есть комментарии — по ним и ходим в шторке
@@ -3250,12 +3278,17 @@ function renderHome() {
         ${isBook() && bookNotes(book()).length
           ? `<button class="cta-side" id="bookNotesBtn" type="button"
                aria-label="Комментарии" title="Комментарии">📑</button>` : ""}
+        ${isBook() && bookTalks(book()).length
+          ? `<button class="cta-side" id="bookTalkBtn" type="button"
+               aria-label="Разговор о главе" title="Разговор о главе">💬</button>` : ""}
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
 
   const bn = $("#bookNotesBtn");
   if (bn) bn.addEventListener("click", () => openBookNotesSheet(book(), bookProgress()));
+  const bt = $("#bookTalkBtn");
+  if (bt) bt.addEventListener("click", () => openTalkSheet(book(), bookProgress()));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4575,6 +4608,96 @@ function renderAchMaterial(view) {
 // Шторка с карточкой знания
 /* Комментарии к главе одним списком: заголовок, строка, текст. Читаются
    по ходу, не отвлекая от самой книги — открыл, глянул, закрыл. */
+let talkAt = -1;       // какая песнь открыта в разговоре
+
+function openTalkSheet(b, page) {
+  const bk = b || book();
+  const главы = talkChapters(bk);
+  if (!главы.length) { toast("Разбора пока нет"); return; }
+  if (talkAt < 0 || !главы.some((c) => c.i === talkAt)) {
+    const тут = chapterIndexAt(bk, page);
+    talkAt = главы.some((c) => c.i === тут) ? тут : главы[0].i;
+  }
+  рисуйРазговор(bk);
+}
+
+function рисуйРазговор(bk) {
+  const главы = talkChapters(bk);
+  const место = главы.findIndex((c) => c.i === talkAt);
+  const глава = главы[место] || главы[0];
+  const блоки = talkOfChapter(bk, глава.i);
+  sheetMode = "talk";
+  openSheet(`
+    <div class="bn-head">
+      <button class="bn-nav" data-tk="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
+      <div>
+        <h3>${esc(глава.name || "Разговор")}</h3>
+        <p class="sub">разговор о главе · ${место + 1} из ${главы.length}</p>
+      </div>
+      <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
+    </div>
+    <div class="tk-list">
+      ${блоки.map((бл, n) => {
+        const выбран = talkPick(bk, глава.i + 1, n);
+        return `
+        <div class="tk-block">
+          ${бл.t ? `<h4>${esc(бл.t)}</h4>` : ""}
+          ${бл.x ? `<p class="tk-see">${esc(бл.x)}</p>` : ""}
+          ${бл.q ? `<p class="tk-q">${esc(бл.q)}</p>` : ""}
+          ${(бл.opts || []).length ? `
+            <div class="tk-opts">
+              ${бл.opts.map((o, k) => `
+                <button class="tk-opt${выбран === k ? " on" : ""}"
+                  data-tk-pick="${n}" data-tk-opt="${k}" type="button">
+                  <i>${"АБВГДЕ"[k] || (k + 1)}</i><span>${esc(o.a || "")}</span>
+                </button>`).join("")}
+            </div>` : ""}
+          ${выбран !== undefined && (бл.opts || [])[выбран] && бл.opts[выбран].why
+            ? `<p class="tk-why">${esc(бл.opts[выбран].why)}</p>` : ""}
+          ${бл.end ? `
+            <div class="tk-end">
+              <p>${esc(бл.end)}</p>
+              ${(бл.endOpts || []).length ? (() => {
+                const выбранE = talkPick(bk, глава.i + 1, "end" + n);
+                return `
+                  <div class="tk-opts">
+                    ${бл.endOpts.map((o, k) => `
+                      <button class="tk-opt${выбранE === k ? " on" : ""}"
+                        data-tk-pick="end${n}" data-tk-opt="${k}" type="button">
+                        <i>${"АБВГДЕ"[k] || (k + 1)}</i><span>${esc(o.a || "")}</span>
+                      </button>`).join("")}
+                  </div>
+                  ${выбранE !== undefined && бл.endOpts[выбранE] && бл.endOpts[выбранE].why
+                    ? `<p class="tk-why">${esc(бл.endOpts[выбранE].why)}</p>` : ""}`;
+              })() : ""}
+            </div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="tkClose2" type="button">Закрыть</button>
+    </div>`, true);
+
+  document.querySelectorAll("[data-tk]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const сл = главы[место + (el.dataset.tk === "next" ? 1 : -1)];
+      if (!сл) return;
+      talkAt = сл.i;
+      рисуйРазговор(bk);
+    }));
+  document.querySelectorAll("[data-tk-pick]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const кон = document.querySelector(".sheet-body");
+      const было = кон ? кон.scrollTop : 0;
+      const где = /^end/.test(el.dataset.tkPick) ? el.dataset.tkPick : Number(el.dataset.tkPick);
+      talkChoose(bk, глава.i + 1, где, Number(el.dataset.tkOpt));
+      рисуйРазговор(bk);
+      const кон2 = document.querySelector(".sheet-body");
+      if (кон2) кон2.scrollTop = было;      // не подбрасывать список после выбора
+    }));
+  $("#tkClose2").addEventListener("click", closeSheet);
+}
+
 let notesAt = -1;      // какая песнь открыта в шторке комментариев
 
 function openBookNotesSheet(b, page) {
@@ -12251,7 +12374,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -12380,6 +12503,10 @@ async function syncNow(manual) {
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
       data.pills = mergeLists(data.pills || [], remote.pills || []);
+      // выбранные версии — свод, а не список: берём свежий целиком
+      if (remote.talks && (remote.talksAt || 0) > (data.talksAt || 0)) {
+        data.talks = remote.talks; data.talksAt = remote.talksAt;
+      }
       if (remote.shop && remote.shop.theme
           && (remote.shop.themeAt || 0) > (data.shop.themeAt || 0)) {
         data.shop.theme = remote.shop.theme;
