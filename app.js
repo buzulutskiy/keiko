@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 194";
+const APP_VERSION = "Кэйко 195";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -521,6 +521,20 @@ function chapterIndexAt(b, page) {
    больше одного обоснованного ответа. Варианты — не тест с правильной
    клеточкой, а версии: выбираешь ближнюю и читаешь, чем она сильна и что
    упускает. Ответ сохраняется, чтобы через месяц увидеть, что думал. */
+/* Статья о главе: не тест и не сноски, а рассказ — как если бы кто-то
+   понимающий сел рядом и объяснил, что тут происходит и почему это красиво.
+   Блоки трёх видов: заголовок, абзац, иллюстрация с подписью. */
+const bookArticle = (b) => {
+  const c = catOf((b || book()).id);
+  return (c && Array.isArray(c.article)) ? c.article : [];
+};
+const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) === i + 1);
+const articleChapters = (b) => {
+  const bk = b || book();
+  const есть = new Set(bookArticle(bk).map((x) => Number(x.ch)).filter(Boolean));
+  return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
+};
+
 const bookTalks = (b) => {
   const c = catOf((b || book()).id);
   return (c && Array.isArray(c.talks)) ? c.talks : [];
@@ -3278,7 +3292,7 @@ function renderHome() {
         ${isBook() && bookNotes(book()).length
           ? `<button class="cta-side" id="bookNotesBtn" type="button"
                aria-label="Комментарии" title="Комментарии">📑</button>` : ""}
-        ${isBook() && bookTalks(book()).length
+        ${isBook() && bookArticle(book()).length
           ? `<button class="cta-side" id="bookTalkBtn" type="button"
                aria-label="Разговор о главе" title="Разговор о главе">💬</button>` : ""}
       </div>
@@ -4612,7 +4626,7 @@ let talkAt = -1;       // какая песнь открыта в разгово
 
 function openTalkSheet(b, page) {
   const bk = b || book();
-  const главы = talkChapters(bk);
+  const главы = articleChapters(bk);
   if (!главы.length) { toast("Разбора пока нет"); return; }
   if (talkAt < 0 || !главы.some((c) => c.i === talkAt)) {
     const тут = chapterIndexAt(bk, page);
@@ -4622,58 +4636,35 @@ function openTalkSheet(b, page) {
 }
 
 function рисуйРазговор(bk) {
-  const главы = talkChapters(bk);
+  const главы = articleChapters(bk);
   const место = главы.findIndex((c) => c.i === talkAt);
   const глава = главы[место] || главы[0];
-  const блоки = talkOfChapter(bk, глава.i);
+  const блоки = articleOfChapter(bk, глава.i);
   sheetMode = "talk";
   openSheet(`
     <div class="bn-head">
       <button class="bn-nav" data-tk="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
       <div>
-        <h3>${esc(глава.name || "Разговор")}</h3>
-        <p class="sub">разговор о главе · ${место + 1} из ${главы.length}</p>
+        <h3>${esc(глава.name || "О главе")}</h3>
+        <p class="sub">разбор · ${место + 1} из ${главы.length}</p>
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
-    <div class="tk-list">
-      ${блоки.map((бл, n) => {
-        const выбран = talkPick(bk, глава.i + 1, n);
-        return `
-        <div class="tk-block">
-          ${бл.t ? `<h4>${esc(бл.t)}</h4>` : ""}
-          ${бл.x ? `<p class="tk-see">${esc(бл.x)}</p>` : ""}
-          ${бл.q ? `<p class="tk-q">${esc(бл.q)}</p>` : ""}
-          ${(бл.opts || []).length ? `
-            <div class="tk-opts">
-              ${бл.opts.map((o, k) => `
-                <button class="tk-opt${выбран === k ? " on" : ""}"
-                  data-tk-pick="${n}" data-tk-opt="${k}" type="button">
-                  <i>${"АБВГДЕ"[k] || (k + 1)}</i><span>${esc(o.a || "")}</span>
-                </button>`).join("")}
-            </div>` : ""}
-          ${выбран !== undefined && (бл.opts || [])[выбран] && бл.opts[выбран].why
-            ? `<p class="tk-why">${esc(бл.opts[выбран].why)}</p>` : ""}
-          ${бл.end ? `
-            <div class="tk-end">
-              <p>${esc(бл.end)}</p>
-              ${(бл.endOpts || []).length ? (() => {
-                const выбранE = talkPick(bk, глава.i + 1, "end" + n);
-                return `
-                  <div class="tk-opts">
-                    ${бл.endOpts.map((o, k) => `
-                      <button class="tk-opt${выбранE === k ? " on" : ""}"
-                        data-tk-pick="end${n}" data-tk-opt="${k}" type="button">
-                        <i>${"АБВГДЕ"[k] || (k + 1)}</i><span>${esc(o.a || "")}</span>
-                      </button>`).join("")}
-                  </div>
-                  ${выбранE !== undefined && бл.endOpts[выбранE] && бл.endOpts[выбранE].why
-                    ? `<p class="tk-why">${esc(бл.endOpts[выбранE].why)}</p>` : ""}`;
-              })() : ""}
-            </div>` : ""}
-        </div>`;
+    <article class="ar">
+      ${блоки.map((б) => {
+        if (б.h) return `<h4>${esc(б.h)}</h4>`;
+        if (б.img) {
+          const src = artSrc(б.img);
+          return `<figure class="ar-fig">
+            ${src ? `<img src="${esc(src)}" alt="${esc(б.cap || "")}" loading="lazy">`
+                  : `<div class="ar-wait">иллюстрация загружается…</div>`}
+            ${б.cap ? `<figcaption>${esc(б.cap)}</figcaption>` : ""}
+          </figure>`;
+        }
+        if (б.note) return `<p class="ar-note">${esc(б.note)}</p>`;
+        return `<p>${esc(б.p || "")}</p>`;
       }).join("")}
-    </div>
+    </article>
     <div class="sheet-actions">
       <button class="btn" id="tkClose2" type="button">Закрыть</button>
     </div>`, true);
@@ -4684,16 +4675,6 @@ function рисуйРазговор(bk) {
       if (!сл) return;
       talkAt = сл.i;
       рисуйРазговор(bk);
-    }));
-  document.querySelectorAll("[data-tk-pick]").forEach((el) =>
-    el.addEventListener("click", () => {
-      const кон = document.querySelector(".sheet-body");
-      const было = кон ? кон.scrollTop : 0;
-      const где = /^end/.test(el.dataset.tkPick) ? el.dataset.tkPick : Number(el.dataset.tkPick);
-      talkChoose(bk, глава.i + 1, где, Number(el.dataset.tkOpt));
-      рисуйРазговор(bk);
-      const кон2 = document.querySelector(".sheet-body");
-      if (кон2) кон2.scrollTop = было;      // не подбрасывать список после выбора
     }));
   $("#tkClose2").addEventListener("click", closeSheet);
 }
@@ -11206,6 +11187,33 @@ function restoreBackup(file) {
 
 const CAT_FILE = "keiko-catalog.json";   // имя своё: catalog.json бывает у других приложений
 const CAT_COVER_FILE = (id) => `cover-${id}.txt`;
+/* Иллюстрации к статьям лежат в каталоге отдельными файлами и кладутся в тот
+   же кэш, что обложки: один раз скачал — дальше работает без сети. */
+const CAT_ART_FILE = (key) => `art-${key}.txt`;
+const artPulling = new Set();
+
+function artSrc(key) {
+  if (!key) return "";
+  const have = coverCache.get("art:" + key);
+  if (have) return have;
+  pullArt(key);
+  return "";
+}
+
+async function pullArt(key) {
+  if (!cfg.token || !cfg.catalogId || artPulling.has(key)) return;
+  if (coverCache.get("art:" + key)) return;
+  artPulling.add(key);
+  try {
+    const files = await catalogFiles(false);
+    let txt = await catText(files, CAT_ART_FILE(key), 25000);
+    if (!txt) return;
+    txt = txt.trim();
+    if (!txt.startsWith("data:")) return;
+    await coverSave("art:" + key, txt);
+    coversArrived();
+  } catch {} finally { artPulling.delete(key); }
+}
 /* Каталог сверяем часто, а не раз в сутки: у него свой условный запрос по
    метке, и когда ничего не менялось, ответ приходит пустым — это дёшево.
    Сутки же означали, что исправленная карточка или новая обложка доезжали до
