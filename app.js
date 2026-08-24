@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 203";
+const APP_VERSION = "Кэйко 204";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7298,81 +7298,6 @@ function pracHands(u) {
   return r && l ? "both" : r ? "right" : l ? "left" : "both";
 }
 
-/* ══════════ Музыкальные термины ══════════
-   Названия частей взяты из разбора и написаны языком музыкантов: каденция,
-   субдоминанта, модуляция. Играть это не мешает, а вот понимать — интересно.
-   Поэтому рядом с названием этапа стоит «?»: короткое объяснение своими
-   словами, без нотных примеров и без учебника. */
-const MUSIC_TERMS = [
-  { k: ["тоник"], t: "Тоника",
-    x: "Главный аккорд тональности, её дом. Всё, что звучит вокруг, так или иначе тянется сюда — и когда музыка приходит в тонику, слух слышит: пришли." },
-  { k: ["субдоминант"], t: "Субдоминанта",
-    x: "Аккорд от четвёртой ступени. Первый шаг прочь от дома: ещё не напряжение, а мягкий уход в сторону. У этой прелюдии на нём заканчивается вторая фраза." },
-  { k: ["доминант"], t: "Доминанта",
-    x: "Аккорд от пятой ступени, самый требовательный. Он не может стоять последним: слух ждёт, что дальше будет тоника. На этом ожидании держится почти вся классическая музыка." },
-  { k: ["совершенная каденц"], t: "Совершенная каденция",
-    x: "Самая закрытая точка: доминанта разрешается в тонику, и обе в основном виде. После неё раздел действительно окончен — так закрывается первый период, в шестнадцатом такте." },
-  { k: ["прерванная каденц"], t: "Прерванная каденция",
-    x: "Обманка. Всё идёт к тонике, слух уже приготовился — а вместо неё приходит другой аккорд, и конец откладывается. В этой прелюдии таких обманок две подряд, в 28-м и 37-м тактах: музыка будто не хочет заканчиваться." },
-  { k: ["каденц"], t: "Каденция",
-    x: "Оборот в конце фразы — музыкальный знак препинания. Бывает запятой, бывает точкой: по тому, насколько устойчиво она звучит, слух и понимает, кончилась мысль или продолжается." },
-  { k: ["период"], t: "Период",
-    x: "Законченная музыкальная мысль, обычно из нескольких фраз, закрытая каденцией. В этой прелюдии их три: первый до 16-го такта, второй до 28-го, третий до конца." },
-  { k: ["фраз"], t: "Фраза",
-    x: "Отрезок мелодии на одном дыхании — как строка в стихотворении. Кончается каденцией, дальше начинается следующая." },
-  { k: ["модуляц"], t: "Модуляция",
-    x: "Переход в другую тональность посреди пьесы. Дом меняется: то, что было устойчивым, перестаёт им быть. Второй период здесь как раз модуляционный — тональность плывёт и не даёт опоры." },
-  { k: ["кода"], t: "Кода",
-    x: "Заключительный раздел, дописанный после того, как форма уже закончилась. Не новая мысль, а прощание: музыка договаривает то, что не поместилось." },
-  { k: ["стык", "шов"], t: "Стык частей",
-    x: "Две соседние части уже звучат порознь, но между ними — шов, и он всегда самое слабое место. Поэтому его играют отдельно: конец одной части и начало другой подряд, не останавливаясь." },
-  { k: ["прогон"], t: "Прогон от начала",
-    x: "Возврат к первому такту и всё подряд до нужного места. Куски по отдельности можно знать назубок и всё равно спотыкаться, когда играешь целиком: память на связки нарабатывается только так." },
-  { k: ["as-moll"], t: "as-moll",
-    x: "Ля-бемоль минор — субдоминантовая тональность к основной. На слух: тот же характер, но на ступень дальше от дома." },
-  { k: ["b-moll"], t: "b-moll",
-    x: "Си-бемоль минор — доминантовая тональность к основной. Уход туда звучит как вопрос, возвращение — как ответ." },
-];
-
-/* Какие термины упомянуты в строке. Найденное вырезаем: иначе «доминанта»
-   находилась внутри «субдоминанты», а общая «каденция» — внутри «прерванной
-   каденции», и к одной фразе прилипали объяснения не про неё. Поэтому в
-   словаре частное стоит раньше общего. */
-const termsIn = (text) => {
-  let t = String(text || "").toLowerCase();
-  const out = [];
-  for (const тм of MUSIC_TERMS) {
-    if (!тм.k.some((k) => t.includes(k))) continue;
-    if (!out.some((x) => x.t === тм.t)) out.push(тм);
-    for (const k of тм.k) t = t.split(k).join(" ");
-  }
-  return out;
-};
-
-/* Справка про то, что сейчас играешь. Сначала — что происходит именно в
-   этом куске прелюдии, обычными словами. Разбор слов идёт ниже и мелким:
-   заучивать термины никто не просит, но если попалось незнакомое — оно
-   объяснено рядом, а не в отдельном учебнике. */
-function openTermsSheet(list, про) {
-  sheetMode = "term";
-  openSheet(`
-    <div class="ach-sheet">
-      <div class="big open">🎼</div>
-      <h3>${esc((про && про.title) || "Что это за слова")}</h3>
-      ${про && про.note ? `<p style="max-width:340px">${esc(про.note)}</p>` : ""}
-      ${list.length ? `
-        <div class="dig">
-          <div class="dig-head">Если по словам</div>
-          ${list.map((тм) => `<div class="dig-item"><b>${esc(тм.t)}</b> — ${esc(тм.x)}</div>`).join("")}
-        </div>` : ""}
-    </div>
-    <div class="sheet-actions">
-      <button class="btn" id="termClose" type="button">Понятно</button>
-    </div>`);
-  $("#termClose").addEventListener("click", closeSheet);
-}
-
-
 /* ── Где мы сейчас ──
    Идём по блокам подряд. Внутри блока выбирается такт с наименьшим числом
    заходов, при равенстве — самый левый: получается ровный круг 1, 2, 3, 4,
@@ -7526,6 +7451,39 @@ const plClock = (t) => {
   const m = Math.floor(t / 60), sec = Math.floor(t % 60);
   return m + ":" + String(sec).padStart(2, "0");
 };
+
+/* ── Разметка записи по тактам ──
+   В разборе может лежать marks: такт → секунда, где он начинается. Тогда плеер
+   сам выделяет то место, которое сейчас разучиваешь, — не надо ловить пальцем
+   границы на дорожке. Записи без разметки работают как раньше. */
+const pracMarks = () => (pracDoc() || {}).marks || null;
+function markSpan(u) {
+  const m = pracMarks();
+  if (!m || !u) return null;
+  const a = m[u.from];
+  if (!(a >= 0)) return null;
+  let b = m[u.to + 1];
+  if (!(b > a)) {
+    const дальше = Object.keys(m).map(Number).filter((k) => k > u.to).sort((x, y) => x - y)[0];
+    b = дальше ? m[дальше] : 0;
+  }
+  return b > a ? { a, b } : null;
+}
+/* Отрезок под текущий такт выставляется один раз на такт: дальше края можно
+   двигать руками, и приложение их не перебивает. */
+function plFollow(u) {
+  if (!pracAudioEl || !u) return;
+  const id = pracAudioEl.dataset.for;
+  const sp = markSpan(u);
+  const метка = u.from + "-" + u.to;
+  const o = plOpt(id);
+  if (!sp) return;
+  if (o.followed === метка) return;
+  o.followed = метка; o.a = sp.a; o.b = sp.b;
+  pracSaveLoops();
+  try { if (pracAudioEl.currentTime < sp.a || pracAudioEl.currentTime > sp.b) pracAudioEl.currentTime = sp.a; } catch {}
+  plPaint();
+}
 
 function plSel(id, dur) {
   const l = pracLoops[id];
@@ -7710,6 +7668,7 @@ function pracPlayer() {
     </div>
     <div class="pl-jump">
       <button data-pl="play">▶︎ Слушать</button>
+      <button data-pl="replay">↺ Сначала</button>
       <button data-pl="all">Весь трек</button>
     </div>
     <div class="pl-tools">
@@ -9164,6 +9123,7 @@ function pracRender() {
   if (!u) { pracFinish(); return; }
   prac.cur = u;
   pracPlayer();
+  plFollow(u);
   pracVideo(u);
 
   const w = pracWhere();
@@ -9177,46 +9137,29 @@ function pracRender() {
       <b>${l.name}</b><span>${l.hint}</span>
     </button>`).join("");
 
-  /* Кружки под каждым тактом блока: видно и сколько набрано, и как это шло.
-     Без них круг выглядит как топтание на месте — «опять третий такт». */
-  const круги = (() => {
-    let out = "";
-    for (let b = w.bl.from; b <= w.bl.to; b++)
-      out += `<div class="rp-row${!w.final && w.bar === b ? " now" : ""}${barReady(b) ? " done" : ""}">
-        <b>такт ${b}</b>
-        <span class="dots">${dotsHTML(repsOf(b), REP_GOAL)}</span>
-        <em>${repCount(b)}/${REP_GOAL}</em>
-      </div>`;
-    return out;
-  })();
+  /* Десять кружков того места, которое сейчас перед глазами. Списка всего
+     блока здесь нет намеренно: пока играешь один такт, соседние — шум. */
+  const свои = u.final ? finalOf(w.bl) : repsOf(u.from);
+  const сколько = u.final ? Math.max(3, свои.length + 1) : REP_GOAL;
 
   box.innerHTML = `
     <div class="wk">
       <div class="wk-task">
-        <p class="wk-kind">${esc(имя || "такты " + w.bl.from + "–" + w.bl.to)}
-          ${blockWhy(w.bl).note || termsIn(имя).length
-            ? `<button class="wk-q" data-prac="terms" type="button" aria-label="Что это значит">?</button>` : ""}</p>
+        <p class="wk-kind">${esc(имя || "такты " + w.bl.from + "–" + w.bl.to)}</p>
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${PRAC_HAND[hand]}</p>
+        <div class="dots big">${dotsHTML(свои, сколько)}</div>
         <p class="wk-stage">${u.final
-          ? (w.tries ? "Сшиваем блок целиком · заход " + (w.tries + 1) : "Сшиваем блок целиком")
-          : "Круг " + u.round + " из " + REP_GOAL + " · блок " + (w.bl.i + 1) + " из " + блоков}</p>
+          ? "Сшиваем блок целиком"
+          : "Блок " + (w.bl.i + 1) + " из " + блоков + " · такты " + w.bl.from + "–" + w.bl.to}</p>
         <p class="wk-next">${u.final
           ? "пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок"
           : "сыграл — отметь, как вышло"}</p>
         <div class="rep-btns">${кнопки}</div>
-        <div class="rp-list">${круги}
-          <div class="rp-row fin${u.final ? " now" : ""}${finalPassed(w.bl) ? " done" : ""}">
-            <b>вместе ${w.bl.from}–${w.bl.to}</b>
-            <span class="dots">${finalOf(w.bl).length ? dotsHTML(finalOf(w.bl).slice(-5), Math.min(5, finalOf(w.bl).length)) : '<i class="dot"></i>'}</span>
-            <em>${finalPassed(w.bl) ? "сшит" : blockReady(w.bl) ? "сейчас" : "после кругов"}</em>
-          </div>
-        </div>
         <div class="wk-row">
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
-          <button class="pr-ghost" data-prac="finish">Закончить</button>
         </div>
         <p class="wk-tail">пройдено блоков: ${готово} из ${блоков}</p>
         ${prac.hintOpen ? pracHintHTML(u) : ""}
@@ -9651,6 +9594,15 @@ function bindPractice() {
       return;
     }
     if (b) {
+      if (b.dataset.pl === "replay") {
+        /* Переслушать место заново — одно нажатие. Раньше приходилось попадать
+           пальцем в начало дорожки: на телефоне это лотерея. */
+        const sel = plSel(pracAudioEl.dataset.for, pracAudioEl.duration || 0);
+        try { pracAudioEl.currentTime = sel.a; } catch {}
+        pracAudioEl.play().catch(() => {});
+        plPaint();
+        return;
+      }
       if (b.dataset.pl === "play") {
         if (pracAudioEl.paused) {
           const sel = plSel(pracAudioEl.dataset.for, pracAudioEl.duration || 0);
@@ -9831,15 +9783,6 @@ function bindPractice() {
         prac.startedAt = prac.startedAt || Date.now();
         prac.counted = 0;
         return pracNext();
-      }
-      case "terms": {
-        const w2 = pracWhere();
-        const про = w2.bl ? { title: "Такты " + w2.bl.from + "–" + w2.bl.to,
-                              note: blockWhy(w2.bl).note || blockWhy(w2.bl).why || "" } : null;
-        const list = termsIn((про && про.note ? про.note + " " : "") + (w2.bl ? blockWhy(w2.bl).why : ""));
-        if (про && (про.note || list.length)) openTermsSheet(list, про);
-        else toast("Про это место пояснений пока нет");
-        return;
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
       case "list": prac.listOpen = !prac.listOpen; return pracRender();
