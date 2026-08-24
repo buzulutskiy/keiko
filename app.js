@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 197";
+const APP_VERSION = "Кэйко 198";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3978,6 +3978,18 @@ function prevSlice(r) {
 /* Цифра сама по себе ни о чём: тридцать девять страниц — это много или мало?
    Смысл появляется рядом с прошлым разом. Вверх — оранжевым, вниз — серым:
    ни красного, ни зелёного тут не нужно, меньше прошлой недели не провинность. */
+/* С чем сравниваем. Без этой строки «0 страниц ↓ 21» в понедельник читается
+   как поломка: кажется, что сравнили с целой прошлой неделей и потеряли
+   страницы. На деле рядом стоит такой же отрезок — один прошлый понедельник. */
+function chipsNote() {
+  const d = new Date();
+  if (period === "month") return `в сравнении с прошлым месяцем — по ${d.getDate()}-е число`;
+  const k = (d.getDay() + 6) % 7;
+  return k === 0
+    ? "в сравнении с прошлым понедельником"
+    : `в сравнении с прошлой неделей — пн–${DOW[k]}`;
+}
+
 function chipHTML(val, prev, word) {
   const d = (val || 0) - (prev || 0);
   /* Ровно столько же — это тоже результат сравнения, и молчать о нём нельзя:
@@ -4054,7 +4066,8 @@ function summaryHTML() {
           (st.pages || was.pages) ? chipHTML(st.pages, was.pages, "страниц") : "",
           (st.lessons || was.lessons) ? chipHTML(st.lessons, was.lessons, plural(st.lessons || was.lessons, "урок", "урока", "уроков")) : "",
         ].filter(Boolean).join("");
-        return chips ? `<div class="sum-chips">${chips}</div>` : "";
+        return chips ? `<div class="sum-chips">${chips}</div>
+          <p class="sum-vs">${esc(chipsNote())}</p>` : "";
       })()}
 
       ${lineChartHTML(periodSeries())}
