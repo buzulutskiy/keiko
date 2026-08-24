@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 209";
+const APP_VERSION = "Кэйко 210";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5299,6 +5299,8 @@ function gutStats() {
   const fullest = Math.max(0, ...Object.values(byMonth));
 
   return {
+    // билет от Антона: засчитывается первая же отметка после того, как он его выписал
+    ticket: list.some((g) => (g.at || 0) > TICKET_FROM),
     total: list.length, days: dates.length, since, fullest,
     months: months.size, parts: parts.size, clock, fast, fast15,
     thrice: Object.values(perDay).some((n) => n >= 3),
@@ -5328,7 +5330,16 @@ function gutStats() {
    бы обычный день в срыв серии. Считаем только накопленное: сколько записей,
    сколько разных дней, как давно ведётся, в какое время суток. Пропустила
    неделю — ни одна не закроется обратно. */
+/* Билет выписан 24 августа 2026 года в десять вечера — засчитывается первый
+   поход после этой минуты. Награда настоящая: её выдаёт Антон, а не
+   приложение. */
+const TICKET_FROM = 1787598358040;
+
 const GUT_ACH = [
+  { id: "gticket", icon: "🎟", name: "Билет от Антона", hint: "предъявителю",
+    word: "Билет на 100 ₽ или один поцелуйчик — на выбор предъявителя. "
+        + "Выдаёт Антон, по первому требованию. Покажите ему этот билет — и получите награду.",
+    test: (s) => s.ticket },
   { id: "g1", icon: "🌱", name: "Почин", hint: "первая запись",
     word: "Первая запись. Дальше — само собой.", test: (s) => s.total >= 1 },
   { id: "g2", icon: "✌️", name: "Дубль", hint: "дважды за день",
