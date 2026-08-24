@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 214";
+const APP_VERSION = "Кэйко 215";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4780,7 +4780,12 @@ function рисуйРазговор(bk) {
   const блоки = articleOfChapter(bk, глава.i);
   const вопросы = faqOfChapter(bk, глава.i);
   const lead = clubLead(bk, глава.i);
-  const вид = (talkView === "faq" && вопросы.length) ? "faq" : "art";
+  /* Вкладка вопросов видна и тогда, когда файл ещё едет: невидимая вкладка
+     на месте несостоявшейся загрузки — это ровно тот случай, когда «ничего
+     нет» и «не приехало» выглядят одинаково. */
+  const ждём = !вопросы.length && (hasArts(bk.id) || !artsOf(bk.id));
+  const есть = вопросы.length || ждём;
+  const вид = (talkView === "faq" && есть) ? "faq" : "art";
   /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
   const абзацы = [];
   sheetMode = "talk";
@@ -4793,12 +4798,15 @@ function рисуйРазговор(bk) {
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
-    ${вопросы.length ? `
+    ${есть ? `
       <div class="tv-tabs">
         <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
         <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
       </div>` : ""}
-    ${вид === "faq" ? `
+    ${вид === "faq" && !вопросы.length ? `
+    <div class="ar-wait" style="margin-top:16px">вопросы ещё не приехали${artsWhy ? " · " + esc(artsWhy) : ""}</div>
+    <div class="sheet-actions"><button class="btn" id="fqPull" type="button">Загрузить</button></div>`
+    : вид === "faq" ? `
     <div class="fq-list">
       ${вопросы.map((q, i) => {
         абзацы.push(q.q + " — " + q.a);
@@ -4843,6 +4851,13 @@ function рисуйРазговор(bk) {
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
+  const fq = $("#fqPull");
+  if (fq) fq.addEventListener("click", async () => {
+    toast("Тяну вопросы…");
+    const новое = await pullArts(bk.id);
+    if (новое) рисуйРазговор(bk);
+    else toast(artsWhy || "Ничего не пришло");
+  });
   document.querySelectorAll("[data-tv]").forEach((el) =>
     el.addEventListener("click", () => { talkView = el.dataset.tv; рисуйРазговор(bk); }));
   document.querySelectorAll("[data-cp]").forEach((el) =>
