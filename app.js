@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 211";
+const APP_VERSION = "Кэйко 212";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4649,9 +4649,22 @@ function clubState(bk, i, page) {
 
 function openClub(b, page) {
   const bk = b || book();
-  if (!articleChapters(bk).length) { toast("Разборов пока нет"); return; }
+  /* Разборы приезжают из каталога, а он сверяется по своему расписанию: новые
+     песни или вопросы могли уже лежать в гисте, но ещё не доехать до телефона.
+     Открыли раздел — спрашиваем каталог сразу и, если он привёз что-то новое,
+     перерисовываем список под рукой. */
+  const свежий = () => {
+    if (!cfg.token) return;
+    catalogPull(true).then(() => {
+      if (sheetMode === "club") рисуйКлуб(bk, page);
+      else if (sheetMode === "talk") рисуйРазговор(bk);   // вкладка вопросов могла приехать только что
+      else if (articleChapters(bk).length) { talkAt = -1; рисуйКлуб(bk, page); }
+    }).catch(() => {});
+  };
+  if (!articleChapters(bk).length) { toast("Смотрю, что есть в каталоге…"); свежий(); return; }
   talkAt = -1;
   рисуйКлуб(bk, page);
+  свежий();
 }
 
 function рисуйКлуб(bk, page) {
