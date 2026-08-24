@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 205";
+const APP_VERSION = "Кэйко 206";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7254,24 +7254,29 @@ const blockWhy = (bl) => {
    вместе не складываться.
 
    На такте с одной звучащей рукой шагов меньше: разделять там нечего. */
-const STEP_GOALS = { read: 2, right: 3, left: 3, both: REP_GOAL };
+const STEP_GOALS = { readR: 2, readL: 2, right: 3, left: 3, both: REP_GOAL };
 const STEP_NAME = {
-  read: "Читаю ноты",
+  readR: "Читаю скрипичный ключ",
+  readL: "Читаю басовый ключ",
   right: "Играю скрипичный ключ",
   left: "Играю басовый ключ",
   both: "Играю двумя руками",
 };
+// какой ключ у шага: по нему пишется отрезок в запись дня
+const STEP_HAND = { readR: "right", readL: "left", right: "right", left: "left" };
 
-// какие шаги есть у этого такта: смотрим, что вообще на нём звучит
+/* Какие шаги есть у этого такта. Ключи разбираются порознь и подряд: сначала
+   прочитал скрипичный — сразу его и сыграл, потом то же с басовым, и лишь
+   после этого вместе. Читать оба ключа сразу, а играть их через три шага —
+   значит забыть прочитанное по дороге. */
 function barSteps(b) {
   const doc = pracDoc();
   const h = doc && doc.hints && doc.hints[b];
-  if (!h) return ["read", "both"];
+  if (!h) return ["readR", "readL", "right", "left", "both"];
   const r = !!h.r, l = !!h.l;
-  if (r && l) return ["read", "right", "left", "both"];
-  return ["read", r ? "right" : "left"];
+  if (r && l) return ["readR", "right", "readL", "left", "both"];
+  return r ? ["readR", "right"] : ["readL", "left"];
 }
-// последний шаг такта — тот, ради которого всё: им и меряется круг
 const barMain = (b) => barSteps(b)[barSteps(b).length - 1];
 
 const repsStore = () => {
@@ -7286,7 +7291,16 @@ function barBox(b, make) {
   const st = repsStore();
   const cur = st.reps[b];
   if (Array.isArray(cur)) { st.reps[b] = { both: cur }; return st.reps[b]; }
-  if (cur && typeof cur === "object") return cur;
+  if (cur && typeof cur === "object") {
+    /* Раньше чтение было одно на такт, без ключа. Переселяем его в тот ключ,
+       который на этом такте читают первым: набранное не должно пропадать. */
+    if (cur.read) {
+      const первый = barSteps(b)[0];
+      cur[первый] = (cur[первый] || []).concat(cur.read);
+      delete cur.read;
+    }
+    return cur;
+  }
   /* На чтении пустых тактов не заводим: иначе один взгляд в список пишет в
      данные сорок пустых записей и гонит их в гист. */
   if (!make) return {};
@@ -9826,14 +9840,15 @@ function bindPractice() {
       const lvl = Number(b.dataset.lvl);
       prac.startedAt = prac.startedAt || Date.now();
       const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
-      /* Рука шага: у ключей своя, у чтения и сшивки — те, что звучат. */
-      const рука = u.step === "right" || u.step === "left" ? u.step : pracHands(u);
+      /* Рука шага: у чтения и игры по ключу своя, у сшивки — те, что звучат. */
+      const рука = STEP_HAND[u.step] || pracHands(u);
       pracNote({ from: u.from, to: u.to, size: u.to - u.from + 1, hand: рука }, sec);
       repAdd(u, lvl);
       /* Прочитанное в запись дня отрезком не идёт: сыграно ничего не было.
          Время при этом считается — разбор глазами тоже занятие. */
+      const чтение = u.step === "readR" || u.step === "readL";
       let added = 0;
-      if (u.step !== "read") {
+      if (!чтение) {
         prac.closed.push({ from: u.from, to: u.to });
         added = pracLog({ from: u.from, to: u.to, hand: рука });
       } else pracCount();
