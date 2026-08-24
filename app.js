@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 212";
+const APP_VERSION = "Кэйко 213";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -517,18 +517,39 @@ function chapterIndexAt(b, page) {
 /* Статья о главе: не тест и не сноски, а рассказ — как если бы кто-то
    понимающий сел рядом и объяснил, что тут происходит и почему это красиво.
    Блоки трёх видов: заголовок, абзац, иллюстрация с подписью. */
-const bookArticle = (b) => {
-  const c = catOf((b || book()).id);
-  return (c && Array.isArray(c.article)) ? c.article : [];
+/* ── Разборы лежат отдельно ──
+   Каталог тянется целиком при каждой правке содержимого, а разборы читают
+   редко и по одному материалу. Поэтому они живут своим файлом на материал и
+   грузятся, только когда открываешь раздел; на устройстве остаются в
+   хранилище, так что дальше открываются и без сети. */
+const LS_ART = (id) => "keiko-art-" + id;
+let ARTS = {};
+const artsOf = (id) => {
+  if (ARTS[id]) return ARTS[id];
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_ART(id)) || "null");
+    if (saved) { ARTS[id] = saved; return saved; }
+  } catch {}
+  return null;
 };
+/* Старые записи каталога тоже читаем: пока файл не приехал, показываем то,
+   что уже есть, — и ничего не пропадает при переезде. */
+/* Есть ли у материала разбор — знает сам каталог: он маленький и всегда под
+   рукой. Иначе кнопку было бы видно только после загрузки тяжёлого файла. */
+const hasArts = (id) => !!(catOf(id) || {}).arts;
+const artsPart = (b, поле) => {
+  const id = (b || book()).id;
+  const own = artsOf(id);
+  if (own && Array.isArray(own[поле])) return own[поле];
+  const c = catOf(id);
+  return (c && Array.isArray(c[поле])) ? c[поле] : [];
+};
+const bookArticle = (b) => artsPart(b, "article");
 const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) === i + 1);
 /* Вопросы и ответы к песне — второй этап разбора: не рассуждение, а короткие
    ответы на «кто это вообще» и «почему так». Лежат в каталоге рядом со статьёй
    и открываются по тому же правилу — только когда песнь дочитана. */
-const bookFaq = (b) => {
-  const c = catOf((b || book()).id);
-  return (c && Array.isArray(c.faq)) ? c.faq : [];
-};
+const bookFaq = (b) => artsPart(b, "faq");
 const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
 const articleChapters = (b) => {
   const bk = b || book();
@@ -3541,7 +3562,7 @@ function updateAchBadge() {
 /* Разбор есть не у каждого материала, а лента свайпается без полной
    перерисовки. Поэтому кнопка живёт в разметке всегда и только прячется:
    иначе она оставалась от прошлой обложки — «то появляется, то исчезает». */
-const talkBtnOn = () => isBook() && bookArticle(book()).length > 0;
+const talkBtnOn = () => isBook() && (bookArticle(book()).length > 0 || hasArts(book().id));
 
 function updateHeroInfo() {
   const s = curStats();
@@ -4654,14 +4675,27 @@ function openClub(b, page) {
      Открыли раздел — спрашиваем каталог сразу и, если он привёз что-то новое,
      перерисовываем список под рукой. */
   const свежий = () => {
-    if (!cfg.token) return;
-    catalogPull(true).then(() => {
+    pullArts(bk.id).then((новое) => {
+      if (!новое) return;
       if (sheetMode === "club") рисуйКлуб(bk, page);
       else if (sheetMode === "talk") рисуйРазговор(bk);   // вкладка вопросов могла приехать только что
       else if (articleChapters(bk).length) { talkAt = -1; рисуйКлуб(bk, page); }
     }).catch(() => {});
   };
-  if (!articleChapters(bk).length) { toast("Смотрю, что есть в каталоге…"); свежий(); return; }
+  if (!articleChapters(bk).length) {
+    /* Файл разбора ещё не приехал: показываем ожидание, а не пустоту — иначе
+       нажатие выглядит как «кнопка не работает». */
+    sheetMode = "club";
+    openSheet(`
+      <div class="bn-head"><div style="grid-column:1/-1">
+        <h3>Разборы</h3><p class="sub">загружаются…</p>
+      </div></div>
+      <div class="ar-wait">минуту — тяну из каталога</div>
+      <div class="sheet-actions"><button class="btn" id="clWait" type="button">Закрыть</button></div>`, true);
+    const b = $("#clWait"); if (b) b.addEventListener("click", closeSheet);
+    свежий();
+    return;
+  }
   talkAt = -1;
   рисуйКлуб(bk, page);
   свежий();
@@ -11003,6 +11037,27 @@ const CAT_COVER_FILE = (id) => `cover-${id}.txt`;
 /* Иллюстрации к статьям лежат в каталоге отдельными файлами и кладутся в тот
    же кэш, что обложки: один раз скачал — дальше работает без сети. */
 const CAT_ART_FILE = (key) => `art-${key}.txt`;
+const CAT_ARTS_FILE = (key) => `article-${key}.json`;
+const artsPulling = new Set();
+
+/* Разбор материала — отдельный файл в каталожном гисте. Тянем его по требованию:
+   открыл раздел разборов — спросили. Пришло — кладём на устройство и говорим
+   вызвавшему, что содержимое обновилось. */
+async function pullArts(id) {
+  if (!id || !cfg.token || !cfg.catalogId || artsPulling.has(id)) return false;
+  artsPulling.add(id);
+  try {
+    const files = await catalogFiles(false);
+    const txt = await catText(files, CAT_ARTS_FILE(id), 30000);
+    if (!txt) return false;
+    const pack = JSON.parse(txt);
+    if (!pack || typeof pack !== "object") return false;
+    const было = JSON.stringify(ARTS[id] || null);
+    ARTS[id] = pack;
+    try { localStorage.setItem(LS_ART(id), JSON.stringify(pack)); } catch {}
+    return было !== JSON.stringify(pack);
+  } catch { return false; } finally { artsPulling.delete(id); }
+}
 const artPulling = new Set();
 
 function artSrc(key) {
