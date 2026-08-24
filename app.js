@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 204";
+const APP_VERSION = "Кэйко 205";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -766,7 +766,8 @@ function pctRoute() {
   if (pctRouteCache.key === ck) return pctRouteCache.val;
   let всего = 0, сделано = 0;
   for (const bl of pracBlocks()) {
-    for (let b = bl.from; b <= bl.to; b++) { всего += REP_GOAL; сделано += repCount(b); }
+    for (let b = bl.from; b <= bl.to; b++)
+      for (const st of barSteps(b)) { всего += stepGoal(b, st); сделано += repCount(b, st); }
     всего += REP_GOAL;                                  // сшивка блока весит как такт
     сделано += finalPassed(bl) ? REP_GOAL : 0;
   }
@@ -7246,15 +7247,64 @@ const blockWhy = (bl) => {
   return p ? { why: p.why || "", note: p.note || "" } : { why: "", note: "" };
 };
 
+/* ── Шаги внутри такта ──
+   Такт не «сыгран» одной кнопкой. Сначала его читают глазами, потом играют
+   каждым ключом порознь, и только потом двумя руками — и у каждого шага свой
+   счёт, потому что трудность у них разная: ноты могут читаться легко, а
+   вместе не складываться.
+
+   На такте с одной звучащей рукой шагов меньше: разделять там нечего. */
+const STEP_GOALS = { read: 2, right: 3, left: 3, both: REP_GOAL };
+const STEP_NAME = {
+  read: "Читаю ноты",
+  right: "Играю скрипичный ключ",
+  left: "Играю басовый ключ",
+  both: "Играю двумя руками",
+};
+
+// какие шаги есть у этого такта: смотрим, что вообще на нём звучит
+function barSteps(b) {
+  const doc = pracDoc();
+  const h = doc && doc.hints && doc.hints[b];
+  if (!h) return ["read", "both"];
+  const r = !!h.r, l = !!h.l;
+  if (r && l) return ["read", "right", "left", "both"];
+  return ["read", r ? "right" : "left"];
+}
+// последний шаг такта — тот, ради которого всё: им и меряется круг
+const barMain = (b) => barSteps(b)[barSteps(b).length - 1];
+
 const repsStore = () => {
   const st = pracStore();
-  st.reps = st.reps || {};      // такт → список заходов
+  st.reps = st.reps || {};      // такт → { шаг: список заходов }
   st.final = st.final || {};    // блок → список сшивок
   return st;
 };
-const repsOf = (b) => repsStore().reps[b] || [];
-const repCount = (b) => Math.min(REP_GOAL, repsOf(b).length);
-const barReady = (b) => repsOf(b).length >= REP_GOAL;
+/* Первая версия держала у такта один список. Читаем её как заходы «двумя
+   руками» — терять набранное из-за смены формы незачем. */
+function barBox(b, make) {
+  const st = repsStore();
+  const cur = st.reps[b];
+  if (Array.isArray(cur)) { st.reps[b] = { both: cur }; return st.reps[b]; }
+  if (cur && typeof cur === "object") return cur;
+  /* На чтении пустых тактов не заводим: иначе один взгляд в список пишет в
+     данные сорок пустых записей и гонит их в гист. */
+  if (!make) return {};
+  st.reps[b] = {};
+  return st.reps[b];
+}
+/* Главный шаг такта всегда набирает полные десять заходов: на такте, где
+   звучит одна рука, именно он и есть игра — сокращать ему счёт не за что.
+   Подготовительные шаги короче: их дело — довести до главного. */
+const stepGoal = (b, step) => step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL);
+const repsOf = (b, step) => barBox(b)[step || barMain(b)] || [];
+const stepDone = (b, step) => repsOf(b, step).length >= stepGoal(b, step);
+const repCount = (b, step) => Math.min(stepGoal(b, step || barMain(b)), repsOf(b, step).length);
+// такт готов, когда закрыты все его шаги
+const barReady = (b) => barSteps(b).every((st) => stepDone(b, st));
+// сколько заходов набрано по такту всего — по этому и идёт круг
+const barMarks = (b) => barSteps(b).reduce((n, st) => n + repsOf(b, st).length, 0);
+
 const finalOf = (bl) => repsStore().final[blockKey(bl)] || [];
 /* Сшивка засчитана, когда последний заход был не «сложно»: сложный повторяется
    до тех пор, пока блок не пойдёт хотя бы с усилием. */
@@ -7272,13 +7322,16 @@ function repAdd(u, lvl) {
   const st = repsStore();
   const rec = { lvl, d: todayStr(), at: now() };
   if (u.final) (st.final[blockKey(u)] = st.final[blockKey(u)] || []).push(rec);
-  else (st.reps[u.from] = st.reps[u.from] || []).push(rec);
+  else {
+    const box = barBox(u.from, true);
+    (box[u.step] = box[u.step] || []).push(rec);
+  }
   st.at = now();
   return rec;
 }
 function repDrop(u) {
   const st = repsStore();
-  const arr = u.final ? st.final[blockKey(u)] : st.reps[u.from];
+  const arr = u.final ? st.final[blockKey(u)] : barBox(u.from)[u.step];
   if (arr && arr.length) arr.pop();
   st.at = now();
 }
@@ -7299,34 +7352,44 @@ function pracHands(u) {
 }
 
 /* ── Где мы сейчас ──
-   Идём по блокам подряд. Внутри блока выбирается такт с наименьшим числом
-   заходов, при равенстве — самый левый: получается ровный круг 1, 2, 3, 4,
-   снова 1. Когда у всех тактов блока набрано по десять — сшивка блока
-   целиком, и только после неё следующий блок. */
+   Идём по блокам подряд. Внутри блока берём такт, у которого заходов меньше
+   всех, при равенстве — самый левый: получается ровный круг. Внутри такта
+   шаги идут по порядку — сначала чтение, потом ключи порознь, потом вместе, —
+   поэтому первый заход на такт выглядит как «прочитал и сыграл», а следующие
+   круги уже только игра двумя руками.
+
+   Когда у всех тактов блока закрыты все шаги — сшивка блока целиком, и только
+   после неё следующий блок. */
 function pracWhere() {
   const blocks = pracBlocks();
   for (const bl of blocks) {
     if (!blockReady(bl)) {
+      /* Круг считается по главному шагу — игре двумя руками. Пока такт впервые
+         разбирают, он держит очередь за собой: прочитал, сыграл каждым ключом,
+         сыграл вместе — и только теперь переходим к следующему. Иначе выходило
+         бы «прочитал все четыре, потом сыграл все четыре», а он просил
+         разучивать такт целиком и идти дальше. */
       let bar = bl.from, best = Infinity;
       for (let b = bl.from; b <= bl.to; b++) {
-        const n = repsOf(b).length;
-        if (n >= REP_GOAL) continue;
+        if (barReady(b)) continue;
+        const n = repsOf(b, barMain(b)).length;
         if (n < best) { best = n; bar = b; }
       }
-      return { blocks, bl, bar, round: (best === Infinity ? 0 : best) + 1 };
+      const step = barSteps(bar).find((st) => !stepDone(bar, st)) || barMain(bar);
+      return { blocks, bl, bar, step, round: repsOf(bar, step).length + 1 };
     }
     if (!finalPassed(bl)) return { blocks, bl, final: true, tries: finalOf(bl).length };
   }
   return { blocks, finished: true };
 }
 
-/* Что показывать в очереди дальше: отдельный такт или сшивку блока. */
+/* Что показывать сейчас: шаг такта или сшивку блока. */
 function pracUnitNow() {
   const w = pracWhere();
   if (w.finished) return null;
   return w.final
     ? { from: w.bl.from, to: w.bl.to, final: true, bl: w.bl }
-    : { from: w.bar, to: w.bar, bl: w.bl, round: w.round };
+    : { from: w.bar, to: w.bar, step: w.step, bl: w.bl, round: w.round };
 }
 
 /* ── Список тактов ──
@@ -7370,7 +7433,7 @@ function pracListHTML() {
       <b>Такты</b>
       <button class="th-link" data-prac="listClose" type="button">закрыть</button>
     </div>
-    <div class="rt-head">Блоков пройдено ${готовых} из ${blocks.length} · в каждом такте ${REP_GOAL} заходов</div>
+    <div class="rt-head">Блоков пройдено ${готовых} из ${blocks.length} · у такта свои шаги: чтение, ключи, вместе</div>
     <div class="bl-list">
       ${blocks.map((bl) => {
         const тут = w.bl && w.bl.from === bl.from;
@@ -7381,8 +7444,9 @@ function pracListHTML() {
           rows.push(`
             <div class="rp-row${мой ? " now" : ""}${barReady(b) ? " done" : ""}">
               <b>такт ${b}</b>
-              <span class="dots">${dotsHTML(repsOf(b), REP_GOAL)}</span>
-              <em>${repCount(b)}/${REP_GOAL}</em>
+              <span class="dots">${barSteps(b).map((st) =>
+                `<span class="dgrp" title="${esc(STEP_NAME[st])}">${dotsHTML(repsOf(b, st), stepGoal(b, st))}</span>`).join("")}</span>
+              <em>${barMarks(b)}/${barSteps(b).reduce((n, st) => n + stepGoal(b, st), 0)}</em>
             </div>`);
         }
         const f = finalOf(bl);
@@ -7403,7 +7467,7 @@ function pracListHTML() {
           </div>`;
       }).join("")}
     </div>
-    <p class="bl-note">Кружок — один заход: мятный «легко», золотой «с усилием», фиолетовый «сложно». Блок сшивается, когда все такты набрали по ${REP_GOAL}.</p>`;
+    <p class="bl-note">Кружок — один заход: мятный «легко», золотой «с усилием», фиолетовый «сложно». Группы через чёрточку — чтение, скрипичный, басовый, обе руки. Блок сшивается, когда все шаги закрыты.</p>`;
 }
 
 const pracMin = () => prac && prac.startedAt ? (Date.now() - prac.startedAt - prac.breakMs) / 60000 : 0;
@@ -9130,31 +9194,27 @@ function pracRender() {
   const имя = blockWhy(w.bl).why;
   const блоков = w.blocks.length;
   const готово = w.blocks.filter(blockDone).length;
-  const hand = pracHands(u);
 
   const кнопки = LVLS.map((l) => `
     <button class="rep l${l.k}" data-lvl="${l.k}" type="button">
       <b>${l.name}</b><span>${l.hint}</span>
     </button>`).join("");
 
-  /* Десять кружков того места, которое сейчас перед глазами. Списка всего
-     блока здесь нет намеренно: пока играешь один такт, соседние — шум. */
-  const свои = u.final ? finalOf(w.bl) : repsOf(u.from);
-  const сколько = u.final ? Math.max(3, свои.length + 1) : REP_GOAL;
+  /* Кружки — того шага, который сейчас: у чтения свой счёт, у каждого ключа
+     свой, у игры двумя руками свой. Трудность у них разная, и мешать их в
+     одну кучу значит не увидеть, где именно тяжело. */
+  const свои = u.final ? finalOf(w.bl) : repsOf(u.from, u.step);
+  const сколько = u.final ? Math.max(3, свои.length + 1) : stepGoal(u.from, u.step);
+  const шаг = u.final ? "Играю блок целиком" : STEP_NAME[u.step];
 
   box.innerHTML = `
     <div class="wk">
       <div class="wk-task">
         <p class="wk-kind">${esc(имя || "такты " + w.bl.from + "–" + w.bl.to)}</p>
         <div class="wk-big">${pracSpan(u)}</div>
-        <p class="wk-hand">${PRAC_HAND[hand]}</p>
+        <p class="wk-hand">${esc(шаг)}</p>
         <div class="dots big">${dotsHTML(свои, сколько)}</div>
-        <p class="wk-stage">${u.final
-          ? "Сшиваем блок целиком"
-          : "Блок " + (w.bl.i + 1) + " из " + блоков + " · такты " + w.bl.from + "–" + w.bl.to}</p>
-        <p class="wk-next">${u.final
-          ? "пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок"
-          : "сыграл — отметь, как вышло"}</p>
+        ${u.final ? `<p class="wk-next">пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок</p>` : ""}
         <div class="rep-btns">${кнопки}</div>
         <div class="wk-row">
           <button class="pr-ghost" data-prac="list">Такты</button>
@@ -9766,10 +9826,17 @@ function bindPractice() {
       const lvl = Number(b.dataset.lvl);
       prac.startedAt = prac.startedAt || Date.now();
       const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
-      pracNote({ from: u.from, to: u.to, size: u.to - u.from + 1, hand: pracHands(u) }, sec);
+      /* Рука шага: у ключей своя, у чтения и сшивки — те, что звучат. */
+      const рука = u.step === "right" || u.step === "left" ? u.step : pracHands(u);
+      pracNote({ from: u.from, to: u.to, size: u.to - u.from + 1, hand: рука }, sec);
       repAdd(u, lvl);
-      prac.closed.push({ from: u.from, to: u.to });
-      const added = pracLog({ from: u.from, to: u.to, hand: pracHands(u) });
+      /* Прочитанное в запись дня отрезком не идёт: сыграно ничего не было.
+         Время при этом считается — разбор глазами тоже занятие. */
+      let added = 0;
+      if (u.step !== "read") {
+        prac.closed.push({ from: u.from, to: u.to });
+        added = pracLog({ from: u.from, to: u.to, hand: рука });
+      } else pracCount();
       prac.undo = { u, added };
       saveData();
       schedulePush();

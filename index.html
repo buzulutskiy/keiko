@@ -1527,7 +1527,11 @@
     .rp-row.fin { margin-top: 4px; border-style: dashed; border-color: rgba(255, 255, 255, 0.14); }
     .rp-row b { font-size: 0.84rem; font-weight: 650; white-space: nowrap; }
     .rp-row em { font-size: 0.74rem; color: var(--dim); font-style: normal; white-space: nowrap; }
-    .dots { display: flex; flex-wrap: wrap; gap: 4px; }
+    .dots { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+    /* Группа кружков одного шага: чтение, ключ, обе руки — между ними просвет,
+       чтобы счёт каждого шага читался отдельно. */
+    .dgrp { display: inline-flex; gap: 3px; padding-right: 6px; }
+    .dgrp + .dgrp { border-left: 1px solid rgba(255, 255, 255, 0.12); padding-left: 6px; }
     .dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.12);
