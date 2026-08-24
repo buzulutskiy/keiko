@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 207";
+const APP_VERSION = "Кэйко 208";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3295,9 +3295,8 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        ${isBook() && bookArticle(book()).length
-          ? `<button class="cta-side" id="bookTalkBtn" type="button"
-               aria-label="Книжный клуб" title="Книжный клуб">Клуб</button>` : ""}
+        <button class="cta-side" id="bookTalkBtn" type="button" ${talkBtnOn() ? "" : "hidden"}
+          aria-label="Разбор" title="Разбор"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.8c0 3.8-3.8 6.9-8.5 6.9-1 0-2-.14-2.9-.4L4 20l1.3-3.3C4.2 15.4 3.5 13.7 3.5 11.8c0-3.8 3.8-6.9 8.5-6.9s8.5 3.1 8.5 6.9Z"/><path d="M8.3 10.2h7.4M8.3 13.2h4.6"/></svg></button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3571,6 +3570,11 @@ function updateAchBadge() {
   if (txt) txt.nodeValue = `${T("tabAch")} ${open}`;
 }
 
+/* Разбор есть не у каждого материала, а лента свайпается без полной
+   перерисовки. Поэтому кнопка живёт в разметке всегда и только прячется:
+   иначе она оставалась от прошлой обложки — «то появляется, то исчезает». */
+const talkBtnOn = () => isBook() && bookArticle(book()).length > 0;
+
 function updateHeroInfo() {
   const s = curStats();
   const doneToday = !!entryFor(todayStr());
@@ -3599,6 +3603,9 @@ function updateHeroInfo() {
         ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
         : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
+
+  const talk = $("#bookTalkBtn");
+  if (talk) talk.hidden = !talkBtnOn();
 
   const nudge = $(".nudge");
   if (nudge) {
@@ -4639,7 +4646,7 @@ function renderAchMaterial(view) {
 }
 
 // Шторка с карточкой знания
-/* ══════════ Книжный клуб ══════════
+/* ══════════ Разборы песней ══════════
    Не сноски и не тест. Клуб — это список песней с разбором: видно, что уже
    прочитано, что читаешь сейчас, а что впереди (в такой разбор лучше не
    лезть — заспойлерит). Внутри разбора любой абзац можно скопировать и
@@ -4683,11 +4690,12 @@ function рисуйКлуб(bk, page) {
   const главы = articleChapters(bk);
   const стр = page == null ? bookProgress() : page;
   const прочитано = главы.filter((c) => clubSeen(bk, c.i)).length;
+  const открыт = (c) => clubState(bk, c.i, стр) === "read";
   sheetMode = "club";
   openSheet(`
     <div class="bn-head">
       <div style="grid-column:1/-1">
-        <h3>Книжный клуб</h3>
+        <h3>Разборы</h3>
         <p class="sub">${главы.length} ${plural(главы.length, "разбор", "разбора", "разборов")}
           · ${прочитано ? `${прочитано} прочитано` : "ни одного не читал"}</p>
       </div>
@@ -4697,14 +4705,18 @@ function рисуйКлуб(bk, page) {
         const st = clubState(bk, c.i, стр);
         const метка = st === "read" ? "прочитана" : st === "now" ? "читаешь" : "впереди";
         const lead = clubLead(bk, c.i);
-        return `<button class="cl-item ${st}" data-cl="${c.i}" type="button">
+        const закрыт = !открыт(c);
+        /* Разбор непрочитанной песни — это спойлер, поэтому он закрыт: в нём
+           пересказан весь сюжет, включая то, чем всё кончится. Открывается
+           сам, как только дочитаешь песнь до конца. */
+        return `<button class="cl-item ${st}${закрыт ? " lock" : ""}" data-cl="${c.i}" type="button">
           <div class="cl-txt">
-            <b>${esc(c.name || "")}</b>
-            ${lead ? `<p>${esc(lead)}</p>` : ""}
+            <b>${закрыт ? "🔒 " : ""}${esc(c.name || "")}</b>
+            ${закрыт ? `<p>откроется, когда дочитаешь</p>` : lead ? `<p>${esc(lead)}</p>` : ""}
           </div>
           <div class="cl-side">
             <span class="cl-st ${st}">${метка}</span>
-            ${clubSeen(bk, c.i) ? `<span class="cl-seen">разбор прочитан</span>` : ""}
+            ${!закрыт && clubSeen(bk, c.i) ? `<span class="cl-seen">разбор прочитан</span>` : ""}
           </div>
         </button>`;
       }).join("")}
@@ -4715,7 +4727,10 @@ function рисуйКлуб(bk, page) {
 
   document.querySelectorAll("[data-cl]").forEach((el) =>
     el.addEventListener("click", () => {
-      talkAt = Number(el.dataset.cl);
+      const i = Number(el.dataset.cl);
+      const глава = главы.find((c) => c.i === i);
+      if (!глава || !открыт(глава)) { toast("Разбор откроется, когда дочитаешь песнь"); return; }
+      talkAt = i;
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
@@ -4735,7 +4750,11 @@ function openTalkSheet(b, page) {
 }
 
 function рисуйРазговор(bk) {
-  const главы = articleChapters(bk);
+  /* Стрелками ходим только по открытым разборам: соседняя песнь может быть
+     ещё не прочитана, и её разбор так же спойлер, как из списка. */
+  const стр = bookProgress();
+  const главы = articleChapters(bk).filter((c) => clubState(bk, c.i, стр) === "read");
+  if (!главы.length) { toast("Разбор откроется, когда дочитаешь песнь"); return; }
   const место = главы.findIndex((c) => c.i === talkAt);
   const глава = главы[место] || главы[0];
   const блоки = articleOfChapter(bk, глава.i);

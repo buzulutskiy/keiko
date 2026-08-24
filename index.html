@@ -133,6 +133,7 @@
     body.zen .tabbar,
     body.zen .hero-title,
     body.zen .cta,
+    body.zen .cta-side,
     body.zen .nudge,
     body.zen .fabs,
     body.zen .to-top { opacity: 0 !important; pointer-events: none !important; }
@@ -142,7 +143,7 @@
     body.zen .slot.on { transform: scale(1.06); }
     body.zen #bgWave.on { opacity: 0.95; }
 
-    header, #banner, .tabbar, .hero-title, .cta, .nudge, .fabs, .to-top {
+    header, #banner, .tabbar, .hero-title, .cta, .cta-side, .nudge, .fabs, .to-top {
       transition: opacity 1.4s ease !important;
     }
     .ring-wrap { transition: opacity 1.4s ease, transform 1.4s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -1659,10 +1660,13 @@
     }
     /* Квадратная кнопка рядом с «Отметить чтение» */
     .cta-side {
-      flex: 0 0 auto; width: 62px; align-self: stretch; border-radius: 16px;
+      flex: 0 0 auto; width: 58px; align-self: stretch; border-radius: 16px;
       background: var(--glass); border: 1px solid var(--glass-line);
-      font-size: 0.86rem; font-weight: 700; line-height: 1; color: var(--ink);
+      display: grid; place-items: center; line-height: 1; color: var(--ink);
     }
+    .cta-side svg { width: 24px; height: 24px; }
+    /* display:grid перебивает встроенное [hidden]{display:none} — возвращаем */
+    .cta-side[hidden] { display: none; }
     /* Клуб: список песней с разборами. */
     .cl-list {
       display: grid; gap: 10px; margin-top: 12px; text-align: left;
@@ -1673,6 +1677,8 @@
       background: var(--glass); border: 1px solid var(--glass-line); text-align: left;
     }
     .cl-item.ahead { opacity: .62; }
+    .cl-item.lock { opacity: .5; }
+    .cl-item.lock .cl-txt p { color: var(--dim); }
     .cl-txt { flex: 1 1 auto; min-width: 0; }
     .cl-txt b { display: block; font-size: 0.98rem; line-height: 1.35; }
     .cl-txt p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.4; color: var(--dim); }
