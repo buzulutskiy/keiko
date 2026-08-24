@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 206";
+const APP_VERSION = "Кэйко 207";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7254,7 +7254,9 @@ const blockWhy = (bl) => {
    вместе не складываться.
 
    На такте с одной звучащей рукой шагов меньше: разделять там нечего. */
-const STEP_GOALS = { readR: 2, readL: 2, right: 3, left: 3, both: REP_GOAL };
+/* Заходов у каждого шага поровну: чтение ключа — такая же работа, как игра, и
+   двух раз ему не хватает. Один шаг — один счёт до десяти. */
+const STEP_GOALS = { readR: REP_GOAL, readL: REP_GOAL, right: REP_GOAL, left: REP_GOAL, both: REP_GOAL };
 const STEP_NAME = {
   readR: "Читаю скрипичный ключ",
   readL: "Читаю басовый ключ",
@@ -7389,7 +7391,17 @@ function pracWhere() {
         const n = repsOf(b, barMain(b)).length;
         if (n < best) { best = n; bar = b; }
       }
-      const step = barSteps(bar).find((st) => !stepDone(bar, st)) || barMain(bar);
+      /* Внутри такта тоже круг: прочитал ключ — сразу его сыграл, потом второй
+         ключ, потом вместе. Берём шаг с наименьшим числом заходов, при
+         равенстве — тот, что раньше по порядку. Если брать первый незакрытый,
+         выйдет десять чтений подряд, а потом десять игр: прочитанное к тому
+         времени успевает забыться. */
+      const шаги = barSteps(bar).filter((st) => !stepDone(bar, st));
+      let step = шаги[0] || barMain(bar), мало = Infinity;
+      for (const st of шаги) {
+        const n = repsOf(bar, st).length;
+        if (n < мало) { мало = n; step = st; }
+      }
       return { blocks, bl, bar, step, round: repsOf(bar, step).length + 1 };
     }
     if (!finalPassed(bl)) return { blocks, bl, final: true, tries: finalOf(bl).length };
