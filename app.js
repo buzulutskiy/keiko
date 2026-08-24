@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 196";
+const APP_VERSION = "Кэйко 197";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -81,8 +81,9 @@ const uid = () => crypto.randomUUID();
 const now = () => Date.now();
 function todayStr() { return dateStr(new Date()); }
 
-function copyText(text) {
+function copyText(text, word) {
   const t = String(text || "");
+  const ok_ = (word || "Название") + " скопировано";
   if (!t) return;
   /* Сначала старый способ через выделение: он синхронный и потому переживает
      жест надёжнее, чем обещание clipboard API. */
@@ -94,11 +95,11 @@ function copyText(text) {
     ta.select();
     const ok = document.execCommand("copy");
     ta.remove();
-    if (ok) { toast("Название скопировано"); return; }
+    if (ok) { toast(ok_); return; }
   } catch {}
   if (navigator.clipboard) {
     navigator.clipboard.writeText(t)
-      .then(() => toast("Название скопировано"))
+      .then(() => toast(ok_))
       .catch(() => toast("Не вышло скопировать"));
   } else toast("Не вышло скопировать");
 }
@@ -3289,20 +3290,15 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        ${isBook() && bookNotes(book()).length
-          ? `<button class="cta-side" id="bookNotesBtn" type="button"
-               aria-label="Комментарии" title="Комментарии">📑</button>` : ""}
         ${isBook() && bookArticle(book()).length
           ? `<button class="cta-side" id="bookTalkBtn" type="button"
-               aria-label="Разговор о главе" title="Разговор о главе">💬</button>` : ""}
+               aria-label="Книжный клуб" title="Книжный клуб">Клуб</button>` : ""}
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
 
-  const bn = $("#bookNotesBtn");
-  if (bn) bn.addEventListener("click", () => openBookNotesSheet(book(), bookProgress()));
   const bt = $("#bookTalkBtn");
-  if (bt) bt.addEventListener("click", () => openTalkSheet(book(), bookProgress()));
+  if (bt) bt.addEventListener("click", () => openClub(book(), bookProgress()));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4627,9 +4623,88 @@ function renderAchMaterial(view) {
 }
 
 // Шторка с карточкой знания
-/* Комментарии к главе одним списком: заголовок, строка, текст. Читаются
-   по ходу, не отвлекая от самой книги — открыл, глянул, закрыл. */
-let talkAt = -1;       // какая песнь открыта в разговоре
+/* ══════════ Книжный клуб ══════════
+   Не сноски и не тест. Клуб — это список песней с разбором: видно, что уже
+   прочитано, что читаешь сейчас, а что впереди (в такой разбор лучше не
+   лезть — заспойлерит). Внутри разбора любой абзац можно скопировать и
+   переслать, если захочется уточнить у нейросети или у человека. */
+let talkAt = -1;       // какая песнь открыта; -1 — показываем список
+
+const clubLead = (bk, i) => (articleOfChapter(bk, i).find((x) => x.t) || {}).t || "";
+const clubKey = (bk, i) => bk.id + ":" + (i + 1);
+const clubSeen = (bk, i) => !!(data.club || {})[clubKey(bk, i)];
+function clubMark(bk, i) {
+  if (clubSeen(bk, i)) return;
+  data.club = data.club || {};
+  data.club[clubKey(bk, i)] = now();
+  data.clubAt = now();
+  saveData();
+  schedulePush();
+}
+
+/* Докуда идёт глава: до начала следующей, последняя — до конца книги. */
+function chapterEnd(bk, i) {
+  const list = bk.chapters || [];
+  const сл = list[i + 1];
+  return сл ? сл.from - 1 : (bk.pages || 0);
+}
+function clubState(bk, i, page) {
+  const c = (bk.chapters || [])[i];
+  if (!c) return "ahead";
+  if (page >= chapterEnd(bk, i)) return "read";
+  if (page >= c.from) return "now";
+  return "ahead";
+}
+
+function openClub(b, page) {
+  const bk = b || book();
+  if (!articleChapters(bk).length) { toast("Разборов пока нет"); return; }
+  talkAt = -1;
+  рисуйКлуб(bk, page);
+}
+
+function рисуйКлуб(bk, page) {
+  const главы = articleChapters(bk);
+  const стр = page == null ? bookProgress() : page;
+  const прочитано = главы.filter((c) => clubSeen(bk, c.i)).length;
+  sheetMode = "club";
+  openSheet(`
+    <div class="bn-head">
+      <div style="grid-column:1/-1">
+        <h3>Книжный клуб</h3>
+        <p class="sub">${главы.length} ${plural(главы.length, "разбор", "разбора", "разборов")}
+          · ${прочитано ? `${прочитано} прочитано` : "ни одного не читал"}</p>
+      </div>
+    </div>
+    <div class="cl-list">
+      ${главы.map((c) => {
+        const st = clubState(bk, c.i, стр);
+        const метка = st === "read" ? "прочитана" : st === "now" ? "читаешь" : "впереди";
+        const lead = clubLead(bk, c.i);
+        return `<button class="cl-item ${st}" data-cl="${c.i}" type="button">
+          <div class="cl-txt">
+            <b>${esc(c.name || "")}</b>
+            ${lead ? `<p>${esc(lead)}</p>` : ""}
+          </div>
+          <div class="cl-side">
+            <span class="cl-st ${st}">${метка}</span>
+            ${clubSeen(bk, c.i) ? `<span class="cl-seen">разбор прочитан</span>` : ""}
+          </div>
+        </button>`;
+      }).join("")}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="clClose" type="button">Закрыть</button>
+    </div>`, true);
+
+  document.querySelectorAll("[data-cl]").forEach((el) =>
+    el.addEventListener("click", () => {
+      talkAt = Number(el.dataset.cl);
+      clubMark(bk, talkAt);
+      рисуйРазговор(bk);
+    }));
+  $("#clClose").addEventListener("click", closeSheet);
+}
 
 function openTalkSheet(b, page) {
   const bk = b || book();
@@ -4639,6 +4714,7 @@ function openTalkSheet(b, page) {
     const тут = chapterIndexAt(bk, page);
     talkAt = главы.some((c) => c.i === тут) ? тут : главы[0].i;
   }
+  clubMark(bk, talkAt);
   рисуйРазговор(bk);
 }
 
@@ -4647,6 +4723,9 @@ function рисуйРазговор(bk) {
   const место = главы.findIndex((c) => c.i === talkAt);
   const глава = главы[место] || главы[0];
   const блоки = articleOfChapter(bk, глава.i);
+  const lead = clubLead(bk, глава.i);
+  /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
+  const абзацы = [];
   sheetMode = "talk";
   openSheet(`
     <div class="bn-head">
@@ -4658,7 +4737,9 @@ function рисуйРазговор(bk) {
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
     <article class="ar">
+      ${lead ? `<p class="ar-lead">${esc(lead)}</p>` : ""}
       ${блоки.map((б) => {
+        if (б.t) return "";
         if (б.h) return `<h4>${esc(б.h)}</h4>`;
         if (б.img) {
           const src = artSrc(б.img);
@@ -4668,11 +4749,16 @@ function рисуйРазговор(bk) {
             ${б.cap ? `<figcaption>${esc(б.cap)}</figcaption>` : ""}
           </figure>`;
         }
-        if (б.note) return `<p class="ar-note">${esc(б.note)}</p>`;
-        return `<p>${esc(б.p || "")}</p>`;
+        const текст = б.note || б.p || "";
+        абзацы.push(текст);
+        const n = абзацы.length - 1;
+        return `<p class="ar-b ${б.note ? "ar-note" : ""}">${esc(текст)}<button
+          class="ar-cp" data-cp="${n}" type="button" aria-label="Скопировать абзац">⧉</button></p>`;
       }).join("")}
     </article>
     <div class="sheet-actions">
+      <button class="btn" id="tkAll" type="button">Скопировать разбор</button>
+      <button class="btn" id="tkBack" type="button">К списку</button>
       <button class="btn" id="tkClose2" type="button">Закрыть</button>
     </div>`, true);
 
@@ -4681,8 +4767,17 @@ function рисуйРазговор(bk) {
       const сл = главы[место + (el.dataset.tk === "next" ? 1 : -1)];
       if (!сл) return;
       talkAt = сл.i;
+      clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
+  document.querySelectorAll("[data-cp]").forEach((el) =>
+    el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)], "Абзац")));
+  $("#tkAll").addEventListener("click", () => {
+    const весь = [глава.name || "", lead, ""].concat(блоки.map((б) =>
+      б.t ? "" : б.h ? "\n" + б.h : (б.note || б.p || ""))).filter(Boolean).join("\n\n");
+    copyText(весь, "Разбор");
+  });
+  $("#tkBack").addEventListener("click", () => { talkAt = -1; рисуйКлуб(bk); });
   $("#tkClose2").addEventListener("click", closeSheet);
 }
 
@@ -12389,7 +12484,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -12521,6 +12616,14 @@ async function syncNow(manual) {
       // выбранные версии — свод, а не список: берём свежий целиком
       if (remote.talks && (remote.talksAt || 0) > (data.talksAt || 0)) {
         data.talks = remote.talks; data.talksAt = remote.talksAt;
+      }
+      /* Прочитанные разборы — просто объединяем: отметка «прочитал» не должна
+         пропадать оттого, что на другом устройстве её ещё не было. */
+      if (remote.club) {
+        const свод = { ...(data.club || {}) };
+        for (const k in remote.club) свод[k] = Math.max(свод[k] || 0, remote.club[k] || 0);
+        data.club = свод;
+        data.clubAt = Math.max(data.clubAt || 0, remote.clubAt || 0);
       }
       if (remote.shop && remote.shop.theme
           && (remote.shop.themeAt || 0) > (data.shop.themeAt || 0)) {
