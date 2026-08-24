@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 210";
+const APP_VERSION = "Кэйко 211";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -522,6 +522,14 @@ const bookArticle = (b) => {
   return (c && Array.isArray(c.article)) ? c.article : [];
 };
 const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) === i + 1);
+/* Вопросы и ответы к песне — второй этап разбора: не рассуждение, а короткие
+   ответы на «кто это вообще» и «почему так». Лежат в каталоге рядом со статьёй
+   и открываются по тому же правилу — только когда песнь дочитана. */
+const bookFaq = (b) => {
+  const c = catOf((b || book()).id);
+  return (c && Array.isArray(c.faq)) ? c.faq : [];
+};
+const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
 const articleChapters = (b) => {
   const bk = b || book();
   const есть = new Set(bookArticle(bk).map((x) => Number(x.ch)).filter(Boolean));
@@ -4673,6 +4681,8 @@ function рисуйКлуб(bk, page) {
           <div class="cl-txt">
             <b>${закрыт ? "🔒 " : ""}${esc(c.name || "")}</b>
             ${закрыт ? `<p>откроется, когда дочитаешь</p>` : lead ? `<p>${esc(lead)}</p>` : ""}
+            ${!закрыт && faqOfChapter(bk, c.i).length
+              ? `<p class="cl-two">разбор · ${faqOfChapter(bk, c.i).length} ${plural(faqOfChapter(bk, c.i).length, "вопрос", "вопроса", "вопросов")}</p>` : ""}
           </div>
           <div class="cl-side">
             <span class="cl-st ${st}">${метка}</span>
@@ -4691,6 +4701,7 @@ function рисуйКлуб(bk, page) {
       const глава = главы.find((c) => c.i === i);
       if (!глава || !открыт(глава)) { toast("Разбор откроется, когда дочитаешь песнь"); return; }
       talkAt = i;
+      talkView = "art";              // из списка всегда входим в разбор
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
@@ -4709,6 +4720,8 @@ function openTalkSheet(b, page) {
   рисуйРазговор(bk);
 }
 
+let talkView = "art";      // что открыто внутри песни: разбор или вопросы
+
 function рисуйРазговор(bk) {
   /* Стрелками ходим только по открытым разборам: соседняя песнь может быть
      ещё не прочитана, и её разбор так же спойлер, как из списка. */
@@ -4718,7 +4731,9 @@ function рисуйРазговор(bk) {
   const место = главы.findIndex((c) => c.i === talkAt);
   const глава = главы[место] || главы[0];
   const блоки = articleOfChapter(bk, глава.i);
+  const вопросы = faqOfChapter(bk, глава.i);
   const lead = clubLead(bk, глава.i);
+  const вид = (talkView === "faq" && вопросы.length) ? "faq" : "art";
   /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
   const абзацы = [];
   sheetMode = "talk";
@@ -4727,10 +4742,26 @@ function рисуйРазговор(bk) {
       <button class="bn-nav" data-tk="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
       <div>
         <h3>${esc(глава.name || "О главе")}</h3>
-        <p class="sub">разбор · ${место + 1} из ${главы.length}</p>
+        <p class="sub">песнь ${место + 1} из ${главы.length}</p>
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
+    ${вопросы.length ? `
+      <div class="tv-tabs">
+        <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
+        <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
+      </div>` : ""}
+    ${вид === "faq" ? `
+    <div class="fq-list">
+      ${вопросы.map((q, i) => {
+        абзацы.push(q.q + " — " + q.a);
+        return `<div class="fq">
+          <b>${esc(q.q)}</b>
+          <p>${esc(q.a)}<button class="ar-cp" data-cp="${i}" type="button"
+            aria-label="Скопировать вопрос с ответом">⧉</button></p>
+        </div>`;
+      }).join("")}
+    </div>` : `
     <article class="ar">
       ${lead ? `<p class="ar-lead">${esc(lead)}</p>` : ""}
       ${блоки.map((б) => {
@@ -4750,9 +4781,9 @@ function рисуйРазговор(bk) {
         return `<p class="ar-b ${б.note ? "ar-note" : ""}">${esc(текст)}<button
           class="ar-cp" data-cp="${n}" type="button" aria-label="Скопировать абзац">⧉</button></p>`;
       }).join("")}
-    </article>
+    </article>`}
     <div class="sheet-actions">
-      <button class="btn" id="tkAll" type="button">Скопировать разбор</button>
+      <button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>
       <button class="btn" id="tkBack" type="button">К списку</button>
       <button class="btn" id="tkClose2" type="button">Закрыть</button>
     </div>`, true);
@@ -4765,12 +4796,18 @@ function рисуйРазговор(bk) {
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
+  document.querySelectorAll("[data-tv]").forEach((el) =>
+    el.addEventListener("click", () => { talkView = el.dataset.tv; рисуйРазговор(bk); }));
   document.querySelectorAll("[data-cp]").forEach((el) =>
-    el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)], "Абзац")));
+    el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)],
+      вид === "faq" ? "Вопрос" : "Абзац")));
   $("#tkAll").addEventListener("click", () => {
-    const весь = [глава.name || "", lead, ""].concat(блоки.map((б) =>
-      б.t ? "" : б.h ? "\n" + б.h : (б.note || б.p || ""))).filter(Boolean).join("\n\n");
-    copyText(весь, "Разбор");
+    const весь = вид === "faq"
+      ? [глава.name || "", ""].concat(вопросы.map((q, i) => (i + 1) + ". " + q.q + "\n" + q.a))
+          .filter(Boolean).join("\n\n")
+      : [глава.name || "", lead, ""].concat(блоки.map((б) =>
+          б.t ? "" : б.h ? "\n" + б.h : (б.note || б.p || ""))).filter(Boolean).join("\n\n");
+    copyText(весь, вид === "faq" ? "Вопросы" : "Разбор");
   });
   $("#tkBack").addEventListener("click", () => { talkAt = -1; рисуйКлуб(bk); });
   $("#tkClose2").addEventListener("click", closeSheet);

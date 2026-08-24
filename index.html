@@ -1691,6 +1691,20 @@
     .cl-st.read { background: rgba(139, 124, 246, 0.16); color: var(--violet); }
     .cl-st.now { background: rgba(255, 255, 255, 0.14); color: var(--ink); }
     .cl-seen { font-size: 0.66rem; color: var(--dim); }
+    /* Два этапа внутри песни: разбор и вопросы. */
+    .tv-tabs {
+      display: grid; grid-auto-flow: column; gap: 6px; margin: 12px 0 2px;
+      padding: 4px; border-radius: 13px; background: rgba(255, 255, 255, 0.05);
+    }
+    .tv-tabs button {
+      padding: 9px 10px; border-radius: 10px; font-size: 0.88rem; font-weight: 650;
+      color: var(--dim); background: transparent; border: 0;
+    }
+    .tv-tabs button.on { background: var(--glass); color: var(--ink); border: 1px solid var(--glass-line); }
+    .fq-list { display: grid; gap: 14px; margin-top: 14px; text-align: left; }
+    .fq b { display: block; font-size: 1.02rem; line-height: 1.4; margin-bottom: 5px; }
+    .fq p { margin: 0; font-size: 0.98rem; line-height: 1.6; color: var(--muted); }
+    .cl-two { margin: 4px 0 0; font-size: 0.74rem; color: var(--dim); }
     .bn-head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
     .bn-head h3 { margin: 0; }
     .bn-head .sub { margin: 2px 0 0; }
