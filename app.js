@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 199";
+const APP_VERSION = "Кэйко 200";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -766,7 +766,10 @@ function pctRoute() {
   const ck = piece().id + "|" + Object.keys(st.done || {}).length + "|" + ((pracDoc() || {}).parts || []).length;
   if (pctRouteCache.key === ck) return pctRouteCache.val;
   const route = pracRoute();
-  const val = route.length ? route.filter((r) => r.done).length / route.length * 100 : 0;
+  const вес = (r) => r.kind === "run" ? 1 / (r.n || 1) : 1;
+  const всего = route.reduce((a, r) => a + вес(r), 0);
+  const сделано = route.reduce((a, r) => a + (r.done ? вес(r) : 0), 0);
+  const val = всего ? сделано / всего * 100 : 0;
   pctRouteCache = { key: ck, val };
   return val;
 }
@@ -7273,7 +7276,9 @@ function pracHands(u) {
   if (r && !l) return ["right"];
   if (l && !r) return ["left"];
   if (!r && !l) return [];
-  return u.size >= 4 ? ["both"] : ["left", "right", "both"];
+  /* Прогон играется сразу двумя руками, какой бы он ни был короткий: смысл
+     его в том, чтобы пройти место подряд, а порознь оно уже разобрано. */
+  return (u.run || u.size >= 4) ? ["both"] : ["left", "right", "both"];
 }
 
 /* Покрытие: какие такты уже сыграны этой рукой окнами не меньше заданного
@@ -7310,12 +7315,48 @@ function barHasHand(b, h) {
   return h === "left" ? !!x.l : h === "right" ? !!x.r : (!!x.l && !!x.r);
 }
 
+/* ── Лестница прогона ──
+   Раньше рубеж давал один заход «с первого по восьмой», и это оказалось слишком
+   резко: к восьмому такту первые уже забылись, играть подряд не получалось.
+   Теперь прогон растёт по одному такту: 1–2, 1–3, … и так до рубежа. Каждый
+   следующий заход добавляет ровно один новый такт к тому, что только что
+   сыграно целиком. Следующий рубеж продолжает с того места, где кончился
+   предыдущий: до восьмого уже играно подряд, дальше 1–9, 1–10 и так далее. */
+function runSteps(край, runs, first) {
+  const prev = (runs || []).filter((x) => x < край).reduce((a, x) => Math.max(a, x), first);
+  const out = [];
+  for (let t = Math.max(first + 1, prev + 1); t <= край; t++) out.push(t);
+  return out.length ? out : [край];
+}
+const runUnit = (first, to) => ({ from: first, to, size: to - first + 1, run: true });
+
+/* Прогоны, сыгранные целиком: 1–8 закрывает и 1–5, и 1–7 — они внутри него,
+   и сыграны они были подряд. Нужно, чтобы уже пройденное не открывалось заново
+   при появлении лестницы. */
+let runCovCache = { key: "", map: null };
+function runReach(h) {
+  const done = pracStore().done;
+  const ck = piece().id + "|" + Object.keys(done).length + "|" + (pracStore().at || 0);
+  if (runCovCache.key !== ck) runCovCache = { key: ck, map: new Map() };
+  if (runCovCache.map.has(h)) return runCovCache.map.get(h);
+  const reach = new Map();                       // начало прогона → докуда доиграно
+  for (const key of Object.keys(done)) {
+    const m = /^(\d+):(\d+)-(\d+):([a-z]+):run$/.exec(key);
+    if (!m || m[4] !== h) continue;
+    const from = Number(m[2]), to = Number(m[3]);
+    reach.set(from, Math.max(reach.get(from) || 0, to));
+  }
+  runCovCache.map.set(h, reach);
+  return reach;
+}
+
 const pracIsDone = (u, h) => {
   if (pracStore().done[pracKey(u, h)]) return true;
-  /* Прогон засчитывается только сам собой. Он покрывает те же такты, что уже
+  /* Прогон засчитывается только прогоном. Он покрывает те же такты, что уже
      разобраны по кускам, и без этой оговорки закрывался бы автоматически —
-     а смысл его именно в том, чтобы сыграть всё подряд. */
-  if (u.run) return false;
+     а смысл его именно в том, чтобы сыграть всё подряд. Зато более длинный
+     прогон от того же такта засчитывается: он включает этот целиком. */
+  if (u.run) return (runReach(h).get(u.from) || 0) >= u.to;
   // окно с другими границами, но той же длины — работа та же
   const cov = pracCoverage(h, u.size);
   for (let b = u.from; b <= u.to; b++)
@@ -7461,8 +7502,10 @@ function pracWhere() {
       if (p.from !== край + 1) continue;
       const доКрая = parts.filter((x) => x.to <= край);
       if (!доКрая.length || !доКрая.every(pracPartDone)) continue;
-      const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1, run: true };
-      if (!pracUnitDone(u)) return { parts, run: u };
+      for (const to of runSteps(край, runs, parts[0].from)) {
+        const u = runUnit(parts[0].from, to);
+        if (!pracUnitDone(u)) return { parts, run: u };
+      }
     }
     if (!pracPartDone(p)) {
       for (const size of pracSteps(p)) if (!pracStepDone(p, size)) return { parts, part: p, size };
@@ -7477,8 +7520,10 @@ function pracWhere() {
   for (const край of runs) {
     const доКрая = parts.filter((x) => x.to <= край);
     if (!доКрая.length || !доКрая.every(pracPartDone)) break;
-    const u = { from: parts[0].from, to: край, size: край - parts[0].from + 1, run: true };
-    if (!pracUnitDone(u)) return { parts, run: u };
+    for (const to of runSteps(край, runs, parts[0].from)) {
+      const u = runUnit(parts[0].from, to);
+      if (!pracUnitDone(u)) return { parts, run: u };
+    }
   }
 
   /* Крупная сборка идёт дальше швов: пары соседних частей уже пройдены,
@@ -7516,8 +7561,14 @@ function pracRoute() {
   const first = parts.length ? parts[0].from : 1;
   const out = [];
   const прогон = (край) => {
-    const u = { from: first, to: край, size: край - first + 1, run: true };
-    out.push({ kind: "run", u, done: pracUnitDone(u) });
+    /* Лестница к рубежу — это один пункт пути, разбитый на ступени. В проценте
+       она и весит как один: иначе появление ступеней само по себе обвалило бы
+       цифру, хотя сыграно ровно столько же. */
+    const шаги = runSteps(край, runs, first);
+    for (const to of шаги) {
+      const u = runUnit(first, to);
+      out.push({ kind: "run", u, край, n: шаги.length, done: pracUnitDone(u) });
+    }
   };
 
   for (let i = 0; i < parts.length; i++) {
@@ -7546,6 +7597,27 @@ function pracRoute() {
   asm.forEach((lvl, i) => out.push({
     kind: "asm", lvl, i, done: lvl.map(pracAsUnit).every(pracUnitDone),
   }));
+  return out;
+}
+
+/* Лестница прогона в списке — одна строка с ходом внутри, как у шага части.
+   Тридцать девять почти одинаковых строк «прогон до N-го» превратили бы путь
+   в простыню, по которой не видно ни частей, ни швов. */
+function routeRows(route) {
+  const out = [];
+  for (const r of route) {
+    if (r.kind !== "run") { out.push(r); continue; }
+    const прошлый = out[out.length - 1];
+    if (прошлый && прошлый.kind === "run" && прошлый.край === r.край) {
+      прошлый.готово += r.done ? 1 : 0;
+      прошлый.done = прошлый.done && r.done;
+      if (!r.done && !прошлый.сейчасДо) прошлый.сейчасДо = r.u.to;
+      continue;
+    }
+    out.push({ ...r, шагов: r.n || 1, готово: r.done ? 1 : 0,
+               сейчасДо: r.done ? 0 : r.u.to,
+               u: runUnit(r.u.from, r.край) });
+  }
   return out;
 }
 
@@ -7582,7 +7654,7 @@ function pracListHTML() {
       <button class="th-link" data-prac="listClose" type="button">закрыть</button>
     </div>
     ${(() => {
-      const route = pracRoute();
+      const route = routeRows(pracRoute());
       const сейчас = route.findIndex((r) => !r.done);
       return `
         <div class="rt-head">Путь по пьесе · пройдено ${route.filter((r) => r.done).length} из ${route.length}</div>
@@ -7591,6 +7663,8 @@ function pracListHTML() {
           const хвост = r.kind === "step" && r.окна.length > 1
             ? (тут && r.сейчас ? "сейчас " + r.сейчас.from + "–" + r.сейчас.to
                : r.готово + " из " + r.окна.length)
+            : r.kind === "run" && r.шагов > 1
+            ? (тут && r.сейчасДо ? "сейчас до " + r.сейчасДо + "-го" : r.готово + " из " + r.шагов)
             : "";
           return `
           <div class="rt-row${r.done ? " done" : ""}${тут ? " now" : ""}">
@@ -7648,7 +7722,8 @@ function pracQueue() {
       const base = { from: u.from, to: u.to, size: u.size, hand: h };
       if (w.refresh) { q.push({ ...base, review: true, k: pracKey(u, h) }); continue; }
       if (pracIsDone(u, h)) continue;                  // сыграно — и читать нечего
-      if (!pracReadDone(u, h)) q.push({ ...base, phase: "read" });
+      // прогон не читают: эти такты уже разобраны, его именно играют подряд
+      if (!u.run && !pracReadDone(u, h)) q.push({ ...base, phase: "read" });
       q.push({ ...base, phase: "play" });
     }
   return q;
@@ -9405,7 +9480,7 @@ function pracRender() {
         ${w.run ? `
           <div class="pr-big sm">такты ${w.run.from}–${w.run.to}</div>
           <p class="pr-hand">прогон от начала</p>
-          <p class="pr-tail">всё до этого места уже разобрано — играем подряд</p>`
+          <p class="pr-tail">играем подряд с первого такта — каждый заход длиннее на один</p>`
           : w.seam ? `
           <div class="pr-big sm">такты ${w.seam.from}–${w.seam.to}</div>
           <p class="pr-hand">шов · части ${w.a.i + 1} и ${w.b.i + 1}</p>
@@ -10146,8 +10221,9 @@ function bindPractice() {
         let про;
         if (w2.run) про = { title: "Прогон от первого такта",
           note: "Куски по отдельности можно знать назубок и всё равно спотыкаться, когда играешь целиком: "
-              + "память на связки нарабатывается только так. Отсюда и рубежи — они стоят на концах разделов, "
-              + "чтобы каждый раз собиралось что-то законченное." };
+              + "память на связки нарабатывается только так. Поэтому прогон растёт по такту: сыграл подряд "
+              + "до этого места — добавляешь один новый и играешь снова с начала. Так к рубежу приходишь "
+              + "не с чистого листа, а с уже сыгранным разбегом." };
         else if (w2.seam) про = { title: "Стык двух частей",
           note: "Обе части уже звучат порознь, но шов между ними всегда самое слабое место: пальцы знают "
               + "начало и конец, а переход между ними — нет. Поэтому его играют отдельно, конец одной "
