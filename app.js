@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 208";
+const APP_VERSION = "Кэйко 209";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -500,14 +500,6 @@ function bookProgress() {
   }
   return Math.min(page, b.pages);
 }
-/* Комментарии к книге. Лежат в каталоге материала: {ch, line, t, x} —
-   номер главы, строка (необязательно), заголовок и текст. Показываем те,
-   что относятся к главе, в которой ты сейчас: читаешь песнь V — видишь
-   комментарии к песни V, остальные не мешают. */
-function bookNotes(b) {
-  const c = catOf((b || book()).id);
-  return (c && Array.isArray(c.notes)) ? c.notes : [];
-}
 
 // в какой главе страница — по порядковому номеру, а не по названию
 function chapterIndexAt(b, page) {
@@ -536,50 +528,11 @@ const articleChapters = (b) => {
   return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
 };
 
-const bookTalks = (b) => {
-  const c = catOf((b || book()).id);
-  return (c && Array.isArray(c.talks)) ? c.talks : [];
-};
-const talkOfChapter = (b, i) => bookTalks(b).filter((t) => Number(t.ch) === i + 1);
-const talkChapters = (b) => {
-  const bk = b || book();
-  const есть = new Set(bookTalks(bk).map((t) => Number(t.ch)).filter(Boolean));
-  return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
-};
 
-const talkKey = (bk, ch, n) => bk.id + ":" + ch + ":" + n;
-const talkPick = (bk, ch, n) => (data.talks || {})[talkKey(bk, ch, n)];
-function talkChoose(bk, ch, n, opt) {
-  data.talks = data.talks || {};
-  const k = talkKey(bk, ch, n);
-  data.talks[k] = data.talks[k] === opt ? undefined : opt;   // повторный тык снимает выбор
-  if (data.talks[k] === undefined) delete data.talks[k];
-  data.talksAt = now();
-  saveData();
-  schedulePush();
-}
 
 // главы, к которым есть комментарии — по ним и ходим в шторке
-function bookNotesChapters(b) {
-  const bk = b || book();
-  const есть = new Set(bookNotes(bk).map((n) => Number(n.ch)).filter(Boolean));
-  return (bk.chapters || []).map((c, i) => ({ ...c, i, n: есть.has(i + 1) ? 1 : 0 }))
-    .filter((c) => c.n);
-}
 
-function bookNotesOfChapter(b, i) {
-  const все = bookNotes(b || book()).filter((n) => Number(n.ch) === i + 1);
-  return все.sort((a, x) => (parseInt(a.line) || 0) - (parseInt(x.line) || 0));
-}
 
-function bookNotesHere(b, page) {
-  const bk = b || book();
-  const i = chapterIndexAt(bk, page);
-  if (i < 0) return [];
-  const все = bookNotes(bk);
-  const мои = все.filter((n) => Number(n.ch) === i + 1);
-  return мои.sort((a, x) => (Number(a.line) || 0) - (Number(x.line) || 0));
-}
 
 function chapterAt(page) {
   const list = book().chapters || [];
@@ -1450,15 +1403,22 @@ function showDone(before, after, wasExisting, ctx) {
    пройдены, и предлагает следующие. */
 function pracForgetDay(pieceId, ds) {
   const st = data.practice && data.practice[pieceId];
-  if (!st || !st.done) return 0;
+  if (!st) return 0;
   let n = 0;
-  /* Не удаляем ключ, а гасим его нулём. Удалённый ключ при слиянии с гистом
-     воскресал: разбор сливается объединением, и то, чего нет у одной стороны,
-     просто берётся у другой — отличить «откатили» от «сюда ещё не доехало»
-     по пустому месту невозможно. Ноль — след отката, и он побеждает как
-     любое другое значение свежей стороны. */
-  for (const [k, v] of Object.entries(st.done))
-    if (v === ds) { st.done[k] = 0; n++; }
+  /* Заход не вырезаем, а помечаем — по той же причине, что и при отмене:
+     вырезанное воскресает при слиянии, а пометка едет как обычное значение. */
+  const гасим = (arr) => {
+    for (const r of arr || []) if (r && r.d === ds && !r.off) { r.off = 1; n++; }
+  };
+  for (const такт of Object.keys(st.reps || {})) {
+    const box = st.reps[такт];
+    if (Array.isArray(box)) гасим(box);
+    else for (const шаг of Object.keys(box || {})) гасим(box[шаг]);
+  }
+  for (const k of Object.keys(st.final || {})) гасим(st.final[k]);
+  // старый формат: ключи «размер:от-до:рука» со днём в значении
+  for (const [k, v] of Object.entries(st.done || {})) if (v === ds) { st.done[k] = 0; n++; }
+  if (n) st.at = now();
   return n;
 }
 
@@ -4816,59 +4776,6 @@ function рисуйРазговор(bk) {
   $("#tkClose2").addEventListener("click", closeSheet);
 }
 
-let notesAt = -1;      // какая песнь открыта в шторке комментариев
-
-function openBookNotesSheet(b, page) {
-  const bk = b || book();
-  const главы = bookNotesChapters(bk);
-  if (!главы.length) { toast("Комментариев пока нет"); return; }
-  /* Открываемся там, где читаешь. Ещё не начал — на первой прокомментированной
-     главе: смотреть комментарии до чтения совершенно нормально. */
-  if (notesAt < 0 || !главы.some((c) => c.i === notesAt)) {
-    const тут = chapterIndexAt(bk, page);
-    notesAt = главы.some((c) => c.i === тут) ? тут : главы[0].i;
-  }
-  рисуйКомментарии(bk);
-}
-
-function рисуйКомментарии(bk) {
-  const главы = bookNotesChapters(bk);
-  const место = главы.findIndex((c) => c.i === notesAt);
-  const глава = главы[место] || главы[0];
-  const list = bookNotesOfChapter(bk, глава.i);
-  sheetMode = "booknotes";
-  openSheet(`
-    <div class="bn-head">
-      <button class="bn-nav" data-bn="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
-      <div>
-        <h3>${esc(глава.name || "Комментарии")}</h3>
-        <p class="sub">${list.length} ${plural(list.length, "комментарий", "комментария", "комментариев")}
-          · ${место + 1} из ${главы.length}</p>
-      </div>
-      <button class="bn-nav" data-bn="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
-    </div>
-    <div class="bn-list">
-      ${list.map((n) => `
-        <div class="bn-item">
-          ${n.line ? `<span class="bn-line">строка ${esc(String(n.line))}</span>` : ""}
-          ${n.t ? `<b>${esc(n.t)}</b>` : ""}
-          <p>${esc(n.x || "")}</p>
-        </div>`).join("")}
-    </div>
-    <div class="sheet-actions">
-      <button class="btn" id="bnClose" type="button">Закрыть</button>
-    </div>`, true);
-  document.querySelectorAll("[data-bn]").forEach((el) =>
-    el.addEventListener("click", () => {
-      const шаг = el.dataset.bn === "next" ? 1 : -1;
-      const сл = главы[место + шаг];
-      if (!сл) return;
-      notesAt = сл.i;
-      рисуйКомментарии(bk);
-    }));
-  $("#bnClose").addEventListener("click", closeSheet);
-}
-
 function openFactSheet(f) {
   sheetMode = "fact";
   openSheet(`
@@ -7151,11 +7058,6 @@ const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.b
    работал. Ручной механизм не дублируется, а кормится. */
 
 const PRAC_REST_AT = 20, PRAC_STOP_AT = 60, PRAC_ASK_AGAIN = 12, PRAC_REVIEW_N = 2;
-/* Не «левая рука», а «басовый ключ». Рука — это про то, чем нажимаешь; ключ —
-   про то, что читаешь. Разбирают ноты, а не конечности, и в нотах написано
-   именно это. В данных по-прежнему left/right: переименовывать хранимое ради
-   подписи незачем, старые записи должны читаться как были. */
-const PRAC_HAND = { left: "басовый ключ", right: "скрипичный ключ", both: "оба ключа" };
 
 let prac = null;          // состояние идущего занятия
 let pracTimer = 0;
@@ -7212,16 +7114,34 @@ function mergePrac(mine, theirs) {
     /* Пройденное не выбирают, его складывают: иначе такты, закрытые на втором
        телефоне, пропадут молча. */
     out[id].done = Object.assign({}, old.done || {}, fresh.done || {});
-    /* Заходы — списки, и складывать их надо по-своему: у каждого такта берём
-       тот список, где заходов больше. Заходы дописываются только в конец, так
-       что длинный список включает короткий; выбрать «свежий целиком» значило бы
-       потерять то, что набрано на другом телефоне. */
-    for (const поле of ["reps", "final"]) {
+    /* Заходы — списки, и складывать их надо по-своему: берём тот список, где
+       заходов больше. Они дописываются только в конец, так что длинный
+       включает короткий; выбрать «свежий целиком» значило бы потерять то, что
+       набрано на другом телефоне.
+       У тактов заходы разложены по шагам (чтение, ключи, вместе) — сравниваем
+       каждый шаг отдельно, иначе один общий выбор терял бы чужую работу
+       целиком. Сшивки блоков лежат простыми списками. */
+    const гашеных = (x) => (x || []).filter((r) => r && r.off).length;
+    const длиннее = (a, b) => {
+      a = a || []; b = b || [];
+      if (a.length !== b.length) return a.length > b.length ? a : b;
+      return гашеных(b) > гашеных(a) ? b : a;      // отмена — знание более свежее
+    };
+    {
       const свод = {};
-      for (const src of [old[поле] || {}, fresh[поле] || {}])
-        for (const k of Object.keys(src))
-          if (!свод[k] || (src[k] || []).length > свод[k].length) свод[k] = src[k] || [];
-      out[id][поле] = свод;
+      for (const src of [old.reps || {}, fresh.reps || {}])
+        for (const такт of Object.keys(src)) {
+          const box = Array.isArray(src[такт]) ? { both: src[такт] } : (src[такт] || {});
+          свод[такт] = свод[такт] || {};
+          for (const шаг of Object.keys(box)) свод[такт][шаг] = длиннее(свод[такт][шаг], box[шаг]);
+        }
+      out[id].reps = свод;
+    }
+    {
+      const свод = {};
+      for (const src of [old.final || {}, fresh.final || {}])
+        for (const k of Object.keys(src)) свод[k] = длиннее(свод[k], src[k]);
+      out[id].final = свод;
     }
     out[id].session = Math.max(a.session || 0, b.session || 0);
     out[id].at = Math.max(a.at || 0, b.at || 0);
@@ -7249,7 +7169,6 @@ const LVLS = [
   { k: 2, name: "С усилием", hint: "вышло, но пришлось собраться" },
   { k: 3, name: "Сложно",    hint: "спотыкался" },
 ];
-const lvlName = (k) => (LVLS.find((x) => x.k === k) || LVLS[0]).name;
 
 function pracBlocks() {
   const bars = piece().bars || 0;
@@ -7332,7 +7251,11 @@ function barBox(b, make) {
    звучит одна рука, именно он и есть игра — сокращать ему счёт не за что.
    Подготовительные шаги короче: их дело — довести до главного. */
 const stepGoal = (b, step) => step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL);
-const repsOf = (b, step) => barBox(b)[step || barMain(b)] || [];
+/* Отменённый заход не вырезаем, а гасим пометкой: вырезанный воскресал при
+   слиянии с гистом — там из двух списков побеждает более длинный, и удаление
+   выглядело как «на этом устройстве ещё не доехало». */
+const repsRaw = (b, step) => barBox(b)[step || barMain(b)] || [];
+const repsOf = (b, step) => repsRaw(b, step).filter((r) => !r.off);
 const stepDone = (b, step) => repsOf(b, step).length >= stepGoal(b, step);
 const repCount = (b, step) => Math.min(stepGoal(b, step || barMain(b)), repsOf(b, step).length);
 // такт готов, когда закрыты все его шаги
@@ -7340,7 +7263,8 @@ const barReady = (b) => barSteps(b).every((st) => stepDone(b, st));
 // сколько заходов набрано по такту всего — по этому и идёт круг
 const barMarks = (b) => barSteps(b).reduce((n, st) => n + repsOf(b, st).length, 0);
 
-const finalOf = (bl) => repsStore().final[blockKey(bl)] || [];
+const finalRaw = (bl) => repsStore().final[blockKey(bl)] || [];
+const finalOf = (bl) => finalRaw(bl).filter((r) => !r.off);
 /* Сшивка засчитана, когда последний заход был не «сложно»: сложный повторяется
    до тех пор, пока блок не пойдёт хотя бы с усилием. */
 const finalPassed = (bl) => {
@@ -7367,7 +7291,7 @@ function repAdd(u, lvl) {
 function repDrop(u) {
   const st = repsStore();
   const arr = u.final ? st.final[blockKey(u)] : barBox(u.from)[u.step];
-  if (arr && arr.length) arr.pop();
+  if (arr) for (let i = arr.length - 1; i >= 0; i--) if (!arr[i].off) { arr[i].off = 1; break; }
   st.at = now();
 }
 
@@ -7586,8 +7510,13 @@ function plFollow(u) {
   const sp = markSpan(u);
   const метка = u.from + "-" + u.to;
   const o = plOpt(id);
-  if (!sp) return;
   if (o.followed === метка) return;
+  if (!sp) {
+    /* Дальше размеченных тактов выделение из прошлого места только мешает:
+       нажмёшь «слушать» — заиграет чужой такт. Возвращаем весь трек. */
+    if (o.followed) { delete o.a; delete o.b; o.followed = метка; pracSaveLoops(); plPaint(); }
+    return;
+  }
   o.followed = метка; o.a = sp.a; o.b = sp.b;
   pracSaveLoops();
   try { if (pracAudioEl.currentTime < sp.a || pracAudioEl.currentTime > sp.b) pracAudioEl.currentTime = sp.a; } catch {}
@@ -9909,7 +9838,10 @@ function bindPractice() {
         repDrop(un.u);
         const e = pracEntry(false);
         if (e && un.added) { e.spans.splice(-un.added, un.added); e.updatedAt = now(); }
-        prac.closed.pop();
+        /* Отменяем чтение — из списка сыгранного вынимать нечего: оно туда и
+           не попадало. Раньше отмена чтения съедала чужой заход, и итог
+           занятия оказывался меньше, чем было на самом деле. */
+        if (un.added) prac.closed.pop();
         prac.undo = null;
         saveData();
         schedulePush();
