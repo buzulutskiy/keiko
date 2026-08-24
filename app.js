@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 200";
+const APP_VERSION = "Кэйко 201";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -7468,6 +7468,14 @@ function pracStepName(size, part) {
 
 const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 });
 
+/* Шов и прогон делали одну и ту же работу дважды. Шов двух соседних частей —
+   это те же такты подряд, что и прогон от начала: части 1–4 и 5–8 дают шов
+   1–8, и лестница прогона приходит ровно туда же. Поэтому там, где до этого
+   места дотягивается прогон, отдельный шов не нужен — он просто повторял
+   занятие. Если рубежей у пьесы нет, швы остаются: сращивать части иначе
+   негде. */
+const seamCovered = (seam, runs) => (runs || []).some((край) => край >= seam.to);
+
 /* Шов сращивается сразу, как только готовы обе соседние части, а не в конце
    пьесы. Иначе выходило бы странно: первая часть звучит, вторая звучит,
    а вместе они впервые встречаются только когда выучено всё. */
@@ -7512,7 +7520,8 @@ function pracWhere() {
     }
     if (i > 0 && pracPartDone(parts[i - 1]) && pracPartDone(p)) {
       const seam = seamUnit(parts[i - 1], p);
-      if (!pracUnitDone(seam)) return { parts, seam, a: parts[i - 1], b: p };
+      if (!seamCovered(seam, runs) && !pracUnitDone(seam))
+        return { parts, seam, a: parts[i - 1], b: p };
     }
   }
   /* Последний рубеж лежит на конце пьесы: за ним частей уже нет, и в цикле
@@ -7587,7 +7596,8 @@ function pracRoute() {
     }
     if (i > 0) {
       const seam = seamUnit(parts[i - 1], p);
-      out.push({ kind: "seam", a: parts[i - 1], b: p, u: seam, done: pracUnitDone(seam) });
+      if (!seamCovered(seam, runs))
+        out.push({ kind: "seam", a: parts[i - 1], b: p, u: seam, done: pracUnitDone(seam) });
     }
   }
   // рубеж на самом конце пьесы в цикл не попадает: за ним частей уже нет
