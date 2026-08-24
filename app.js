@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 195";
+const APP_VERSION = "Кэйко 196";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3984,9 +3984,13 @@ function prevSlice(r) {
    ни красного, ни зелёного тут не нужно, меньше прошлой недели не провинность. */
 function chipHTML(val, prev, word) {
   const d = (val || 0) - (prev || 0);
-  const tail = !d ? "" : d > 0
-    ? `<i class="up">↑ ${d}</i>`
-    : `<i class="down">↓ ${-d}</i>`;
+  /* Ровно столько же — это тоже результат сравнения, и молчать о нём нельзя:
+     пустое место читается как «тренд не работает», а не как «без изменений».
+     Отдельно отмечаем случай, когда сравнивать ещё не с чем. */
+  const tail = d > 0 ? `<i class="up">↑ ${d}</i>`
+    : d < 0 ? `<i class="down">↓ ${-d}</i>`
+    : (prev || 0) ? `<i class="same">= столько же</i>`
+    : `<i class="same">впервые</i>`;
   return `<div class="sc"><b>${val || 0}</b><span>${esc(word)}</span>${tail}</div>`;
 }
 
@@ -4047,9 +4051,12 @@ function summaryHTML() {
         /* Нулевые плашки не показываются вовсе: у Дианы нет ни тактов, ни
            уроков — ей достаточно страниц, а нули только занимали строку. */
         const chips = [
-          st.bars ? chipHTML(st.bars, was.bars, plural(st.bars, "такт", "такта", "тактов")) : "",
-          st.pages ? chipHTML(st.pages, was.pages, "страниц") : "",
-          st.lessons ? chipHTML(st.lessons, was.lessons, plural(st.lessons, "урок", "урока", "уроков")) : "",
+          /* Показатель остаётся на месте, если он был в прошлом периоде: иначе
+             в понедельник неделя выглядела пустой, будто раздел сломался, —
+             а падение до нуля само по себе новость и должно быть видно. */
+          (st.bars || was.bars) ? chipHTML(st.bars, was.bars, plural(st.bars || was.bars, "такт", "такта", "тактов")) : "",
+          (st.pages || was.pages) ? chipHTML(st.pages, was.pages, "страниц") : "",
+          (st.lessons || was.lessons) ? chipHTML(st.lessons, was.lessons, plural(st.lessons || was.lessons, "урок", "урока", "уроков")) : "",
         ].filter(Boolean).join("");
         return chips ? `<div class="sum-chips">${chips}</div>` : "";
       })()}
