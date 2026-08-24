@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 213";
+const APP_VERSION = "Кэйко 214";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11043,20 +11043,47 @@ const artsPulling = new Set();
 /* Разбор материала — отдельный файл в каталожном гисте. Тянем его по требованию:
    открыл раздел разборов — спросили. Пришло — кладём на устройство и говорим
    вызвавшему, что содержимое обновилось. */
+/* Прямая ссылка на файл гиста, без ревизии в адресе: всегда отдаёт свежее.
+   Это один запрос вместо описи всего гиста — и он проходит там, где тяжёлая
+   опись срывается по таймауту. */
+const artsURL = (id) => (cfg.catalogOwner && cfg.catalogId)
+  ? `https://gist.githubusercontent.com/${encodeURIComponent(cfg.catalogOwner)}/${cfg.catalogId}/raw/${CAT_ARTS_FILE(id)}`
+  : "";
+
+let artsWhy = "";        // почему не приехало — показываем по кнопке в настройках
+
 async function pullArts(id) {
-  if (!id || !cfg.token || !cfg.catalogId || artsPulling.has(id)) return false;
+  if (!id || artsPulling.has(id)) return false;
   artsPulling.add(id);
-  try {
-    const files = await catalogFiles(false);
-    const txt = await catText(files, CAT_ARTS_FILE(id), 30000);
-    if (!txt) return false;
+  artsWhy = "";
+  const принять = (txt) => {
     const pack = JSON.parse(txt);
-    if (!pack || typeof pack !== "object") return false;
+    if (!pack || typeof pack !== "object") throw new Error("файл разбора не разобрался");
     const было = JSON.stringify(ARTS[id] || null);
     ARTS[id] = pack;
     try { localStorage.setItem(LS_ART(id), JSON.stringify(pack)); } catch {}
     return было !== JSON.stringify(pack);
-  } catch { return false; } finally { artsPulling.delete(id); }
+  };
+  try {
+    const url = artsURL(id);
+    if (url) {
+      try {
+        const r = await withTimeout(fetch(url, { cache: "no-store" }), 30000);
+        if (r.ok) return принять(await r.text());
+        if (r.status === 404) { artsWhy = "разбора для этого материала в гисте нет"; return false; }
+        artsWhy = "гист ответил " + r.status;
+      } catch (e) { artsWhy = e.message || "нет связи"; }
+    }
+    // прямой ссылки нет или не сработала — идём длинным путём, через опись
+    if (!cfg.token || !cfg.catalogId) { artsWhy = artsWhy || "гист не подключён"; return false; }
+    const files = await catalogFiles(false);
+    const txt = await catText(files, CAT_ARTS_FILE(id), 30000);
+    if (!txt) { artsWhy = artsWhy || "файла разбора нет в описи гиста"; return false; }
+    return принять(txt);
+  } catch (e) {
+    artsWhy = e.message || "не получилось";
+    return false;
+  } finally { artsPulling.delete(id); }
 }
 const artPulling = new Set();
 
@@ -11163,7 +11190,13 @@ async function catalogFetch(force) {
   const r = await gh("/gists/" + id, cond, 45000);
   if (r.status === 304) return catFiles;
   if (!r.ok) return catFiles;                       // связи нет — работаем тем, что было
-  const files = (await r.json()).files || {};
+  const пакет = await r.json();
+  const files = пакет.files || {};
+  /* Имя владельца нужно, чтобы читать файлы прямой ссылкой, без описи: опись
+     весит мегабайт и на мобильной сети рвётся, а один файл — сотни килобайт. */
+  if (пакет.owner && пакет.owner.login && cfg.catalogOwner !== пакет.owner.login) {
+    cfg.catalogOwner = пакет.owner.login; saveCfg();
+  }
   if (!files[CAT_FILE]) {
     // адрес указывает не туда — забываем его и ищем каталог заново
     cfg.catalogId = ""; saveCfg();
@@ -11815,8 +11848,23 @@ function catalogUI() {
     <div class="freeze">
       <div class="fz-head">📚 <b>Каталог</b> — награды, карточки знаний и обложки могут жить в гисте, а не в коде приложения</div>
       <div class="fz-empty">В каталоге: ${inCat.length ? esc(inCat.join(", ")) : "пусто"} · сверка ${esc(when)}</div>
+      ${(() => {
+        /* Разборы лежат отдельными файлами и грузятся по требованию — видно,
+           что уже на телефоне, а что нет. Без этого «почему нет вкладки
+           вопросов» приходится выяснять на ощупь. */
+        const строки = Object.keys(CATALOG).filter((id) => CATALOG[id] && CATALOG[id].arts).map((id) => {
+          const a = artsOf(id);
+          return a
+            ? `${id}: разборов ${(a.article || []).length}, вопросов ${(a.faq || []).length}`
+            : `${id}: не загружен`;
+        });
+        return строки.length
+          ? `<div class="fz-empty">Разборы — ${esc(строки.join(" · "))}${artsWhy ? " · " + esc(artsWhy) : ""}</div>`
+          : "";
+      })()}
       <div class="fz-form2">
         <button class="btn" id="catPull" type="button">Обновить из гиста</button>
+        <button class="btn" id="catArts" type="button">Загрузить разборы</button>
         <button class="btn" id="catDrop" type="button">Забыть каталог</button>
       </div>
       <div class="fz-head" style="margin-top:10px">Первое наполнение — файлом с компьютера</div>
@@ -11835,6 +11883,17 @@ function bindCatalogUI() {
       toast(n ? `Загружено материалов: ${n}` : "Каталог пуст");
       render();
     } catch (e) { toast(e.message || "Не получилось"); }
+  });
+
+  const arts = $("#catArts");
+  if (arts) arts.addEventListener("click", async () => {
+    const ids = Object.keys(CATALOG).filter((id) => CATALOG[id] && CATALOG[id].arts);
+    if (!ids.length) { toast("В каталоге нет материалов с разбором"); return; }
+    toast("Тяну разборы…");
+    let ok = 0;
+    for (const id of ids) if (await pullArts(id)) ok++;
+    render();
+    toast(ok ? `Загружено разборов: ${ok}` : (artsWhy || "Ничего нового"));
   });
 
   const drop = $("#catDrop");
