@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 202";
+const APP_VERSION = "Кэйко 203";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -755,20 +755,21 @@ function watchStats() {
 
 const curStats = () => isBook() ? bookStats() : isWatch() ? watchStats() : isCourse() ? pastelStats() : pianoStats();
 // на экране — процент выученности; для пианино он строже, чем «такт задет»
-/* Процент у пьесы — доля пройденного пути, а не доля тронутых тактов.
-   Раньше он считался по проходам: дошёл до восьмого такта — и цифра встала,
-   сколько ни играй заново, потому что эти такты уже были засчитаны. А главное,
-   начни кто-нибудь с сорокового — и почти сто процентов сразу. Путь честнее:
-   в нём и разбор по одному такту, и стыки, и прогоны с начала, и сборка. */
+/* Процент у пьесы — доля набранных заходов, а не доля тронутых тактов.
+   Каждый такт должен набрать по десять, каждый блок — ещё и сшивку; из этого
+   и складывается целое. Начни кто-нибудь с сорокового такта — процент честно
+   покажет, что сделана одна сороковая, а не «почти всё». */
 let pctRouteCache = { key: "", val: 0 };
 function pctRoute() {
-  const st = pracStore();
-  const ck = piece().id + "|" + Object.keys(st.done || {}).length + "|" + ((pracDoc() || {}).parts || []).length;
+  const st = repsStore();
+  const ck = piece().id + "|" + (st.at || 0) + "|" + (piece().bars || 0);
   if (pctRouteCache.key === ck) return pctRouteCache.val;
-  const route = pracRoute();
-  const вес = (r) => r.kind === "run" ? 1 / (r.n || 1) : 1;
-  const всего = route.reduce((a, r) => a + вес(r), 0);
-  const сделано = route.reduce((a, r) => a + (r.done ? вес(r) : 0), 0);
+  let всего = 0, сделано = 0;
+  for (const bl of pracBlocks()) {
+    for (let b = bl.from; b <= bl.to; b++) { всего += REP_GOAL; сделано += repCount(b); }
+    всего += REP_GOAL;                                  // сшивка блока весит как такт
+    сделано += finalPassed(bl) ? REP_GOAL : 0;
+  }
   const val = всего ? сделано / всего * 100 : 0;
   pctRouteCache = { key: ck, val };
   return val;
@@ -3695,11 +3696,13 @@ function paceForecast() {
     marks.push(0);
     for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
   } else {
-    /* Такт не выучивается с одного касания: к нему возвращаются. Поэтому цель —
-       не «задеть все такты», а пройти каждый FIRM_AT раз. Иначе срок выходил
-       втрое оптимистичнее правды. */
+    /* Такт не выучивается с одного касания: к нему возвращаются. Цель — набрать
+       на каждом такте REP_GOAL заходов, и срок считается по ним же, иначе он
+       выходит втрое оптимистичнее правды. Один заход двумя руками пишет два
+       отрезка, поэтому берём не сумму рук, а большее из двух: это и есть число
+       заходов по такту. */
     const bars = piece().bars;
-    total = bars * 2 * FIRM_AT;             // каждая рука отдельно, каждая — по FIRM_AT проходов
+    total = bars * REP_GOAL;
     unit = "bar";
     const r = new Array(bars + 1).fill(0), l = new Array(bars + 1).fill(0);
     marks.push(0);
@@ -3709,7 +3712,7 @@ function paceForecast() {
         for (let i = Math.max(1, sp.from); i <= Math.min(bars, sp.to); i++) arr[i]++;
       }
       let n = 0;
-      for (let i = 1; i <= bars; i++) n += Math.min(r[i], FIRM_AT) + Math.min(l[i], FIRM_AT);
+      for (let i = 1; i <= bars; i++) n += Math.min(Math.max(r[i], l[i]), REP_GOAL);
       marks.push(n);
     }
   }
@@ -7139,41 +7142,7 @@ let pracTimer = 0;
 
 const pracDoc = () => PRACTICE_DATA[piece().id] || null;
 
-/* Части: из разбора, а если его нет — механически по четыре такта. */
-function pracParts() {
-  const doc = pracDoc();
-  const bars = piece().bars;
-  if (doc && doc.parts && doc.parts.length) {
-    /* Разбор мог делаться по другому изданию: подрезаем под то число тактов,
-       которое стоит у пьесы, а хвост дописываем к последней части. */
-    const out = [];
-    for (const p of doc.parts) {
-      if (p.from > bars) break;
-      // note — объяснение части своими словами; собирали часть заново и теряли его
-      out.push({ i: out.length, from: p.from, to: Math.min(p.to, bars),
-                 why: p.why || "", note: p.note || "" });
-    }
-    if (out.length && out[out.length - 1].to < bars) out[out.length - 1].to = bars;
-    if (out.length) return out;
-  }
-  const out = [];
-  for (let f = 1; f <= bars; f += 4)
-    out.push({ i: out.length, from: f, to: Math.min(bars, f + 3), why: "" });
-  return out;
-}
 
-function pracAssembly(parts) {
-  let cur = parts.map((p) => ({ from: p.from, to: p.to }));
-  const out = [];
-  while (cur.length > 1) {
-    const next = [];
-    for (let i = 0; i < cur.length; i += 2)
-      next.push(cur[i + 1] ? { from: cur[i].from, to: cur[i + 1].to } : cur[i]);
-    out.push(next);
-    cur = next;
-  }
-  return out;
-}
 
 const pracStore = () => {
   data.practice = data.practice || {};
@@ -7223,6 +7192,17 @@ function mergePrac(mine, theirs) {
     /* Пройденное не выбирают, его складывают: иначе такты, закрытые на втором
        телефоне, пропадут молча. */
     out[id].done = Object.assign({}, old.done || {}, fresh.done || {});
+    /* Заходы — списки, и складывать их надо по-своему: у каждого такта берём
+       тот список, где заходов больше. Заходы дописываются только в конец, так
+       что длинный список включает короткий; выбрать «свежий целиком» значило бы
+       потерять то, что набрано на другом телефоне. */
+    for (const поле of ["reps", "final"]) {
+      const свод = {};
+      for (const src of [old[поле] || {}, fresh[поле] || {}])
+        for (const k of Object.keys(src))
+          if (!свод[k] || (src[k] || []).length > свод[k].length) свод[k] = src[k] || [];
+      out[id][поле] = свод;
+    }
     out[id].session = Math.max(a.session || 0, b.session || 0);
     out[id].at = Math.max(a.at || 0, b.at || 0);
     /* Источник видео всегда один: если свежая запись его сменила, прежние
@@ -7233,156 +7213,90 @@ function mergePrac(mine, theirs) {
   return out;
 }
 
-/* Хвост «:read» дописывается только чтению. У игры ключ прежний, слово в слово,
-   поэтому весь разобранный раньше материал остаётся разобранным. */
-const pracKey = (u, hand, phase) =>
-  u.size + ":" + u.from + "-" + u.to + ":" + hand
-  + (u.run ? ":run" : "") + (phase === "read" ? ":read" : "");
-/* Последнее окно сдвигается назад, а не обрезается. Часть из пяти тактов
-   на этапе «по 4 такта» давала окна 1–4 и 5–5 — одинокий такт противоречил
-   названию этапа. Теперь это 1–4 и 2–5: окно всегда той длины, что обещано,
-   и каждый такт хоть раз оказывается внутри полного отрезка. */
-const pracUnits = (from, to, size) => {
-  const len = to - from + 1;
-  if (size >= len) return [{ from, to, size: len }];
+/* ── Круги и заходы ──
+   Пьеса режется на блоки не длиннее четырёх тактов. Внутри блока такты идут
+   по кругу: сыграл первый — отметил, второй — отметил, и так до конца блока,
+   потом сначала. Каждому такту нужно набрать десять заходов; когда набрали
+   все, блок сшивается целиком.
+
+   Отметка не одна: «легко», «с усилием», «сложно». Это не оценка себе, а
+   способ увидеть, где именно тяжело, — и условие для сшивки: пока блок
+   целиком идёт «сложно», он повторяется. */
+const REP_GOAL = 10;                 // сколько заходов набирает каждый такт
+const BLOCK_MAX = 4;                 // максимум тактов в блоке
+const LVLS = [
+  { k: 1, name: "Легко",     hint: "пальцы сами" },
+  { k: 2, name: "С усилием", hint: "вышло, но пришлось собраться" },
+  { k: 3, name: "Сложно",    hint: "спотыкался" },
+];
+const lvlName = (k) => (LVLS.find((x) => x.k === k) || LVLS[0]).name;
+
+function pracBlocks() {
+  const bars = piece().bars || 0;
   const out = [];
-  for (let f = from; f <= to; f += size) {
-    let a = f, b = f + size - 1;
-    if (b > to) { b = to; a = to - size + 1; }
-    if (out.length && out[out.length - 1].from === a) break;
-    out.push({ from: a, to: b, size });
-    if (b === to) break;
-  }
+  for (let f = 1; f <= bars; f += BLOCK_MAX)
+    out.push({ i: out.length, from: f, to: Math.min(bars, f + BLOCK_MAX - 1) });
   return out;
-};
-const pracSteps = (p) => {
-  const len = p.to - p.from + 1;
-  return [1, 2, 4, len].filter((x, i, a) => x <= len && a.indexOf(x) === i);
+}
+const blockKey = (bl) => bl.from + "-" + bl.to;
+/* Название блока берём из разбора, если его границы совпали с частью: там оно
+   написано словами музыканта — «период I, фраза 2». */
+const blockWhy = (bl) => {
+  const p = (pracDoc() && pracDoc().parts || []).find((x) => x.from === bl.from && x.to === bl.to);
+  return p ? { why: p.why || "", note: p.note || "" } : { why: "", note: "" };
 };
 
-/* Какие руки звучат на отрезке. В начале прелюдии левая молчит три такта —
-   предлагать её разбор было бы бессмыслицей; а если звучит одна рука,
-   то и соединять нечего. */
+const repsStore = () => {
+  const st = pracStore();
+  st.reps = st.reps || {};      // такт → список заходов
+  st.final = st.final || {};    // блок → список сшивок
+  return st;
+};
+const repsOf = (b) => repsStore().reps[b] || [];
+const repCount = (b) => Math.min(REP_GOAL, repsOf(b).length);
+const barReady = (b) => repsOf(b).length >= REP_GOAL;
+const finalOf = (bl) => repsStore().final[blockKey(bl)] || [];
+/* Сшивка засчитана, когда последний заход был не «сложно»: сложный повторяется
+   до тех пор, пока блок не пойдёт хотя бы с усилием. */
+const finalPassed = (bl) => {
+  const list = finalOf(bl);
+  return list.length > 0 && (list[list.length - 1].lvl || 3) <= 2;
+};
+function blockReady(bl) {
+  for (let b = bl.from; b <= bl.to; b++) if (!barReady(b)) return false;
+  return true;
+}
+const blockDone = (bl) => blockReady(bl) && finalPassed(bl);
+
+function repAdd(u, lvl) {
+  const st = repsStore();
+  const rec = { lvl, d: todayStr(), at: now() };
+  if (u.final) (st.final[blockKey(u)] = st.final[blockKey(u)] || []).push(rec);
+  else (st.reps[u.from] = st.reps[u.from] || []).push(rec);
+  st.at = now();
+  return rec;
+}
+function repDrop(u) {
+  const st = repsStore();
+  const arr = u.final ? st.final[blockKey(u)] : st.reps[u.from];
+  if (arr && arr.length) arr.pop();
+  st.at = now();
+}
+
+/* Какие руки звучат на такте. В начале прелюдии левая молчит три такта —
+   писать под ними «оба ключа» было бы неправдой. */
 function pracHands(u) {
   const doc = pracDoc();
-  if (!doc || !doc.hints) return u.size >= 4 ? ["both"] : ["left", "right", "both"];
+  if (!doc || !doc.hints) return "both";
   let r = false, l = false;
   for (let b = u.from; b <= u.to; b++) {
     const h = doc.hints[b];
-    if (!h) { r = l = true; break; }
+    if (!h) return "both";
     if (h.r) r = true;
     if (h.l) l = true;
   }
-  if (r && !l) return ["right"];
-  if (l && !r) return ["left"];
-  if (!r && !l) return [];
-  /* Прогон играется сразу двумя руками, какой бы он ни был короткий: смысл
-     его в том, чтобы пройти место подряд, а порознь оно уже разобрано. */
-  return (u.run || u.size >= 4) ? ["both"] : ["left", "right", "both"];
+  return r && l ? "both" : r ? "right" : l ? "left" : "both";
 }
-
-/* Покрытие: какие такты уже сыграны этой рукой окнами не меньше заданного
-   размера. Ключ отметки хранит границы окна, поэтому при смене разбора
-   прежние ключи перестают совпадать с новыми — «по два такта» было нарезано
-   как 2–3 и 4–5, а стало 3–4 и 5–6. Сама работа при этом никуда не делась.
-   Чтение (:read) сюда не идёт: прочитанное не заменяет сыгранного. */
-let pracCovCache = { key: "", map: null };
-function pracCoverage(h, minSize) {
-  const done = pracStore().done;
-  const ck = piece().id + "|" + Object.keys(done).length;
-  if (pracCovCache.key !== ck) pracCovCache = { key: ck, map: new Map() };
-  const mk = h + "|" + minSize;
-  if (pracCovCache.map.has(mk)) return pracCovCache.map.get(mk);
-  const set = new Set();
-  for (const key of Object.keys(done)) {
-    const m = /^(\d+):(\d+)-(\d+):([a-z]+)$/.exec(key);
-    if (!m || m[4] !== h || Number(m[1]) < minSize) continue;
-    for (let b = Number(m[2]); b <= Number(m[3]); b++) set.add(b);
-  }
-  pracCovCache.map.set(mk, set);
-  return set;
-}
-
-/* Звучит ли рука на этом такте. В начале прелюдии левая молчит три такта, и
-   окно «3–4» захватывает границу молчания: требовать на третьем такте левую
-   бессмысленно — там для неё нот нет. Без этой проверки такой этап нельзя
-   было пройти никаким способом. */
-function barHasHand(b, h) {
-  const doc = pracDoc();
-  const x = doc && doc.hints && doc.hints[b];
-  if (!x) return true;                       // разбора нет — считаем, что звучит
-  // «обе руки» имеют смысл только там, где обе и играют
-  return h === "left" ? !!x.l : h === "right" ? !!x.r : (!!x.l && !!x.r);
-}
-
-/* ── Лестница прогона ──
-   Раньше рубеж давал один заход «с первого по восьмой», и это оказалось слишком
-   резко: к восьмому такту первые уже забылись, играть подряд не получалось.
-   Теперь прогон растёт по одному такту: 1–2, 1–3, … и так до рубежа. Каждый
-   следующий заход добавляет ровно один новый такт к тому, что только что
-   сыграно целиком. Следующий рубеж продолжает с того места, где кончился
-   предыдущий: до восьмого уже играно подряд, дальше 1–9, 1–10 и так далее. */
-function runSteps(край, runs, first) {
-  const prev = (runs || []).filter((x) => x < край).reduce((a, x) => Math.max(a, x), first);
-  const out = [];
-  for (let t = Math.max(first + 1, prev + 1); t <= край; t++) out.push(t);
-  return out.length ? out : [край];
-}
-const runUnit = (first, to) => ({ from: first, to, size: to - first + 1, run: true });
-
-/* Прогоны, сыгранные целиком: 1–8 закрывает и 1–5, и 1–7 — они внутри него,
-   и сыграны они были подряд. Нужно, чтобы уже пройденное не открывалось заново
-   при появлении лестницы. */
-let runCovCache = { key: "", map: null };
-function runReach(h) {
-  const done = pracStore().done;
-  const ck = piece().id + "|" + Object.keys(done).length + "|" + (pracStore().at || 0);
-  if (runCovCache.key !== ck) runCovCache = { key: ck, map: new Map() };
-  if (runCovCache.map.has(h)) return runCovCache.map.get(h);
-  const reach = new Map();                       // начало прогона → докуда доиграно
-  for (const key of Object.keys(done)) {
-    const m = /^(\d+):(\d+)-(\d+):([a-z]+):run$/.exec(key);
-    if (!m || m[4] !== h) continue;
-    const from = Number(m[2]), to = Number(m[3]);
-    reach.set(from, Math.max(reach.get(from) || 0, to));
-  }
-  runCovCache.map.set(h, reach);
-  return reach;
-}
-
-const pracIsDone = (u, h) => {
-  if (pracStore().done[pracKey(u, h)]) return true;
-  /* Прогон засчитывается только прогоном. Он покрывает те же такты, что уже
-     разобраны по кускам, и без этой оговорки закрывался бы автоматически —
-     а смысл его именно в том, чтобы сыграть всё подряд. Зато более длинный
-     прогон от того же такта засчитывается: он включает этот целиком. */
-  if (u.run) return (runReach(h).get(u.from) || 0) >= u.to;
-  // окно с другими границами, но той же длины — работа та же
-  const cov = pracCoverage(h, u.size);
-  for (let b = u.from; b <= u.to; b++)
-    if (barHasHand(b, h) && !cov.has(b)) return false;
-  return true;
-};
-
-/* Вся лестница части по порядку — каждая ступень, каждый ключ, чтение и
-   игра. Нужна одному делу: отматывать назад. Очередь смотрит вперёд и
-   пройденное пропускает, а «шаг назад» должен уметь вернуться и в него. */
-function pracLadder(part) {
-  const out = [];
-  for (const size of pracSteps(part))
-    for (const u of pracUnits(part.from, part.to, size))
-      for (const h of pracHands(u)) {
-        out.push({ u: { ...u }, hand: h, phase: "read" });
-        out.push({ u: { ...u }, hand: h, phase: "play" });
-      }
-  return out;
-}
-const pracReadDone = (u, h) => !!pracStore().done[pracKey(u, h, "read")];
-const pracUnitDone = (u) => pracHands(u).every((h) => pracIsDone(u, h));
-const pracStepDone = (p, size) => pracUnits(p.from, p.to, size).every(pracUnitDone);
-const pracPartDone = (p) => pracSteps(p).every((size) => pracStepDone(p, size));
-const pracAsUnit = (sp) => ({ from: sp.from, to: sp.to, size: sp.to - sp.from + 1 });
-
 
 /* ══════════ Музыкальные термины ══════════
    Названия частей взяты из разбора и написаны языком музыкантов: каденция,
@@ -7458,96 +7372,41 @@ function openTermsSheet(list, про) {
   $("#termClose").addEventListener("click", closeSheet);
 }
 
-/* Имя этапа словами. Кружки «1 · 2 · 4 · всё» читались как шифр: цифры
-   не говорят, что от тебя хотят и почему именно так. */
-function pracStepName(size, part) {
-  if (part && size === part.to - part.from + 1) return "Часть целиком";
-  if (size === 1) return "Каждый такт по отдельности";
-  return "По " + size + " " + plural(size, "такту", "такта", "тактов") + " подряд";
+
+/* ── Где мы сейчас ──
+   Идём по блокам подряд. Внутри блока выбирается такт с наименьшим числом
+   заходов, при равенстве — самый левый: получается ровный круг 1, 2, 3, 4,
+   снова 1. Когда у всех тактов блока набрано по десять — сшивка блока
+   целиком, и только после неё следующий блок. */
+function pracWhere() {
+  const blocks = pracBlocks();
+  for (const bl of blocks) {
+    if (!blockReady(bl)) {
+      let bar = bl.from, best = Infinity;
+      for (let b = bl.from; b <= bl.to; b++) {
+        const n = repsOf(b).length;
+        if (n >= REP_GOAL) continue;
+        if (n < best) { best = n; bar = b; }
+      }
+      return { blocks, bl, bar, round: (best === Infinity ? 0 : best) + 1 };
+    }
+    if (!finalPassed(bl)) return { blocks, bl, final: true, tries: finalOf(bl).length };
+  }
+  return { blocks, finished: true };
 }
 
-const seamUnit = (a, b) => ({ from: a.from, to: b.to, size: b.to - a.from + 1 });
-
-/* Шов и прогон делали одну и ту же работу дважды. Шов двух соседних частей —
-   это те же такты подряд, что и прогон от начала: части 1–4 и 5–8 дают шов
-   1–8, и лестница прогона приходит ровно туда же. Поэтому там, где до этого
-   места дотягивается прогон, отдельный шов не нужен — он просто повторял
-   занятие. Если рубежей у пьесы нет, швы остаются: сращивать части иначе
-   негде. */
-const seamCovered = (seam, runs) => (runs || []).some((край) => край >= seam.to);
-
-/* Шов сращивается сразу, как только готовы обе соседние части, а не в конце
-   пьесы. Иначе выходило бы странно: первая часть звучит, вторая звучит,
-   а вместе они впервые встречаются только когда выучено всё. */
-function pracWhere() {
-  const parts = pracParts();
-
-  /* Где встали в прошлый раз. Пока эта часть не доведена — продолжаем её,
-     а не отматываем к первой недоделанной по порядку. */
-  if (prac && prac.pick == null) {
-    const last = pracStore().lastPart;
-    if (last != null && parts[last] && !pracPartDone(parts[last])) prac.pick = last;
-  }
-
-  /* Выбранная руками часть идёт вперёд очереди: иногда нужно вернуться
-     к старому куску, не дожидаясь, пока до него дойдёт порядок. */
-  if (prac && prac.pick != null && parts[prac.pick]) {
-    const p = parts[prac.pick];
-    for (const size of pracSteps(p))
-      if (!pracStepDone(p, size)) return { parts, part: p, size, picked: true };
-    const whole = { from: p.from, to: p.to, size: p.to - p.from + 1 };
-    return { parts, part: p, size: whole.size, picked: true, refresh: true };
-  }
-
-  const runs = (pracDoc() || {}).runs || [];
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    /* Дошли до рубежа — сначала прогон от первого такта, потом дальше. Если
-       проверять рубежи после всего цикла, прогон «с начала до восьмого»
-       предлагался бы только когда вся пьеса разобрана, то есть никогда
-       вовремя. */
-    for (const край of runs) {
-      if (p.from !== край + 1) continue;
-      const доКрая = parts.filter((x) => x.to <= край);
-      if (!доКрая.length || !доКрая.every(pracPartDone)) continue;
-      for (const to of runSteps(край, runs, parts[0].from)) {
-        const u = runUnit(parts[0].from, to);
-        if (!pracUnitDone(u)) return { parts, run: u };
-      }
-    }
-    if (!pracPartDone(p)) {
-      for (const size of pracSteps(p)) if (!pracStepDone(p, size)) return { parts, part: p, size };
-    }
-    if (i > 0 && pracPartDone(parts[i - 1]) && pracPartDone(p)) {
-      const seam = seamUnit(parts[i - 1], p);
-      if (!seamCovered(seam, runs) && !pracUnitDone(seam))
-        return { parts, seam, a: parts[i - 1], b: p };
-    }
-  }
-  /* Последний рубеж лежит на конце пьесы: за ним частей уже нет, и в цикле
-     он не встретится. */
-  for (const край of runs) {
-    const доКрая = parts.filter((x) => x.to <= край);
-    if (!доКрая.length || !доКрая.every(pracPartDone)) break;
-    for (const to of runSteps(край, runs, parts[0].from)) {
-      const u = runUnit(parts[0].from, to);
-      if (!pracUnitDone(u)) return { parts, run: u };
-    }
-  }
-
-  /* Крупная сборка идёт дальше швов: пары соседних частей уже пройдены,
-     поэтому первый уровень пропускаем. */
-  const asm = pracAssembly(parts).slice(1);
-  for (let i = 0; i < asm.length; i++)
-    if (!asm[i].map(pracAsUnit).every(pracUnitDone)) return { parts, asm, assembly: i };
-  return { parts, asm, assembly: Math.max(0, asm.length - 1), finished: true };
+/* Что показывать в очереди дальше: отдельный такт или сшивку блока. */
+function pracUnitNow() {
+  const w = pracWhere();
+  if (w.finished) return null;
+  return w.final
+    ? { from: w.bl.from, to: w.bl.to, final: true, bl: w.bl }
+    : { from: w.bar, to: w.bar, bl: w.bl, round: w.round };
 }
 
 /* ── Список тактов ──
-   Раньше выбрать место можно было только среди частей, и то вслепую: сколько
-   раз ты трогал такт и когда это было в последний раз, нигде не показывалось.
-   Здесь всё разом: сколько проходов у каждой руки, что уже закреплено,
-   что не трогал давно — и переход к любой части одним нажатием. */
+   Весь путь одним экраном: блоки, в каждом такты с кружками заходов и сшивка.
+   Видно, где стоишь, сколько осталось до перехода и как оно шло — по цвету. */
 function pracBarInfo() {
   const bars = piece().bars;
   const p = passes();
@@ -7560,203 +7419,66 @@ function pracBarInfo() {
   return { right: p.right, left: p.left, seen };
 }
 
-/* Весь путь по пьесе одним списком: шаги внутри частей, швы между ними,
-   прогоны от начала и сборка. Раньше в списке были только части — видно,
-   что выучено, но не видно дороги: где соединяем, где возвращаемся назад,
-   что будет после. Порядок здесь тот же, что у очереди занятия. */
-function pracRoute() {
-  const parts = pracParts();
-  const runs = (pracDoc() || {}).runs || [];
-  const first = parts.length ? parts[0].from : 1;
-  const out = [];
-  const прогон = (край) => {
-    /* Лестница к рубежу — это один пункт пути, разбитый на ступени. В проценте
-       она и весит как один: иначе появление ступеней само по себе обвалило бы
-       цифру, хотя сыграно ровно столько же. */
-    const шаги = runSteps(край, runs, first);
-    for (const to of шаги) {
-      const u = runUnit(first, to);
-      out.push({ kind: "run", u, край, n: шаги.length, done: pracUnitDone(u) });
-    }
-  };
-
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    for (const край of runs)
-      if (p.from === край + 1 && parts.some((x) => x.to <= край)) прогон(край);
-    for (const size of pracSteps(p)) {
-      /* Шаг «по 2 такта» — это не один заход, а несколько окон: 5–6, потом
-         7–8. Занятие показывает окно, список показывал часть — и выглядело
-         так, будто это разные места. Держим оба числа. */
-      const окна = pracUnits(p.from, p.to, size);
-      const готово = окна.filter(pracUnitDone).length;
-      const сейчас = окна.find((u) => !pracUnitDone(u));
-      out.push({ kind: "step", p, size, окна, готово, сейчас,
-                 done: pracStepDone(p, size) });
-    }
-    if (i > 0) {
-      const seam = seamUnit(parts[i - 1], p);
-      if (!seamCovered(seam, runs))
-        out.push({ kind: "seam", a: parts[i - 1], b: p, u: seam, done: pracUnitDone(seam) });
-    }
-  }
-  // рубеж на самом конце пьесы в цикл не попадает: за ним частей уже нет
-  for (const край of runs) if (!parts.some((x) => x.from === край + 1)) прогон(край);
-
-  const asm = pracAssembly(parts).slice(1);
-  asm.forEach((lvl, i) => out.push({
-    kind: "asm", lvl, i, done: lvl.map(pracAsUnit).every(pracUnitDone),
-  }));
-  return out;
-}
-
-/* Лестница прогона в списке — одна строка с ходом внутри, как у шага части.
-   Тридцать девять почти одинаковых строк «прогон до N-го» превратили бы путь
-   в простыню, по которой не видно ни частей, ни швов. */
-function routeRows(route) {
-  const out = [];
-  for (const r of route) {
-    if (r.kind !== "run") { out.push(r); continue; }
-    const прошлый = out[out.length - 1];
-    if (прошлый && прошлый.kind === "run" && прошлый.край === r.край) {
-      прошлый.готово += r.done ? 1 : 0;
-      прошлый.done = прошлый.done && r.done;
-      if (!r.done && !прошлый.сейчасДо) прошлый.сейчасДо = r.u.to;
-      continue;
-    }
-    out.push({ ...r, шагов: r.n || 1, готово: r.done ? 1 : 0,
-               сейчасДо: r.done ? 0 : r.u.to,
-               u: runUnit(r.u.from, r.край) });
+const dotsHTML = (list, goal) => {
+  let out = "";
+  for (let i = 0; i < goal; i++) {
+    const r = list[i];
+    out += `<i class="dot${r ? " l" + r.lvl : ""}"></i>`;
   }
   return out;
-}
-
-// как называется этап в списке пути
-function routeName(r) {
-  if (r.kind === "step") return pracStepName(r.size, r.p);
-  if (r.kind === "seam") return "Стык: конец " + (r.a.i + 1) + "-й части и начало " + (r.b.i + 1) + "-й";
-  if (r.kind === "run") return "Прогон с начала до " + r.u.to + "-го такта";
-  return r.lvl.length > 1 ? "Сборка: " + r.lvl.length + " " + plural(r.lvl.length, "кусок", "куска", "кусков")
-    : "Вся пьеса целиком";
-}
-const routeSpan = (r) => r.kind === "step" ? "такты " + r.p.from + "–" + r.p.to
-  : r.kind === "asm" ? r.lvl.map((x) => x.from + "–" + x.to).join(" · ")
-  : "такты " + r.u.from + "–" + r.u.to;
+};
 
 function pracListHTML() {
-  const info = pracBarInfo();
-  const parts = pracParts();
   const w = pracWhere();
+  const blocks = w.blocks;
+  const info = pracBarInfo();
   const today = todayStr();
-  const hands = (b) => {
-    const r = Math.min(FIRM_AT, info.right[b] || 0), l = Math.min(FIRM_AT, info.left[b] || 0);
-    return { r, l, firm: r >= FIRM_AT && l >= FIRM_AT, touched: (info.right[b] || 0) + (info.left[b] || 0) > 0 };
-  };
   const ago = (ds) => {
     if (!ds) return "не трогал";
     const d = daysBetween(ds, today);
     return d <= 0 ? "сегодня" : d + " " + plural(d, "день", "дня", "дней") + " назад";
   };
+  const готовых = blocks.filter(blockDone).length;
 
   return `
     <div class="pl-head-row">
       <b>Такты</b>
       <button class="th-link" data-prac="listClose" type="button">закрыть</button>
     </div>
-    ${(() => {
-      const route = routeRows(pracRoute());
-      const сейчас = route.findIndex((r) => !r.done);
-      return `
-        <div class="rt-head">Путь по пьесе · пройдено ${route.filter((r) => r.done).length} из ${route.length}</div>
-        <div class="rt-list">${route.map((r, i) => {
-          const тут = i === сейчас;
-          const хвост = r.kind === "step" && r.окна.length > 1
-            ? (тут && r.сейчас ? "сейчас " + r.сейчас.from + "–" + r.сейчас.to
-               : r.готово + " из " + r.окна.length)
-            : r.kind === "run" && r.шагов > 1
-            ? (тут && r.сейчасДо ? "сейчас до " + r.сейчасДо + "-го" : r.готово + " из " + r.шагов)
-            : "";
-          return `
-          <div class="rt-row${r.done ? " done" : ""}${тут ? " now" : ""}">
-            <i>${r.done ? "✓" : тут ? "▸" : "·"}</i>
-            <b>${esc(routeName(r))}${хвост ? ` <u>${esc(хвост)}</u>` : ""}</b>
-            <em>${esc(routeSpan(r))}</em>
-          </div>`;
-        }).join("")}</div>`;
-    })()}
+    <div class="rt-head">Блоков пройдено ${готовых} из ${blocks.length} · в каждом такте ${REP_GOAL} заходов</div>
     <div class="bl-list">
-      ${parts.map((p) => {
-        const done = pracPartDone(p);
-        const now = w.part && w.part.i === p.i;
-        const last = Math.max(...Array.from({ length: p.to - p.from + 1 },
-          (_, k) => (info.seen[p.from + k] ? fromStr(info.seen[p.from + k]).getTime() : 0)));
+      ${blocks.map((bl) => {
+        const тут = w.bl && w.bl.from === bl.from;
+        const имя = blockWhy(bl).why;
+        const rows = [];
+        for (let b = bl.from; b <= bl.to; b++) {
+          const мой = тут && !w.final && w.bar === b;
+          rows.push(`
+            <div class="rp-row${мой ? " now" : ""}${barReady(b) ? " done" : ""}">
+              <b>такт ${b}</b>
+              <span class="dots">${dotsHTML(repsOf(b), REP_GOAL)}</span>
+              <em>${repCount(b)}/${REP_GOAL}</em>
+            </div>`);
+        }
+        const f = finalOf(bl);
+        rows.push(`
+          <div class="rp-row fin${тут && w.final ? " now" : ""}${finalPassed(bl) ? " done" : ""}">
+            <b>вместе ${bl.from}–${bl.to}</b>
+            <span class="dots">${f.length ? dotsHTML(f.slice(-5), Math.max(1, Math.min(5, f.length))) : '<i class="dot"></i>'}</span>
+            <em>${finalPassed(bl) ? "сшит" : blockReady(bl) ? "пора сшивать" : "после кругов"}</em>
+          </div>`);
         return `
-          <div class="bl-part${now ? " now" : ""}${done ? " done" : ""}">
-            <button class="bl-head" data-pickpart="${p.i}" type="button">
-              <span class="bl-name">${esc(p.why || "Часть " + (p.i + 1))}</span>
-              <span class="bl-sub">такты ${p.from}–${p.to} · ${done ? "закреплено" : now ? "здесь сейчас" : "в работе"}
-                · ${esc(last ? ago(dateStr(new Date(last))) : "не трогал")}</span>
-            </button>
-            <div class="bl-bars">
-              ${Array.from({ length: p.to - p.from + 1 }, (_, k) => {
-                const b = p.from + k, h = hands(b);
-                return `<i class="bl-b${h.firm ? " firm" : h.touched ? " part" : ""}"
-                  title="такт ${b}: скрипичный ${h.r}/${FIRM_AT}, басовый ${h.l}/${FIRM_AT}"
-                  data-barinfo="Такт ${b} · скрипичный ${h.r} из ${FIRM_AT} · басовый ${h.l} из ${FIRM_AT} · ${esc(ago(info.seen[b]))}">${b}</i>`;
-              }).join("")}
+          <div class="bl-part${тут ? " now" : ""}${blockDone(bl) ? " done" : ""}">
+            <div class="bl-head as-text">
+              <span class="bl-name">${esc(имя || "Такты " + bl.from + "–" + bl.to)}</span>
+              <span class="bl-sub">такты ${bl.from}–${bl.to} · ${blockDone(bl) ? "готов" : тут ? "здесь сейчас" : "впереди"}
+                · ${esc(ago(info.seen[bl.from]))}</span>
             </div>
+            ${rows.join("")}
           </div>`;
       }).join("")}
     </div>
-    <p class="bl-note">Кружок наполняется по числу проходов: такт считается выученным после ${FIRM_AT}. Нажми на часть, чтобы продолжить с неё.</p>`;
-}
-
-function pracQueue() {
-  const w = pracWhere();
-  const q = [];
-  /* Раньше занятие начиналось с «освежить давнее», и первым делом упорно
-     подсовывались самые первые такты. Со стороны это выглядело как «опять
-     сначала» и раздражало заслуженно: продолжать надо с того, на чём встал,
-     а вернуться к старому — дело добровольное, для этого есть список тактов. */
-  const us = w.run ? [w.run]
-    : w.seam ? [w.seam]
-    : w.part ? pracUnits(w.part.from, w.part.to, w.size)
-    : (w.asm[w.assembly] || []).map(pracAsUnit);
-  /* Каждый ключ проходится дважды: сначала глазами, потом руками. Но чтение —
-     подготовка к игре, а не самостоятельная повинность: сыгранному ключу
-     читать нечего. Без этой оговорки у тактов, сыгранных до появления чтения,
-     очередь выглядела бессмыслицей: прочитай басовый, прочитай скрипичный —
-     а играть не предлагали, обе игры давно зачтены. */
-  for (const u of us)
-    for (const h of pracHands(u)) {
-      /* Флаг прогона обязан доехать до отметки: ключ у него свой, с «:run».
-         Без него «Получилось» писало ключ обычного отрезка, прогон оставался
-         несыгранным, и занятие честно предлагало его снова — кнопка нажималась
-         впустую. */
-      const base = { from: u.from, to: u.to, size: u.size, hand: h, run: !!u.run };
-      if (w.refresh) { q.push({ ...base, review: true, k: pracKey(u, h) }); continue; }
-      if (pracIsDone(u, h)) continue;                  // сыграно — и читать нечего
-      /* Прогон растёт на один такт, и этот такт сначала берут отдельно:
-         прочитать ноты, сыграть его самого — и только потом приставить к тому,
-         что уже идёт подряд. Иначе новый такт встречаешь на ходу, посреди
-         разгона, и спотыкаешься именно на нём. Отдельный заход отметок не
-         ставит: такт давно разобран, это освежение перед сшивкой. */
-      if (u.run && u.to > u.from) {
-        const такт = { from: u.to, to: u.to, size: 1, hand: h };
-        /* Освежение отметок не оставляет, а очередь пересобирается после
-           каждого подтверждения — значит, помнить о нём должно само занятие.
-           Иначе «Прочитал» возвращает ту же карточку снова и снова: кнопка
-           нажимается, а ничего не меняется. */
-        for (const phase of ["read", "play"]) {
-          const warm = u.to + ":" + h + ":" + phase;
-          if (prac && prac.warm && prac.warm[warm]) continue;
-          q.push({ ...такт, phase, revisit: true, warm });
-        }
-      }
-      if (!u.run && !pracReadDone(u, h)) q.push({ ...base, phase: "read" });
-      q.push({ ...base, phase: "play" });
-    }
-  return q;
+    <p class="bl-note">Кружок — один заход: мятный «легко», золотой «с усилием», фиолетовый «сложно». Блок сшивается, когда все такты набрали по ${REP_GOAL}.</p>`;
 }
 
 const pracMin = () => prac && prac.startedAt ? (Date.now() - prac.startedAt - prac.breakMs) / 60000 : 0;
@@ -7794,63 +7516,6 @@ function pracHintHTML(u) {
   return `<div class="pr-hint">${rows.join("")}<p class="pr-leg">${esc(doc.legend || "")}</p></div>`;
 }
 
-/* Части списком, а не равными столбиками: столбики читались как сплошная
-   размазанная полоса — не видно ни границ групп, ни того, что это за куски. */
-function pracPartsHTML(w) {
-  return '<div class="pr-plist">' + w.parts.map((p) => {
-    const steps = pracSteps(p);
-    let all = 0, ok = 0;
-    for (const size of steps)
-      for (const u of pracUnits(p.from, p.to, size)) {
-        const hs = pracHands(u);
-        all += hs.length;
-        ok += hs.filter((h) => pracIsDone(u, h)).length;
-      }
-    const pct = all ? Math.round(ok / all * 100) : 0;
-    const done = pracPartDone(p), now = w.part && w.part.i === p.i;
-    return `<button class="pr-p ${done ? "done" : now ? "now" : ""}" data-part="${p.i}" type="button">
-      <div class="pr-p-top">
-        <b>${p.from}–${p.to}</b>
-        <em>${esc(p.why || "часть " + (p.i + 1))}</em>
-        <span>${done ? "готово" : pct ? pct + "%" : ""}</span>
-      </div>
-      <span class="pr-p-bar"><i style="width:${pct}%"></i></span>
-    </button>`;
-  }).join("") + "</div>";
-}
-
-function pracLadderHTML(w) {
-  if (w.seam) {
-    return `<div class="pr-ladder"><div class="pr-lvl now"><b>шов</b>
-      <span class="tr"><i style="width:0%"></i></span><span>0/1</span></div></div>`;
-  }
-  if (!w.part) {
-    return `<p class="pr-cap-line">Все части зазвучали — <b>собираем пьесу</b></p>`
-      + '<div class="pr-ladder">' + w.asm.map((level, li) => {
-        const us = level.map(pracAsUnit);
-        const d = us.filter(pracUnitDone).length;
-        const name = us.length === 1 ? "вся пьеса"
-          : "по " + us.length + " " + plural(us.length, "куску", "куска", "кусков");
-        return `<div class="pr-lvl ${li === w.assembly ? "now" : ""}"><b>${name}</b>
-          <span class="tr"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
-          <span>${d}/${us.length}</span></div>`;
-      }).join("") + "</div>";
-  }
-  const p = w.part;
-  return '<div class="pr-ladder">' + pracSteps(p).map((size) => {
-      const us = pracUnits(p.from, p.to, size);
-      const d = us.filter(pracUnitDone).length;
-      const name = size === p.to - p.from + 1 ? "часть целиком"
-        : size === 1 ? "по 1 такту" : "по " + size + " " + plural(size, "такту", "такта", "тактов");
-      return `<div class="pr-lvl ${size === w.size ? "now" : ""}"><b>${name}</b>
-        <span class="tr"><i style="width:${Math.round(d / us.length * 100)}%"></i></span>
-        <span>${d}/${us.length}</span></div>`;
-    }).join("") + "</div>";
-}
-
-/* Плеер с записью материала. Не стандартный: главное здесь — выделить кусок
-   и гонять его по кругу, а не слушать запись подряд. По умолчанию выделено
-   всё; двигаешь края — остаётся отрезок, который повторяется сам. */
 let pracAudioEl = null, pracRaf = 0;
 const PRAC_LOOP_LS = "keiko-practice-loop-v1";
 const pracLoops = (() => { try { return JSON.parse(localStorage.getItem(PRAC_LOOP_LS)) || {}; } catch { return {}; } })();
@@ -9491,130 +9156,84 @@ function pracRender() {
     lessonRender($("#pracStage"));
     return;
   }
-  const w = pracWhere();
   const m = Math.floor(pracMin());
   $("#pracWhere").textContent = piece().name + (prac.startedAt ? " · " + m + " мин" : "");
   const box = $("#pracStage");
 
-  if (prac.screen !== "work") {
-    const pl = $("#pracPlayer"); if (pl) pl.hidden = true;
-    const vd = $("#pracVideo"); if (vd) vd.hidden = true;
-  }
-
-  if (prac.screen === "start") {
-    const p = w.part;
-    const named = w.parts.some((x) => x.why);
-    box.innerHTML = `
-      <div class="pr-mid">
-        <p class="pr-kind">занятие ${pracStore().session + 1}</p>
-        ${w.run ? `
-          <div class="pr-big sm">такты ${w.run.from}–${w.run.to}</div>
-          <p class="pr-hand">прогон от начала</p>
-          <p class="pr-tail">играем подряд с первого такта — каждый заход длиннее на один</p>`
-          : w.seam ? `
-          <div class="pr-big sm">такты ${w.seam.from}–${w.seam.to}</div>
-          <p class="pr-hand">шов · части ${w.a.i + 1} и ${w.b.i + 1}</p>
-          <p class="pr-tail">обе части уже звучат порознь</p>`
-          : p ? `
-          <div class="pr-big sm">${esc(p.why || "такты " + p.from + "–" + p.to)}</div>
-          <p class="pr-hand">часть ${p.i + 1} из ${w.parts.length} · такты ${p.from}–${p.to}</p>
-          <p class="pr-next">сейчас: ${esc(pracStepName(w.size, p).toLowerCase())}</p>`
-          : `<div class="pr-big sm">Собираем пьесу</div><p class="pr-hand">все части готовы</p>`}
-        ${pracPartsHTML(w)}
-        ${named ? "" : '<p class="pr-tail">разбор ещё не приехал — части поделены по четыре такта</p>'}
-      </div>
-      <div class="pr-bot">
-        <button class="pr-main" data-prac="begin">${pracStore().session ? "Продолжить" : "Начать занятие"}</button>
-        <div class="pr-row"><button class="pr-ghost" data-prac="reset">Начать пьесу заново</button></div>
-      </div>`;
-    return;
-  }
-
-  pracPlayer();
-  const u = prac.cur;
+  const u = pracUnitNow();
   if (!u) { pracFinish(); return; }
+  prac.cur = u;
+  pracPlayer();
   pracVideo(u);
 
-  /* Что за этап, который сейчас, и что будет следующим. */
-  let top = "", stage = "", after = "";
-  if (u.review) {
-    top = "повторяем пройденное";
-    stage = "Освежаем то, что делали раньше";
-  } else if (w.run) {
-    top = "с начала до такта " + w.run.to;
-    /* Разогрев нового такта идёт под тем же рубежом, но занимаемся сейчас
-       им одним: писать «прогон от первого такта» над одиноким тактом —
-       значит путать. */
-    stage = u.warm ? "Новый такт сам по себе" : "Прогон от первого такта";
-    after = "куски уже сыграны порознь — теперь подряд, не останавливаясь";
-  } else if (w.seam) {
-    top = (w.a.why || "часть " + (w.a.i + 1)) + " + " + (w.b.why || "часть " + (w.b.i + 1));
-    stage = "Стык двух частей";
-    after = "обе части уже звучат порознь — важно только место склейки";
-  } else if (w.part) {
-    const steps = pracSteps(w.part);
-    const at = steps.indexOf(w.size);
-    top = w.part.why || `часть ${w.part.i + 1} из ${w.parts.length}`;
-    stage = pracStepName(w.size, w.part);
-    after = at + 1 < steps.length
-      ? "дальше: " + pracStepName(steps[at + 1], w.part).toLowerCase()
-      : (w.part.i + 1 < w.parts.length ? "дальше: стык со следующей частью" : "дальше: сборка пьесы");
-  } else {
-    top = "все части готовы";
-    stage = "Собираем пьесу целиком";
-  }
+  const w = pracWhere();
+  const имя = blockWhy(w.bl).why;
+  const блоков = w.blocks.length;
+  const готово = w.blocks.filter(blockDone).length;
+  const hand = pracHands(u);
 
-  /* Экран отвечает на главный вопрос прямо: играем или читаем. Раньше на
-     игре писалось только имя ступени — «по 2 такта подряд», — и было не
-     понять, разбирать это глазами или уже руками. Анонс следующей ступени
-     убран совсем: он отвлекал от того, что перед глазами сейчас. */
-  const reading = u.phase === "read";
-  if (reading) {
-    stage = "Читаем ноты";
-  } else if (stage) {
-    stage = "Играем — " + stage.charAt(0).toLowerCase() + stage.slice(1);
-  }
-  after = "";
+  const кнопки = LVLS.map((l) => `
+    <button class="rep l${l.k}" data-lvl="${l.k}" type="button">
+      <b>${l.name}</b><span>${l.hint}</span>
+    </button>`).join("");
 
-  /* Рабочий экран — одна длинная страница, а не тесная сцена с прибитыми
-     краями. Сверху задание и «Получилось», ниже видео, ещё ниже звук. Всё
-     прокручивается, ничего не прячется, кнопка ответа всегда рядом с тем,
-     что она подтверждает. */
+  /* Кружки под каждым тактом блока: видно и сколько набрано, и как это шло.
+     Без них круг выглядит как топтание на месте — «опять третий такт». */
+  const круги = (() => {
+    let out = "";
+    for (let b = w.bl.from; b <= w.bl.to; b++)
+      out += `<div class="rp-row${!w.final && w.bar === b ? " now" : ""}${barReady(b) ? " done" : ""}">
+        <b>такт ${b}</b>
+        <span class="dots">${dotsHTML(repsOf(b), REP_GOAL)}</span>
+        <em>${repCount(b)}/${REP_GOAL}</em>
+      </div>`;
+    return out;
+  })();
+
   box.innerHTML = `
     <div class="wk">
       <div class="wk-task">
-        <p class="wk-kind">${esc(top)}${(w.run || w.seam || (w.part && (w.part.note || termsIn(top + " " + stage).length)))
-          ? ` <button class="wk-q" data-prac="terms" type="button" aria-label="Что это значит">?</button>` : ""}</p>
+        <p class="wk-kind">${esc(имя || "такты " + w.bl.from + "–" + w.bl.to)}
+          ${blockWhy(w.bl).note || termsIn(имя).length
+            ? `<button class="wk-q" data-prac="terms" type="button" aria-label="Что это значит">?</button>` : ""}</p>
         <div class="wk-big">${pracSpan(u)}</div>
-        <p class="wk-hand">${PRAC_HAND[u.hand]}</p>
-        <p class="wk-stage">${esc(stage)}</p>
-        ${u.revisit ? `<p class="wk-passed">✓ ${reading ? "уже прочитано" : "уже пройдено — повтор засчитается попыткой"}</p>` : ""}
-        ${after ? `<p class="wk-next">${esc(after)}</p>` : ""}
-        <button class="pr-go" data-prac="ok">${reading ? "Прочитал" : "Получилось"}</button>
+        <p class="wk-hand">${PRAC_HAND[hand]}</p>
+        <p class="wk-stage">${u.final
+          ? (w.tries ? "Сшиваем блок целиком · заход " + (w.tries + 1) : "Сшиваем блок целиком")
+          : "Круг " + u.round + " из " + REP_GOAL + " · блок " + (w.bl.i + 1) + " из " + блоков}</p>
+        <p class="wk-next">${u.final
+          ? "пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок"
+          : "сыграл — отметь, как вышло"}</p>
+        <div class="rep-btns">${кнопки}</div>
+        <div class="rp-list">${круги}
+          <div class="rp-row fin${u.final ? " now" : ""}${finalPassed(w.bl) ? " done" : ""}">
+            <b>вместе ${w.bl.from}–${w.bl.to}</b>
+            <span class="dots">${finalOf(w.bl).length ? dotsHTML(finalOf(w.bl).slice(-5), Math.min(5, finalOf(w.bl).length)) : '<i class="dot"></i>'}</span>
+            <em>${finalPassed(w.bl) ? "сшит" : blockReady(w.bl) ? "сейчас" : "после кругов"}</em>
+          </div>
+        </div>
         <div class="wk-row">
-          ${!u.review && w.part ? `
-            <button class="pr-ghost" data-prac="stepback" aria-label="Шаг назад">‹</button>
-            <button class="pr-ghost" data-prac="stepfwd" aria-label="Шаг вперёд">›</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
           <button class="pr-ghost" data-prac="finish">Закончить</button>
         </div>
+        <p class="wk-tail">пройдено блоков: ${готово} из ${блоков}</p>
         ${prac.hintOpen ? pracHintHTML(u) : ""}
       </div>
     </div>
     ${prac.listOpen ? `<div class="bl-wrap" id="pracList">${pracListHTML()}</div>` : ""}`;
 }
 
+/* Очереди больше нет: где мы находимся, целиком следует из отметок. Сыграл
+   такт — счётчик вырос, и следующий шаг вычисляется заново. Так занятие не
+   может разъехаться с данными, что бы ни случилось между заходами. */
 function pracNext() {
-  if (!prac.queue.length) prac.queue = pracQueue();
-  // отмечаем, над какой частью работаем: со следующего занятия начнём отсюда
-  const wNow = pracWhere();
-  if (wNow.part) { pracStore().lastPart = wNow.part.i; saveData(); }
-  prac.cur = prac.queue.shift() || null;
+  const u = pracUnitNow();
+  prac.cur = u;
   prac.unitAt = Date.now();          // с этого мгновения считаем время на отрезок
-  prac.screen = prac.cur ? "work" : "done";
-  if (!prac.cur) { pracFinish(); return; }
+  prac.screen = u ? "work" : "done";
+  if (!u) { pracFinish(); return; }
   pracRender();
 }
 
@@ -9666,7 +9285,6 @@ function openPractice() {
     pracWatch();
   }, 1000);
   keepAwake(true);
-  prac.queue = pracQueue();
   pracNext();
 }
 
@@ -9894,12 +9512,10 @@ function pracFinish() {
     // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
     addEvent("session", piece().id, "piano",
       "Занимался: " + piece().name + " · " + e.mins + " мин"
-      + (closed ? ", " + closed + " " + plural(closed, "отрезок", "отрезка", "отрезков")
-         : prac.reads ? ", разбирал ноты" : ", без закрытых отрезков"),
+      + (closed ? ", " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""),
       { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
-    toast(closed
-      ? "Занятие записано: " + e.mins + " мин за день"
-      : "Занятие записано: " + e.mins + " мин, без закрытых отрезков");
+    toast("Занятие записано: " + e.mins + " мин"
+      + (closed ? " · " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""));
   }
   closePractice();
   if (won) setTimeout(() => showWon(won), 380);
@@ -10081,21 +9697,6 @@ function bindPractice() {
     const b = e.target.closest("button");
     if (!b || !prac) return;
 
-    if (b.dataset.part !== undefined) {
-      prac.pick = +b.dataset.part;
-      prac.queue = [];
-      return pracRender();
-    }
-
-    // выбор части из списка тактов: продолжаем прямо с неё
-    if (b.dataset.pickpart !== undefined) {
-      prac.pick = +b.dataset.pickpart;
-      pracStore().lastPart = prac.pick;
-      prac.queue = []; prac.listOpen = false;
-      saveData(); schedulePush();
-      return pracNext();
-    }
-
     if (b.dataset.lpick !== undefined) {
       const n = +b.dataset.lpick, steps = lessonSteps(n) || [];
       if (!steps.length) { toast("\u0412 \u044d\u0442\u043e\u043c \u0443\u0440\u043e\u043a\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0448\u0430\u0433\u043e\u0432"); return; }
@@ -10205,124 +9806,65 @@ function bindPractice() {
       return pracRender();
     }
 
+    /* Отметка захода: три кнопки вместо одной. Уровень — не оценка себе, а
+       то, чем меряется готовность блока к сшивке. */
+    if (b.dataset.lvl) {
+      const u = prac.cur;
+      if (!u) return;
+      const lvl = Number(b.dataset.lvl);
+      prac.startedAt = prac.startedAt || Date.now();
+      const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
+      pracNote({ from: u.from, to: u.to, size: u.to - u.from + 1, hand: pracHands(u) }, sec);
+      repAdd(u, lvl);
+      prac.closed.push({ from: u.from, to: u.to });
+      const added = pracLog({ from: u.from, to: u.to, hand: pracHands(u) });
+      prac.undo = { u, added };
+      saveData();
+      schedulePush();
+      return pracNext();
+    }
+
     switch (b.dataset.prac) {
       case "begin": {
         /* Запись заведётся на первом закрытом отрезке. Нажал «Начать» и вышел —
            занятия не было. */
         prac.startedAt = prac.startedAt || Date.now();
         prac.counted = 0;
-        prac.queue = pracQueue();
-        return pracNext();
-      }
-      case "ok": {
-        const u = prac.cur;
-        const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
-        pracNote(u, sec);            // копим, где сколько провозились
-        if (u.review) { prac.reviewed.push(u.k); prac.undo = null; }
-        else if (u.revisit) {
-          // разогрев перед сшивкой засчитан — второй раз его не предлагаем
-          if (u.warm) { prac.warm = prac.warm || {}; prac.warm[u.warm] = 1; }
-          /* Повтор после «шага назад»: отметки уже стоят, их не трогаем.
-             Сыгранный повтор — честная попытка: уходит отрезком в запись дня
-             и в счёт проходов. Прочитанный — просто прочитан ещё раз. */
-          if (u.phase !== "read") {
-            prac.closed.push({ from: u.from, to: u.to, hand: u.hand });
-            pracLog(u);
-          }
-          prac.undo = null;
-        }
-        else if (u.phase === "read") {
-          /* Прочитанное отмечаем, но в запись дня отрезком не пишем: сыграно
-             ничего не было, и в пройденные такты это идти не должно. Работой
-             оно при этом считается — время идёт, занятие записывается. */
-          pracStore().done[pracKey(u, u.hand, "read")] = todayStr();
-          prac.reads = (prac.reads || 0) + 1;
-          prac.undo = { u, key: pracKey(u, u.hand, "read"), added: 0 };
-        } else {
-          pracStore().done[pracKey(u, u.hand)] = todayStr();
-          prac.closed.push({ from: u.from, to: u.to, hand: u.hand });
-          const added = pracLog(u);
-          prac.undo = { u, key: pracKey(u, u.hand), added };   // на случай промаха
-        }
-        saveData();
-        /* Очередь пересобирается после каждого подтверждения: после свободных
-           прогулок вперёд-назад только отметки говорят правду о том, что
-           дальше. Занятие само возвращается на передний край. */
-        prac.queue = pracQueue();
         return pracNext();
       }
       case "terms": {
         const w2 = pracWhere();
-        let про;
-        if (w2.run) про = { title: "Прогон от первого такта",
-          note: "Куски по отдельности можно знать назубок и всё равно спотыкаться, когда играешь целиком: "
-              + "память на связки нарабатывается только так. Поэтому прогон растёт по такту: сыграл подряд "
-              + "до этого места — добавляешь один новый и играешь снова с начала. Так к рубежу приходишь "
-              + "не с чистого листа, а с уже сыгранным разбегом." };
-        else if (w2.seam) про = { title: "Стык двух частей",
-          note: "Обе части уже звучат порознь, но шов между ними всегда самое слабое место: пальцы знают "
-              + "начало и конец, а переход между ними — нет. Поэтому его играют отдельно, конец одной "
-              + "и начало другой подряд, не останавливаясь." };
-        else if (w2.part) про = { title: "Такты " + w2.part.from + "–" + w2.part.to,
-          note: w2.part.note || w2.part.why || "" };
-        const list = termsIn((про && про.note ? про.note + " " : "") + ((w2.part && w2.part.why) || ""));
+        const про = w2.bl ? { title: "Такты " + w2.bl.from + "–" + w2.bl.to,
+                              note: blockWhy(w2.bl).note || blockWhy(w2.bl).why || "" } : null;
+        const list = termsIn((про && про.note ? про.note + " " : "") + (w2.bl ? blockWhy(w2.bl).why : ""));
         if (про && (про.note || list.length)) openTermsSheet(list, про);
         else toast("Про это место пояснений пока нет");
         return;
-      }
-      case "stepback":
-      case "stepfwd": {
-        /* Свободная прогулка по лестнице: назад и вперёд, на любой шаг,
-           ничего не отмечая самим движением. Отметки целы — пройденное
-           остаётся пройденным и показывается галочкой; его подтверждение
-           идёт повтором-попыткой. Непройденное открывается как обычно. */
-        const dir = b.dataset.prac === "stepback" ? -1 : 1;
-        const wb = pracWhere();
-        if (!wb.part || !prac.cur) return;
-        const lad = pracLadder(wb.part);
-        const keyOfT = (t) => t.u.size + ":" + t.u.from + "-" + t.u.to + ":" + t.hand + ":" + (t.phase || "play");
-        const c = prac.cur;
-        let i = lad.findIndex((t) => keyOfT(t) ===
-          c.size + ":" + c.from + "-" + c.to + ":" + c.hand + ":" + (c.phase || "play"));
-        if (i < 0) i = lad.length;          // сборка части — за концом лестницы
-        const j = i + dir;
-        if (j < 0) { toast("Это самый первый шаг"); return; }
-        if (j >= lad.length) { toast("Дальше — сборка части"); return; }
-        const t2 = lad[j];
-        const passed = t2.phase === "read" ? pracReadDone(t2.u, t2.hand) : pracIsDone(t2.u, t2.hand);
-        prac.cur = { from: t2.u.from, to: t2.u.to, size: t2.u.size,
-                     hand: t2.hand, phase: t2.phase, revisit: passed };
-        prac.unitAt = Date.now();
-        prac.undo = null;
-        return pracRender();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
       case "list": prac.listOpen = !prac.listOpen; return pracRender();
       case "listClose": prac.listOpen = false; return pracRender();
 
       case "undo": {
-        /* Промахнулся по «Получилось» — возвращаем отрезок и убираем его след
-           и из разбора, и из сегодняшней записи. */
+        /* Промахнулся по кнопке — снимаем последний заход и убираем его след
+           из сегодняшней записи. */
         const un = prac.undo;
         if (!un) return;
-        pracStore().done[un.key] = 0;    // след отката, чтобы не воскрес из гиста
+        repDrop(un.u);
         const e = pracEntry(false);
         if (e && un.added) { e.spans.splice(-un.added, un.added); e.updatedAt = now(); }
-        if (un.u.phase === "read") prac.reads = Math.max(0, (prac.reads || 0) - 1);
-        else prac.closed.pop();
+        prac.closed.pop();
         prac.undo = null;
-        prac.queue.unshift(un.u);
         saveData();
         schedulePush();
         toast("Возвращено");
         return pracNext();
       }
       case "reset":
-        if (!confirm("Забыть весь разбор этой пьесы и начать с первого такта?\n\nЗаписи занятий останутся.")) return;
-        data.practice[piece().id] = { done: {}, session: pracStore().session };
-        prac.pick = null;
+        if (!confirm("Забыть все заходы по этой пьесе и начать с первого такта?\n\nЗаписи занятий останутся.")) return;
+        data.practice[piece().id] = { reps: {}, final: {}, session: pracStore().session, at: now() };
         saveData(); schedulePush();
-        return pracRender();
+        return pracNext();
 
       case "finish": return pracFinish();
     }
