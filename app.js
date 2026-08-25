@@ -389,15 +389,33 @@ function streakFrom(days) {
 }
 function mondayOf(d) { const r = new Date(d); r.setDate(r.getDate() - ((r.getDay() + 6) % 7)); return r; }
 
+/* Проходы по тактам считаются из заходов занятия, а не из отрезков в записях
+   дня. Отрезки копились ещё по старой схеме и мешали новой статистике: цифры
+   вроде «25% скрипичный» приходили из прошлой жизни пьесы. Теперь один заход —
+   один проход, и всё, что показано, набрано в нынешней системе. */
 function passes() {
   const bars = piece().bars;
   const right = new Array(bars + 1).fill(0), left = new Array(bars + 1).fill(0);
-  for (const e of entries())
-    for (const s of e.spans || []) {
-      const arr = s.hand === "left" ? left : right;
-      for (let b = Math.max(1, s.from); b <= Math.min(bars, s.to); b++) arr[b]++;
-    }
+  for (let b = 1; b <= bars; b++) {
+    const both = repsOf(b, "both").length;
+    right[b] = repsOf(b, "right").length + both;
+    left[b] = repsOf(b, "left").length + both;
+  }
   return { right, left };
+}
+
+/* Насколько пройден каждый ключ: доля набранных заходов среди тех, что этому
+   ключу вообще положены. Чтение ключа сюда входит — это тоже работа с ним. */
+function handProgress() {
+  const bars = piece().bars;
+  let needR = 0, gotR = 0, needL = 0, gotL = 0;
+  for (let b = 1; b <= bars; b++)
+    for (const st of barSteps(b)) {
+      const goal = stepGoal(b, st), got = Math.min(repsOf(b, st).length, goal);
+      if (st === "readR" || st === "right" || st === "both") { needR += goal; gotR += got; }
+      if (st === "readL" || st === "left" || st === "both") { needL += goal; gotL += got; }
+    }
+  return { pctR: needR ? gotR / needR * 100 : 0, pctL: needL ? gotL / needL * 100 : 0 };
 }
 
 function pianoStats() {
@@ -408,31 +426,31 @@ function pianoStats() {
   const touchedR = cnt(p.right, 1), touchedL = cnt(p.left, 1);
   const firmR = cnt(p.right, FIRM_AT), firmL = cnt(p.left, FIRM_AT);
   const maxPass = Math.max(0, ...p.right.slice(1), ...p.left.slice(1));
+  const руки = handProgress();
 
-  let bothInOne = false, maxRun = 0, weekend = false, comeback = false, prev = null;
+  /* Самый длинный кусок, сыгранный за раз, — это сшивка блока: отдельные такты
+     всегда по одному. Считаем по блокам, к которым уже подходили. */
+  let maxRun = 0, bothInOne = false;
+  for (const bl of pracBlocks()) {
+    if (finalOf(bl).length) maxRun = Math.max(maxRun, bl.to - bl.from + 1);
+    for (let b = bl.from; b <= bl.to; b++) if (repsOf(b, "both").length) { bothInOne = true; break; }
+  }
+  if (!maxRun && (touchedR || touchedL)) maxRun = 1;
+
+  let weekend = false, comeback = false, prev = null;
   for (const e of list) {
-    if (new Set((e.spans || []).map(s => s.hand)).size >= 2) bothInOne = true;
-    for (const s of e.spans || []) maxRun = Math.max(maxRun, s.to - s.from + 1);
     const dw = fromStr(e.date).getDay();
     if (dw === 0 || dw === 6) weekend = true;
     if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
     prev = e.date;
   }
+  const путь = pctRoute();
   return {
     bars, passes: p, days: list.length, streak: streak(), streakAll: streakAll(),
     touchedR, touchedL, firmR, firmL, maxPass,
-    pctR: bars ? touchedR / bars * 100 : 0,
-    pctL: bars ? touchedL / bars * 100 : 0,
-    pct: bars ? (touchedR + touchedL) / (bars * 2) * 100 : 0,
-    // Пройденный один раз такт ещё не выучен: чтобы он закрепился, нужно FIRM_AT
-    // проходов. Этот процент и показываем — он честнее отвечает «сколько осталось».
-    // pct выше не трогаем: на нём висят условия наград.
-    pctLearn: bars ? (() => {
-      let n = 0;
-      for (let b = 1; b <= bars; b++)
-        n += Math.min(p.right[b], FIRM_AT) + Math.min(p.left[b], FIRM_AT);
-      return n / (bars * 2 * FIRM_AT) * 100;
-    })() : 0,
+    pctR: руки.pctR, pctL: руки.pctL,
+    // общий процент — доля пройденного пути: те же заходы, только все разом
+    pct: путь, pctLearn: путь,
     pctFirm: bars ? (firmR + firmL) / (bars * 2) * 100 : 0,
     bothInOne, maxRun, weekend, comeback
   };
@@ -3693,25 +3711,35 @@ function paceForecast() {
     marks.push(0);
     for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
   } else {
-    /* Такт не выучивается с одного касания: к нему возвращаются. Цель — набрать
-       на каждом такте REP_GOAL заходов, и срок считается по ним же, иначе он
-       выходит втрое оптимистичнее правды. Один заход двумя руками пишет два
-       отрезка, поэтому берём не сумму рук, а большее из двух: это и есть число
-       заходов по такту. */
+    /* Цель — не «задеть все такты», а закрыть все шаги: чтение и игру каждым
+       ключом, потом вместе, и сшивку блока. Считаем по заходам занятия, а не
+       по отрезкам в записях: отрезки остались от прошлой схемы и врали. */
     const bars = piece().bars;
-    total = bars * REP_GOAL;
-    unit = "bar";
-    const r = new Array(bars + 1).fill(0), l = new Array(bars + 1).fill(0);
-    marks.push(0);
-    for (const e of list) {
-      for (const sp of e.spans || []) {
-        const arr = sp.hand === "left" ? l : r;
-        for (let i = Math.max(1, sp.from); i <= Math.min(bars, sp.to); i++) arr[i]++;
-      }
-      let n = 0;
-      for (let i = 1; i <= bars; i++) n += Math.min(Math.max(r[i], l[i]), REP_GOAL);
-      marks.push(n);
+    total = 0;
+    for (const bl of pracBlocks()) {
+      for (let b = bl.from; b <= bl.to; b++)
+        for (const st of barSteps(b)) total += stepGoal(b, st);
+      total += REP_GOAL;                            // сшивка блока весит как шаг
     }
+    unit = "bar";
+    // когда какой заход был — по дням; финал блока считается только зачтённый
+    const поДням = {};
+    for (let b = 1; b <= bars; b++)
+      for (const st of barSteps(b)) {
+        let n = 0;
+        for (const r of repsOf(b, st)) {
+          if (n++ >= stepGoal(b, st)) break;
+          if (r.d) поДням[r.d] = (поДням[r.d] || 0) + 1;
+        }
+      }
+    for (const bl of pracBlocks()) {
+      if (!finalPassed(bl)) continue;
+      const посл = finalOf(bl)[finalOf(bl).length - 1];
+      if (посл && посл.d) поДням[посл.d] = (поДням[посл.d] || 0) + REP_GOAL;
+    }
+    marks.push(0);
+    let сумма = 0;
+    for (const d of Object.keys(поДням).sort()) { сумма += поДням[d]; marks.push(сумма); }
   }
 
   const done = marks[marks.length - 1];
@@ -7272,7 +7300,7 @@ function mergePrac(mine, theirs) {
    Отметка не одна: «легко», «с усилием», «сложно». Это не оценка себе, а
    способ увидеть, где именно тяжело, — и условие для сшивки: пока блок
    целиком идёт «сложно», он повторяется. */
-const REP_GOAL = 10;                 // сколько заходов набирает каждый такт
+const REP_GOAL = 5;                  // сколько заходов набирает каждый шаг такта
 const BLOCK_MAX = 4;                 // максимум тактов в блоке
 const LVLS = [
   { k: 1, name: "Легко",     hint: "пальцы сами" },
@@ -7288,6 +7316,7 @@ function pracBlocks() {
   return out;
 }
 const blockKey = (bl) => bl.from + "-" + bl.to;
+const blockOfBar = (b) => pracBlocks().find((x) => b >= x.from && b <= x.to) || null;
 /* Название блока берём из разбора, если его границы совпали с частью: там оно
    написано словами музыканта — «период I, фраза 2». */
 const blockWhy = (bl) => {
@@ -7360,7 +7389,22 @@ function barBox(b, make) {
 /* Главный шаг такта всегда набирает полные десять заходов: на такте, где
    звучит одна рука, именно он и есть игра — сокращать ему счёт не за что.
    Подготовительные шаги короче: их дело — довести до главного. */
-const stepGoal = (b, step) => step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL);
+/* Блок можно попросить пройти ещё раз: тогда каждому его шагу добавляется по
+   три захода, и занятие само возвращается от сшивки к тактам. Столько раз,
+   сколько нужно, — пока кусок не начнёт звучать так, как хочется. */
+const EXTRA_STEP = 3;
+const extraOf = (b) => {
+  const bl = blockOfBar(b);
+  return bl ? ((repsStore().extra || {})[blockKey(bl)] || 0) : 0;
+};
+function extraAdd(bl) {
+  const st = repsStore();
+  st.extra = st.extra || {};
+  st.extra[blockKey(bl)] = (st.extra[blockKey(bl)] || 0) + EXTRA_STEP;
+  st.at = now();
+}
+const stepGoal = (b, step) =>
+  (step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL)) + extraOf(b);
 /* Отменённый заход не вырезаем, а гасим пометкой: вырезанный воскресал при
    слиянии с гистом — там из двух списков побеждает более длинный, и удаление
    выглядело как «на этом устройстве ещё не доехало». */
@@ -7486,11 +7530,14 @@ function pracBarInfo() {
   return { right: p.right, left: p.left, seen };
 }
 
-const dotsHTML = (list, goal) => {
+/* Пустые кружки — пунктиром, а тот, который сейчас закрываешь, выделен: без
+   этого непонятно, какой заход идёт, — все незакрытые выглядят одинаково. */
+const dotsHTML = (list, goal, свой) => {
   let out = "";
+  const сейчас = свой === false ? -1 : list.length;
   for (let i = 0; i < goal; i++) {
     const r = list[i];
-    out += `<i class="dot${r ? " l" + r.lvl : ""}"></i>`;
+    out += `<i class="dot${r ? " l" + r.lvl : ""}${i === сейчас ? " now" : ""}"></i>`;
   }
   return out;
 };
@@ -7524,7 +7571,8 @@ function pracListHTML() {
             <div class="rp-row${мой ? " now" : ""}${barReady(b) ? " done" : ""}">
               <b>такт ${b}</b>
               <span class="dots">${barSteps(b).map((st) =>
-                `<span class="dgrp" title="${esc(STEP_NAME[st])}">${dotsHTML(repsOf(b, st), stepGoal(b, st))}</span>`).join("")}</span>
+                `<span class="dgrp" title="${esc(STEP_NAME[st])}">${dotsHTML(repsOf(b, st), stepGoal(b, st),
+                  тут && !w.final && w.bar === b && w.step === st)}</span>`).join("")}</span>
               <em>${barMarks(b)}/${barSteps(b).reduce((n, st) => n + stepGoal(b, st), 0)}</em>
             </div>`);
         }
@@ -9301,6 +9349,7 @@ function pracRender() {
         ${u.final ? `<p class="wk-next">пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок</p>` : ""}
         <div class="rep-btns">${кнопки}</div>
         <div class="wk-row">
+          ${u.final ? `<button class="pr-ghost" data-prac="again">Пройти блок ещё раз</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
@@ -9934,6 +9983,18 @@ function bindPractice() {
            занятия не было. */
         prac.startedAt = prac.startedAt || Date.now();
         prac.counted = 0;
+        return pracNext();
+      }
+      case "again": {
+        /* Сшивка не идёт — возвращаемся к тактам блока и проходим их ещё раз.
+           Ничего не сбрасывается: к цели каждого шага просто прибавляется по
+           три захода, и путь честно удлиняется. */
+        const w3 = pracWhere();
+        if (!w3.bl) return;
+        extraAdd(w3.bl);
+        saveData();
+        schedulePush();
+        toast("Ещё круг по тактам " + w3.bl.from + "–" + w3.bl.to);
         return pracNext();
       }
       case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();

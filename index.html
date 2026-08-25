@@ -1535,13 +1535,16 @@
     .dgrp + .dgrp { border-left: 1px solid rgba(255, 255, 255, 0.12); padding-left: 6px; }
     .dot {
       width: 10px; height: 10px; border-radius: 50%;
-      background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.12);
+      background: transparent; border: 1px dashed rgba(255, 255, 255, 0.22);
     }
+    /* Тот заход, который идёт сейчас: обводка ярче и кружок крупнее. */
+    .dot.now { border-color: var(--ink); border-style: solid; transform: scale(1.35); }
     .dot.l1 { background: #6ee7a8; border-color: #6ee7a8; }
     .dot.l2 { background: #f0bb5c; border-color: #f0bb5c; }
     .dot.l3 { background: var(--violet); border-color: var(--violet); }
     .dots.big { justify-content: center; gap: 7px; margin: 14px 0 2px; }
     .dots.big .dot { width: 14px; height: 14px; }
+    .dots.big .dot.now { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.10); }
     .wk-tail { margin: 12px 0 0; font-size: 0.76rem; color: var(--dim); }
     .bl-head.as-text { display: grid; gap: 3px; text-align: left; padding: 0 0 6px; }
 
