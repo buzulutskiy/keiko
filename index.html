@@ -382,7 +382,8 @@
     .sw.today span { color: var(--gold); }
 
     .periods {
-      display: grid; grid-template-columns: repeat(2, 1fr);
+      /* Крайние колонки под стрелки, середина — переключатель недели и месяца. */
+      display: grid; grid-template-columns: 34px 1fr 1fr 34px; align-items: center;
       gap: 4px; background: var(--card-2);
       border: 1px solid var(--line); border-radius: 13px;
       padding: 4px; margin-bottom: 16px;
@@ -392,6 +393,14 @@
       font-size: 0.85rem; font-weight: 750; color: var(--muted);
     }
     .pbtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); }
+    /* Стрелки по краям переключателя: ими ходят по неделям и месяцам назад.
+       Упёрлись в край — кнопка гаснет, а не пропадает: иначе ряд прыгает. */
+    .parr {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      background: var(--glass); border: 1px solid var(--glass-line);
+      color: var(--ink); font-size: 1.05rem; line-height: 1;
+    }
+    .parr:disabled { opacity: 0.28; }
 
     /* кружки недели */
     .wcircles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: 100%; }

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 243";
+const APP_VERSION = "Кэйко 244";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -45,6 +45,11 @@ const DOW_BY = ["понедельникам", "вторникам", "среда�
 let data = null;
 let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true, zen: true };
 let period = "week";   // week | month — что показываем на «Прогрессе»
+/* На сколько периодов назад отошли от текущего: 0 — эта неделя (или этот
+   месяц), −1 — прошлая, и так далее. Вперёд дальше нуля не пускаем: будущего
+   ещё нет. Смена недели на месяц возвращает к текущему периоду — иначе
+   «четыре недели назад» превращалось бы в «четыре месяца назад». */
+let shift = 0;
 let achView = null;    // {track, pieceId} — открытый материал на вкладке наград
 let online = navigator.onLine !== false;   // офлайн — не ошибка, а режим работы
 let editingThought = null; // момент, который сейчас правим
@@ -3987,18 +3992,28 @@ function paceHTML() {
   )}</span>`;
 }
 
-// границы текущего периода — вся неделя или весь месяц
-function periodRange() {
+/* Опорная дата выбранного периода: понедельник его недели или первое число
+   его месяца. Всё остальное — границы, точки графика, прошлый период —
+   считается от неё, а не от «сегодня». */
+function periodAnchor(сдвиг = shift) {
   const d = new Date();
+  if (period === "month") return new Date(d.getFullYear(), d.getMonth() + сдвиг, 1);
+  const monday = mondayOf(d);
+  monday.setDate(monday.getDate() + сдвиг * 7);
+  return monday;
+}
+
+// границы выбранного периода — вся неделя или весь месяц
+function periodRange() {
+  const a = periodAnchor();
   if (period === "month") {
     return {
-      from: dateStr(new Date(d.getFullYear(), d.getMonth(), 1)),
-      to: dateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+      from: dateStr(new Date(a.getFullYear(), a.getMonth(), 1)),
+      to: dateStr(new Date(a.getFullYear(), a.getMonth() + 1, 0))
     };
   }
-  const monday = mondayOf(d);
-  const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
-  return { from: dateStr(monday), to: dateStr(sunday) };
+  const sunday = new Date(a); sunday.setDate(sunday.getDate() + 6);
+  return { from: dateStr(a), to: dateStr(sunday) };
 }
 
 // точки графика: вся текущая неделя или весь месяц, включая дни впереди
@@ -4007,7 +4022,7 @@ function periodSeries() {
   const today = todayStr();
 
   if (period === "month") {
-    const d = new Date();
+    const d = periodAnchor();
     const total = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     for (let i = 1; i <= total; i++) {
       const ds = dateStr(new Date(d.getFullYear(), d.getMonth(), i));
@@ -4017,7 +4032,7 @@ function periodSeries() {
     return out;
   }
 
-  const monday = mondayOf(new Date());
+  const monday = periodAnchor();
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday); d.setDate(d.getDate() + i);
     const ds = dateStr(d);
@@ -4078,15 +4093,37 @@ function lineChartHTML(points) {
    в начале недели показатель всегда в минусе, пока не догонишь прошлый
    результат; зато число рядом то самое, которое ты помнишь. */
 function prevSlice(r) {
-  const d = new Date();
+  const a = periodAnchor(shift - 1);
   if (period === "month") {
-    const from = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-    const to = new Date(d.getFullYear(), d.getMonth(), 0);
-    return { from: dateStr(from), to: dateStr(to) };
+    return { from: dateStr(new Date(a.getFullYear(), a.getMonth(), 1)),
+             to: dateStr(new Date(a.getFullYear(), a.getMonth() + 1, 0)) };
   }
-  const from = mondayOf(d); from.setDate(from.getDate() - 7);
-  const to = new Date(from); to.setDate(to.getDate() + 6);
-  return { from: dateStr(from), to: dateStr(to) };
+  const to = new Date(a); to.setDate(to.getDate() + 6);
+  return { from: dateStr(a), to: dateStr(to) };
+}
+
+/* Подпись недели датами: «11–17 августа». Месяц пишем один раз, если неделя
+   в него укладывается, — «28 июля — 3 августа» иначе. */
+function weekCap(monday) {
+  const вс = new Date(monday); вс.setDate(вс.getDate() + 6);
+  const мес = (d) => MONTHS_GEN[d.getMonth()];   // «11–17 августа», а не «август»
+  const год = вс.getFullYear() !== new Date().getFullYear() ? " " + вс.getFullYear() : "";
+  return monday.getMonth() === вс.getMonth()
+    ? `${monday.getDate()}–${вс.getDate()} ${мес(вс)}${год}`
+    : `${monday.getDate()} ${мес(monday)} — ${вс.getDate()} ${мес(вс)}${год}`;
+}
+
+/* Куда можно шагнуть. Вперёд — не дальше текущего периода, назад — не дальше
+   первой записи: пустые недели до начала занятий листать незачем. */
+function canShift(куда) {
+  if (куда > 0) return shift < 0;
+  const все = entries().filter((e) => !e.deleted).map((e) => e.date).sort();
+  if (!все.length) return false;
+  const a = periodAnchor(shift - 1);
+  const конец = period === "month"
+    ? dateStr(new Date(a.getFullYear(), a.getMonth() + 1, 0))
+    : dateStr(new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6));
+  return конец >= все[0];
 }
 
 /* С чем сравниваем. Без этой строки «0 страниц ↓ 59» читается как поломка:
@@ -4120,25 +4157,34 @@ function summaryHTML() {
   const g = goalProgress();
   const now = new Date();
 
+  const a = periodAnchor();
+  const прошлое = shift < 0;          // смотрим назад: «впереди столько-то дней» уже неуместно
   let ringVal, ringMax, cap, sub, hint;
   if (period === "month") {
-    const total = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const total = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
     const left = total - now.getDate();
     const weeks = Math.round(total / 7);           // недель в месяце
     const monthGoal = (data.weekGoal || 4) * weeks; // цель месяца = недельная × недели
     ringVal = st.days; ringMax = monthGoal;
-    cap = new Intl.DateTimeFormat("ru", { month: "long" }).format(now);
+    cap = new Intl.DateTimeFormat("ru", { month: "long" }).format(a)
+      + (a.getFullYear() !== now.getFullYear() ? " " + a.getFullYear() : "");
     sub = `из ${monthGoal} ${plural(monthGoal, "дня", "дней", "дней")} цели`;
     hint = ringVal >= monthGoal
-      ? `Цель месяца взята! ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")}`
-      : `Цель месяца: ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")} · впереди ${left} ${plural(left, "день", "дня", "дней")}`;
+      ? `Цель месяца взята: ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")}`
+      : прошлое
+        ? `${ringVal} из ${monthGoal} ${plural(monthGoal, "дня", "дней", "дней")} цели · ${monthGoal - ringVal} не хватило`
+        : `Цель месяца: ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")} · впереди ${left} ${plural(left, "день", "дня", "дней")}`;
   } else {
-    ringVal = g.days; ringMax = g.goal;
-    cap = "Эта неделя";
-    sub = `из ${g.goal} ${plural(g.goal, "дня", "дней", "дней")} цели`;
-    hint = g.done
-      ? "Цель недели закрыта — всё сверху в удовольствие"
-      : `До цели ещё ${g.left} ${plural(g.left, "день", "дня", "дней")}`;
+    const цель = data.weekGoal || 4;
+    ringVal = прошлое ? st.days : g.days;
+    ringMax = цель;
+    cap = shift === 0 ? "Эта неделя" : shift === -1 ? "Прошлая неделя" : weekCap(a);
+    sub = `из ${цель} ${plural(цель, "дня", "дней", "дней")} цели`;
+    hint = ringVal >= цель
+      ? (прошлое ? "Цель недели была взята" : "Цель недели закрыта — всё сверху в удовольствие")
+      : прошлое
+        ? `${ringVal} из ${цель} ${plural(цель, "дня", "дней", "дней")} цели · ${цель - ringVal} не хватило`
+        : `До цели ещё ${g.left} ${plural(g.left, "день", "дня", "дней")}`;
   }
 
   const R = 78, C = 2 * Math.PI * R;
@@ -4146,8 +4192,12 @@ function summaryHTML() {
 
   return `
     <div class="periods">
+      <button class="parr" data-shift="-1" type="button" aria-label="Назад"
+        ${canShift(-1) ? "" : "disabled"}>‹</button>
       ${[["week", "Неделя"], ["month", "Месяц"]].map(([k, t]) =>
         `<button class="pbtn ${period === k ? "on" : ""}" data-p="${k}" type="button">${t}</button>`).join("")}
+      <button class="parr" data-shift="1" type="button" aria-label="Вперёд"
+        ${canShift(1) ? "" : "disabled"}>›</button>
     </div>
 
     <div class="summary">
@@ -4234,7 +4284,16 @@ function renderProgress() {
   document.querySelectorAll(".pbtn").forEach(b =>
     b.addEventListener("click", () => {
       period = b.dataset.p;
+      shift = 0;                       // недели и месяцы считаются по-разному
       cfg.period = period; saveCfg();
+      renderProgress();
+    }));
+
+  document.querySelectorAll(".parr").forEach(b =>
+    b.addEventListener("click", () => {
+      const куда = Number(b.dataset.shift);
+      if (!canShift(куда)) return;
+      shift = Math.min(0, shift + куда);
       renderProgress();
     }));
 
