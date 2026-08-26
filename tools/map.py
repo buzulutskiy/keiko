@@ -92,6 +92,8 @@ def main():
         тип = "image/jpeg" if карта.lower().endswith((".jpg", ".jpeg")) else "image/png"
         files[IMG_FILE(key)] = f"data:{тип};base64," + base64.b64encode(raw).decode()
         pack["mapBox"] = {"west": west, "east": east, "north": north, "south": south}
+        # версия картинки: по ней приложение поймёт, что старую копию надо забыть
+        pack["mapVer"] = int(time.time())
         print(f"карта: {len(raw)} байт, рамка {west}…{east} / {south}…{north}")
 
     записать(files)

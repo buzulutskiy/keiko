@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 221";
+const APP_VERSION = "Кэйко 222";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -580,6 +580,11 @@ const mapBox = (b) => {
   const a = artsOf((b || book()).id);
   return (a && a.mapBox) ? a.mapBox : null;
 };
+/* Версия картинки карты: меняется вместе с самой картинкой, и по ней же
+   строится ключ хранения — старая копия на устройстве больше не переживает
+   замену. */
+const mapKey = (id) => "map-" + id + "-v" + (((artsOf(id) || {}).mapVer) || 1);
+const mapFile = (id) => CAT_ART_FILE("map-" + id);
 /* Меркатор: карта нарисована им, значит и точки надо ставить по нему, иначе
    к северу всё поедет. */
 const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
@@ -4851,7 +4856,7 @@ function рисуйРазговор(bk) {
         ${картаЕсть ? `<button class="${вид === "map" ? "on" : ""}" data-tv="map" type="button">Карта</button>` : ""}
       </div>` : ""}
     ${вид === "map" ? (() => {
-      const src = artSrc("map-" + bk.id);
+      const src = artSrc(mapKey(bk.id), mapFile(bk.id));
       const точка = null;
       return `
       <div class="mp">
@@ -9775,7 +9780,8 @@ function openPlaceMap(bk, i, выбрать) {
          name: (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : "" };
   $("#gmTitle").textContent = gm.name;
   const img = $("#gmImg");
-  const src = artSrc("map-" + bk.id);
+  const ключ = mapKey(bk.id);
+  const src = artSrc(ключ, mapFile(bk.id));
   if (src) img.src = src;
   else {
     /* Картинки ещё нет на устройстве: показываем ожидание и ставим её, как
@@ -9783,13 +9789,13 @@ function openPlaceMap(bk, i, выбрать) {
        её не касается. */
     img.removeAttribute("src");
     gmWait(true);
-    pullArt("map-" + bk.id);
+    pullArt(ключ, mapFile(bk.id));
     /* Ждём картинку, а не одно завершение запроса: её мог тянуть кто-то другой
        раньше нас — тогда наш вызов вернётся сразу и ни о чём не скажет. */
     let попыток = 0;
     const ждать = setInterval(() => {
       if (!gm) { clearInterval(ждать); return; }
-      const s2 = coverCache.get("art:map-" + gm.id);
+      const s2 = coverCache.get("art:" + ключ);
       if (s2) {
         clearInterval(ждать);
         img.src = s2;
@@ -11539,23 +11545,28 @@ async function pullArts(id) {
 }
 const artPulling = new Set();
 
-function artSrc(key) {
+/* Ключ хранения и имя файла — разные вещи. Карту в гисте можно заменить, не
+   меняя имени файла, и тогда старая, уже лежащая на устройстве, осталась бы
+   навсегда: точки поехали бы по чужой картинке. Поэтому в ключ входит версия
+   из данных, а имя файла остаётся прежним. */
+function artSrc(key, file) {
   if (!key) return "";
   const have = coverCache.get("art:" + key);
   if (have) return have;
-  pullArt(key);
+  pullArt(key, file);
   return "";
 }
 
-async function pullArt(key) {
+async function pullArt(key, file) {
   if ((!cfg.catalogOwner && !cfg.token) || !cfg.catalogId || artPulling.has(key)) return;
   if (coverCache.get("art:" + key)) return;
   artPulling.add(key);
   try {
-    let txt = await catRaw(CAT_ART_FILE(key), 25000);
+    const имя = file || CAT_ART_FILE(key);
+    let txt = await catRaw(имя, 25000);
     if (!txt) {
       const files = await catalogFiles(false);
-      txt = await catText(files, CAT_ART_FILE(key), 25000);
+      txt = await catText(files, имя, 25000);
     }
     if (!txt) return;
     txt = txt.trim();
