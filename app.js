@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 232";
+const APP_VERSION = "Кэйко 233";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10168,10 +10168,19 @@ function рисуйСнимки(ожидание) {
     const s1 = shots.one;
     box.innerHTML = шапка + `
       <div class="sh-one">
-        <img src="${esc(pvImg(s1.file, "d"))}" alt="${esc(s1.title || "")}">
+        <div class="sh-zoom"><img src="${esc(pvImg(s1.file, "d"))}" alt="${esc(s1.title || "")}" draggable="false"></div>
         <b>${esc(s1.title || "Без названия")}</b>
-        <p>${s1.year ? esc(String(s1.year)) + " год · " : ""}снимок из архива PastVu</p>
+        <p>${s1.year ? esc(String(s1.year)) + " год · " : ""}снимок из архива PastVu · приближается пальцами</p>
       </div>`;
+    /* Крупный файл иногда не отдаётся — тогда показываем миниатюру: лучше
+       мелкий снимок, чем пустое место. */
+    const кадр = box.querySelector(".sh-one img");
+    if (кадр) кадр.addEventListener("error", function () {
+      if (this.dataset.мелкий) return;
+      this.dataset.мелкий = "1";
+      this.src = pvImg(s1.file, "h");
+    });
+    shZoom(box.querySelector(".sh-zoom"));
   } else if (!shots.список) {
     box.innerHTML = шапка + `<div class="sh-none">Ищу снимки…</div>`;
   } else if (!shots.список.length) {
@@ -10198,6 +10207,91 @@ function рисуйСнимки(ожидание) {
       рисуйСнимки();
       const b = $("#gmShots"); if (b) b.scrollTop = 0;
     }));
+}
+
+/* Снимок можно рассмотреть: щипок приближает, палец таскает, двойное касание
+   возвращает к целому кадру. На старых фотографиях самое интересное — мелочи:
+   вывески, экипажи, лица в окнах. */
+function shZoom(рамка) {
+  if (!рамка) return;
+  const img = рамка.querySelector("img");
+  let scale = 1, tx = 0, ty = 0;
+  const точки = new Map();
+  let старт = null, щипок = false, тянули = false, last = 0;
+
+  const применить = () => {
+    const w = рамка.clientWidth, h = рамка.clientHeight;
+    if (scale <= 1) { scale = 1; tx = 0; ty = 0; }
+    else {
+      tx = Math.min(0, Math.max(w - w * scale, tx));
+      ty = Math.min(0, Math.max(h - h * scale, ty));
+    }
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    рамка.classList.toggle("zoomed", scale > 1);
+  };
+
+  рамка.addEventListener("pointerdown", (e) => {
+    точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { рамка.setPointerCapture(e.pointerId); } catch {}
+    if (точки.size === 1) { старт = { x: e.clientX, y: e.clientY, tx, ty }; щипок = false; тянули = false; }
+    if (точки.size === 2) {
+      const [a, b] = [...точки.values()];
+      щипок = true;
+      старт = { d: Math.hypot(a.x - b.x, a.y - b.y), scale,
+                cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, tx, ty };
+    }
+  });
+  рамка.addEventListener("pointermove", (e) => {
+    if (!точки.has(e.pointerId) || !старт) return;
+    точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (точки.size === 1 && !старт.d) {
+      if (scale <= 1) return;                       // целый кадр не таскаем: пусть страница листается
+      const dx = e.clientX - старт.x, dy = e.clientY - старт.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) тянули = true;
+      tx = старт.tx + dx; ty = старт.ty + dy;
+      применить();
+      e.preventDefault();
+    } else if (точки.size === 2 && старт.d) {
+      const [a, b] = [...точки.values()];
+      const k = Math.min(6, Math.max(1, старт.scale * (Math.hypot(a.x - b.x, a.y - b.y) / старт.d)));
+      const r = рамка.getBoundingClientRect();
+      const cx = старт.cx - r.left, cy = старт.cy - r.top;
+      tx = cx - (cx - старт.tx) * (k / старт.scale);
+      ty = cy - (cy - старт.ty) * (k / старт.scale);
+      scale = k;
+      применить();
+      e.preventDefault();
+    }
+  });
+  const конец = (e) => {
+    точки.delete(e.pointerId);
+    if (!точки.size) старт = null;
+  };
+  рамка.addEventListener("pointerup", (e) => {
+    const t = Date.now();
+    if (!щипок && !тянули && t - last < 300) {
+      const r = рамка.getBoundingClientRect();
+      const cx = e.clientX - r.left, cy = e.clientY - r.top;
+      const k = scale > 1.2 ? 1 : 2.5;
+      tx = cx - (cx - tx) * (k / scale);
+      ty = cy - (cy - ty) * (k / scale);
+      scale = k;
+      применить();
+      last = 0;
+    } else last = (!щипок && !тянули) ? t : 0;
+    конец(e);
+  });
+  рамка.addEventListener("pointercancel", конец);
+  рамка.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = рамка.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const k = Math.min(6, Math.max(1, scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    tx = cx - (cx - tx) * (k / scale);
+    ty = cy - (cy - ty) * (k / scale);
+    scale = k;
+    применить();
+  }, { passive: false });
 }
 
 function bindPlaceMap() {
