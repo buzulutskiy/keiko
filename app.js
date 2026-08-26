@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 230";
+const APP_VERSION = "Кэйко 231";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -588,6 +588,10 @@ const mapBox = (b) => {
    строится ключ хранения — старая копия на устройстве больше не переживает
    замену. */
 const mapKey = (id) => "map-" + id + "-v" + (((artsOf(id) || {}).mapVer) || 1);
+/* Годы, за которые у места стоит искать старые снимки. Есть не у всякой книги:
+   у «Одиссеи» фотографий той эпохи нет по понятным причинам, а у книги про
+   стеки места разбросаны по миру, где архив пуст. */
+const pastvuYears = (b) => (artsOf((b || book()).id) || {}).pastvu || null;
 const mapFile = (id) => CAT_ART_FILE("map-" + id);
 /* Меркатор: карта нарисована им, значит и точки надо ставить по нему, иначе
    к северу всё поедет. */
@@ -10063,10 +10067,18 @@ function gmCard() {
     + `кто там жил, что происходило в древности и позже, что от этого сохранилось сегодня.`);
   const история = `https://www.perplexity.ai/search?q=${вопрос}`;
   card.hidden = false;
+  /* PastVu — архив старых снимков, привязанных к карте. Открываем его на этой
+     же точке и в тех годах, о которых книга: увидеть место таким, каким оно
+     было при героях. */
+  const годы = pastvuYears(gm && gm.id ? { id: gm.id } : null);
+  const старое = годы
+    ? `https://pastvu.com/?g=${p.lat},${p.lon}&z=17&y=${годы.y}&y2=${годы.y2}`
+    : "";
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     <p>${esc(p.t || "")}</p>
     <div class="gm-links">
+      ${старое ? `<a href="${esc(старое)}" target="_blank" rel="noopener">Старые фото</a>` : ""}
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
       <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
       <a href="${esc(гео)}" target="_blank" rel="noopener">На карте</a>

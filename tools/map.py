@@ -79,8 +79,15 @@ def записать(files):
     sys.exit("не записалось")
 
 def main():
-    if len(sys.argv) < 3: sys.exit(__doc__)
-    key, путь = sys.argv[1], sys.argv[2]
+    argv = sys.argv[1:]
+    годы = None
+    if "--годы" in argv:
+        i = argv.index("--годы")
+        годы = (int(argv[i + 1]), int(argv[i + 2]))
+        del argv[i:i + 3]
+    if len(argv) < 2: sys.exit(__doc__)
+    key, путь = argv[0], argv[1]
+    sys.argv = ["map.py"] + argv          # дальше разбор по старым правилам
     точки = разобрать(open(путь, encoding="utf-8").read())
     if not точки: sys.exit("в файле не нашлось ни одной точки")
 
@@ -89,6 +96,9 @@ def main():
     старые = [p for p in (pack.get("map") or []) if p.get("ch") not in песни]
     pack["map"] = sorted(старые + точки, key=lambda p: (p["ch"], p["name"]))
 
+    if годы:
+        # диапазон для старых фотографий: по нему открывается PastVu
+        pack["pastvu"] = {"y": годы[0], "y2": годы[1]}
     files = {ART_FILE(key): pack}
     # каталог должен знать, что у материала есть свой файл: по этому флажку
     # приложение показывает кнопку, не скачивая тяжёлое
