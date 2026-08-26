@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 222";
+const APP_VERSION = "Кэйко 223";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4932,7 +4932,13 @@ function рисуйРазговор(bk) {
     else toast(artsWhy || "Ничего не пришло");
   });
   document.querySelectorAll("[data-tv]").forEach((el) =>
-    el.addEventListener("click", () => { talkView = el.dataset.tv; рисуйРазговор(bk); }));
+    el.addEventListener("click", () => {
+      /* Карта в шторке размером с ладонь бессмысленна — вкладка сразу открывает
+         её во весь экран, а разбор остаётся под ней там, где был. */
+      if (el.dataset.tv === "map") { openPlaceMap(bk, глава.i); return; }
+      talkView = el.dataset.tv;
+      рисуйРазговор(bk);
+    }));
   /* Точка на маленькой карте и название под ней ведут в одно место: карта во
      весь экран, уже подведённая к этой точке. Рассматривать её в шторке
      размером с ладонь бессмысленно. */
@@ -9815,6 +9821,15 @@ function openPlaceMap(bk, i, выбрать) {
   gmFit();
   gmCard();
   keepAwake(true);
+  /* Точки и запросы для поиска живут в том же файле, что разбор: спрашиваем
+     свежий — на устройстве мог лежать старый, ещё с русскими запросами. */
+  pullArts(bk.id).then((новое) => {
+    if (!новое || !gm || gm.id !== bk.id) return;
+    gm.места = mapOfChapter(bk, i);
+    gm.рамка = mapBox(bk) || gm.рамка;
+    gmPins();
+    gmCard();
+  }).catch(() => {});
 }
 
 function gmWait(on) {
@@ -9901,7 +9916,7 @@ function gmFocus(name, scale) {
   const p = gm && gm.места.find((x) => x.name === name);
   if (!p || !gm.base) return;
   const { x, y } = mapXY(gm.рамка, p);
-  gm.scale = Math.min(6, Math.max(1, scale || gm.scale));
+  gm.scale = Math.min(8, Math.max(1, scale || gm.scale));
   const px = gm.base.w * gm.scale * x / 100, py = gm.base.h * gm.scale * y / 100;
   gm.tx = gm.base.sw / 2 - px;
   gm.ty = gm.base.sh / 2 - py - 40;         // чуть выше центра: снизу карточка
@@ -9958,12 +9973,16 @@ function bindPlaceMap() {
   /* Жесты: одним пальцем тащим, двумя приближаем. Колесо — для настольного
      браузера. Всё на указателях, поэтому мышь и палец работают одинаково. */
   const точки = new Map();
-  let старт = null;
+  let старт = null, щипок = false, тянули = false;
   stage.addEventListener("pointerdown", (e) => {
     if (!gm) return;
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    stage.setPointerCapture(e.pointerId);
-    if (точки.size === 1) старт = { x: e.clientX, y: e.clientY, tx: gm.tx, ty: gm.ty, moved: false };
+    try { stage.setPointerCapture(e.pointerId); } catch {}
+    if (точки.size === 1) {
+      старт = { x: e.clientX, y: e.clientY, tx: gm.tx, ty: gm.ty, moved: false };
+      щипок = false; тянули = false;
+    }
+    if (точки.size === 2) щипок = true;
     if (точки.size === 2) {
       const [a, b] = [...точки.values()];
       старт = { d: Math.hypot(a.x - b.x, a.y - b.y), scale: gm.scale,
@@ -9975,13 +9994,13 @@ function bindPlaceMap() {
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (точки.size === 1 && старт && старт.tx !== undefined && !старт.d) {
       const dx = e.clientX - старт.x, dy = e.clientY - старт.y;
-      if (Math.abs(dx) + Math.abs(dy) > 6) старт.moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 6) { старт.moved = true; тянули = true; }
       gm.tx = старт.tx + dx; gm.ty = старт.ty + dy;
       gmClamp(); gmApply();
     } else if (точки.size === 2 && старт && старт.d) {
       const [a, b] = [...точки.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      const k = Math.min(6, Math.max(1, старт.scale * (d / старт.d)));
+      const k = Math.min(8, Math.max(1, старт.scale * (d / старт.d)));
       const r = stage.getBoundingClientRect();
       const cx = старт.cx - r.left, cy = старт.cy - r.top;
       // точка под пальцами остаётся под пальцами
@@ -9993,7 +10012,11 @@ function bindPlaceMap() {
   });
   const конец = (e) => {
     точки.delete(e.pointerId);
-    if (!точки.size) старт = null;
+    if (!точки.size) { старт = null; return; }
+    /* Один палец убрали, второй остался — дальше это перетаскивание, а не
+       щипок: перезаводим отсчёт, иначе карта замирает до полного отпускания. */
+    const [a] = [...точки.values()];
+    старт = { x: a.x, y: a.y, tx: gm ? gm.tx : 0, ty: gm ? gm.ty : 0, moved: true };
   };
   stage.addEventListener("pointerup", конец);
   stage.addEventListener("pointercancel", конец);
@@ -10003,18 +10026,23 @@ function bindPlaceMap() {
     e.preventDefault();
     const r = stage.getBoundingClientRect();
     const cx = e.clientX - r.left, cy = e.clientY - r.top;
-    const k = Math.min(6, Math.max(1, gm.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const k = Math.min(8, Math.max(1, gm.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
     gm.tx = cx - (cx - gm.tx) * (k / gm.scale);
     gm.ty = cy - (cy - gm.ty) * (k / gm.scale);
     gm.scale = k;
     gmClamp(); gmApply();
   }, { passive: false });
 
-  // двойное касание — приблизить и отдалить обратно
-  let last = 0;
+  /* Двойное касание — приблизить и отдалить обратно. Но два пальца при щипке
+     тоже дают два «отпускания» подряд, и приближение честно сбрасывалось в
+     единицу сразу после жеста: казалось, что карта «откидывает назад».
+     Поэтому считаем двойным касанием только одиночные тапы без движения. */
+  let last = 0, lastXY = null;
   stage.addEventListener("pointerup", (e) => {
     const t = Date.now();
-    if (t - last < 300 && gm) {
+    const одиночный = !щипок && !тянули;      // ни второго пальца, ни перетаскивания
+    const рядом = lastXY && Math.hypot(e.clientX - lastXY.x, e.clientY - lastXY.y) < 30;
+    if (одиночный && рядом && t - last < 300 && gm) {
       const r = stage.getBoundingClientRect();
       const cx = e.clientX - r.left, cy = e.clientY - r.top;
       const k = gm.scale > 1.6 ? 1 : 2.6;
@@ -10023,7 +10051,8 @@ function bindPlaceMap() {
       gm.scale = k;
       gmClamp(); gmApply();
     }
-    last = t;
+    last = одиночный ? t : 0;
+    lastXY = { x: e.clientX, y: e.clientY };
   });
 
   window.addEventListener("resize", () => { if (gm) gmFit(); });
