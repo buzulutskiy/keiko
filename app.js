@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 218";
+const APP_VERSION = "Кэйко 219";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4852,7 +4852,7 @@ function рисуйРазговор(bk) {
       </div>` : ""}
     ${вид === "map" ? (() => {
       const src = artSrc("map-" + bk.id);
-      const точка = места.find((p) => p.name === mapAt) || null;
+      const точка = null;
       return `
       <div class="mp">
         <div class="mp-box">
@@ -4865,12 +4865,10 @@ function рисуйРазговор(bk) {
           }).join("")}
         </div>
         <div class="mp-names">
-          ${места.map((p) => `<button class="mp-name${точка && точка.name === p.name ? " on" : ""}"
-            data-mp="${esc(p.name)}" type="button">${esc(p.name)}</button>`).join("")}
+          ${места.map((p) => `<button class="mp-name" data-mp="${esc(p.name)}" type="button">${esc(p.name)}</button>`).join("")}
         </div>
-        ${точка ? `<div class="mp-card"><b>${esc(точка.name)}</b><p>${esc(точка.t)}</p></div>`
-                : `<p class="mp-hint">Нажми на точку или название — расскажу, что это за место</p>`}
-        <p class="mp-att">карта © OpenStreetMap</p>
+        <button class="mp-full" data-mp="" type="button">Открыть карту во весь экран</button>
+        <p class="mp-att">карта © OpenStreetMap · внутри приближается пальцами</p>
       </div>` })() : ""}
     ${вид === "map" ? "" : вид === "faq" && !вопросы.length ? `
     <div class="ar-wait" style="margin-top:16px">вопросы ещё не приехали${artsWhy ? " · " + esc(artsWhy) : ""}</div>
@@ -4930,11 +4928,11 @@ function рисуйРазговор(bk) {
   });
   document.querySelectorAll("[data-tv]").forEach((el) =>
     el.addEventListener("click", () => { talkView = el.dataset.tv; рисуйРазговор(bk); }));
+  /* Точка на маленькой карте и название под ней ведут в одно место: карта во
+     весь экран, уже подведённая к этой точке. Рассматривать её в шторке
+     размером с ладонь бессмысленно. */
   document.querySelectorAll("[data-mp]").forEach((el) =>
-    el.addEventListener("click", () => {
-      mapAt = mapAt === el.dataset.mp ? null : el.dataset.mp;   // повторный тык закрывает
-      рисуйРазговор(bk);
-    }));
+    el.addEventListener("click", () => openPlaceMap(bk, глава.i, el.dataset.mp || null)));
   document.querySelectorAll("[data-cp]").forEach((el) =>
     el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)],
       вид === "faq" ? "Вопрос" : "Абзац")));
@@ -9760,6 +9758,228 @@ function pracFinish() {
   if (won) setTimeout(() => showWon(won), 380);
 }
 
+
+/* ══════════ Карта мест во весь экран ══════════
+   Маленькая карта в разборе — только повод открыть большую: там точки
+   приближаются пальцами, а нажатие поднимает карточку снизу. Ссылка ведёт на
+   обычные карты — посмотреть, как место выглядит сегодня. */
+let gm = null;      // {места, рамка, at, scale, tx, ty}
+
+function openPlaceMap(bk, i, выбрать) {
+  const места = mapOfChapter(bk, i);
+  const рамка = mapBox(bk);
+  if (!места.length || !рамка) { toast("Карты для этой песни пока нет"); return; }
+  const box = $("#gmap");
+  if (!box) return;
+  gm = { места, рамка, at: выбрать || null, scale: 1, tx: 0, ty: 0, id: bk.id,
+         name: (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : "" };
+  $("#gmTitle").textContent = gm.name;
+  const img = $("#gmImg");
+  const src = artSrc("map-" + bk.id);
+  if (src) img.src = src;
+  else { img.removeAttribute("src"); pullArt("map-" + bk.id); }
+  box.hidden = false;
+  box.setAttribute("aria-hidden", "false");
+  document.body.classList.add("prac-on");
+  gmPins();
+  gmFit();
+  gmCard();
+  keepAwake(true);
+}
+
+function closePlaceMap() {
+  const box = $("#gmap");
+  if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
+  document.body.classList.remove("prac-on");
+  gm = null;
+  keepAwake(false);
+}
+
+function gmPins() {
+  const box = $("#gmPins");
+  if (!box || !gm) return;
+  box.innerHTML = gm.места.map((p) => {
+    const { x, y } = mapXY(gm.рамка, p);
+    return `<button class="gm-pin${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
+      style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%" type="button"><i></i><span>${esc(p.name)}</span></button>`;
+  }).join("");
+  gmScalePins();
+}
+
+/* Точки не растут вместе с картой: кружок остаётся кружком, иначе на четвёртом
+   приближении он занимает пол-Пелопоннеса. */
+function gmScalePins() {
+  if (!gm) return;
+  const k = 1 / gm.scale;
+  document.querySelectorAll(".gm-pin").forEach((el) => {
+    el.style.transform = `translate(-50%, -50%) scale(${k.toFixed(3)})`;
+  });
+  /* На общем виде подписи налезают друг на друга — показываем их, только когда
+     карта приближена; выбранная точка подписана всегда. */
+  const pins = $("#gmPins");
+  if (pins) pins.classList.toggle("tight", gm.scale < 1.8);
+}
+
+function gmApply() {
+  const wrap = $("#gmWrap");
+  if (!wrap || !gm) return;
+  wrap.style.transform = `translate(${gm.tx}px, ${gm.ty}px) scale(${gm.scale})`;
+  gmScalePins();
+}
+
+/* Вписываем карту в экран и запоминаем базовый размер: всё остальное считается
+   от него, поэтому поворот телефона ничего не ломает. */
+function gmFit() {
+  const stage = $("#gmStage"), wrap = $("#gmWrap"), img = $("#gmImg");
+  if (!stage || !wrap || !img || !gm) return;
+  const прим = () => {
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const iw = img.naturalWidth || sw, ih = img.naturalHeight || sh;
+    /* Вписываем целиком, а не заполняем экран: при открытии важно увидеть всю
+       картину сразу — где Итака, а где Троя. Приблизить можно пальцами. */
+    const w = sw, h = w * ih / iw;
+    wrap.style.width = w + "px";
+    gm.base = { w, h, sw, sh };
+    gm.scale = 1;
+    gm.tx = 0;
+    gm.ty = Math.max(0, (sh - h) / 2);
+    gmApply();
+    if (gm.at) gmFocus(gm.at, 2.2);
+  };
+  if (img.complete && img.naturalWidth) прим();
+  else img.onload = прим;
+}
+
+// подвести выбранную точку к центру экрана
+function gmFocus(name, scale) {
+  const p = gm && gm.места.find((x) => x.name === name);
+  if (!p || !gm.base) return;
+  const { x, y } = mapXY(gm.рамка, p);
+  gm.scale = Math.min(6, Math.max(1, scale || gm.scale));
+  const px = gm.base.w * gm.scale * x / 100, py = gm.base.h * gm.scale * y / 100;
+  gm.tx = gm.base.sw / 2 - px;
+  gm.ty = gm.base.sh / 2 - py - 40;         // чуть выше центра: снизу карточка
+  gmClamp();
+  gmApply();
+}
+
+/* Карту нельзя утащить в пустоту: край изображения не уходит дальше края
+   экрана, а если карта меньше экрана — она просто стоит по центру. */
+function gmClamp() {
+  if (!gm || !gm.base) return;
+  const w = gm.base.w * gm.scale, h = gm.base.h * gm.scale;
+  const sw = gm.base.sw, sh = gm.base.sh;
+  gm.tx = w <= sw ? (sw - w) / 2 : Math.min(0, Math.max(sw - w, gm.tx));
+  gm.ty = h <= sh ? (sh - h) / 2 : Math.min(0, Math.max(sh - h, gm.ty));
+}
+
+function gmCard() {
+  const card = $("#gmCard");
+  if (!card || !gm) return;
+  const p = gm.места.find((x) => x.name === gm.at);
+  if (!p) { card.hidden = true; card.innerHTML = ""; return; }
+  /* Ссылка на обычные карты по координатам: там фотографии, панорамы и то,
+     как место называется сегодня. Своя ссылка в данных важнее — если она есть,
+     показываем обе. */
+  const гео = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  card.hidden = false;
+  card.innerHTML = `
+    <b>${esc(p.name)}</b>
+    <p>${esc(p.t || "")}</p>
+    <div class="gm-links">
+      <a href="${esc(гео)}" target="_blank" rel="noopener">Фото и панорамы</a>
+      ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
+    </div>`;
+}
+
+function bindPlaceMap() {
+  const box = $("#gmap"), stage = $("#gmStage");
+  if (!box || !stage) return;
+  $("#gmClose").addEventListener("click", closePlaceMap);
+
+  box.addEventListener("click", (e) => {
+    const pin = e.target.closest("[data-gm]");
+    if (!pin || !gm) return;
+    gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
+    gmPins();
+    gmCard();
+    if (gm.at) gmFocus(gm.at, Math.max(gm.scale, 2.2));
+  });
+
+  /* Жесты: одним пальцем тащим, двумя приближаем. Колесо — для настольного
+     браузера. Всё на указателях, поэтому мышь и палец работают одинаково. */
+  const точки = new Map();
+  let старт = null;
+  stage.addEventListener("pointerdown", (e) => {
+    if (!gm) return;
+    точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    stage.setPointerCapture(e.pointerId);
+    if (точки.size === 1) старт = { x: e.clientX, y: e.clientY, tx: gm.tx, ty: gm.ty, moved: false };
+    if (точки.size === 2) {
+      const [a, b] = [...точки.values()];
+      старт = { d: Math.hypot(a.x - b.x, a.y - b.y), scale: gm.scale,
+                cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, tx: gm.tx, ty: gm.ty, moved: true };
+    }
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!gm || !точки.has(e.pointerId)) return;
+    точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (точки.size === 1 && старт && старт.tx !== undefined && !старт.d) {
+      const dx = e.clientX - старт.x, dy = e.clientY - старт.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) старт.moved = true;
+      gm.tx = старт.tx + dx; gm.ty = старт.ty + dy;
+      gmClamp(); gmApply();
+    } else if (точки.size === 2 && старт && старт.d) {
+      const [a, b] = [...точки.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const k = Math.min(6, Math.max(1, старт.scale * (d / старт.d)));
+      const r = stage.getBoundingClientRect();
+      const cx = старт.cx - r.left, cy = старт.cy - r.top;
+      // точка под пальцами остаётся под пальцами
+      gm.tx = cx - (cx - старт.tx) * (k / старт.scale);
+      gm.ty = cy - (cy - старт.ty) * (k / старт.scale);
+      gm.scale = k;
+      gmClamp(); gmApply();
+    }
+  });
+  const конец = (e) => {
+    точки.delete(e.pointerId);
+    if (!точки.size) старт = null;
+  };
+  stage.addEventListener("pointerup", конец);
+  stage.addEventListener("pointercancel", конец);
+
+  stage.addEventListener("wheel", (e) => {
+    if (!gm) return;
+    e.preventDefault();
+    const r = stage.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const k = Math.min(6, Math.max(1, gm.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    gm.tx = cx - (cx - gm.tx) * (k / gm.scale);
+    gm.ty = cy - (cy - gm.ty) * (k / gm.scale);
+    gm.scale = k;
+    gmClamp(); gmApply();
+  }, { passive: false });
+
+  // двойное касание — приблизить и отдалить обратно
+  let last = 0;
+  stage.addEventListener("pointerup", (e) => {
+    const t = Date.now();
+    if (t - last < 300 && gm) {
+      const r = stage.getBoundingClientRect();
+      const cx = e.clientX - r.left, cy = e.clientY - r.top;
+      const k = gm.scale > 1.6 ? 1 : 2.6;
+      gm.tx = cx - (cx - gm.tx) * (k / gm.scale);
+      gm.ty = cy - (cy - gm.ty) * (k / gm.scale);
+      gm.scale = k;
+      gmClamp(); gmApply();
+    }
+    last = t;
+  });
+
+  window.addEventListener("resize", () => { if (gm) gmFit(); });
+}
+
 function bindPractice() {
   $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
   $("#pracPlayer").addEventListener("pointerdown", plDrag);
@@ -11224,10 +11444,20 @@ const artsPulling = new Set();
    вызвавшему, что содержимое обновилось. */
 /* Прямая ссылка на файл гиста, без ревизии в адресе: всегда отдаёт свежее.
    Это один запрос вместо описи всего гиста — и он проходит там, где тяжёлая
-   опись срывается по таймауту. */
-const artsURL = (id) => (cfg.catalogOwner && cfg.catalogId)
-  ? `https://gist.githubusercontent.com/${encodeURIComponent(cfg.catalogOwner)}/${cfg.catalogId}/raw/${CAT_ARTS_FILE(id)}`
+   опись срывается по таймауту. Опись каталога с обложками и звуком весит
+   мегабайт, и с ростом гиста ею стало дорого пользоваться ради одного файла. */
+const rawURL = (name) => (cfg.catalogOwner && cfg.catalogId)
+  ? `https://gist.githubusercontent.com/${encodeURIComponent(cfg.catalogOwner)}/${cfg.catalogId}/raw/${name}`
   : "";
+async function catRaw(name, ms) {
+  const url = rawURL(name);
+  if (!url) return null;
+  try {
+    const r = await withTimeout(fetch(url, { cache: "no-store" }), ms || 25000);
+    return r.ok ? await r.text() : null;
+  } catch { return null; }
+}
+const artsURL = (id) => rawURL(CAT_ARTS_FILE(id));
 
 let artsWhy = "";        // почему не приехало — показываем по кнопке в настройках
 
@@ -11275,12 +11505,15 @@ function artSrc(key) {
 }
 
 async function pullArt(key) {
-  if (!cfg.token || !cfg.catalogId || artPulling.has(key)) return;
+  if ((!cfg.catalogOwner && !cfg.token) || !cfg.catalogId || artPulling.has(key)) return;
   if (coverCache.get("art:" + key)) return;
   artPulling.add(key);
   try {
-    const files = await catalogFiles(false);
-    let txt = await catText(files, CAT_ART_FILE(key), 25000);
+    let txt = await catRaw(CAT_ART_FILE(key), 25000);
+    if (!txt) {
+      const files = await catalogFiles(false);
+      txt = await catText(files, CAT_ART_FILE(key), 25000);
+    }
     if (!txt) return;
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
@@ -11477,11 +11710,14 @@ async function coverPump() {
 }
 
 async function pullCover(id) {
-  if (!cfg.token || !cfg.catalogId || coverPulling.has(id)) return;
+  if ((!cfg.catalogOwner && !cfg.token) || !cfg.catalogId || coverPulling.has(id)) return;
   coverPulling.add(id);
   try {
-    const files = await catalogFiles(false);
-    let txt = await catText(files, CAT_COVER_FILE(id), 25000);
+    let txt = await catRaw(CAT_COVER_FILE(id), 25000);
+    if (!txt) {
+      const files = await catalogFiles(false);
+      txt = await catText(files, CAT_COVER_FILE(id), 25000);
+    }
     if (!txt) return;
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
@@ -12818,6 +13054,7 @@ function boot() {
   // если доступ к движению уже разрешён — просто подписываемся
 
   bindPractice();
+  bindPlaceMap();
   $("#sheetBg").addEventListener("click", closeSheet);
   $("#cheerOk").addEventListener("click", () => {
     $("#cheer").classList.remove("show", "daily");
