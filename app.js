@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 236";
+const APP_VERSION = "Кэйко 237";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10059,6 +10059,9 @@ function gmCard() {
      туда, куда мы её поставили, а как называется то, что рядом, видно на
      самой карте. Метка подписана нашим именем места. */
   const гео = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  /* Яндекс полезнее по России: у него подробнее сибирские берега и подписи
+     по-русски. Порядок координат у него обратный — сначала долгота. */
+  const янд = `https://yandex.ru/maps/?ll=${p.lon},${p.lat}&z=16&pt=${p.lon},${p.lat},pm2rdm`;
   /* «История» — вопрос в Perplexity: он собирает ответ из открытых источников
      и показывает ссылки. Спрашиваем по-русски, но место называем так, как его
      знают в мире, — иначе поиск уводит не туда. */
@@ -10079,7 +10082,8 @@ function gmCard() {
       ${годы ? `<a href="#" data-shots="1">Старые фото</a>` : ""}
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
       <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
-      <a href="${esc(гео)}" target="_blank" rel="noopener">На карте</a>
+      <a href="${esc(гео)}" target="_blank" rel="noopener">Google</a>
+      <a href="${esc(янд)}" target="_blank" rel="noopener">Яндекс</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
     </div>`;
 }
