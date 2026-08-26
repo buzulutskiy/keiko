@@ -1817,6 +1817,10 @@
       box-shadow: 0 0 0 5px rgba(240, 187, 92, 0.2);
     }
     .gm-pin.on i { background: #fff; box-shadow: 0 0 0 7px rgba(255, 255, 255, 0.25); }
+    /* Приблизительная точка: полый кружок. Сплошной значит, что координата
+       сверена с настоящим объектом на местности. */
+    .gm-pin.near i { background: none; border-color: var(--gold); box-shadow: none; }
+    .gm-pin.near.on i { background: none; border-color: #fff; }
     /* Кучка: вместо кружка — число. Видно, что здесь несколько мест и что
        нажатие даст выбор, а не сразу одно из них наугад. */
     .gm-pin.many i { width: 24px; height: 24px; display: grid; place-items: center; }

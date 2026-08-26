@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 239";
+const APP_VERSION = "Кэйко 240";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9918,7 +9918,11 @@ function gmPins() {
   if (!box || !gm) return;
   box.innerHTML = gm.места.map((p) => {
     const { x, y } = mapXY(gm.рамка, p);
-    return `<button class="gm-pin${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
+    /* Часть координат выверена по объектам OpenStreetMap, часть поставлена
+       на глазок. Кружок у выверенной сплошной, у приблизительной — полый:
+       видно, чему верить, не открывая карточку. */
+    const примерно = /не выверен|стоит примерно/.test(p.t || "") ? " near" : "";
+    return `<button class="gm-pin${примерно}${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
       data-x="${x.toFixed(3)}" data-y="${y.toFixed(3)}" type="button"><i></i><span>${esc(p.name)}</span></button>`;
   }).join("");
   gmScalePins();
