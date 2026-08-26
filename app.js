@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 223";
+const APP_VERSION = "Кэйко 224";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9862,18 +9862,26 @@ function gmPins() {
   box.innerHTML = gm.места.map((p) => {
     const { x, y } = mapXY(gm.рамка, p);
     return `<button class="gm-pin${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
-      style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%" type="button"><i></i><span>${esc(p.name)}</span></button>`;
+      data-x="${x.toFixed(3)}" data-y="${y.toFixed(3)}" type="button"><i></i><span>${esc(p.name)}</span></button>`;
   }).join("");
   gmScalePins();
 }
 
 /* Точки не растут вместе с картой: кружок остаётся кружком, иначе на четвёртом
    приближении он занимает пол-Пелопоннеса. */
+/* Точки считаются в экранных координатах: где сейчас оказалась их доля карты
+   после сдвига и увеличения. Это и держит их чёткими — они не участвуют в
+   растягивании картинки. */
 function gmScalePins() {
-  if (!gm) return;
-  const k = 1 / gm.scale;
+  if (!gm || !gm.base) return;
+  const w = gm.base.w * gm.scale, h = gm.base.h * gm.scale;
   document.querySelectorAll(".gm-pin").forEach((el) => {
-    el.style.transform = `translate(-50%, -50%) scale(${k.toFixed(3)})`;
+    const x = gm.tx + w * Number(el.dataset.x) / 100;
+    const y = gm.ty + h * Number(el.dataset.y) / 100;
+    el.style.left = x.toFixed(1) + "px";
+    el.style.top = y.toFixed(1) + "px";
+    // за краем экрана точку не рисуем: она всё равно не видна, а тянет на себя касания
+    el.style.visibility = (x < -40 || y < -40 || x > gm.base.sw + 40 || y > gm.base.sh + 40) ? "hidden" : "";
   });
   /* На общем виде подписи налезают друг на друга — показываем их, только когда
      карта приближена; выбранная точка подписана всегда. */

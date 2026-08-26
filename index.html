@@ -1778,7 +1778,12 @@
     }
     #gmWrap { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
     #gmWrap img { display: block; width: 100%; height: auto; user-select: none; }
-    #gmPins { position: absolute; inset: 0; }
+    /* Точки лежат НАД увеличиваемой картой, а не внутри неё: внутри их
+       растягивало вместе с картинкой, и кружки с подписями мылились так же,
+       как сама карта. Теперь они считаются в экранных координатах и всегда
+       остаются чёткими. */
+    #gmPins { position: absolute; inset: 0; pointer-events: none; }
+    #gmPins .gm-pin { pointer-events: auto; }
     .gm-pin {
       position: absolute; transform: translate(-50%, -50%);
       display: grid; place-items: center; width: 30px; height: 30px;
@@ -3755,7 +3760,8 @@
       <button id="gmClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     <div id="gmStage">
-      <div id="gmWrap"><img id="gmImg" alt="" draggable="false"><div id="gmPins"></div></div>
+      <div id="gmWrap"><img id="gmImg" alt="" draggable="false"></div>
+      <div id="gmPins"></div>
     </div>
     <div id="gmCard" hidden></div>
   </div>
