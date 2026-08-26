@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 231";
+const APP_VERSION = "Кэйко 232";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9903,6 +9903,7 @@ function gmWait(on) {
 }
 
 function closePlaceMap() {
+  closeShots();
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
@@ -10071,14 +10072,12 @@ function gmCard() {
      же точке и в тех годах, о которых книга: увидеть место таким, каким оно
      было при героях. */
   const годы = pastvuYears(gm && gm.id ? { id: gm.id } : null);
-  const старое = годы
-    ? `https://pastvu.com/?g=${p.lat},${p.lon}&z=17&y=${годы.y}&y2=${годы.y2}`
-    : "";
+
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     <p>${esc(p.t || "")}</p>
     <div class="gm-links">
-      ${старое ? `<a href="${esc(старое)}" target="_blank" rel="noopener">Старые фото</a>` : ""}
+      ${годы ? `<a href="#" data-shots="1">Старые фото</a>` : ""}
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
       <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
       <a href="${esc(гео)}" target="_blank" rel="noopener">На карте</a>
@@ -10105,6 +10104,102 @@ function gmSearch(текст) {
     : `<button type="button" disabled>Ничего не нашлось</button>`;
 }
 
+
+/* ── Старые снимки места ──
+   Архив PastVu отдаёт снимки по координате обычным запросом, и это удобнее,
+   чем открывать их карту: телефон, чужой интерфейс, приближение — всё мимо.
+   Показываем ленту сами: миниатюры, год, подпись; нажатие открывает снимок
+   крупно, а ссылка ведёт на исходную страницу архива. */
+const PV_API = "https://pastvu.com/api2";
+const pvImg = (file, size) => `https://pastvu.com/_p/${size || "h"}/${file}`;
+const pvPage = (cid) => `https://pastvu.com/p/${cid}`;
+let shots = null;      // {место, список, at}
+
+async function pvNearest(lat, lon, годы, limit) {
+  const params = { geo: [lat, lon], limit: limit || 30 };
+  if (годы) { params.year = годы.y; params.year2 = годы.y2; }
+  const url = PV_API + "?method=photo.giveNearestPhotos&params=" + encodeURIComponent(JSON.stringify(params));
+  const r = await withTimeout(fetch(url), 15000);
+  if (!r.ok) throw new Error("архив не ответил");
+  const d = await r.json();
+  const list = (d && d.result && d.result.photos) || [];
+  /* Архив отдаёт и снимки без года — они нам не нужны, мы обещали эпоху. */
+  return list.filter((p) => p.file);
+}
+
+function openShots(p) {
+  const box = $("#gmShots");
+  if (!box || !gm) return;
+  shots = { место: p, список: null, one: null };
+  box.hidden = false;
+  box.setAttribute("aria-hidden", "false");
+  рисуйСнимки("Ищу снимки…");
+  const годы = pastvuYears({ id: gm.id });
+  pvNearest(p.lat, p.lon, годы, 30)
+    .then((list) => { if (shots) { shots.список = list; рисуйСнимки(); } })
+    .catch(() => { if (shots) { shots.сбой = true; рисуйСнимки("Архив не ответил"); } });
+}
+
+function closeShots() {
+  const box = $("#gmShots");
+  if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); box.innerHTML = ""; }
+  shots = null;
+}
+
+function рисуйСнимки(ожидание) {
+  const box = $("#gmShots");
+  if (!box || !shots) return;
+  const p = shots.место;
+  const годы = pastvuYears({ id: gm ? gm.id : "" });
+  const карта = `https://pastvu.com/?g=${p.lat},${p.lon}&z=17${годы ? `&y=${годы.y}&y2=${годы.y2}` : ""}`;
+  const шапка = `
+    <div class="sh-top">
+      <b>${esc(shots.one ? (shots.one.title || "Снимок") : p.name)}</b>
+      ${shots.one ? `<a href="${esc(pvPage(shots.one.cid))}" target="_blank" rel="noopener">Источник</a>`
+                  : `<a href="${esc(карта)}" target="_blank" rel="noopener">На карте архива</a>`}
+      <button data-sh="${shots.one ? "back" : "close"}" type="button">${shots.one ? "Назад" : "✕"}</button>
+    </div>`;
+
+  if (ожидание) {
+    box.innerHTML = шапка + `<div class="sh-none">${esc(ожидание)}
+      ${shots.сбой ? `<div style="margin-top:14px"><button class="btn" data-sh="retry" type="button">Ещё раз</button></div>` : ""}</div>`;
+  }
+  else if (shots.one) {
+    const s1 = shots.one;
+    box.innerHTML = шапка + `
+      <div class="sh-one">
+        <img src="${esc(pvImg(s1.file, "d"))}" alt="${esc(s1.title || "")}">
+        <b>${esc(s1.title || "Без названия")}</b>
+        <p>${s1.year ? esc(String(s1.year)) + " год · " : ""}снимок из архива PastVu</p>
+      </div>`;
+  } else if (!shots.список) {
+    box.innerHTML = шапка + `<div class="sh-none">Ищу снимки…</div>`;
+  } else if (!shots.список.length) {
+    box.innerHTML = шапка + `<div class="sh-none">Для этого места снимков тех лет в архиве нет.<br>
+      Попробуй «На карте архива» — рядом что-то может найтись.</div>`;
+  } else {
+    box.innerHTML = шапка + `<div class="sh-grid">${shots.список.map((s1, i) => `
+      <button class="sh-item" data-shot="${i}" type="button">
+        <img src="${esc(pvImg(s1.file, "h"))}" alt="" loading="lazy">
+        <b>${s1.year ? esc(String(s1.year)) : "год неизвестен"}</b>
+        <em>${esc(s1.title || "")}</em>
+      </button>`).join("")}</div>`;
+  }
+
+  box.querySelectorAll("[data-sh]").forEach((el) =>
+    el.addEventListener("click", () => {
+      if (el.dataset.sh === "back") { shots.one = null; рисуйСнимки(); }
+      else if (el.dataset.sh === "retry") { const п = shots.место; closeShots(); openShots(п); }
+      else closeShots();
+    }));
+  box.querySelectorAll("[data-shot]").forEach((el) =>
+    el.addEventListener("click", () => {
+      shots.one = shots.список[Number(el.dataset.shot)];
+      рисуйСнимки();
+      const b = $("#gmShots"); if (b) b.scrollTop = 0;
+    }));
+}
+
 function bindPlaceMap() {
   const box = $("#gmap"), stage = $("#gmStage");
   if (!box || !stage) return;
@@ -10128,6 +10223,13 @@ function bindPlaceMap() {
   });
 
   box.addEventListener("click", (e) => {
+    const shot = e.target.closest("[data-shots]");
+    if (shot) {
+      e.preventDefault();
+      const p = gm && gm.места.find((x) => x.name === gm.at);
+      if (p) openShots(p);
+      return;
+    }
     const pin = e.target.closest("[data-gm]");
     if (!pin || !gm) return;
     gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
