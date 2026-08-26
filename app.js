@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 229";
+const APP_VERSION = "Кэйко 230";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3332,7 +3332,7 @@ function renderHome() {
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
         <button class="cta-side" id="bookTalkBtn" type="button" ${talkBtnOn() ? "" : "hidden"}
-          aria-label="Разбор" title="Разбор"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.8c0 3.8-3.8 6.9-8.5 6.9-1 0-2-.14-2.9-.4L4 20l1.3-3.3C4.2 15.4 3.5 13.7 3.5 11.8c0-3.8 3.8-6.9 8.5-6.9s8.5 3.1 8.5 6.9Z"/><path d="M8.3 10.2h7.4M8.3 13.2h4.6"/></svg></button>
+          aria-label="${esc(talkBtnWord())}" title="${esc(talkBtnWord())}">${talkBtnIcon()}</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3622,6 +3622,11 @@ const talkBtnOn = () => isBook() &&
 // у материала бывает только карта — тогда кнопка ведёт прямо в неё
 const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(b).length > 0;
 
+/* Значок кнопки говорит, что за ней: у книги с разбором — облачко реплики,
+   у книги, где есть только карта, — карта. */
+const talkBtnIcon = () => onlyMap(book()) ? "🗺" : "💬";
+const talkBtnWord = () => onlyMap(book()) ? "Карта мест" : "Разбор";
+
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
    флажок «файл есть», и пока он не доехал, кнопки не было — а узнать правду
    можно прямым запросом за один заход. Спрашиваем раз на материал за сессию и
@@ -3675,7 +3680,13 @@ function updateHeroInfo() {
   }
 
   const talk = $("#bookTalkBtn");
-  if (talk) talk.hidden = !talkBtnOn();
+  if (talk) {
+    talk.hidden = !talkBtnOn();
+    // значок меняется вместе с материалом: лента свайпается без полной перерисовки
+    talk.textContent = talkBtnIcon();
+    talk.title = talkBtnWord();
+    talk.setAttribute("aria-label", talkBtnWord());
+  }
   artsPeek();          // вдруг разбор есть, а каталог об этом ещё не сказал
 
   const nudge = $(".nudge");
