@@ -1816,6 +1816,10 @@
       box-shadow: 0 0 0 5px rgba(240, 187, 92, 0.2);
     }
     .gm-pin.on i { background: #fff; box-shadow: 0 0 0 7px rgba(255, 255, 255, 0.25); }
+    /* Разложенные веером точки: чуть меньше и с ободком, чтобы было видно —
+       это не настоящее место каждой, а разведённая кучка. */
+    .gm-pin.fan i { width: 10px; height: 10px; box-shadow: 0 0 0 3px rgba(240, 187, 92, 0.16); }
+
     #gmPins.tight .gm-pin span { opacity: 0; }
     #gmPins.tight .gm-pin.on span { opacity: 1; }
     .gm-pin span {

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 228";
+const APP_VERSION = "Кэйко 229";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3626,6 +3626,7 @@ const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(
    флажок «файл есть», и пока он не доехал, кнопки не было — а узнать правду
    можно прямым запросом за один заход. Спрашиваем раз на материал за сессию и
    только если файла ещё нет на устройстве. */
+const GM_MAX = 60;                    // докуда пускаем увеличение карты
 const artsAsked = new Map();          // материал → когда спрашивали в последний раз
 function artsPeek() {
   if (!isBook()) return;
@@ -9915,21 +9916,62 @@ function gmPins() {
 function gmScalePins() {
   if (!gm || !gm.base) return;
   const w = gm.base.w * gm.scale, h = gm.base.h * gm.scale;
+  const видимые = [];
   document.querySelectorAll(".gm-pin").forEach((el) => {
     const x = gm.tx + w * Number(el.dataset.x) / 100;
     const y = gm.ty + h * Number(el.dataset.y) / 100;
     el.style.left = x.toFixed(1) + "px";
     el.style.top = y.toFixed(1) + "px";
+    el.classList.remove("fan");
     // за краем экрана точку не рисуем: она всё равно не видна, а тянет на себя касания
-    el.style.visibility = (x < -40 || y < -40 || x > gm.base.sw + 40 || y > gm.base.sh + 40) ? "hidden" : "";
+    const за = x < -40 || y < -40 || x > gm.base.sw + 40 || y > gm.base.sh + 40;
+    el.style.visibility = за ? "hidden" : "";
+    if (!за) видимые.push({ el, x, y });
   });
-  /* На общем виде подписи налезают друг на друга — показываем их, только когда
-     карта приближена; выбранная точка подписана всегда. */
+
+  /* Соседние стеки стоят в сотнях метров друг от друга: на карте мира это доли
+     пикселя, и никакое увеличение их не разведёт. Поэтому слипшиеся точки
+     раскладываем веером вокруг общего места — так до каждой можно дотянуться
+     пальцем и прочитать имя. */
+  /* Клетка размером с кружок: точки, попавшие в одну клетку, перекрывают друг
+     друга — их и раскладываем веером. Клетки не цепляются друг за друга, иначе
+     через соседей в одну кучу собирается пол-Европы. */
+  const КЛЕТКА = 14;
+  if (gm.scale < 4) { gmLabels(); return; }
+  const клетки = new Map();
+  for (const т of видимые) {
+    const k = Math.round(т.x / КЛЕТКА) + ":" + Math.round(т.y / КЛЕТКА);
+    if (!клетки.has(k)) клетки.set(k, []);
+    клетки.get(k).push(т);
+  }
+  for (const кучка of клетки.values()) {
+    if (кучка.length < 2) continue;
+    const cx = кучка.reduce((a, т) => a + т.x, 0) / кучка.length;
+    const cy = кучка.reduce((a, т) => a + т.y, 0) / кучка.length;
+    /* Больше восьми в клетке — раскладываем кольцами: одно кольцо такую кучу
+       не вмещает, точки снова сольются. */
+    const вКольце = 8;
+    кучка.forEach((т, i) => {
+      const кольцо = Math.floor(i / вКольце);
+      const место = i % вКольце;
+      const сколько = Math.min(вКольце, кучка.length - кольцо * вКольце);
+      const r = 20 + кольцо * 26;
+      const a = -Math.PI / 2 + место * 2 * Math.PI / сколько + (кольцо % 2 ? Math.PI / сколько : 0);
+      т.el.style.left = (cx + r * Math.cos(a)).toFixed(1) + "px";
+      т.el.style.top = (cy + r * Math.sin(a)).toFixed(1) + "px";
+      т.el.classList.add("fan");
+    });
+  }
+
+  gmLabels();
+}
+
+/* Подписи показываем, только если их немного: сто шесть имён поверх карты —
+   это сплошная каша при любом увеличении. Там, где точек много, имя видно
+   у выбранной, а остальные ищутся поиском. */
+function gmLabels() {
   const pins = $("#gmPins");
-  /* Подписи показываем, только если их немного: сто шесть имён поверх карты —
-     это сплошная каша при любом увеличении. Там, где точек много, имя видно
-     у выбранной, а остальные ищутся поиском. */
-  if (pins) pins.classList.toggle("tight", gm.scale < 1.8 || gm.места.length > 25);
+  if (pins && gm) pins.classList.toggle("tight", gm.scale < 1.8 || gm.места.length > 25);
 }
 
 function gmApply() {
@@ -9967,7 +10009,7 @@ function gmFocus(name, scale) {
   const p = gm && gm.места.find((x) => x.name === name);
   if (!p || !gm.base) return;
   const { x, y } = mapXY(gm.рамка, p);
-  gm.scale = Math.min(8, Math.max(1, scale || gm.scale));
+  gm.scale = Math.min(GM_MAX, Math.max(1, scale || gm.scale));
   const px = gm.base.w * gm.scale * x / 100, py = gm.base.h * gm.scale * y / 100;
   gm.tx = gm.base.sw / 2 - px;
   gm.ty = gm.base.sh / 2 - py - 40;         // чуть выше центра: снизу карточка
@@ -9995,7 +10037,13 @@ function gmCard() {
      ничего, а «остров Гоцо Мальта» найдёт. Карта остаётся второй кнопкой. */
   const запрос = encodeURIComponent(p.q || p.name);
   const фото = `https://www.google.com/search?tbm=isch&q=${запрос}`;
-  const гео = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  /* По названию карты находят место точнее, чем по координатам: у именованных
+     скал есть своя точка на карте. Но там, где у автора своё имя и координата
+     поставлена на глазок, название уведёт не туда — тогда только координаты. */
+  const наглаз = /стоит примерно/.test(p.t || "");
+  const гео = (p.q && !наглаз)
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.q)}`
+    : `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
   /* «История» — вопрос в Perplexity: он собирает ответ из открытых источников
      и показывает ссылки. Спрашиваем по-русски, но место называем так, как его
      знают в мире, — иначе поиск уводит не туда. */
@@ -10095,7 +10143,7 @@ function bindPlaceMap() {
     } else if (точки.size === 2 && старт && старт.d) {
       const [a, b] = [...точки.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      const k = Math.min(8, Math.max(1, старт.scale * (d / старт.d)));
+      const k = Math.min(GM_MAX, Math.max(1, старт.scale * (d / старт.d)));
       const r = stage.getBoundingClientRect();
       const cx = старт.cx - r.left, cy = старт.cy - r.top;
       // точка под пальцами остаётся под пальцами
@@ -10121,7 +10169,7 @@ function bindPlaceMap() {
     e.preventDefault();
     const r = stage.getBoundingClientRect();
     const cx = e.clientX - r.left, cy = e.clientY - r.top;
-    const k = Math.min(8, Math.max(1, gm.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const k = Math.min(GM_MAX, Math.max(1, gm.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
     gm.tx = cx - (cx - gm.tx) * (k / gm.scale);
     gm.ty = cy - (cy - gm.ty) * (k / gm.scale);
     gm.scale = k;
@@ -10140,7 +10188,10 @@ function bindPlaceMap() {
     if (одиночный && рядом && t - last < 300 && gm) {
       const r = stage.getBoundingClientRect();
       const cx = e.clientX - r.left, cy = e.clientY - r.top;
-      const k = gm.scale > 1.6 ? 1 : 2.6;
+      /* Двойное касание: если уже приблизил — возвращаемся к общему виду,
+         если нет — приближаем. Шаг крупный: мелкий шаг на такой карте
+         бессмыслен. */
+      const k = gm.scale > 1.6 ? 1 : 4;
       gm.tx = cx - (cx - gm.tx) * (k / gm.scale);
       gm.ty = cy - (cy - gm.ty) * (k / gm.scale);
       gm.scale = k;
