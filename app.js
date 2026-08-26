@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 224";
+const APP_VERSION = "Кэйко 225";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9953,12 +9953,20 @@ function gmCard() {
   const запрос = encodeURIComponent(p.q || p.name);
   const фото = `https://www.google.com/search?tbm=isch&q=${запрос}`;
   const гео = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  /* «История» — вопрос в Perplexity: он собирает ответ из открытых источников
+     и показывает ссылки. Спрашиваем по-русски, но место называем так, как его
+     знают в мире, — иначе поиск уводит не туда. */
+  const вопрос = encodeURIComponent(
+    `Расскажи историю места ${p.q || p.name} (${p.name} у Гомера): откуда название, `
+    + `кто там жил, что происходило в древности и позже, что от этого сохранилось сегодня.`);
+  const история = `https://www.perplexity.ai/search?q=${вопрос}`;
   card.hidden = false;
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     <p>${esc(p.t || "")}</p>
     <div class="gm-links">
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
+      <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
       <a href="${esc(гео)}" target="_blank" rel="noopener">На карте</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
     </div>`;
