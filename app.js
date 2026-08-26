@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 219";
+const APP_VERSION = "Кэйко 220";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9777,7 +9777,31 @@ function openPlaceMap(bk, i, выбрать) {
   const img = $("#gmImg");
   const src = artSrc("map-" + bk.id);
   if (src) img.src = src;
-  else { img.removeAttribute("src"); pullArt("map-" + bk.id); }
+  else {
+    /* Картинки ещё нет на устройстве: показываем ожидание и ставим её, как
+       только приедет, — сама карта об этом не узнает, перерисовка приложения
+       её не касается. */
+    img.removeAttribute("src");
+    gmWait(true);
+    pullArt("map-" + bk.id);
+    /* Ждём картинку, а не одно завершение запроса: её мог тянуть кто-то другой
+       раньше нас — тогда наш вызов вернётся сразу и ни о чём не скажет. */
+    let попыток = 0;
+    const ждать = setInterval(() => {
+      if (!gm) { clearInterval(ждать); return; }
+      const s2 = coverCache.get("art:map-" + gm.id);
+      if (s2) {
+        clearInterval(ждать);
+        img.src = s2;
+        gmWait(false);
+        gmFit();
+      } else if (++попыток > 40) {              // двадцать секунд — и хватит
+        clearInterval(ждать);
+        gmWait(false);
+        toast("Карта не загрузилась — попробуй ещё раз");
+      }
+    }, 500);
+  }
   box.hidden = false;
   box.setAttribute("aria-hidden", "false");
   document.body.classList.add("prac-on");
@@ -9785,6 +9809,22 @@ function openPlaceMap(bk, i, выбрать) {
   gmFit();
   gmCard();
   keepAwake(true);
+}
+
+function gmWait(on) {
+  const stage = $("#gmStage");
+  if (!stage) return;
+  let el = $("#gmWait");
+  if (on) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "gmWait";
+      el.className = "ar-wait";
+      el.style.cssText = "position:absolute;inset:0;display:grid;place-items:center;background:transparent";
+      el.textContent = "карта загружается…";
+      stage.appendChild(el);
+    }
+  } else if (el) el.remove();
 }
 
 function closePlaceMap() {
