@@ -1808,7 +1808,7 @@
     #gmPins .gm-pin { pointer-events: auto; }
     .gm-pin {
       position: absolute; transform: translate(-50%, -50%);
-      display: grid; place-items: center; width: 30px; height: 30px;
+      display: grid; place-items: center; width: 38px; height: 38px;
       background: none; border: 0; padding: 0;
     }
     .gm-pin i {
@@ -1817,9 +1817,14 @@
       box-shadow: 0 0 0 5px rgba(240, 187, 92, 0.2);
     }
     .gm-pin.on i { background: #fff; box-shadow: 0 0 0 7px rgba(255, 255, 255, 0.25); }
-    /* Разложенные веером точки: чуть меньше и с ободком, чтобы было видно —
-       это не настоящее место каждой, а разведённая кучка. */
-    .gm-pin.fan i { width: 10px; height: 10px; box-shadow: 0 0 0 3px rgba(240, 187, 92, 0.16); }
+    /* Кучка: вместо кружка — число. Видно, что здесь несколько мест и что
+       нажатие даст выбор, а не сразу одно из них наугад. */
+    .gm-pin.many i { width: 24px; height: 24px; display: grid; place-items: center; }
+    .gm-pin.many b {
+      position: absolute; font-size: 0.7rem; font-weight: 800; color: #14181f;
+      pointer-events: none;
+    }
+    .gm-pin.many span { opacity: 0 !important; }
 
     #gmPins.tight .gm-pin span { opacity: 0; }
     #gmPins.tight .gm-pin.on span { opacity: 1; }

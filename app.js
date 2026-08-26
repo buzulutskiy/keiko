@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 238";
+const APP_VERSION = "Кэйко 239";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9938,7 +9938,10 @@ function gmScalePins() {
     const y = gm.ty + h * Number(el.dataset.y) / 100;
     el.style.left = x.toFixed(1) + "px";
     el.style.top = y.toFixed(1) + "px";
-    el.classList.remove("fan");
+    // прошлое состояние кучки снимаем: считаем заново на каждом кадре
+    el.classList.remove("many");
+    el.removeAttribute("data-many");
+    const счёт = el.querySelector("b"); if (счёт) счёт.remove();
     // за краем экрана точку не рисуем: она всё равно не видна, а тянет на себя касания
     const за = x < -40 || y < -40 || x > gm.base.sw + 40 || y > gm.base.sh + 40;
     el.style.visibility = за ? "hidden" : "";
@@ -9946,37 +9949,32 @@ function gmScalePins() {
   });
 
   /* Соседние стеки стоят в сотнях метров друг от друга: на карте мира это доли
-     пикселя, и никакое увеличение их не разведёт. Поэтому слипшиеся точки
-     раскладываем веером вокруг общего места — так до каждой можно дотянуться
-     пальцем и прочитать имя. */
-  /* Клетка размером с кружок: точки, попавшие в одну клетку, перекрывают друг
-     друга — их и раскладываем веером. Клетки не цепляются друг за друга, иначе
-     через соседей в одну кучу собирается пол-Европы. */
-  const КЛЕТКА = 14;
-  if (gm.scale < 4) { gmLabels(); return; }
+     пикселя. Раньше такие точки раскладывались веером — но веер врёт: кружок
+     стоит не там, где место, и промахнуться легко. Теперь слипшиеся точки
+     собираются в одну с числом: нажал — и выбираешь из списка по имени.
+     Приближаешь — кучка распадается сама, точки встают по своим местам. */
+  const КЛЕТКА = 26;
+  gm.кучки = {};
   const клетки = new Map();
   for (const т of видимые) {
     const k = Math.round(т.x / КЛЕТКА) + ":" + Math.round(т.y / КЛЕТКА);
     if (!клетки.has(k)) клетки.set(k, []);
     клетки.get(k).push(т);
   }
-  for (const кучка of клетки.values()) {
+  for (const [k, кучка] of клетки) {
     if (кучка.length < 2) continue;
     const cx = кучка.reduce((a, т) => a + т.x, 0) / кучка.length;
     const cy = кучка.reduce((a, т) => a + т.y, 0) / кучка.length;
-    /* Больше восьми в клетке — раскладываем кольцами: одно кольцо такую кучу
-       не вмещает, точки снова сольются. */
-    const вКольце = 8;
-    кучка.forEach((т, i) => {
-      const кольцо = Math.floor(i / вКольце);
-      const место = i % вКольце;
-      const сколько = Math.min(вКольце, кучка.length - кольцо * вКольце);
-      const r = 20 + кольцо * 26;
-      const a = -Math.PI / 2 + место * 2 * Math.PI / сколько + (кольцо % 2 ? Math.PI / сколько : 0);
-      т.el.style.left = (cx + r * Math.cos(a)).toFixed(1) + "px";
-      т.el.style.top = (cy + r * Math.sin(a)).toFixed(1) + "px";
-      т.el.classList.add("fan");
-    });
+    /* Главной в кучке делаем выбранную точку, если она здесь: тогда кружок
+       остаётся белым и видно, что выбор внутри этой кучки. */
+    const глава = кучка.find((т) => т.el.dataset.gm === gm.at) || кучка[0];
+    for (const т of кучка) if (т !== глава) т.el.style.visibility = "hidden";
+    глава.el.style.left = cx.toFixed(1) + "px";
+    глава.el.style.top = cy.toFixed(1) + "px";
+    глава.el.classList.add("many");
+    глава.el.dataset.many = k;
+    глава.el.insertAdjacentHTML("beforeend", `<b>${кучка.length}</b>`);
+    gm.кучки[k] = кучка.map((т) => т.el.dataset.gm);
   }
 
   gmLabels();
@@ -10086,6 +10084,18 @@ function gmCard() {
       <a href="${esc(янд)}" target="_blank" rel="noopener">Яндекс</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
     </div>`;
+}
+
+/* Кучка точек: показываем её состав тем же списком, что и поиск, — выбрать
+   по имени надёжнее, чем целиться пальцем в слипшиеся кружки. */
+function gmCluster(имена) {
+  const box = $("#gmHits");
+  if (!box || !gm) return;
+  const места = (имена || []).map((n) => gm.места.find((p) => p.name === n)).filter(Boolean);
+  if (!места.length) return;
+  box.hidden = false;
+  box.innerHTML = места.map((p) => `<button data-hit="${esc(p.name)}" type="button">${esc(p.name)}
+      <em>${esc((p.t || "").split(" · ").slice(0, 2).join(" · "))}</em></button>`).join("");
 }
 
 /* Поиск по названию: набрал «Тотем» — увидел, где он. Ищем и по имени из
@@ -10331,12 +10341,24 @@ function bindPlaceMap() {
       if (p) openShots(p);
       return;
     }
+    if (!gm) return;
+    const куча = e.target.closest("[data-many]");
+    if (куча) { gmCluster(gm.кучки && gm.кучки[куча.dataset.many]); return; }
     const pin = e.target.closest("[data-gm]");
-    if (!pin || !gm) return;
-    gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
+    if (pin) {
+      gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
+      gmPins();
+      gmCard();
+      if (gm.at) gmFocus(gm.at, Math.max(gm.scale, 2.2));
+      return;
+    }
+    /* Нажал мимо точки — выбор снимается и карточка уходит: закрывать её
+       отдельной кнопкой неудобно, а пустое место рядом всегда под рукой.
+       После перетаскивания карты выбор не трогаем: это был не тычок. */
+    if (!e.target.closest("#gmStage") || тянули || !gm.at) return;
+    gm.at = null;
     gmPins();
     gmCard();
-    if (gm.at) gmFocus(gm.at, Math.max(gm.scale, 2.2));
   });
 
   /* Жесты: одним пальцем тащим, двумя приближаем. Колесо — для настольного
