@@ -1708,6 +1708,48 @@
     .fq b { display: block; font-size: 1.02rem; line-height: 1.4; margin-bottom: 5px; }
     .fq p { margin: 0; font-size: 0.98rem; line-height: 1.6; color: var(--muted); }
     .cl-two { margin: 4px 0 0; font-size: 0.74rem; color: var(--dim); }
+    /* Карта мест: картинка с точками по координатам. */
+    .mp { margin-top: 14px; }
+    .mp-box {
+      position: relative; border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.03);
+    }
+    .mp-box img { display: block; width: 100%; }
+    .mp-pin {
+      position: absolute; transform: translate(-50%, -50%);
+      display: grid; place-items: center; padding: 0; background: none; border: 0;
+      width: 26px; height: 26px;                 /* палец попадает, а точка мелкая */
+    }
+    .mp-pin i {
+      width: 11px; height: 11px; border-radius: 50%;
+      background: var(--gold); border: 2px solid rgba(0, 0, 0, 0.45);
+      box-shadow: 0 0 0 4px rgba(240, 187, 92, 0.18);
+    }
+    /* Подписи у всех точек сразу превращают карту в кашу — на Пелопоннесе их
+       пять в одном месте. Имя показываем только у выбранной, остальные —
+       строкой под картой. */
+    .mp-pin span {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 0.66rem; font-weight: 700; letter-spacing: .02em; color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+      white-space: nowrap; opacity: 0; pointer-events: none;
+    }
+    .mp-pin.on span { opacity: 1; }
+    .mp-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .mp-name {
+      padding: 6px 11px; border-radius: 999px; font-size: 0.8rem; color: var(--muted);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .mp-name.on { background: rgba(240, 187, 92, 0.16); border-color: rgba(240, 187, 92, 0.4); color: var(--ink); }
+    .mp-pin.on i { background: #fff; box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.22); }
+    .mp-card {
+      margin-top: 12px; padding: 13px 15px; border-radius: 14px; text-align: left;
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .mp-card b { display: block; font-size: 1.04rem; margin-bottom: 5px; }
+    .mp-card p { margin: 0; font-size: 0.95rem; line-height: 1.6; color: var(--muted); }
+    .mp-hint { margin: 12px 0 0; font-size: 0.8rem; color: var(--dim); }
+    .mp-att { margin: 8px 0 0; font-size: 0.66rem; color: var(--dim); }
     .bn-head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
     .bn-head h3 { margin: 0; }
     .bn-head .sub { margin: 2px 0 0; }

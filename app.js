@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 217";
+const APP_VERSION = "Кэйко 218";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -569,6 +569,26 @@ const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) ===
    и открываются по тому же правилу — только когда песнь дочитана. */
 const bookFaq = (b) => artsPart(b, "faq");
 const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
+/* ── Карта мест ──
+   Третий этап разбора: где всё это происходит. Карта — обычная современная,
+   картинкой, а точки расставлены по координатам; у каждой короткий рассказ.
+   Читая про Пилос, полезно увидеть, что это юго-запад Пелопоннеса, а Троя —
+   на другом берегу моря. */
+const bookMap = (b) => artsPart(b, "map");
+const mapOfChapter = (b, i) => bookMap(b).filter((x) => Number(x.ch) === i + 1);
+const mapBox = (b) => {
+  const a = artsOf((b || book()).id);
+  return (a && a.mapBox) ? a.mapBox : null;
+};
+/* Меркатор: карта нарисована им, значит и точки надо ставить по нему, иначе
+   к северу всё поедет. */
+const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+function mapXY(box, p) {
+  const x = (p.lon - box.west) / (box.east - box.west) * 100;
+  const yn = mercY(box.north), ys = mercY(box.south);
+  const y = (yn - mercY(p.lat)) / (yn - ys) * 100;
+  return { x, y };
+}
 const articleChapters = (b) => {
   const bk = b || book();
   const есть = new Set(bookArticle(bk).map((x) => Number(x.ch)).filter(Boolean));
@@ -4788,7 +4808,8 @@ function openTalkSheet(b, page) {
   рисуйРазговор(bk);
 }
 
-let talkView = "art";      // что открыто внутри песни: разбор или вопросы
+let talkView = "art";      // что открыто внутри песни: разбор, вопросы или карта
+let mapAt = null;          // какая точка карты раскрыта
 
 function рисуйРазговор(bk) {
   /* Стрелками ходим только по открытым разборам: соседняя песнь может быть
@@ -4800,13 +4821,17 @@ function рисуйРазговор(bk) {
   const глава = главы[место] || главы[0];
   const блоки = articleOfChapter(bk, глава.i);
   const вопросы = faqOfChapter(bk, глава.i);
+  const места = mapOfChapter(bk, глава.i);
+  const рамка = mapBox(bk);
   const lead = clubLead(bk, глава.i);
   /* Вкладка вопросов видна и тогда, когда файл ещё едет: невидимая вкладка
      на месте несостоявшейся загрузки — это ровно тот случай, когда «ничего
      нет» и «не приехало» выглядят одинаково. */
   const ждём = !вопросы.length && (hasArts(bk.id) || !artsOf(bk.id));
   const есть = вопросы.length || ждём;
-  const вид = (talkView === "faq" && есть) ? "faq" : "art";
+  const картаЕсть = места.length && рамка;
+  const вид = (talkView === "faq" && есть) ? "faq"
+    : (talkView === "map" && картаЕсть) ? "map" : "art";
   /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
   const абзацы = [];
   sheetMode = "talk";
@@ -4819,12 +4844,35 @@ function рисуйРазговор(bk) {
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
-    ${есть ? `
+    ${есть || картаЕсть ? `
       <div class="tv-tabs">
         <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
-        <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
+        ${есть ? `<button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>` : ""}
+        ${картаЕсть ? `<button class="${вид === "map" ? "on" : ""}" data-tv="map" type="button">Карта</button>` : ""}
       </div>` : ""}
-    ${вид === "faq" && !вопросы.length ? `
+    ${вид === "map" ? (() => {
+      const src = artSrc("map-" + bk.id);
+      const точка = места.find((p) => p.name === mapAt) || null;
+      return `
+      <div class="mp">
+        <div class="mp-box">
+          ${src ? `<img src="${esc(src)}" alt="карта">` : `<div class="ar-wait">карта загружается…</div>`}
+          ${места.map((p) => {
+            const { x, y } = mapXY(рамка, p);
+            return `<button class="mp-pin${точка && точка.name === p.name ? " on" : ""}"
+              style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%" data-mp="${esc(p.name)}"
+              type="button"><i></i><span>${esc(p.name)}</span></button>`;
+          }).join("")}
+        </div>
+        <div class="mp-names">
+          ${места.map((p) => `<button class="mp-name${точка && точка.name === p.name ? " on" : ""}"
+            data-mp="${esc(p.name)}" type="button">${esc(p.name)}</button>`).join("")}
+        </div>
+        ${точка ? `<div class="mp-card"><b>${esc(точка.name)}</b><p>${esc(точка.t)}</p></div>`
+                : `<p class="mp-hint">Нажми на точку или название — расскажу, что это за место</p>`}
+        <p class="mp-att">карта © OpenStreetMap</p>
+      </div>` })() : ""}
+    ${вид === "map" ? "" : вид === "faq" && !вопросы.length ? `
     <div class="ar-wait" style="margin-top:16px">вопросы ещё не приехали${artsWhy ? " · " + esc(artsWhy) : ""}</div>
     <div class="sheet-actions"><button class="btn" id="fqPull" type="button">Загрузить</button></div>`
     : вид === "faq" ? `
@@ -4859,7 +4907,7 @@ function рисуйРазговор(bk) {
       }).join("")}
     </article>`}
     <div class="sheet-actions">
-      <button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>
+      ${вид === "map" ? "" : `<button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>`}
       <button class="btn" id="tkBack" type="button">К списку</button>
       <button class="btn" id="tkClose2" type="button">Закрыть</button>
     </div>`, true);
@@ -4869,6 +4917,7 @@ function рисуйРазговор(bk) {
       const сл = главы[место + (el.dataset.tk === "next" ? 1 : -1)];
       if (!сл) return;
       talkAt = сл.i;
+      mapAt = null;                    // у соседней песни свои места
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
@@ -4881,10 +4930,16 @@ function рисуйРазговор(bk) {
   });
   document.querySelectorAll("[data-tv]").forEach((el) =>
     el.addEventListener("click", () => { talkView = el.dataset.tv; рисуйРазговор(bk); }));
+  document.querySelectorAll("[data-mp]").forEach((el) =>
+    el.addEventListener("click", () => {
+      mapAt = mapAt === el.dataset.mp ? null : el.dataset.mp;   // повторный тык закрывает
+      рисуйРазговор(bk);
+    }));
   document.querySelectorAll("[data-cp]").forEach((el) =>
     el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)],
       вид === "faq" ? "Вопрос" : "Абзац")));
-  $("#tkAll").addEventListener("click", () => {
+  const tkAll = $("#tkAll");
+  if (tkAll) tkAll.addEventListener("click", () => {
     const весь = вид === "faq"
       ? [глава.name || "", ""].concat(вопросы.map((q, i) => (i + 1) + ". " + q.q + "\n" + q.a))
           .filter(Boolean).join("\n\n")
