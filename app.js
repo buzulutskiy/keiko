@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 240";
+const APP_VERSION = "Кэйко 241";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -592,6 +592,12 @@ const mapKey = (id) => "map-" + id + "-v" + (((artsOf(id) || {}).mapVer) || 1);
    у «Одиссеи» фотографий той эпохи нет по понятным причинам, а у книги про
    стеки места разбросаны по миру, где архив пуст. */
 const pastvuYears = (b) => (artsOf((b || book()).id) || {}).pastvu || null;
+/* Содержание карты: у точки может стоять номер главы (part), а у материала —
+   список глав. Тогда карту можно отфильтровать: показать только те места,
+   что встречаются в выбранной главе. Это отдельное поле, а не ch: по ch
+   собирается карта главы, и обнулять его нельзя — карта всей книги живёт
+   как раз на точках без главы. */
+const mapPartsOf = (b) => (artsOf((b || book()).id) || {}).parts || [];
 const mapFile = (id) => CAT_ART_FILE("map-" + id);
 /* Меркатор: карта нарисована им, значит и точки надо ставить по нему, иначе
    к северу всё поедет. */
@@ -9837,8 +9843,10 @@ function openPlaceMap(bk, i, выбрать) {
   const box = $("#gmap");
   if (!box) return;
   gm = { места, рамка, at: выбрать || null, scale: 1, tx: 0, ty: 0, id: bk.id, i,
+         части: mapPartsOf(bk), часть: 0,
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
-  $("#gmTitle").textContent = gm.name;
+  gmTitle();
+  gmTocBtn();
   const img = $("#gmImg");
   const ключ = mapKey(bk.id);
   const src = artSrc(ключ, mapFile(bk.id));
@@ -9881,6 +9889,8 @@ function openPlaceMap(bk, i, выбрать) {
     if (!новое || !gm || gm.id !== bk.id) return;
     gm.места = mapPoints(bk, i);
     gm.рамка = mapBox(bk) || gm.рамка;
+    gm.части = mapPartsOf(bk);
+    gmTocBtn();
     gmPins();
     gmCard();
   }).catch(() => {});
@@ -9913,10 +9923,52 @@ function closePlaceMap() {
   keepAwake(false);
 }
 
+/* Сколько точек приходится на каждую главу — пустые главы в содержание не
+   попадают: листать список, где половина строк ни к чему не ведёт, незачем. */
+function gmParts() {
+  if (!gm) return [];
+  const счёт = new Map();
+  for (const p of gm.места) {
+    const n = Number(p.part) || 0;
+    счёт.set(n, (счёт.get(n) || 0) + 1);
+  }
+  return (gm.части || []).map((c) => ({ ...c, k: счёт.get(Number(c.n)) || 0 }))
+    .filter((c) => c.k > 0);
+}
+const gmВидимые = () => !gm ? []
+  : (gm.часть ? gm.места.filter((p) => Number(p.part) === gm.часть) : gm.места);
+
+function gmTitle() {
+  const el = $("#gmTitle");
+  if (!el || !gm) return;
+  const c = (gm.части || []).find((x) => Number(x.n) === gm.часть);
+  el.textContent = c ? c.name : gm.name;
+}
+
+/* Кнопка содержания нужна, только если делить и правда есть на что: одна
+   глава на всю карту — это не выбор, а лишняя кнопка. */
+function gmTocBtn() {
+  const b = $("#gmToc");
+  if (b) b.hidden = gmParts().length < 2;
+}
+
+function gmToc() {
+  const box = $("#gmHits");
+  if (!box || !gm) return;
+  const части = gmParts();
+  if (!части.length) return;
+  const слово = (n) => `${n} ${plural(n, "место", "места", "мест")}`;
+  box.hidden = false;
+  box.innerHTML = `<button data-part="0" type="button">Все места
+      <em>${слово(gm.места.length)}</em></button>`
+    + части.map((c) => `<button data-part="${esc(String(c.n))}" type="button">${esc(c.name)}
+        <em>${слово(c.k)}</em></button>`).join("");
+}
+
 function gmPins() {
   const box = $("#gmPins");
   if (!box || !gm) return;
-  box.innerHTML = gm.места.map((p) => {
+  box.innerHTML = gmВидимые().map((p) => {
     const { x, y } = mapXY(gm.рамка, p);
     /* Часть координат выверена по объектам OpenStreetMap, часть поставлена
        на глазок. Кружок у выверенной сплошной, у приблизительной — полый:
@@ -10110,7 +10162,7 @@ function gmSearch(текст) {
   if (!box || !gm) return;
   const q = String(текст || "").trim().toLowerCase();
   if (q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
-  const найдено = gm.места.filter((p) =>
+  const найдено = gmВидимые().filter((p) =>
     (p.name || "").toLowerCase().includes(q) ||
     (p.q || "").toLowerCase().includes(q) ||
     (p.t || "").toLowerCase().includes(q)).slice(0, 40);
@@ -10325,10 +10377,32 @@ function bindPlaceMap() {
     поле.addEventListener("input", () => gmSearch(поле.value));
     поле.addEventListener("focus", () => gmSearch(поле.value));
   }
+  const кнТос = $("#gmToc");
+  if (кнТос) кнТос.addEventListener("click", () => {
+    const хиты = $("#gmHits");
+    if (!хиты) return;
+    if (!хиты.hidden && хиты.querySelector("[data-part]")) { хиты.hidden = true; хиты.innerHTML = ""; return; }
+    if (поле) поле.value = "";
+    gmToc();
+  });
+
   const хиты = $("#gmHits");
   if (хиты) хиты.addEventListener("click", (e) => {
+    if (!gm) return;
+    const ч = e.target.closest("[data-part]");
+    if (ч) {
+      gm.часть = Number(ч.dataset.part) || 0;
+      /* Выбранное место могло уйти из показа вместе с чужой главой —
+         тогда снимаем выбор, иначе карточка внизу висит без своей точки. */
+      if (gm.at && !gmВидимые().some((p) => p.name === gm.at)) gm.at = null;
+      хиты.hidden = true; хиты.innerHTML = "";
+      gmTitle();
+      gmPins();
+      gmCard();
+      return;
+    }
     const b = e.target.closest("[data-hit]");
-    if (!b || !gm) return;
+    if (!b) return;
     gm.at = b.dataset.hit;
     хиты.hidden = true;
     if (поле) { поле.value = ""; поле.blur(); }

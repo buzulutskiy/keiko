@@ -1791,10 +1791,11 @@
     }
     #gmHits button em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim); margin-top: 2px; }
     #gmHits button:last-child { border-bottom: 0; }
-    #gmClose {
+    #gmClose, #gmToc {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
       background: var(--glass); border: 1px solid var(--glass-line); font-size: 1.1rem;
     }
+    #gmToc[hidden] { display: none; }
     #gmStage {
       flex: 1 1 auto; position: relative; overflow: hidden; touch-action: none;
     }
@@ -3836,6 +3837,7 @@
     <div id="gmTop">
       <div id="gmTitle"></div>
       <input id="gmFind" type="search" placeholder="Найти место" autocomplete="off" enterkeyhint="search">
+      <button id="gmToc" type="button" aria-label="Содержание" hidden>☰</button>
       <button id="gmClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     <div id="gmHits" hidden></div>
