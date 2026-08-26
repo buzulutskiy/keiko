@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 227";
+const APP_VERSION = "Кэйко 228";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3337,6 +3337,7 @@ function renderHome() {
       <div class="nudge">${nudge}</div>
     </div>`;
 
+  artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bt = $("#bookTalkBtn");
   if (bt) bt.addEventListener("click", () => {
     if (onlyMap(book())) openPlaceMap(book(), -1);
@@ -3621,6 +3622,28 @@ const talkBtnOn = () => isBook() &&
 // у материала бывает только карта — тогда кнопка ведёт прямо в неё
 const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(b).length > 0;
 
+/* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
+   флажок «файл есть», и пока он не доехал, кнопки не было — а узнать правду
+   можно прямым запросом за один заход. Спрашиваем раз на материал за сессию и
+   только если файла ещё нет на устройстве. */
+const artsAsked = new Map();          // материал → когда спрашивали в последний раз
+function artsPeek() {
+  if (!isBook()) return;
+  const id = book().id;
+  if (!id || artsOf(id)) return;
+  /* На запуске адрес гиста ещё не известен, и первый заход всегда пустой.
+     Поэтому неудача не запоминается навсегда: пробуем снова, но не чаще
+     чем раз в двадцать секунд. */
+  const было = artsAsked.get(id) || 0;
+  if (now() - было < 20000) return;
+  artsAsked.set(id, now());
+  pullArts(id).then((новое) => {
+    if (!новое) { artsAsked.set(id, 0); return; }   // не приехало — можно пробовать снова
+    const talk = $("#bookTalkBtn");
+    if (talk) talk.hidden = !talkBtnOn();
+  }).catch(() => artsAsked.set(id, 0));
+}
+
 function updateHeroInfo() {
   const s = curStats();
   const doneToday = !!entryFor(todayStr());
@@ -3652,6 +3675,7 @@ function updateHeroInfo() {
 
   const talk = $("#bookTalkBtn");
   if (talk) talk.hidden = !talkBtnOn();
+  artsPeek();          // вдруг разбор есть, а каталог об этом ещё не сказал
 
   const nudge = $(".nudge");
   if (nudge) {
