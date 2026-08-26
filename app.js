@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 242";
+const APP_VERSION = "Кэйко 243";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9940,12 +9940,16 @@ function gmParts() {
   return (gm.части || []).map((c) => ({ ...c, k: счёт.get(Number(c.n)) || 0 }))
     .filter((c) => c.k > 0);
 }
-const gmВидимые = () => !gm ? []
-  : (gm.часть ? gm.места.filter((p) => Number(p.part) === gm.часть) : gm.места);
+const gmВидимые = () => {
+  if (!gm) return [];
+  if (gm.часть === -1) return gm.места.filter((p) => !Number(p.part));   // вне частей
+  return gm.часть ? gm.места.filter((p) => Number(p.part) === gm.часть) : gm.места;
+};
 
 function gmTitle() {
   const el = $("#gmTitle");
   if (!el || !gm) return;
+  if (gm.часть === -1) { el.textContent = "Вокруг романа"; return; }
   const c = (gm.части || []).find((x) => Number(x.n) === gm.часть);
   el.textContent = c ? c.name : gm.name;
 }
@@ -9964,10 +9968,16 @@ function gmToc() {
   if (!части.length) return;
   const слово = (n) => `${n} ${plural(n, "место", "места", "мест")}`;
   box.hidden = false;
+  /* Места без главы — не мусор: это то, что вокруг книги, а не в ней. У
+     Достоевского так стоят адреса из его записной книжки и разбора краеведов.
+     Отдельной строкой, чтобы было видно, что они не выпали, а стоят особняком. */
+  const вне = gm.места.filter((p) => !Number(p.part)).length;
   box.innerHTML = `<button data-part="0" type="button">Все места
       <em>${слово(gm.места.length)}</em></button>`
     + части.map((c) => `<button data-part="${esc(String(c.n))}" type="button">${esc(c.name)}
-        <em>${слово(c.k)}</em></button>`).join("");
+        <em>${слово(c.k)}</em></button>`).join("")
+    + (вне ? `<button data-part="-1" type="button">Вокруг романа
+        <em>${слово(вне)} · не сцены книги</em></button>` : "");
 }
 
 function gmPins() {
