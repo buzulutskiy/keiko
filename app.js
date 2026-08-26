@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 226";
+const APP_VERSION = "Кэйко 227";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3612,7 +3612,12 @@ function updateAchBadge() {
 /* Разбор есть не у каждого материала, а лента свайпается без полной
    перерисовки. Поэтому кнопка живёт в разметке всегда и только прячется:
    иначе она оставалась от прошлой обложки — «то появляется, то исчезает». */
-const talkBtnOn = () => isBook() && (bookArticle(book()).length > 0 || hasArts(book().id));
+/* Кнопка есть, если у материала есть разбор, вопросы или карта — или каталог
+   говорит, что файл с ними существует. Карту забыл включить в это условие
+   сразу, и у книги, где кроме карты ничего нет, кнопки просто не было. */
+const talkBtnOn = () => isBook() &&
+  (bookArticle(book()).length > 0 || bookFaq(book()).length > 0
+   || mapWhole(book()).length > 0 || hasArts(book().id));
 // у материала бывает только карта — тогда кнопка ведёт прямо в неё
 const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(b).length > 0;
 

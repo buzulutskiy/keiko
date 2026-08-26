@@ -20,6 +20,7 @@
 import base64, json, re, subprocess, sys, time
 
 CAT_GIST = "8a3a280b21390e3b32569913f9f3cabe"
+CAT_FILE = "keiko-catalog.json"
 ART_FILE = lambda key: f"article-{key}.json"
 IMG_FILE = lambda key: f"art-map-{key}.txt"
 RIM = {"I":1,"II":2,"III":3,"IV":4,"V":5,"VI":6,"VII":7,"VIII":8,"IX":9,"X":10,"XI":11,"XII":12,
@@ -89,6 +90,14 @@ def main():
     pack["map"] = sorted(старые + точки, key=lambda p: (p["ch"], p["name"]))
 
     files = {ART_FILE(key): pack}
+    # каталог должен знать, что у материала есть свой файл: по этому флажку
+    # приложение показывает кнопку, не скачивая тяжёлое
+    d = файл(CAT_FILE)
+    m = d["materials"].setdefault(key, {})
+    if not m.get("arts"):
+        m["arts"] = True
+        d["savedAt"] = int(time.time() * 1000)
+        files[CAT_FILE] = d
     if len(sys.argv) >= 8:
         карта, west, east, north, south = sys.argv[3], *map(float, sys.argv[4:8])
         raw = open(карта, "rb").read()
