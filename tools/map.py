@@ -8,7 +8,7 @@
 Формат файла точек:
 
     ## Песнь III
-    Пилос | 36.913 | 21.695 | Город Нестора на юго-западе Пелопоннеса…
+    Пилос (дворец Нестора Пилос) | 36.913 | 21.695 | Город Нестора…
     Итака | 38.42 | 20.68 | Родина Одиссея…
 
     python3 tools/map.py odyssey точки.txt карта.jpg 18.6 29.2 41.4 34.2
@@ -41,7 +41,13 @@ def разобрать(текст):
         if len(части) < 4: continue
         name, lat, lon, t = части[0], части[1], части[2], " | ".join(части[3:])
         if not ch: sys.exit("точка до заголовка песни: " + name)
-        out.append({"ch": ch, "name": name, "lat": float(lat), "lon": float(lon), "t": t})
+        # «Огигия (Гоцо Мальта)» — в скобках то, что искать в картинках
+        q = ""
+        m2 = re.match(r'^(.+?)\s*\((.+)\)$', name)
+        if m2: name, q = m2.group(1).strip(), m2.group(2).strip()
+        точка = {"ch": ch, "name": name, "lat": float(lat), "lon": float(lon), "t": t}
+        if q: точка["q"] = q
+        out.append(точка)
     return out
 
 def файл(name, обязателен=True):

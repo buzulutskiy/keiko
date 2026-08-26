@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 220";
+const APP_VERSION = "Кэйко 221";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9918,16 +9918,19 @@ function gmCard() {
   if (!card || !gm) return;
   const p = gm.места.find((x) => x.name === gm.at);
   if (!p) { card.hidden = true; card.innerHTML = ""; return; }
-  /* Ссылка на обычные карты по координатам: там фотографии, панорамы и то,
-     как место называется сегодня. Своя ссылка в данных важнее — если она есть,
-     показываем обе. */
+  /* «Фото» ведёт в поиск по картинкам: интересно не где это на карте, а как
+     место выглядит сегодня. У мифических имён свой запрос — «Огигия» не найдёт
+     ничего, а «остров Гоцо Мальта» найдёт. Карта остаётся второй кнопкой. */
+  const запрос = encodeURIComponent(p.q || p.name);
+  const фото = `https://www.google.com/search?tbm=isch&q=${запрос}`;
   const гео = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
   card.hidden = false;
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     <p>${esc(p.t || "")}</p>
     <div class="gm-links">
-      <a href="${esc(гео)}" target="_blank" rel="noopener">Фото и панорамы</a>
+      <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
+      <a href="${esc(гео)}" target="_blank" rel="noopener">На карте</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
     </div>`;
 }
