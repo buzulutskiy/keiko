@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 233";
+const APP_VERSION = "Кэйко 234";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10127,14 +10127,14 @@ async function pvNearest(lat, lon, годы, limit) {
   return list.filter((p) => p.file);
 }
 
-function openShots(p) {
+function openShots(p, все) {
   const box = $("#gmShots");
   if (!box || !gm) return;
-  shots = { место: p, список: null, one: null };
+  shots = { место: p, список: null, one: null, все: !!все };
   box.hidden = false;
   box.setAttribute("aria-hidden", "false");
   рисуйСнимки("Ищу снимки…");
-  const годы = pastvuYears({ id: gm.id });
+  const годы = shots.все ? null : pastvuYears({ id: gm.id });
   pvNearest(p.lat, p.lon, годы, 30)
     .then((list) => { if (shots) { shots.список = list; рисуйСнимки(); } })
     .catch(() => { if (shots) { shots.сбой = true; рисуйСнимки("Архив не ответил"); } });
@@ -10156,7 +10156,8 @@ function рисуйСнимки(ожидание) {
     <div class="sh-top">
       <b>${esc(shots.one ? (shots.one.title || "Снимок") : p.name)}</b>
       ${shots.one ? `<a href="${esc(pvPage(shots.one.cid))}" target="_blank" rel="noopener">Источник</a>`
-                  : `<a href="${esc(карта)}" target="_blank" rel="noopener">На карте архива</a>`}
+        : `${годы ? `<button data-sh="years" type="button">${shots.все ? "Годы книги" : "Все годы"}</button>` : ""}
+           <a href="${esc(карта)}" target="_blank" rel="noopener">Архив</a>`}
       <button data-sh="${shots.one ? "back" : "close"}" type="button">${shots.one ? "Назад" : "✕"}</button>
     </div>`;
 
@@ -10184,10 +10185,12 @@ function рисуйСнимки(ожидание) {
   } else if (!shots.список) {
     box.innerHTML = шапка + `<div class="sh-none">Ищу снимки…</div>`;
   } else if (!shots.список.length) {
-    box.innerHTML = шапка + `<div class="sh-none">Для этого места снимков тех лет в архиве нет.<br>
-      Попробуй «На карте архива» — рядом что-то может найтись.</div>`;
+    box.innerHTML = шапка + `<div class="sh-none">Для этого места снимков ${shots.все ? "" : "тех лет "}в архиве нет.
+      ${!shots.все && годы ? `<div style="margin-top:14px"><button class="btn" data-sh="years" type="button">Посмотреть все годы</button></div>` : ""}</div>`;
   } else {
-    box.innerHTML = шапка + `<div class="sh-grid">${shots.список.map((s1, i) => `
+    box.innerHTML = шапка + `<div class="sh-note">${shots.все || !годы
+      ? "снимки всех лет, какие есть в архиве"
+      : `снимки ${годы.y}–${годы.y2} годов · «Все годы» покажет остальные`}</div><div class="sh-grid">${shots.список.map((s1, i) => `
       <button class="sh-item" data-shot="${i}" type="button">
         <img src="${esc(pvImg(s1.file, "h"))}" alt="" loading="lazy">
         <b>${s1.year ? esc(String(s1.year)) : "год неизвестен"}</b>
@@ -10198,7 +10201,8 @@ function рисуйСнимки(ожидание) {
   box.querySelectorAll("[data-sh]").forEach((el) =>
     el.addEventListener("click", () => {
       if (el.dataset.sh === "back") { shots.one = null; рисуйСнимки(); }
-      else if (el.dataset.sh === "retry") { const п = shots.место; closeShots(); openShots(п); }
+      else if (el.dataset.sh === "retry") { const п = shots.место, в = shots.все; closeShots(); openShots(п, в); }
+      else if (el.dataset.sh === "years") { const п = shots.место, в = !shots.все; closeShots(); openShots(п, в); }
       else closeShots();
     }));
   box.querySelectorAll("[data-shot]").forEach((el) =>
