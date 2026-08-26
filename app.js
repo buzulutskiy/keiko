@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 225";
+const APP_VERSION = "Кэйко 226";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -576,6 +576,10 @@ const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
    на другом берегу моря. */
 const bookMap = (b) => artsPart(b, "map");
 const mapOfChapter = (b, i) => bookMap(b).filter((x) => Number(x.ch) === i + 1);
+/* Места без главы (ch = 0) — карта на всю книгу: у «Столпов моря» стеки
+   разбросаны по свету и к главам не привязаны, там карта и есть содержание. */
+const mapWhole = (b) => bookMap(b).filter((x) => !Number(x.ch));
+const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
 const mapBox = (b) => {
   const a = artsOf((b || book()).id);
   return (a && a.mapBox) ? a.mapBox : null;
@@ -3334,7 +3338,10 @@ function renderHome() {
     </div>`;
 
   const bt = $("#bookTalkBtn");
-  if (bt) bt.addEventListener("click", () => openClub(book(), bookProgress()));
+  if (bt) bt.addEventListener("click", () => {
+    if (onlyMap(book())) openPlaceMap(book(), -1);
+    else openClub(book(), bookProgress());
+  });
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -3606,6 +3613,8 @@ function updateAchBadge() {
    перерисовки. Поэтому кнопка живёт в разметке всегда и только прячется:
    иначе она оставалась от прошлой обложки — «то появляется, то исчезает». */
 const talkBtnOn = () => isBook() && (bookArticle(book()).length > 0 || hasArts(book().id));
+// у материала бывает только карта — тогда кнопка ведёт прямо в неё
+const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(b).length > 0;
 
 function updateHeroInfo() {
   const s = curStats();
@@ -9777,13 +9786,13 @@ function pracFinish() {
 let gm = null;      // {места, рамка, at, scale, tx, ty}
 
 function openPlaceMap(bk, i, выбрать) {
-  const места = mapOfChapter(bk, i);
+  const места = mapPoints(bk, i);
   const рамка = mapBox(bk);
-  if (!места.length || !рамка) { toast("Карты для этой песни пока нет"); return; }
+  if (!места.length || !рамка) { toast("Карты пока нет"); return; }
   const box = $("#gmap");
   if (!box) return;
-  gm = { места, рамка, at: выбрать || null, scale: 1, tx: 0, ty: 0, id: bk.id,
-         name: (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : "" };
+  gm = { места, рамка, at: выбрать || null, scale: 1, tx: 0, ty: 0, id: bk.id, i,
+         name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   $("#gmTitle").textContent = gm.name;
   const img = $("#gmImg");
   const ключ = mapKey(bk.id);
@@ -9825,7 +9834,7 @@ function openPlaceMap(bk, i, выбрать) {
      свежий — на устройстве мог лежать старый, ещё с русскими запросами. */
   pullArts(bk.id).then((новое) => {
     if (!новое || !gm || gm.id !== bk.id) return;
-    gm.места = mapOfChapter(bk, i);
+    gm.места = mapPoints(bk, i);
     gm.рамка = mapBox(bk) || gm.рамка;
     gmPins();
     gmCard();
@@ -9849,6 +9858,8 @@ function gmWait(on) {
 }
 
 function closePlaceMap() {
+  const поле = $("#gmFind"); if (поле) поле.value = "";
+  const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
   if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
   document.body.classList.remove("prac-on");
@@ -9886,7 +9897,10 @@ function gmScalePins() {
   /* На общем виде подписи налезают друг на друга — показываем их, только когда
      карта приближена; выбранная точка подписана всегда. */
   const pins = $("#gmPins");
-  if (pins) pins.classList.toggle("tight", gm.scale < 1.8);
+  /* Подписи показываем, только если их немного: сто шесть имён поверх карты —
+     это сплошная каша при любом увеличении. Там, где точек много, имя видно
+     у выбранной, а остальные ищутся поиском. */
+  if (pins) pins.classList.toggle("tight", gm.scale < 1.8 || gm.места.length > 25);
 }
 
 function gmApply() {
@@ -9957,7 +9971,7 @@ function gmCard() {
      и показывает ссылки. Спрашиваем по-русски, но место называем так, как его
      знают в мире, — иначе поиск уводит не туда. */
   const вопрос = encodeURIComponent(
-    `Расскажи историю места ${p.q || p.name} (${p.name} у Гомера): откуда название, `
+    `Расскажи историю места ${p.q || p.name}${p.q ? ` (в книге — ${p.name})` : ""}: откуда название, `
     + `кто там жил, что происходило в древности и позже, что от этого сохранилось сегодня.`);
   const история = `https://www.perplexity.ai/search?q=${вопрос}`;
   card.hidden = false;
@@ -9972,10 +9986,46 @@ function gmCard() {
     </div>`;
 }
 
+/* Поиск по названию: набрал «Тотем» — увидел, где он. Ищем и по имени из
+   книги, и по описанию: там лежит официальное название и район, поэтому
+   «Shetland» или «долерит» тоже находят. */
+function gmSearch(текст) {
+  const box = $("#gmHits");
+  if (!box || !gm) return;
+  const q = String(текст || "").trim().toLowerCase();
+  if (q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+  const найдено = gm.места.filter((p) =>
+    (p.name || "").toLowerCase().includes(q) ||
+    (p.q || "").toLowerCase().includes(q) ||
+    (p.t || "").toLowerCase().includes(q)).slice(0, 40);
+  box.hidden = false;
+  box.innerHTML = найдено.length
+    ? найдено.map((p) => `<button data-hit="${esc(p.name)}" type="button">${esc(p.name)}
+        <em>${esc((p.t || "").split(" · ").slice(0, 2).join(" · "))}</em></button>`).join("")
+    : `<button type="button" disabled>Ничего не нашлось</button>`;
+}
+
 function bindPlaceMap() {
   const box = $("#gmap"), stage = $("#gmStage");
   if (!box || !stage) return;
   $("#gmClose").addEventListener("click", closePlaceMap);
+
+  const поле = $("#gmFind");
+  if (поле) {
+    поле.addEventListener("input", () => gmSearch(поле.value));
+    поле.addEventListener("focus", () => gmSearch(поле.value));
+  }
+  const хиты = $("#gmHits");
+  if (хиты) хиты.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-hit]");
+    if (!b || !gm) return;
+    gm.at = b.dataset.hit;
+    хиты.hidden = true;
+    if (поле) { поле.value = ""; поле.blur(); }
+    gmPins();
+    gmCard();
+    gmFocus(gm.at, Math.max(gm.scale, 3.5));
+  });
 
   box.addEventListener("click", (e) => {
     const pin = e.target.closest("[data-gm]");

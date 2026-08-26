@@ -31,16 +31,19 @@ def номер(s):
     return int(s) if s.isdigit() else RIM.get(s.upper(), 0)
 
 def разобрать(текст):
-    ch, out = 0, []
+    ch, out = None, []
     for сырая in текст.splitlines():
         line = сырая.strip()
         m = re.match(r'^#+\s*(?:Песнь|Песня|Глава)\s+([IVXLC]+|\d+)', line, re.I)
         if m: ch = номер(m.group(1)); continue
+        # «## Вся книга» — точки не привязаны к главе: карта на весь материал
+        if re.match(r'^#+\s*(?:Вся книга|Книга целиком|Все места)\s*$', line, re.I):
+            ch = 0; continue
         if not line or line.startswith("#"): continue
         части = [x.strip() for x in line.split("|")]
         if len(части) < 4: continue
         name, lat, lon, t = части[0], части[1], части[2], " | ".join(части[3:])
-        if not ch: sys.exit("точка до заголовка песни: " + name)
+        if ch is None: sys.exit("точка до заголовка: " + name)
         # «Огигия (Гоцо Мальта)» — в скобках то, что искать в картинках
         q = ""
         m2 = re.match(r'^(.+?)\s*\((.+)\)$', name)

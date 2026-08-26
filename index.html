@@ -1768,7 +1768,28 @@
       display: flex; align-items: center; gap: 10px; flex-shrink: 0;
       padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
     }
-    #gmTitle { flex: 1 1 auto; font-size: 0.9rem; font-weight: 700; color: var(--muted); }
+    #gmTitle { flex: 0 1 auto; font-size: 0.9rem; font-weight: 700; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+    /* Поиск по местам: со ста шестью точками искать глазами бесполезно. */
+    #gmFind {
+      flex: 1 1 120px; min-width: 0; max-width: 260px; padding: 9px 12px;
+      border-radius: 11px; font-size: 0.88rem; color: var(--ink);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    #gmFind::placeholder { color: var(--dim); }
+    #gmHits {
+      position: absolute; z-index: 3; left: 14px; right: 14px;
+      top: calc(env(safe-area-inset-top) + 56px);
+      max-height: 45vh; overflow-y: auto; border-radius: 14px;
+      background: rgba(14, 19, 28, 0.97); border: 1px solid var(--glass-line);
+    }
+    #gmHits button {
+      display: block; width: 100%; text-align: left; padding: 11px 14px;
+      background: none; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--ink); font-size: 0.9rem;
+    }
+    #gmHits button em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim); margin-top: 2px; }
+    #gmHits button:last-child { border-bottom: 0; }
     #gmClose {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
       background: var(--glass); border: 1px solid var(--glass-line); font-size: 1.1rem;
@@ -3757,8 +3778,10 @@
   <div id="gmap" hidden aria-hidden="true">
     <div id="gmTop">
       <div id="gmTitle"></div>
+      <input id="gmFind" type="search" placeholder="Найти место" autocomplete="off" enterkeyhint="search">
       <button id="gmClose" type="button" aria-label="Закрыть">✕</button>
     </div>
+    <div id="gmHits" hidden></div>
     <div id="gmStage">
       <div id="gmWrap"><img id="gmImg" alt="" draggable="false"></div>
       <div id="gmPins"></div>
