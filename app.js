@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 246";
+const APP_VERSION = "Кэйко 247";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9985,8 +9985,29 @@ function gmParts() {
 const gmВидимые = () => {
   if (!gm) return [];
   if (gm.часть === -1) return gm.места.filter((p) => !частьТочки(p));   // вне частей
-  return gm.часть ? gm.места.filter((p) => частьТочки(p) === gm.часть) : gm.места;
+  if (gm.часть) return gm.места.filter((p) => частьТочки(p) === gm.часть);
+  /* «Все места»: Итака, Троя и Огигия встречаются в разных песнях со своим
+     описанием в каждой. На общей карте это одно место, а не стопка из трёх
+     точек в одной координате. Оставляем первое вхождение, остальные прячем;
+     в карточке перечислены главы, где оно встречается. */
+  const было = new Set();
+  return gm.места.filter((p) => {
+    if (было.has(p.name)) return false;
+    было.add(p.name);
+    return true;
+  });
 };
+
+/* В каких главах встречается место — для карточки на общей карте. */
+function gmГлавы(имя) {
+  if (!gm) return [];
+  const номера = [...new Set(gm.места.filter((p) => p.name === имя).map(частьТочки).filter(Boolean))]
+    .sort((a, b) => a - b);
+  return номера.map((n) => {
+    const c = (gm.части || []).find((x) => Number(x.n) === n);
+    return c ? String(c.name).split(".")[0].trim() : "";
+  }).filter(Boolean);
+}
 
 function gmTitle() {
   const el = $("#gmTitle");
@@ -10189,7 +10210,9 @@ function gmClamp() {
 function gmCard() {
   const card = $("#gmCard");
   if (!card || !gm) return;
-  const p = gm.места.find((x) => x.name === gm.at);
+  /* Ищем среди показанных, а не среди всех: у Огигии своё описание в каждой
+     песни, и в песни V должно стоять её, а не первое попавшееся. */
+  const p = gmВидимые().find((x) => x.name === gm.at) || gm.места.find((x) => x.name === gm.at);
   if (!p) { card.hidden = true; card.innerHTML = ""; return; }
   /* «Фото» ведёт в поиск по картинкам: интересно не где это на карте, а как
      место выглядит сегодня. У мифических имён свой запрос — «Огигия» не найдёт
@@ -10218,9 +10241,13 @@ function gmCard() {
      было при героях. */
   const годы = pastvuYears(gm && gm.id ? { id: gm.id } : null);
 
+  /* На общей карте место может приходить из нескольких глав — говорим, из
+     каких: иначе непонятно, почему в описании только одна песнь. */
+  const главы = gm.часть ? [] : gmГлавы(p.name);
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     <p>${esc(p.t || "")}</p>
+    ${главы.length > 1 ? `<p class="gm-in">${esc(главы.join(" · "))}</p>` : ""}
     <div class="gm-links">
       ${годы ? `<a href="#" data-shots="1">Старые фото</a>` : ""}
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
