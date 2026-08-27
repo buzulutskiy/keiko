@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 244";
+const APP_VERSION = "Кэйко 245";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -581,9 +581,15 @@ const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
    на другом берегу моря. */
 const bookMap = (b) => artsPart(b, "map");
 const mapOfChapter = (b, i) => bookMap(b).filter((x) => Number(x.ch) === i + 1);
-/* Места без главы (ch = 0) — карта на всю книгу: у «Столпов моря» стеки
-   разбросаны по свету и к главам не привязаны, там карта и есть содержание. */
-const mapWhole = (b) => bookMap(b).filter((x) => !Number(x.ch));
+/* Карта на всю книгу. Обычно это места без главы (ch = 0): у «Столпов моря»
+   стеки разбросаны по свету и к главам не привязаны. Но если у книги все
+   точки разложены по главам, как в «Одиссее», карта всей книги — это просто
+   все они разом; по главам их разведёт содержание внутри карты. */
+const mapWhole = (b) => {
+  const все = bookMap(b);
+  const без = все.filter((x) => !Number(x.ch));
+  return без.length ? без : все;
+};
 const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
 const mapBox = (b) => {
   const a = artsOf((b || book()).id);
@@ -3353,6 +3359,8 @@ function renderHome() {
       </button>
         <button class="cta-side" id="bookTalkBtn" type="button" ${talkBtnOn() ? "" : "hidden"}
           aria-label="${esc(talkBtnWord())}" title="${esc(talkBtnWord())}">${talkBtnIcon()}</button>
+        <button class="cta-side" id="bookMapBtn" type="button" ${mapBtnOn() ? "" : "hidden"}
+          aria-label="Карта мест" title="Карта мест">🗺</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3363,6 +3371,8 @@ function renderHome() {
     if (onlyMap(book())) openPlaceMap(book(), -1);
     else openClub(book(), bookProgress());
   });
+  const bm = $("#bookMapBtn");
+  if (bm) bm.addEventListener("click", () => openPlaceMap(book(), -1));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -3646,6 +3656,10 @@ const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(
    у книги, где есть только карта, — карта. */
 const talkBtnIcon = () => onlyMap(book()) ? "🗺" : "💬";
 const talkBtnWord = () => onlyMap(book()) ? "Карта мест" : "Разбор";
+/* Карта — своя кнопка рядом с разбором, а не вкладка внутри него: на карту
+   ходят отдельно от чтения, и незачем ради неё открывать разбор песни, где
+   лежат спойлеры. У книги, где кроме карты ничего нет, кнопка одна — та. */
+const mapBtnOn = () => isBook() && !onlyMap(book()) && mapWhole(book()).length > 0 && !!mapBox(book());
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
    флажок «файл есть», и пока он не доехал, кнопки не было — а узнать правду
@@ -4937,8 +4951,7 @@ function openTalkSheet(b, page) {
   рисуйРазговор(bk);
 }
 
-let talkView = "art";      // что открыто внутри песни: разбор, вопросы или карта
-let mapAt = null;          // какая точка карты раскрыта
+let talkView = "art";      // что открыто внутри песни: разбор или вопросы
 
 function рисуйРазговор(bk) {
   /* Стрелками ходим только по открытым разборам: соседняя песнь может быть
@@ -4950,17 +4963,13 @@ function рисуйРазговор(bk) {
   const глава = главы[место] || главы[0];
   const блоки = articleOfChapter(bk, глава.i);
   const вопросы = faqOfChapter(bk, глава.i);
-  const места = mapOfChapter(bk, глава.i);
-  const рамка = mapBox(bk);
   const lead = clubLead(bk, глава.i);
   /* Вкладка вопросов видна и тогда, когда файл ещё едет: невидимая вкладка
      на месте несостоявшейся загрузки — это ровно тот случай, когда «ничего
      нет» и «не приехало» выглядят одинаково. */
   const ждём = !вопросы.length && (hasArts(bk.id) || !artsOf(bk.id));
   const есть = вопросы.length || ждём;
-  const картаЕсть = места.length && рамка;
-  const вид = (talkView === "faq" && есть) ? "faq"
-    : (talkView === "map" && картаЕсть) ? "map" : "art";
+  const вид = (talkView === "faq" && есть) ? "faq" : "art";
   /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
   const абзацы = [];
   sheetMode = "talk";
@@ -4973,33 +4982,12 @@ function рисуйРазговор(bk) {
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
-    ${есть || картаЕсть ? `
+    ${есть ? `
       <div class="tv-tabs">
         <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
-        ${есть ? `<button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>` : ""}
-        ${картаЕсть ? `<button class="${вид === "map" ? "on" : ""}" data-tv="map" type="button">Карта</button>` : ""}
+        <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
       </div>` : ""}
-    ${вид === "map" ? (() => {
-      const src = artSrc(mapKey(bk.id), mapFile(bk.id));
-      const точка = null;
-      return `
-      <div class="mp">
-        <div class="mp-box">
-          ${src ? `<img src="${esc(src)}" alt="карта">` : `<div class="ar-wait">карта загружается…</div>`}
-          ${места.map((p) => {
-            const { x, y } = mapXY(рамка, p);
-            return `<button class="mp-pin${точка && точка.name === p.name ? " on" : ""}"
-              style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%" data-mp="${esc(p.name)}"
-              type="button"><i></i><span>${esc(p.name)}</span></button>`;
-          }).join("")}
-        </div>
-        <div class="mp-names">
-          ${места.map((p) => `<button class="mp-name" data-mp="${esc(p.name)}" type="button">${esc(p.name)}</button>`).join("")}
-        </div>
-        <button class="mp-full" data-mp="" type="button">Открыть карту во весь экран</button>
-        <p class="mp-att">карта © OpenStreetMap · внутри приближается пальцами</p>
-      </div>` })() : ""}
-    ${вид === "map" ? "" : вид === "faq" && !вопросы.length ? `
+    ${вид === "faq" && !вопросы.length ? `
     <div class="ar-wait" style="margin-top:16px">вопросы ещё не приехали${artsWhy ? " · " + esc(artsWhy) : ""}</div>
     <div class="sheet-actions"><button class="btn" id="fqPull" type="button">Загрузить</button></div>`
     : вид === "faq" ? `
@@ -5034,7 +5022,7 @@ function рисуйРазговор(bk) {
       }).join("")}
     </article>`}
     <div class="sheet-actions">
-      ${вид === "map" ? "" : `<button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>`}
+      <button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>
       <button class="btn" id="tkBack" type="button">К списку</button>
       <button class="btn" id="tkClose2" type="button">Закрыть</button>
     </div>`, true);
@@ -5044,7 +5032,6 @@ function рисуйРазговор(bk) {
       const сл = главы[место + (el.dataset.tk === "next" ? 1 : -1)];
       if (!сл) return;
       talkAt = сл.i;
-      mapAt = null;                    // у соседней песни свои места
       clubMark(bk, talkAt);
       рисуйРазговор(bk);
     }));
@@ -5057,17 +5044,9 @@ function рисуйРазговор(bk) {
   });
   document.querySelectorAll("[data-tv]").forEach((el) =>
     el.addEventListener("click", () => {
-      /* Карта в шторке размером с ладонь бессмысленна — вкладка сразу открывает
-         её во весь экран, а разбор остаётся под ней там, где был. */
-      if (el.dataset.tv === "map") { openPlaceMap(bk, глава.i); return; }
       talkView = el.dataset.tv;
       рисуйРазговор(bk);
     }));
-  /* Точка на маленькой карте и название под ней ведут в одно место: карта во
-     весь экран, уже подведённая к этой точке. Рассматривать её в шторке
-     размером с ладонь бессмысленно. */
-  document.querySelectorAll("[data-mp]").forEach((el) =>
-    el.addEventListener("click", () => openPlaceMap(bk, глава.i, el.dataset.mp || null)));
   document.querySelectorAll("[data-cp]").forEach((el) =>
     el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)],
       вид === "faq" ? "Вопрос" : "Абзац")));
@@ -9989,11 +9968,15 @@ function closePlaceMap() {
 
 /* Сколько точек приходится на каждую главу — пустые главы в содержание не
    попадают: листать список, где половина строк ни к чему не ведёт, незачем. */
+/* Глава точки: у одних книг она проставлена отдельным полем part, у «Одиссеи»
+   роль главы играет ch — по нему же собирается карта одной песни. */
+const частьТочки = (p) => Number(p.part) || Number(p.ch) || 0;
+
 function gmParts() {
   if (!gm) return [];
   const счёт = new Map();
   for (const p of gm.места) {
-    const n = Number(p.part) || 0;
+    const n = частьТочки(p);
     счёт.set(n, (счёт.get(n) || 0) + 1);
   }
   return (gm.части || []).map((c) => ({ ...c, k: счёт.get(Number(c.n)) || 0 }))
@@ -10001,8 +9984,8 @@ function gmParts() {
 }
 const gmВидимые = () => {
   if (!gm) return [];
-  if (gm.часть === -1) return gm.места.filter((p) => !Number(p.part));   // вне частей
-  return gm.часть ? gm.места.filter((p) => Number(p.part) === gm.часть) : gm.места;
+  if (gm.часть === -1) return gm.места.filter((p) => !частьТочки(p));   // вне частей
+  return gm.часть ? gm.места.filter((p) => частьТочки(p) === gm.часть) : gm.места;
 };
 
 function gmTitle() {
@@ -10030,7 +10013,7 @@ function gmToc() {
   /* Места без главы — не мусор: это то, что вокруг книги, а не в ней. У
      Достоевского так стоят адреса из его записной книжки и разбора краеведов.
      Отдельной строкой, чтобы было видно, что они не выпали, а стоят особняком. */
-  const вне = gm.места.filter((p) => !Number(p.part)).length;
+  const вне = gm.места.filter((p) => !частьТочки(p)).length;
   box.innerHTML = `<button data-part="0" type="button">Все места
       <em>${слово(gm.места.length)}</em></button>`
     + части.map((c) => `<button data-part="${esc(String(c.n))}" type="button">${esc(c.name)}
