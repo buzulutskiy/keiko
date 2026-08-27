@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 248";
+const APP_VERSION = "Кэйко 249";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -149,6 +149,7 @@ const EV_GONE = new Set(["ach", "fact"]);
 function emptyData() {
   return {
     active: "book",
+    usage: {},     // счётчики заходов в разделы — чтобы решать о вырезании по фактам
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
     pastel: { course: null, entries: [] },
@@ -206,6 +207,7 @@ function migrate(obj) {
   for (const k of Object.keys(base.practice || {}))
     if (base.practice[k] && base.practice[k].vmap !== undefined) delete base.practice[k].vmap;
   if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
+  if (obj.usage && typeof obj.usage === "object") base.usage = obj.usage;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
   if (obj.eventsV) base.eventsV = obj.eventsV;
@@ -947,6 +949,24 @@ function achState() {
 
 // текст награды с учётом контекста материала
 const wordOf = (a) => a.word || achWords()[a.id] || a.hint;
+
+/* ── Счётчики использования ──
+   Отметка «этим разделом воспользовались»: через месяц-другой по этим числам
+   решается, что из функционала мёртво и подлежит вырезанию. Никакой аналитики
+   наружу — числа лежат в твоём же гисте рядом с записями. Каждое устройство
+   пишет только в свою ветку, поэтому слияние — поимённый максимум, и ничего
+   не теряется. В гист счётчики не толкаются сами: уедут со следующей
+   настоящей записью. */
+function useMark(key) {
+  try {
+    if (!data) return;
+    if (!cfg.deviceId) { cfg.deviceId = Math.random().toString(36).slice(2, 7); saveCfg(); }
+    const dev = (data.usage = data.usage || {})[cfg.deviceId] || (data.usage[cfg.deviceId] = {});
+    const u = dev[key] || (dev[key] = { n: 0, at: 0 });
+    u.n++; u.at = now();
+    saveData();
+  } catch {}
+}
 
 /* ── Действия ── */
 function normSpan(hand, from, to) {
@@ -1841,6 +1861,7 @@ function renderTabbar() {
   document.querySelectorAll("#tabbar button").forEach(b =>
     b.addEventListener("click", () => {
       tab = b.dataset.tab;
+      useMark("вкладка-" + tab);
       settingsOpen = false; settingsView = null;
       if (tab === "notes") { notesFocus = true; shuffleThought = null; notesFilter = "all"; }
       cfg.tab = tab; saveCfg();
@@ -2899,6 +2920,7 @@ function recMime() {
 const canRecord = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
 async function startTake(onTick, onLevel) {
+  useMark("запись-игры");
   /* Раньше здесь стояло autoGainControl: false — «чтобы не портить музыку».
      На деле рояль в комнате пишется еле слышно: у телефона крошечный микрофон,
      и без автоусиления уровень остаётся на уровне шума. Возвращаем. */
@@ -4857,6 +4879,7 @@ function clubState(bk, i, page) {
 }
 
 function openClub(b, page) {
+  useMark("разбор");
   const bk = b || book();
   /* Разборы приезжают из каталога, а он сверяется по своему расписанию: новые
      песни или вопросы могли уже лежать в гисте, но ещё не доехать до телефона.
@@ -5049,6 +5072,7 @@ function рисуйРазговор(bk) {
   document.querySelectorAll("[data-tv]").forEach((el) =>
     el.addEventListener("click", () => {
       talkView = el.dataset.tv;
+      if (talkView === "faq") useMark("вопросы");
       рисуйРазговор(bk);
     }));
   document.querySelectorAll("[data-cp]").forEach((el) =>
@@ -5794,6 +5818,7 @@ const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ 
 const gutOpenSet = () => new Set(gutAchState().filter((a) => a.done).map((a) => a.id));
 
 function gutAdd() {
+  useMark("какуля");
   data.gut = data.gut || [];
   const was = gutOpenSet();          // что было открыто до этой отметки
   const t = now();
@@ -5906,6 +5931,7 @@ function gutCheer() {
 const GUT_BEST = () => "keiko-gut-best" + suffix();
 
 function gutGame() {
+  useMark("спрятанная-игра");
   if (document.getElementById("gutGame")) return;
   try { if (navigator.vibrate) navigator.vibrate(12); } catch {}
 
@@ -6169,6 +6195,7 @@ function renderGut() {
    дата, когда-нибудь или оставить как есть. Запускается сколько угодно раз —
    это пересборка полочек, а не разовая настройка. */
 function renderWishTriage() {
+  useMark("раскидать");
   const today = todayStr(), tomo = tomorrowStr();
   // список зафиксирован на старте: пока раскладываешь, полочки под руками не ездят
   const w = wishes().find((x) => x.id === wishTriage.ids[wishTriage.at] && !x.done);
@@ -7355,6 +7382,7 @@ function bindSoundUI() {
   document.querySelectorAll("[data-sound]").forEach(b =>
     b.addEventListener("click", () => {
       cfg.sound = b.dataset.sound === "on";
+      if (cfg.sound) useMark("звук");
       saveCfg();
       audioUnlocked = true;         // это и есть нужный жест
       render();
@@ -9884,6 +9912,7 @@ function pracFinish() {
 let gm = null;      // {места, рамка, at, scale, tx, ty}
 
 function openPlaceMap(bk, i, выбрать) {
+  useMark("карта");
   const места = mapPoints(bk, i);
   const рамка = mapBox(bk);
   if (!места.length || !рамка) { toast("Карты пока нет"); return; }
@@ -10317,6 +10346,7 @@ async function pvNearest(lat, lon, годы, limit) {
 }
 
 function openShots(p, все) {
+  useMark("карта-снимки");
   const box = $("#gmShots");
   if (!box || !gm) return;
   shots = { место: p, список: null, one: null, все: !!все };
@@ -10503,6 +10533,7 @@ function bindPlaceMap() {
     if (!хиты) return;
     if (!хиты.hidden && хиты.querySelector("[data-part]")) { хиты.hidden = true; хиты.innerHTML = ""; return; }
     if (поле) поле.value = "";
+    useMark("карта-содержание");
     gmToc();
   });
 
@@ -11318,6 +11349,7 @@ function openAddBookSheet() {
 
 // шторка: звёзды и отзыв
 function openShelfSheet(id) {
+  useMark("полка");
   const a = shelfItems().find(x => x.id === id) || (data.archive || []).find(x => x.id === id);
   if (!a) return;
   sheetMode = "shelf";
@@ -11886,6 +11918,7 @@ function rollCandidate(exceptName) {
 
 // кубик: просто прокручивает ленту и останавливается на выбранном материале
 function rollDice() {
+  useMark("кубик");
   const { pick } = rollCandidate();
   if (!pick) return;
 
@@ -12467,6 +12500,7 @@ function bookSpanDates(b) {
 
 /* ── Библиотека: все материалы, у каждого своя страница со всем, что известно ── */
 function libraryUI() {
+  useMark("библиотека");
   const books  = (data.book.books || []).filter(b => !b.archived);
   const pieces = (data.piano.pieces || []).filter(p => !p.archived);
   const hasPastel = course().lessons.length > 0;
@@ -13400,7 +13434,22 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+
+/* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
+   достаточно поимённого максимума — числа только растут. */
+function mergeUsage(local, remote) {
+  const out = {};
+  for (const src of [remote || {}, local || {}])
+    for (const dev of Object.keys(src)) {
+      out[dev] = out[dev] || {};
+      for (const k of Object.keys(src[dev] || {})) {
+        const a = out[dev][k] || {}, b = src[dev][k] || {};
+        out[dev][k] = { n: Math.max(a.n || 0, b.n || 0), at: Math.max(a.at || 0, b.at || 0) };
+      }
+    }
+  return out;
+}
 
 function mergeLists(local, remote) {
   const map = new Map();
@@ -13552,6 +13601,7 @@ async function syncNow(manual) {
          устройстве он оставался пустым — и первой же записью затирал в гисте
          и пройденные такты, и ссылку на видео. */
       data.practice = mergePrac(data.practice, remote.practice);
+      data.usage = mergeUsage(data.usage, remote.usage);
       // спрятанное — свойство взгляда, а не данных: берём то, что свежее целиком
       if (remote.hidden && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.hidden = remote.hidden;
       pracStamp(false);        // слияние — не правка, отметки времени не трогаем
@@ -14027,6 +14077,7 @@ init();
   }
 
   window.openKnowledgeMap = function () {
+    useMark("карта-знаний");
     if (!data) return;
     if (!TAXONOMY) { toast("Карта ещё грузится — попробуй через миг"); refreshFromGist(); return; }
     MAP = buildTree(); path = []; anim = null;
