@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 252";
+const APP_VERSION = "Кэйко 253";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10229,6 +10229,10 @@ function gmCard() {
      Perplexity. Кладём второй кнопкой, а не вместо: у Perplexity лучше подбор
      иностранных источников, у Яндекса — доступность. */
   const алиса = `https://ya.ru/search/?text=${вопрос}`;
+  /* Felo — поисковик того же устройства, что Perplexity: ответ со ссылками на
+     источники, — но без счётчика бесплатных ответов и без входа в аккаунт.
+     Русский вопрос принимает как есть. */
+  const felo = `https://felo.ai/search?q=${вопрос}`;
   card.hidden = false;
   /* PastVu — архив старых снимков, привязанных к карте. Открываем его на этой
      же точке и в тех годах, о которых книга: увидеть место таким, каким оно
@@ -10247,6 +10251,7 @@ function gmCard() {
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
       <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
       <a href="${esc(алиса)}" target="_blank" rel="noopener">Алиса</a>
+      <a href="${esc(felo)}" target="_blank" rel="noopener">Felo</a>
       <a href="${esc(гео)}" target="_blank" rel="noopener">Earth</a>
       <a href="${esc(янд)}" target="_blank" rel="noopener">Я.Карты</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
