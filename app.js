@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 247";
+const APP_VERSION = "Кэйко 248";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4131,7 +4131,11 @@ function weekCap(monday) {
    первой записи: пустые недели до начала занятий листать незачем. */
 function canShift(куда) {
   if (куда > 0) return shift < 0;
-  const все = entries().filter((e) => !e.deleted).map((e) => e.date).sort();
+  /* Все записи всех занятий, а не entries(): та функция отдаёт только
+     активный материал, и с новой книгой стрелка назад гасла, хотя записи
+     по другим занятиям есть за месяцы. */
+  const все = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()]
+    .filter((e) => !e.deleted).map((e) => e.date).sort();
   if (!все.length) return false;
   const a = periodAnchor(shift - 1);
   const конец = period === "month"
