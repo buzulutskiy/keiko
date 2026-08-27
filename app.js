@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 251";
+const APP_VERSION = "Кэйко 252";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10224,6 +10224,11 @@ function gmCard() {
     + `и длинных перечислений дат. Покажи фотографии места — современные и старые, `
     + `а если есть, то картины и гравюры.`);
   const история = `https://www.perplexity.ai/search?q=${вопрос}`;
+  /* Тот же вопрос в Яндекс: он отвечает быстрым ответом Алисы и работает из
+     России без обхода и без счётчика бесплатных ответов, которым упирается
+     Perplexity. Кладём второй кнопкой, а не вместо: у Perplexity лучше подбор
+     иностранных источников, у Яндекса — доступность. */
+  const алиса = `https://ya.ru/search/?text=${вопрос}`;
   card.hidden = false;
   /* PastVu — архив старых снимков, привязанных к карте. Открываем его на этой
      же точке и в тех годах, о которых книга: увидеть место таким, каким оно
@@ -10241,8 +10246,9 @@ function gmCard() {
       ${годы ? `<a href="#" data-shots="1">Старые фото</a>` : ""}
       <a href="${esc(фото)}" target="_blank" rel="noopener">Фото места</a>
       <a href="${esc(история)}" target="_blank" rel="noopener">История</a>
+      <a href="${esc(алиса)}" target="_blank" rel="noopener">Алиса</a>
       <a href="${esc(гео)}" target="_blank" rel="noopener">Earth</a>
-      <a href="${esc(янд)}" target="_blank" rel="noopener">Яндекс</a>
+      <a href="${esc(янд)}" target="_blank" rel="noopener">Я.Карты</a>
       ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Подробнее</a>` : ""}
     </div>`;
 }
