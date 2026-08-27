@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 245";
+const APP_VERSION = "Кэйко 246";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10051,10 +10051,14 @@ function gmScalePins() {
     const y = gm.ty + h * Number(el.dataset.y) / 100;
     el.style.left = x.toFixed(1) + "px";
     el.style.top = y.toFixed(1) + "px";
-    // прошлое состояние кучки снимаем: считаем заново на каждом кадре
+    /* Прошлое состояние кучки снимаем целиком: класс, счётчик и подпись.
+       Без возврата подписи распавшаяся кучка так и стояла «Египет · Фарос»
+       рядом с отдельным Фаросом. */
     el.classList.remove("many");
     el.removeAttribute("data-many");
     const счёт = el.querySelector("b"); if (счёт) счёт.remove();
+    const имя = el.querySelector("span");
+    if (имя && имя.textContent !== el.dataset.gm) имя.textContent = el.dataset.gm;
     // за краем экрана точку не рисуем: она всё равно не видна, а тянет на себя касания
     const за = x < -40 || y < -40 || x > gm.base.sw + 40 || y > gm.base.sh + 40;
     el.style.visibility = за ? "hidden" : "";
@@ -10088,6 +10092,12 @@ function gmScalePins() {
     глава.el.dataset.many = k;
     глава.el.insertAdjacentHTML("beforeend", `<b>${кучка.length}</b>`);
     gm.кучки[k] = кучка.map((т) => т.el.dataset.gm);
+    /* Подпись кучки перечисляет, кто в ней: иначе «2» над Египтом не отвечает
+       на вопрос, куда делся Фарос. Много имён в строку не влезет — тогда счёт. */
+    const подпись = глава.el.querySelector("span");
+    if (подпись) подпись.textContent = кучка.length <= 3
+      ? gm.кучки[k].join(" · ")
+      : `${кучка.length} ${plural(кучка.length, "место", "места", "мест")}`;
   }
 
   gmLabels();
@@ -10110,6 +10120,28 @@ function gmApply() {
 
 /* Вписываем карту в экран и запоминаем базовый размер: всё остальное считается
    от него, поэтому поворот телефона ничего не ломает. */
+/* Подводим карту к выбранным точкам. На общем плане соседи сливаются в одну
+   метку с числом: Фарос и Египет на карте Средиземноморья стоят в двенадцати
+   пикселях друг от друга, и «а где Фарос?» — законный вопрос. Выбрал песнь —
+   карта подъезжает к её местам, и они расходятся. */
+function gmFitTo(места) {
+  if (!gm || !gm.base || !места || !места.length) return;
+  const тчк = места.map((p) => mapXY(gm.рамка, p));
+  const x1 = Math.min(...тчк.map((t) => t.x)), x2 = Math.max(...тчк.map((t) => t.x));
+  const y1 = Math.min(...тчк.map((t) => t.y)), y2 = Math.max(...тчк.map((t) => t.y));
+  // размах в пикселях невеличенной карты; минимум — чтобы одна точка не давала деление на ноль
+  const пw = Math.max(1.5, x2 - x1) / 100 * gm.base.w;
+  const пh = Math.max(1.5, y2 - y1) / 100 * gm.base.h;
+  const поле = 0.7;                       // по краям оставляем воздух
+  const k = Math.max(1, Math.min(GM_MAX,
+    Math.min(gm.base.sw * поле / пw, gm.base.sh * поле / пh)));
+  gm.scale = k;
+  gm.tx = gm.base.sw / 2 - (x1 + x2) / 2 / 100 * gm.base.w * k;
+  gm.ty = gm.base.sh / 2 - (y1 + y2) / 2 / 100 * gm.base.h * k;
+  gmClamp();
+  gmApply();
+}
+
 function gmFit() {
   const stage = $("#gmStage"), wrap = $("#gmWrap"), img = $("#gmImg");
   if (!stage || !wrap || !img || !gm) return;
@@ -10456,6 +10488,7 @@ function bindPlaceMap() {
       gmTitle();
       gmPins();
       gmCard();
+      if (gm.часть) gmFitTo(gmВидимые()); else gmFit();
       return;
     }
     const b = e.target.closest("[data-hit]");

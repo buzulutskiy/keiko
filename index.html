@@ -1838,7 +1838,8 @@
       position: absolute; font-size: 0.7rem; font-weight: 800; color: #14181f;
       pointer-events: none;
     }
-    .gm-pin.many span { opacity: 0 !important; }
+    /* У кучки подпись как раз нужна — она объясняет, кто под цифрой. */
+    .gm-pin.many span { bottom: 24px; }
 
     #gmPins.tight .gm-pin span { opacity: 0; }
     #gmPins.tight .gm-pin.on span { opacity: 1; }
