@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 249";
+const APP_VERSION = "Кэйко 250";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1794,8 +1794,9 @@ function renderInner() {
     else if (tab === "notes") renderNotes();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
+    // раздел убран, но вкладка могла остаться сохранённой — уводим на главную
+    else if (tab === "pills") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     // профиль сменили — вкладки уже нет, уводим на главную
-    else if (tab === "pills") { if (pillsOn()) renderPills(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
     else if (tab === "gut") { if (gutOn()) renderGut(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
     else renderAch();
   } catch (e) {
@@ -1852,7 +1853,6 @@ function renderTabbar() {
        и карту знаний перенесли в Библиотеку. Экран остался — просто без
        постоянной кнопки. */
     ["wish", ICON("wish", "✧"), `${T("tabWish")} ${wishOpenCount() || ""}${wishesToday().length ? '<i class="tb-dot"></i>' : ""}`],
-    ...(pillsOn() ? [["pills", "💊", "Таблетки"]] : []),
     ...(gutOn() ? [["gut", "💩", "Какуля"]] : [])
   ].map(([id, ic, nm]) =>
     `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
@@ -5540,34 +5540,6 @@ const gutOn = () => {
   const p = profile();
   return /diana|диан/i.test(String(p.id || "") + " " + String(p.name || ""));
 };
-/* ══════════ Таблетки ══════════
-   Раздел отвечает на один вопрос: приняла сегодня или нет. Две отметки,
-   утренняя и вечерняя, у каждой видно время. Истории здесь нет намеренно:
-   вчерашнее ничего не решает, а список пропусков превращает лекарство в
-   упрёк. */
-const pillsOn = () => gutOn();
-const PILL_SLOTS = [
-  { k: "morning", name: "Утро",  icon: "🌅" },
-  { k: "evening", name: "Вечер", icon: "🌙" },
-];
-const pillsList = () => (data.pills || []).filter((x) => !x.deleted);
-const pillOf = (slot) => pillsList().find((x) => x.slot === slot && x.date === todayStr());
-
-function pillToggle(slot) {
-  data.pills = data.pills || [];
-  const было = pillOf(slot);
-  if (было) {                       // нажала по ошибке — снимаем отметку
-    было.deleted = true; было.updatedAt = now();
-  } else {
-    const t = now();
-    data.pills.push({ id: uid(), slot, at: t, date: todayStr(), createdAt: t, updatedAt: t });
-    try { if (navigator.vibrate) navigator.vibrate([18, 40, 26]); } catch {}
-  }
-  saveData();
-  schedulePush();
-  renderPills();
-}
-
 const gutList = () => (data.gut || []).filter((g) => !g.deleted)
   .sort((a, b) => (b.at || 0) - (a.at || 0));
 
@@ -6058,28 +6030,6 @@ function gutGame() {
     document.body.classList.remove("gg-on");
   };
   box.querySelector(".gg-close").addEventListener("click", close);
-}
-
-function renderPills() {
-  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
-  const оба = PILL_SLOTS.every((sl) => pillOf(sl.k));
-  $("#view").innerHTML = `
-    <div class="pill-day">${оба ? "Сегодня всё принято" : "Сегодня"}</div>
-    <div class="pill-today">
-      ${PILL_SLOTS.map((sl) => {
-        const был = pillOf(sl.k);
-        return `
-          <button class="pill-btn${был ? " on" : ""}" data-pill="${sl.k}" type="button">
-            <i>${sl.icon}</i>
-            <b>${esc(sl.name)}</b>
-            <em>${был ? "принята в " + clock.format(new Date(был.at)) : "ещё нет"}</em>
-          </button>`;
-      }).join("")}
-    </div>
-    <p class="pill-hint">Нажми, когда выпьешь. Нажми ещё раз, если отметила по ошибке.</p>`;
-
-  document.querySelectorAll("[data-pill]").forEach((b) =>
-    b.addEventListener("click", () => pillToggle(b.dataset.pill)));
 }
 
 function renderGut() {
@@ -13434,7 +13384,10 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut, pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+  /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
+     код удалить можно, чужие записи молча стирать — нет. */
+  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
