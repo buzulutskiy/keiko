@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 273";
+const APP_VERSION = "Кэйко 274";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1965,13 +1965,20 @@ function syncTabHeight() {
   if (h) document.documentElement.style.setProperty("--tab-h", h + "px");
 }
 
+/* Артефакты живут кнопкой в шапке, рядом с настройками: внизу шесть вкладок
+   не помещаются по-человечески, а сюда раздел просится — его открывают реже,
+   чем прогресс, но чаще, чем настройки. */
+function renderMusBtn() {
+  const b = $("#musBtn");
+  if (!b) return;
+  b.hidden = !musItems().some(musOpen);
+  b.classList.toggle("on", tab === "mus");
+}
+
 function renderTabbar() {
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
-    /* Артефакты сразу после прогресса: смотреть, что открылось, ходят так же
-       часто, как проверять цифры. Вкладки нет, пока нечего показывать. */
-    ...(musItems().length ? [["mus", ICON("mus", "◈"), T("tabMus")]] : []),
     /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
        написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
        можно одной строкой. */
@@ -1984,6 +1991,7 @@ function renderTabbar() {
     ...(gutOn() ? [["gut", "💩", "Какуля"]] : [])
   ].map(([id, ic, nm]) =>
     `<button data-tab="${id}" class="${tab === id ? "on" : ""}" type="button"><i>${ic}</i>${nm}</button>`).join("");
+  renderMusBtn();
   syncTabHeight();
   requestAnimationFrame(syncTabHeight);
   document.querySelectorAll("#tabbar button").forEach(b =>
@@ -14154,6 +14162,16 @@ function boot() {
   if (!online) setSyncDot("off");
 
   $("#gearBtn").addEventListener("click", openSettingsSheet);
+  $("#musBtn").addEventListener("click", () => {
+    /* Второе нажатие возвращает туда, откуда пришёл: кнопка в шапке работает
+       как переключатель, а не как ещё одна вкладка. */
+    if (tab === "mus") { tab = cfg.tabBack || "home"; }
+    else { cfg.tabBack = tab; mus = { book: "", at: null }; tab = "mus"; useMark("вкладка-mus"); }
+    cfg.tab = tab; saveCfg();
+    settingsOpen = false;
+    renderTabbar();
+    render();
+  });
   document.querySelector(".logo").addEventListener("click", openAboutSheet);
   // если доступ к движению уже разрешён — просто подписываемся
 

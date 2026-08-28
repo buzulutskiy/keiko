@@ -211,6 +211,12 @@
       transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s;
     }
     .gear:active { transform: scale(0.92); background: var(--glass-2); }
+    /* Артефакты уехали из нижней панели в шапку: шести вкладок внизу слишком
+       много, а раздел смотрят реже, чем прогресс или заметки.
+       display:grid перебивает встроенное [hidden] — возвращаем. */
+    #musBtn[hidden] { display: none; }
+    #musBtn { font-size: 1.05rem; }
+    #musBtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); border-color: transparent; }
 
     /* ── Сегмент-переключатель хобби ───── */
     .seg {
@@ -3866,6 +3872,7 @@
     <header>
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
+      <button class="gear" id="musBtn" aria-label="Артефакты" title="Артефакты" hidden>◈</button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
