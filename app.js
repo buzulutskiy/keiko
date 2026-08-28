@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 286";
+const APP_VERSION = "Кэйко 287";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9423,7 +9423,7 @@ function lessonPrep(i, bl) {
   const steps = lessonSteps(i) || [];
   const надо = (bl && bl.doing) > 0;
   const свои = steps.filter((st) => st.k === "read")
-    .map((st) => String(st.t || "").replace(/^Приготовь:\s*/i, "").trim())
+    .map((st) => сНомерами(String(st.t || "").replace(/^Приготовь:\s*/i, "").trim()))
     .filter(Boolean);
   return { надо, список: надо ? BASE_KIT.concat(свои) : [] };
 }
@@ -13610,6 +13610,144 @@ function bindLibraryUI() {
     }));
 }
 
+/* ══════════ Палитра набора ══════════
+   Курс говорит словами — «приглушённый жёлтый», «серо-голубой», — а на коробке
+   номера. Перевод каждый раз делается глазами по шести десяткам мелков, и
+   делается он ровно в ту минуту, когда сесть и так было трудно. Держим слепок
+   набора у себя и подписываем номера прямо в подготовке.
+
+   Слепок приблизительный: hex — это чей-то глаз, а живой мелок на крафте под
+   нажимом выглядит иначе. Поэтому предлагаем варианты, а не назначаем один. */
+const пал = () => (data.palette || []);
+
+/* Цвет в пространство, где расстояние примерно соответствует тому, насколько
+   цвета различаются на глаз. В rgb этого не выходит: синий и чёрный там
+   «ближе», чем два соседних бежевых. */
+function цветLab(hex) {
+  const h = String(hex || "").replace("#", "");
+  if (h.length !== 6) return null;
+  const к = (i) => parseInt(h.slice(i, i + 2), 16) / 255;
+  const прям = (c) => (c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92);
+  const r = прям(к(0)), g = прям(к(2)), b = прям(к(4));
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const X = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047);
+  const Y = f(r * 0.2126 + g * 0.7152 + b * 0.0722);
+  const Z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
+  return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+}
+
+/* Ближайшие мелки набора. Второй берём только если он почти так же близок:
+   когда разница между кандидатами меньше глаза, выбирать должен глаз. */
+function мелкиДля(hex, макс, слово) {
+  const цель = цветLab(hex);
+  if (!цель || !пал().length) return [];
+  const с = [];
+  for (const м of пал()) {
+    const l = цветLab(м.hex);
+    if (!l) continue;
+    с.push({ имя: String(м.name || ""), d: Math.hypot(l[0] - цель[0], l[1] - цель[1], l[2] - цель[2]) });
+  }
+  с.sort((a, b) => a.d - b.d);
+  /* Порог подобран по делу: худшее из настоящих совпадений курса — 18,
+     а розовый до бежевого — 26. Между ними и проходит граница. */
+  if (!с.length || с[0].d > 22) return [];        // ничего похожего — молчим, а не врём
+  const из = [с[0]];
+  for (let i = 1; i < с.length && из.length < (макс || 2); i++)
+    if (с[i].d - с[0].d <= 6) из.push(с[i]);
+  /* Мелок, названный тем же словом, что и цвет в тексте, ничего не добавляет:
+     «чёрный (229, черный)» — это «чёрный (229)» и лишний шум. */
+  const основа = (w) => String(w).toLowerCase().replace(/ё/g, "е").slice(0, 4);
+  const чист = слово ? из.filter((x) => основа(x.имя) !== основа(слово)) : из;
+  return (чист.length ? чист : из).map((x) => x.имя);
+}
+
+/* Словарь курса: как автор называет цвет и какой это примерно оттенок.
+   Ищем по основе слова, потому что в тексте оно склоняется: «красным»,
+   «бежевого», «чёрно-коричневым». Составные и уточнённые названия стоят
+   первыми — иначе «тёмно-синий» поймается на «синий», а «чёрно-коричневый»
+   на «чёрный». */
+const ЦВЕТА_КУРСА = [
+  ["ярко-рыж[а-яё]*", "B0561B"],
+  ["бледно-рыж[а-яё]*", "D9915E"],
+  ["рыж[а-яё]*", "B0561B"],
+  ["лимонно-ж[её]лт[а-яё]*", "EFDF00"],
+  ["приглуш[её]нн[а-яё]*\\s+ж[её]лт[а-яё]*", "C8963E"],
+  ["ж[её]лт[а-яё]*", "EFDF00"],
+  ["ярк[а-яё]*\\s+оранжев[а-яё]*", "F07800"],
+  ["оранжев[а-яё]*", "F07800"],
+  ["ч[её]рно-коричнев[а-яё]*", "2A1F1D"],
+  ["т[её]мно-коричнев[а-яё]*", "4A2E20"],
+  ["горьк[а-яё]*\\s+шоколад[а-яё]*", "3F2A20"],
+  ["коричнев[а-яё]*", "5A3A28"],
+  ["ч[её]рн[а-яё]*", "1A1A1A"],
+  ["серо-голуб[а-яё]*", "8FA6B8"],
+  ["голуб[а-яё]*", "7FB6D9"],
+  ["т[её]мно-син[а-яё]*", "2B3A67"],
+  ["холодн[а-яё]*\\s+син[а-яё]*", "2A4B8D"],
+  ["син[а-яё]*", "2A4B8D"],
+  ["серо-зел[её]н[а-яё]*", "8A9A7B"],
+  ["зел[её]н[а-яё]*", "3E7A4E"],
+  ["ярк[а-яё]*\\s+красн[а-яё]*", "D42A2A"],
+  ["красн[а-яё]*", "D42A2A"],
+  ["розов[а-яё]*", "E8A0A8"],
+  ["бежев[а-яё]*", "E0C9A6"],
+  ["терракот[а-яё]*", "C06A4E"],
+  ["бел[ыоаие][а-яё]*", "F2F0EA"],
+  ["охр[аыоей]\\b", "C8963E"],
+  ["индиго", "2B3A67"],
+];
+
+/* Дописываем номера прямо в текст курса. Слово остаётся главным — номер идёт
+   в скобках следом: читается «бежевый», а не «246». Если скобка уже есть,
+   номер кладём внутрь неё, чтобы не громоздить две подряд.
+
+   Сначала находим все места на ИСХОДНОМ тексте и только потом вставляем, с
+   конца к началу: если вставлять по ходу, следующие найденные позиции уже
+   сдвинуты и номер садится посреди слова. */
+function сНомерами(текст) {
+  const из = String(текст || "");
+  if (!пал().length || !из) return из;
+  /* Строка, которая начинается с бумаги, — про бумагу: «Возьми бумагу: крафт
+     подходит, можно любую, хоть синюю». Номер пастели там сбивает с толку.
+     Смотрим только начало строки: «Фон голубым, близким к тону бумаги» — про
+     мелок, хотя слово «бумага» в ней тоже есть. */
+  if (/бумаг|лист|крафт|картон/i.test(из.slice(0, 16)) && !/цвет|мелк|пастел|карандаш/i.test(из)) return из;
+  /* Что уже стоит в скобках — пояснение к слову перед ними. Подписывать и
+     слово, и пояснение значит городить скобку в скобке и повторять номер. */
+  const вСкобках = [];
+  const скр = /\([^)]*\)/g;
+  let ск;
+  while ((ск = скр.exec(из))) вСкобках.push([ск.index, ск.index + ск[0].length]);
+  const найдено = [];
+  for (const [шаблон, hex] of ЦВЕТА_КУРСА) {
+    const re = new RegExp(шаблон, "gi");
+    let m;
+    while ((m = re.exec(из))) {
+      const нач = m.index, кон = нач + m[0].length;
+      if (найдено.some((x) => нач < x.кон && кон > x.нач)) continue;
+      if (вСкобках.some(([a, b]) => нач >= a && кон <= b)) continue;
+      const мелки = мелкиДля(hex, 2, m[0]);
+      if (!мелки.length) break;                  // такого цвета в наборе нет
+      найдено.push({ нач, кон, мелки });
+      break;                                     // одно слово подписываем один раз
+    }
+  }
+  найдено.sort((a, b) => b.нач - a.нач);
+  let вых = из;
+  for (const { кон, мелки } of найдено) {
+    const хвост = вых.slice(кон);
+    const скобка = /^\s*\(([^)]*)\)/.exec(хвост);
+    const вставка = мелки.join(", ");
+    if (скобка) {
+      const конецСкобки = кон + скобка[0].length;
+      вых = вых.slice(0, конецСкобки - 1) + ", " + вставка + вых.slice(конецСкобки - 1);
+    } else {
+      вых = вых.slice(0, кон) + " (" + вставка + ")" + вых.slice(кон);
+    }
+  }
+  return вых;
+}
+
 function catalogUI() {
   if (!cfg.token || !cfg.gistId)
     return `<div class="freeze"><div class="fz-head">📚 <b>Каталог</b> — появится, когда подключишь синхронизацию</div></div>`;
@@ -13645,6 +13783,11 @@ function catalogUI() {
       <button class="btn" id="catUp" type="button">Залить каталог из файла</button>
       <input type="file" id="catFile" accept="application/json,.json" style="display:none">
       <div class="fz-empty">Файл кладётся в отдельный гист: тексты одним файлом, обложки — по одной на материал.</div>
+      <div class="fz-head" style="margin-top:14px">Палитра пастельного набора</div>
+      <button class="btn" id="palUp" type="button">${
+        пал().length ? `Мелков в наборе: ${пал().length} · заменить` : "Загрузить палитру"}</button>
+      <input type="file" id="palFile" accept="application/json,.json" style="display:none">
+      <div class="fz-empty">Выгрузка из приложения с цветовым кругом. Курс называет цвета словами — подготовка к занятию будет подписывать твои номера.</div>
     </div>`;
 }
 
@@ -13682,6 +13825,25 @@ function bindCatalogUI() {
   });
 
   const up = $("#catUp"), file = $("#catFile");
+  const pUp = $("#palUp"), pFile = $("#palFile");
+  if (pUp && pFile) {
+    pUp.addEventListener("click", () => pFile.click());
+    pFile.addEventListener("change", async () => {
+      if (!pFile.files[0]) return;
+      try {
+        const pack = JSON.parse(await pFile.files[0].text());
+        const list = Array.isArray(pack) ? pack : (pack.palette || []);
+        const годные = list.filter((x) => x && x.hex && цветLab(x.hex))
+          .map((x) => ({ hex: String(x.hex).replace("#", ""), name: String(x.name || ""),
+                         spectrum: String(x.spectrum || "") }));
+        if (!годные.length) throw new Error("В файле нет цветов");
+        data.palette = годные; data.paletteAt = now();
+        saveData(); schedulePush(); render();
+        toast(`Мелков в наборе: ${годные.length}`);
+      } catch (e) { toast(e.message || "Не разобрал файл"); }
+    });
+  }
+
   if (up && file) {
     up.addEventListener("click", () => file.click());
     file.addEventListener("change", async () => {
@@ -14080,7 +14242,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
   pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
@@ -14248,6 +14410,11 @@ async function syncNow(manual) {
       // выбранные версии — свод, а не список: берём свежий целиком
       if (remote.talks && (remote.talksAt || 0) > (data.talksAt || 0)) {
         data.talks = remote.talks; data.talksAt = remote.talksAt;
+      }
+      /* Палитра — слепок целиком, а не список записей: докупил мелков и залил
+         заново. Побеждает свежий слепок, сливать половинки бессмысленно. */
+      if (remote.palette && (remote.paletteAt || 0) > (data.paletteAt || 0)) {
+        data.palette = remote.palette; data.paletteAt = remote.paletteAt;
       }
       /* Прочитанные разборы — просто объединяем: отметка «прочитал» не должна
          пропадать оттого, что на другом устройстве её ещё не было. */
