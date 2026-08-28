@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 266";
+const APP_VERSION = "Кэйко 267";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1928,7 +1928,7 @@ function renderTabbar() {
     ["progress", ICON("progress", "▤"), T("tabProgress")],
     /* Артефакты сразу после прогресса: смотреть, что открылось, ходят так же
        часто, как проверять цифры. Вкладки нет, пока нечего показывать. */
-    ...(musItems().length ? [["mus", "🏺", T("tabMus")]] : []),
+    ...(musItems().length ? [["mus", ICON("mus", "◈"), T("tabMus")]] : []),
     /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
        написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
        можно одной строкой. */
@@ -11311,7 +11311,7 @@ const THEMES = [
             "--glass-line": "rgba(255, 138, 61, 0.22)", "--glass-hi": "rgba(255, 255, 255, 0.05)",
             "--panel": "rgba(10, 14, 22, 0.62)", "--bar": "rgba(6, 9, 15, 0.78)",
             "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
-    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", },
+    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", mus: "⌾", },
     words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки",
              ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок",
              ctaDone: "Сеанс записан", ctaAdd: "дополнить", streak: "цикл",
@@ -11343,7 +11343,7 @@ const THEMES = [
             "--glass-line": "rgba(61, 255, 136, 0.28)", "--glass-hi": "rgba(61, 255, 136, 0.12)",
             "--panel": "rgba(2, 20, 10, 0.68)", "--bar": "rgba(1, 14, 7, 0.82)",
             "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
-    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", },
+    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", mus: "❑", },
     words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь",
              ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок",
              ctaDone: "> запись принята", ctaAdd: "дополнить", streak: "цепочка",
