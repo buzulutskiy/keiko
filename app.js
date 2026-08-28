@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 279";
+const APP_VERSION = "Кэйко 280";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10180,6 +10180,7 @@ function предметHTML(x, список) {
       <h3>${esc(x.name)}</h3>
       <div class="ms-from">${esc(musBookName(x.book))}${x.ch ? ", глава " + x.ch : ""}</div>
       ${x.why ? `<p>${esc(x.why)}</p>` : ""}
+      ${x.about ? `<p class="ms-about">${esc(x.about)}</p>` : ""}
       <div class="ms-meta">
         <span>${esc(x.museum || "")}${x.place ? " · " + esc(x.place) : ""}</span>
         ${x.inv && вид === "вещь" ? `<span class="ms-inv">${esc(x.inv)}</span>` : ""}
