@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 283";
+const APP_VERSION = "Кэйко 284";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9355,6 +9355,58 @@ const LESSON_STEPS = [
 
 const lessonSteps = (i) => { const l = lessons()[i]; return (l && Array.isArray(l.steps)) ? l.steps : null; };
 
+/* ── Занятие ──
+   Урок целиком — обещание, под которое трудно сесть: сто десять минут и
+   пятьдесят три шага. Но пугает не длина ролика, а число движений руками:
+   восемь минут видео на «Морде» — это час рисования. Поэтому занятие меряется
+   действиями, а не хронометражом: не больше трёх «повтори» или «сделай»
+   подряд. Смотрение в счёт не идёт — оно ничего не стоит и не требует стола.
+
+   Границы этапов, размеченные в самом курсе, не ломаем: занятие начинается
+   вместе с новым этапом. Получается то же, что четыре такта у пианино —
+   ограниченный кусочек, про который заранее известно, что он кончится. */
+const BLOCK_DOING = 3;
+const lessonDoing = (st) => st && (st.k === "pause" || st.k === "do");
+
+function lessonBlocks(i) {
+  const steps = lessonSteps(i) || [];
+  const out = [];
+  let cur = null;
+  steps.forEach((st, n) => {
+    const g = st.g || "";
+    const дело = lessonDoing(st);
+    if (!cur || cur.g !== g || (дело && cur.doing >= BLOCK_DOING)) {
+      cur = { i, g, from: n, to: n, doing: 0 };
+      out.push(cur);
+    }
+    cur.to = n;
+    if (дело) cur.doing++;
+  });
+  return out;
+}
+const blockOfStep = (i, n) => lessonBlocks(i).find((b) => n >= b.from && n <= b.to) || null;
+
+/* Что достать перед куском. Список не выдуман: «Приготовь» уже размечены в
+   самом курсе шагами вида read — просто лежали посреди урока, и про уголь с
+   клячкой узнаёшь, уже сев за стол. Собираем их наперёд.
+   Базовый набор добавляем только там, где придётся рисовать: перед занятием,
+   где надо просто смотреть, стол разгребать незачем. */
+const BASE_KIT = [
+  "Убери со стола лишнее",
+  "Пастель и уголь под руку",
+  "Ноутбук так, чтобы смотреть не наклоняясь",
+  "Тряпку или салфетку рядом",
+];
+
+function lessonPrep(i, bl) {
+  const steps = lessonSteps(i) || [];
+  const надо = (bl && bl.doing) > 0;
+  const свои = steps.filter((st) => st.k === "read")
+    .map((st) => String(st.t || "").replace(/^Приготовь:\s*/i, "").trim())
+    .filter(Boolean);
+  return { надо, список: надо ? BASE_KIT.concat(свои) : [] };
+}
+
 function lessonNext() {
   const ls = lessons();
   for (let i = 0; i < ls.length; i++) {
@@ -9377,6 +9429,56 @@ function lessonNext() {
 function lessonRender(box) {
   const ls = lessons();
   const at = prac.at;
+
+  /* Подготовка — отдельный экран до первого шага, а не строчка посреди урока.
+     Смысл её не в списке вещей, а в том, чтобы разгребание стола перестало
+     быть барьером ко входу и стало первой частью занятия, на которую не надо
+     спешить. Показываем всегда: если доставать нечего, так и говорим — это
+     тоже ответ на «что меня там ждёт». */
+  if (prac.screen === "prep" && at) {
+    const l = ls[at.i] || {};
+    const bl = blockOfStep(at.i, at.step || 0);
+    const p = lessonPrep(at.i, bl);
+    box.innerHTML = `
+      <div class="wk">
+        <div class="wk-task">
+          <p class="wk-kind">${esc(l.title || "\u0443\u0440\u043e\u043a")}</p>
+          <p class="ls-stage">${esc((bl && bl.g) || "")}</p>
+          <div class="ls-kind">\u{1F4CB} \u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430</div>
+          ${p.надо
+            ? `<ul class="ls-kit">${p.список.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
+            : `<p class="ls-text">\u0421\u0435\u0439\u0447\u0430\u0441 \u0442\u043e\u043b\u044c\u043a\u043e \u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u2014 \u0434\u043e\u0441\u0442\u0430\u0432\u0430\u0442\u044c \u043d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u043d\u0430\u0434\u043e.</p>`}
+          <p class="ls-slow">\u041d\u0435 \u0442\u043e\u0440\u043e\u043f\u0438\u0441\u044c \u2014 \u044d\u0442\u043e \u0442\u043e\u0436\u0435 \u0447\u0430\u0441\u0442\u044c \u0437\u0430\u043d\u044f\u0442\u0438\u044f.</p>
+          <button class="pr-go" data-les="prepOk">\u0413\u043e\u0442\u043e\u0432\u043e, \u043d\u0430\u0447\u0430\u043b\u0438</button>
+          <div class="wk-row">
+            <button class="pr-ghost" data-prac="finish">\u0417\u0430\u043a\u043e\u043d\u0447\u0438\u0442\u044c</button>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  /* Конец занятия. Главное здесь — не поздравление, а разрешение встать: пока
+     конца не видно, занятие превращается в задание, а этого мы не хотим. */
+  if (prac.screen === "blockDone" && at) {
+    const bl = prac.lastBlock || {};
+    const мин = Math.floor(pracMin());
+    box.innerHTML = `
+      <div class="wk">
+        <div class="wk-task">
+          <p class="wk-kind">\u0417\u0430\u043d\u044f\u0442\u0438\u0435 \u0437\u0430\u043a\u0440\u044b\u0442\u043e</p>
+          <p class="ls-stage">${esc(bl.g || "")}</p>
+          <p class="ls-text">\u041c\u043e\u0436\u043d\u043e \u0432\u0441\u0442\u0430\u0442\u044c. \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0441 \u044d\u0442\u043e\u0433\u043e \u0436\u0435 \u043c\u0435\u0441\u0442\u0430 \u043a\u043e\u0433\u0434\u0430 \u0443\u0433\u043e\u0434\u043d\u043e.</p>
+          ${мин >= 10 ? `<p class="ls-slow">${мин} \u043c\u0438\u043d\u0443\u0442 \u043f\u043e\u0437\u0430\u0434\u0438 \u2014 \u0434\u0435\u0441\u044f\u0442\u044c \u043e\u0431\u0435\u0449\u0430\u043d\u043d\u044b\u0445 \u0443\u0436\u0435 \u0435\u0441\u0442\u044c.</p>` : ""}
+          <button class="pr-go" data-les="blockNext">\u0414\u0430\u043b\u044c\u0448\u0435</button>
+          <div class="wk-row">
+            <button class="pr-ghost" data-prac="finish">\u041d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f \u0445\u0432\u0430\u0442\u0438\u0442</button>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
   if (!at) {
     box.innerHTML = `
       <div class="pr-mid">
@@ -9418,6 +9520,17 @@ function lessonRender(box) {
        свободно — стрелки и списки ничего не отмечают, отметку ставит только
        большая кнопка. */
     const stage = st.g || "";
+    /* Не «шаг 34 из 53» — цифра, от которой опускаются руки, — а где ты внутри
+       занятия. Движения считаем отдельно от смотрения: рука устаёт от них, а
+       не от минут ролика. */
+    const блоки = lessonBlocks(at.i);
+    const бл = блоки.find((x) => at.step >= x.from && at.step <= x.to);
+    const номер = бл ? блоки.indexOf(бл) + 1 : 0;
+    const движНомер = бл ? steps.slice(бл.from, at.step + 1).filter(lessonDoing).length : 0;
+    const blockLabel = бл
+      ? ` \u00b7 \u0437\u0430\u043d\u044f\u0442\u0438\u0435 ${номер} \u0438\u0437 ${блоки.length}`
+        + (бл.doing ? ` \u00b7 \u0434\u0432\u0438\u0436\u0435\u043d\u0438\u0435 ${Math.max(1, движНомер)} \u0438\u0437 ${бл.doing}` : "")
+      : "";
     const stageSum = (l.stages && l.stages[stage]) || (stage ? "" : l.summary || "");
     const stepDone = lessonDone(at.i, "s" + at.step);
     const sumHTML = (txt) => txt.split("\n").map((line) => {
@@ -9428,7 +9541,7 @@ function lessonRender(box) {
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task">
-          <p class="wk-kind">${esc(l.title || "\u0443\u0440\u043e\u043a " + (at.i + 1))} \u00b7 \u0448\u0430\u0433 ${at.step + 1} \u0438\u0437 ${steps.length}${done ? " \u00b7 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e " + done : ""}</p>
+          <p class="wk-kind">${esc(l.title || "\u0443\u0440\u043e\u043a " + (at.i + 1))}${blockLabel}</p>
           ${stage ? `<p class="ls-stage">${esc(stage)}</p>` : ""}
           <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` \u00b7 ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
@@ -9832,8 +9945,14 @@ function pracNext() {
 function openLesson() {
   if (!isCourse() || !lessons().length) { toast("Уроков пока нет"); return; }
   const at = lessonNext();
+  /* Входим не в шаг, а в подготовку. Правило «Открыл — играешь» снято с
+     пианино, где готовить нечего: инструмент подключён раз и навсегда. У
+     пастели каждый раз надо разгрести стол, и именно это отталкивает сильнее
+     самого рисования. Значит подготовка — не преграда перед занятием, а его
+     первая часть, и торопиться в ней некуда. */
   prac = {
-    kind: "lesson", screen: "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    kind: "lesson", screen: at ? "prep" : "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    lastBlock: null,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
     cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false, listOpen: false,
@@ -11337,8 +11456,16 @@ function bindPractice() {
           const all = steps.length && steps.every((_, n) => lessonDone(at.i, "s" + n));
           if (all) lessonMark(at.i); else { lessonCount(); saveData(); }
           prac.taskAt = Date.now();
+          const бл = blockOfStep(at.i, at.step);
           if (at.step + 1 < steps.length) prac.at = { i: at.i, phase: "step", step: at.step + 1 };
           else prac.at = lessonNext();
+          /* Занятие кончилось — останавливаемся и говорим об этом. Без этой
+             остановки шаги идут сплошняком, конца не видно, и всё превращается
+             в задание. Останавливаемся и на границе урока тоже. */
+          if (бл && at.step >= бл.to && prac.at) {
+            prac.lastBlock = бл;
+            prac.screen = "blockDone";
+          }
           break;
         }
         case "stepBack":
@@ -11351,6 +11478,20 @@ function bindPractice() {
              ставит только большая кнопка. */
           const steps = lessonSteps(at.i) || [];
           prac.at = { i: at.i, phase: "step", step: Math.min(steps.length - 1, at.step + 1) };
+          break;
+        }
+        case "prepOk":
+          prac.screen = "work";
+          prac.stepAt = Date.now();
+          break;
+        case "blockNext": {
+          /* Следующее занятие может потребовать другого — уголь сменился
+             карандашом, добавился чёрный. Подготовку показываем заново только
+             когда впереди снова рисование, иначе просто идём дальше. */
+          const сл = prac.at && blockOfStep(prac.at.i, prac.at.step || 0);
+          prac.screen = (сл && сл.doing && (!prac.lastBlock || !prac.lastBlock.doing)) ? "prep" : "work";
+          prac.lastBlock = null;
+          prac.stepAt = Date.now();
           break;
         }
         case "stepList": prac.listOpen = !prac.listOpen; prac.pickOpen = false; break;
@@ -11608,7 +11749,7 @@ const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
   tabMus: "Артефакты",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
-  ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
+  ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Позаниматься 10 минут",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
   streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания"
