@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 264";
+const APP_VERSION = "Кэйко 265";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -150,6 +150,7 @@ function emptyData() {
   return {
     active: "book",
     usage: {},     // счётчики заходов в разделы — чтобы решать о вырезании по фактам
+    musAt: {},     // когда открылся предмет музея: по этому и сортируем список
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
     pastel: { course: null, entries: [] },
@@ -209,6 +210,7 @@ function migrate(obj) {
   if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
   if (obj.usage && typeof obj.usage === "object") base.usage = obj.usage;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
+  if (obj.musAt && typeof obj.musAt === "object") base.musAt = obj.musAt;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
   if (obj.eventsV) base.eventsV = obj.eventsV;
   if (obj.pracTrimV) base.pracTrimV = obj.pracTrimV;
@@ -548,6 +550,40 @@ function musOpen(x) {
   return bookProgressOf(b) >= chapterEnd(b, Number(x.ch) - 1);
 }
 const musOpenSet = () => new Set(musItems().filter(musOpen).map((x) => x.id));
+
+/* Время открытия предмета. Нужно для порядка в списке: сверху то, что открылось
+   последним. Открытому раньше, чем завели эту запись, ставим единицу — «когда-то»:
+   соврать точным временем хуже, чем расписаться в незнании. Тот же приём, что
+   у наград. */
+function musStamp(свежие) {
+  data.musAt = data.musAt || {};
+  const сейчас = new Set((свежие || []).map((x) => x.id));
+  for (const x of musItems())
+    if (musOpen(x) && data.musAt[x.id] === undefined)
+      data.musAt[x.id] = сейчас.has(x.id) ? now() : 1;
+}
+const musWhen = (x) => (data.musAt || {})[x.id] || 0;
+
+/* Значок предмета: по типу вещи, а не по книге. Список короткий и правится
+   руками — эмодзи в интерфейсе должен читаться с одного взгляда, а не быть
+   «чем-то древним вообще». Своё значение из данных (поле icon) главнее. */
+const MUS_ICONS = [
+  [/картин|пейзаж|портрет|живопис|галере/i, "🖼"],
+  [/статуя|голова|бюст|скульптур|торс/i, "🗿"],
+  [/кратер|гидрия|килик|псиктер|лекиф|амфор|ваз|сосуд|чаш/i, "🏺"],
+  [/инталия|инталья|камея|гемма|скарабей|сердолик|сардер/i, "💎"],
+  [/перстень|кольцо|серьг|браслет|подвес/i, "💍"],
+  [/рельеф|саркофаг|стела|фриз/i, "🪨"],
+  [/светильник|лампа/i, "🪔"],
+  [/грузило|ткац|пряслиц|веретен/i, "🧵"],
+  [/монет|медал/i, "🪙"],
+  [/лук|стрел|копь|меч|щит|оруж/i, "🏹"],
+  [/маск|шлем/i, "🎭"],
+];
+const musIcon = (x) => x.icon
+  /* Музей тоже смотрим: у картинной галереи всё живопись, даже когда в имени
+     предмета об этом ни слова — «Валентин Серов, „Одиссей и Навзикая“». */
+  || (MUS_ICONS.find(([re]) => re.test(`${x.name} ${x.q || ""} ${x.museum || ""}`)) || [])[1] || "🏛";
 
 // в какой главе страница — по порядковому номеру, а не по названию
 function chapterIndexAt(b, page) {
@@ -1391,6 +1427,7 @@ function saveEntry() {
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
   // предмет музея — такая же награда за чтение, показываем тем же экраном
   freshMus.forEach((x) => overlayQueue.push({ type: "mus", x }));
+  musStamp(freshMus);
 
   const stamped = stampProgress(fresh, freshFacts);
   /* Карточка дня пишется на каждую отметку, а не только когда что-то открылось.
@@ -9991,7 +10028,7 @@ function openMuseum(bookId) {
   useMark("музей");
   const box = $("#museum");
   if (!box) return;
-  mus = { book: bookId || "" };
+  mus = { book: bookId || "", at: null };
   box.hidden = false;
   box.setAttribute("aria-hidden", "false");
   document.body.classList.add("prac-on");
@@ -10028,29 +10065,25 @@ const musBookName = (id) => {
 function рисуйМузей() {
   const box = $("#museum");
   if (!box || !mus) return;
-  const все = musItems();
+  musStamp();                     // могло открыться без отметки — например, после синхронизации
+  /* Показываем только открытое. Закрытые силуэты в сетке были бы просто рядом
+     серых замков: сколько их впереди, видно по счётчику в шапке. */
+  const все = musItems().filter(musOpen);
   const книги = [...new Set(все.map((x) => x.book))]
     .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
   if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
-  const список = mus.book ? все.filter((x) => x.book === mus.book) : все;
-  const открыто = список.filter(musOpen).length;
+  const список = (mus.book ? все.filter((x) => x.book === mus.book) : все)
+    /* Сверху то, что открылось последним: музей читается как лента находок,
+       а не как оглавление книги. */
+    .slice().sort((a, b) => (musWhen(b) - musWhen(a)) || (Number(b.ch) - Number(a.ch)));
+  const всего = musItems().filter((x) => !mus.book || x.book === mus.book).length;
 
-  /* Статус решает, идти ли за вещью: одно дело зал с номером, другое —
-     запасник, куда так просто не попасть. Поэтому он не подпись, а метка. */
-  const метка = (st) => {
-    const s = String(st || "").toLowerCase();
-    if (s.startsWith("вживую")) return `<i class="ms-live">в зале</i>`;
-    if (s.startsWith("проверить")) return `<i class="ms-check">уточнить показ</i>`;
-    return `<i class="ms-store">не в экспозиции</i>`;
-  };
+  const открытый = mus.at ? список.find((x) => x.id === mus.at) : null;
+  if (mus.at && !открытый) mus.at = null;
 
-  /* Как и на карте: установленная с домашнего экрана Кэйко открывает
-     target="_blank" во встроенном мини-браузере, откуда iOS не отдаёт ссылку
-     приложению. У ответа target убираем, у остальных ссылок оставляем. */
-  const мимоМуз = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
-  box.innerHTML = `
+  box.innerHTML = открытый ? предметHTML(открытый, список) : `
     <div id="msTop">
-      <div id="msTitle">Музей · ${открыто} из ${список.length}</div>
+      <div id="msTitle">Музей · ${список.length} из ${всего}</div>
       <button id="msClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     ${книги.length > 1 ? `<div class="ms-tabs">
@@ -10058,86 +10091,84 @@ function рисуйМузей() {
       ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
         type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}
     </div>` : ""}
-    <div id="msList">
-      ${список.length ? список.map((x) => {
-        /* Закрытый предмет показываем силуэтом: видно, что впереди ещё есть
-           что открыть, но ни названия, ни зала — иначе это спойлер и повод
-           заглянуть вперёд. */
-        if (!musOpen(x)) return `<article class="ms-card ms-lock">
-          <b>🔒 Откроется дальше</b>
-          <div class="ms-meta"><span>${esc(musBookName(x.book))}${
-            x.ch ? ", глава " + x.ch : ""}</span></div>
-        </article>`;
-        /* Три разных запроса вместо одного общего. Раньше всюду уходил
-           инвентарный номер — и картинки не находились вовсе: по «ГР-4155»
-           изображений в сети нет, номер живёт только внутри музейной базы.
-           Поэтому картинки ищем по названию, а номер приберегаем для поиска
-           по сайту самого музея, где он как раз и работает.
-           Если у предмета задан свой запрос (поле q), он главнее названия:
-           каталожные имена бывают неудачными для поиска. */
-        const имяQ = (x.q || `${x.name} ${x.museum || ""}`).trim();
-        /* Снимок предмета из базы музея. В данных лежит адрес без размеров,
-           потому что нужны разные: в карточку — маленький, в вопрос поиску —
-           большой, чтобы он показал именно эту вещь, а не похожую. */
-        const кадр = (ш) => x.img ? x.img + (x.img.includes("?") ? "&" : "?") + `w=${ш}&h=${ш}` : "";
-        const фото = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(имяQ)}`;
-        const дом = musSite(x.museum);
-        const вМузее = дом
-          ? `https://www.google.com/search?q=${encodeURIComponent(`site:${дом} ${x.inv || x.name}`)}`
-          : "";
-        const найти = `https://ya.ru/search/?text=${encodeURIComponent(
-          `${имяQ}${x.inv ? " " + x.inv : ""}`)}`;
-        /* «История» — тот же приём, что у мест на карте: один общий вопрос,
-           короткий ответ с картинками. Музей и инвентарный номер называем
-           прямо, иначе поиск отвечает про однофамильца вещи. Про книгу не
-           спрашиваем вовсе: предмет интересен сам по себе, а связь с песнью
-           уже написана в карточке. */
-        const вопрос = encodeURIComponent(
-          `Расскажи коротко о музейном предмете: ${имяQ}${
-            x.inv ? `, инвентарный номер ${x.inv}` : ""}${
-            x.museum ? `, ${x.museum}` : ""}. `
-          /* Ссылку на карточку музея кладём в сам вопрос: поиск открывает
-             её и берёт оттуда датировку, материал и размеры — это первоисточник,
-             а не пересказ. Без неё ответ собирался из чего попало и путал
-             похожие вещи. */
-          + (x.url ? `Опирайся прежде всего на карточку музея: ${x.url} — оттуда возьми `
-                   + `датировку, материал и происхождение. ` : "")
-          /* Снимок из музейной базы отдаём прямо в вопрос: без него поиск
-             подставляет свои картинки, часто чужие — похожую гемму или другой
-             кратер того же века. */
-          + (x.img ? `Изображение самого предмета: ${кадр(1200)} — описывай именно его. ` : "")
-          + `Не больше пяти-шести предложений: что это за вещь, когда и где сделана, `
-          + `что на ней изображено и что этот сюжет значил, как она попала в музей. `
-          + `Только конкретное, без общих фраз и перечислений дат. `
-          + `Покажи изображения самого предмета.`);
-        const история = `https://www.perplexity.ai/search?q=${вопрос}`;
-        return `<article class="ms-card">
-          ${x.img ? `<a class="ms-shot" href="${esc(x.url || кадр(1200))}"
-            target="_blank" rel="noopener"><img src="${esc(кадр(600))}" alt=""
-            loading="lazy" decoding="async"></a>` : ""}
-          <b>${esc(x.name)}</b>
-          ${x.why ? `<p>${esc(x.why)}</p>` : ""}
-          <div class="ms-meta">
-            <span>${esc(x.museum || "")}${x.place ? " · " + esc(x.place) : ""}</span>
-            ${x.inv ? `<span class="ms-inv">${esc(x.inv)}</span>` : ""}
-            ${метка(x.status)}
-            ${!mus.book && книги.length > 1 ? `<span class="ms-book">${esc(musBookName(x.book))}${
-              x.ch ? ", " + x.ch : ""}</span>` : x.ch ? `<span class="ms-book">глава ${x.ch}</span>` : ""}
-          </div>
-          <div class="ms-links">
-            ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">Карточка музея</a>` : ""}
-            <a href="${esc(история)}"${мимоМуз}>История</a>
-            <a href="${esc(фото)}" target="_blank" rel="noopener">Фото</a>
-            ${вМузее ? `<a href="${esc(вМузее)}" target="_blank" rel="noopener">На сайте музея</a>` : ""}
-            <a href="${esc(найти)}" target="_blank" rel="noopener">Найти</a>
-          </div>
-        </article>`;
-      }).join("") : `<div class="empty-note">Предметы ещё не приехали. Потяни ещё раз чуть позже.</div>`}
-    </div>`;
+    ${список.length ? `<div id="msGrid">
+      ${список.map((x) => `<button class="ms-tile" data-msi="${esc(x.id)}" type="button">
+        <i>${musIcon(x)}</i>
+        <b>${esc(x.name)}</b>
+        <em>${esc(x.museum || "")}</em>
+      </button>`).join("")}
+    </div>` : `<div class="empty-note">Предметы откроются по мере чтения.</div>`}`;
 
-  $("#msClose").addEventListener("click", closeMuseum);
+  const закр = $("#msClose");
+  if (закр) закр.addEventListener("click", closeMuseum);
   document.querySelectorAll("[data-msb]").forEach((b) =>
-    b.addEventListener("click", () => { mus.book = b.dataset.msb; рисуйМузей(); }));
+    b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; рисуйМузей(); }));
+  document.querySelectorAll("[data-msi]").forEach((b) =>
+    b.addEventListener("click", () => { mus.at = b.dataset.msi; рисуйМузей(); }));
+  document.querySelectorAll("[data-msgo]").forEach((b) =>
+    b.addEventListener("click", () => { mus.at = b.dataset.msgo || null; рисуйМузей(); }));
+}
+
+/* Один предмет во весь экран: всё, что о нём известно, и переходы к соседям
+   по списку — чтобы листать находки, не возвращаясь в сетку каждый раз. */
+function предметHTML(x, список) {
+  const i = список.findIndex((y) => y.id === x.id);
+  const пред = список[i - 1], след = список[i + 1];
+
+  const имяQ = (x.q || `${x.name} ${x.museum || ""}`).trim();
+  const кадр = (ш) => x.img ? x.img + (x.img.includes("?") ? "&" : "?") + `w=${ш}&h=${ш}` : "";
+  const фото = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(имяQ)}`;
+  const дом = musSite(x.museum);
+  const вМузее = дом
+    ? `https://www.google.com/search?q=${encodeURIComponent(`site:${дом} ${x.inv || x.name}`)}`
+    : "";
+  const вопрос = encodeURIComponent(
+    `Расскажи коротко о музейном предмете: ${имяQ}${
+      x.inv ? `, инвентарный номер ${x.inv}` : ""}${x.museum ? `, ${x.museum}` : ""}. `
+    + (x.url ? `Опирайся прежде всего на карточку музея: ${x.url} — оттуда возьми `
+             + `датировку, материал и происхождение. ` : "")
+    + (x.img ? `Изображение самого предмета: ${кадр(1200)} — описывай именно его. ` : "")
+    + `Не больше пяти-шести предложений: что это за вещь, когда и где сделана, `
+    + `что на ней изображено и что этот сюжет значил, как она попала в музей. `
+    + `Только конкретное, без общих фраз и перечислений дат. `
+    + `Покажи изображения самого предмета.`);
+  const история = `https://www.perplexity.ai/search?q=${вопрос}`;
+  const мимоМуз = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
+  const метка = (st) => {
+    const s2 = String(st || "").toLowerCase();
+    if (s2.startsWith("вживую")) return `<i class="ms-live">в зале</i>`;
+    if (s2.startsWith("проверить")) return `<i class="ms-check">уточнить показ</i>`;
+    return `<i class="ms-store">не в экспозиции</i>`;
+  };
+
+  return `
+    <div id="msTop">
+      <button class="ms-back" data-msgo="" type="button" aria-label="К списку">‹</button>
+      <div id="msTitle">${esc(musBookName(x.book))}${x.ch ? ", глава " + x.ch : ""}</div>
+      <button id="msClose" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="msOne">
+      <div class="ms-big">${musIcon(x)}</div>
+      <h3>${esc(x.name)}</h3>
+      ${x.why ? `<p>${esc(x.why)}</p>` : ""}
+      <div class="ms-meta">
+        <span>${esc(x.museum || "")}${x.place ? " · " + esc(x.place) : ""}</span>
+        ${x.inv ? `<span class="ms-inv">${esc(x.inv)}</span>` : ""}
+        ${метка(x.status)}
+      </div>
+      <div class="ms-links">
+        ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">Карточка музея</a>` : ""}
+        <a href="${esc(история)}"${мимоМуз}>История</a>
+        <a href="${esc(фото)}" target="_blank" rel="noopener">Фото</a>
+        ${вМузее ? `<a href="${esc(вМузее)}" target="_blank" rel="noopener">На сайте музея</a>` : ""}
+      </div>
+      <div class="ms-nav">
+        <button data-msgo="${esc(пред ? пред.id : "")}" type="button"
+          ${пред ? "" : "disabled"}>‹ ${esc(пред ? пред.name : "")}</button>
+        <button data-msgo="${esc(след ? след.id : "")}" type="button"
+          ${след ? "" : "disabled"}>${esc(след ? след.name : "")} ›</button>
+      </div>
+    </div>`;
 }
 
 function closePlaceMap() {
@@ -13673,7 +13704,7 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -13841,6 +13872,17 @@ async function syncNow(manual) {
          и пройденные такты, и ссылку на видео. */
       data.practice = mergePrac(data.practice, remote.practice);
       data.usage = mergeUsage(data.usage, remote.usage);
+      /* Время открытия предмета: берём известное вместо «когда-то» (единицы),
+         а из двух настоящих — раннее: открылся он тогда, когда открылся,
+         на каком устройстве это заметили первым — неважно. */
+      if (remote.musAt) {
+        const свод = { ...(data.musAt || {}) };
+        for (const k in remote.musAt) {
+          const a = свод[k] || 0, b = remote.musAt[k] || 0;
+          свод[k] = (a > 1 && b > 1) ? Math.min(a, b) : Math.max(a, b);
+        }
+        data.musAt = свод;
+      }
       // спрятанное — свойство взгляда, а не данных: берём то, что свежее целиком
       if (remote.hidden && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.hidden = remote.hidden;
       pracStamp(false);        // слияние — не правка, отметки времени не трогаем
