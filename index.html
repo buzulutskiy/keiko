@@ -1919,6 +1919,14 @@
     #gmCard b { display: block; font-size: 1.1rem; margin-bottom: 6px; }
     #gmCard p { margin: 0 0 12px; font-size: 0.95rem; line-height: 1.6; color: var(--muted); }
     /* Где ещё встречается это место: строка мелким шрифтом под описанием. */
+    /* Готовая справка о месте: читается прямо в карточке, поиск остаётся
+       кнопкой рядом — уже как «проверить и копнуть». Карточка может стать
+       высокой, поэтому даём ей прокрутку и потолок в половину экрана. */
+    #gmCard { max-height: 52vh; overflow-y: auto; }
+    #gmCard .gm-about {
+      font-size: 0.88rem; line-height: 1.6; color: var(--ink);
+      margin: 0 0 12px; opacity: 0.92;
+    }
     #gmCard .gm-in { font-size: 0.8rem; color: var(--dim); margin: -6px 0 12px; }
     #gmCard .gm-links { display: flex; gap: 8px; flex-wrap: wrap; }
     #gmCard .gm-links a {
