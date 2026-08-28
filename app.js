@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 274";
+const APP_VERSION = "Кэйко 275";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10082,16 +10082,6 @@ function gmWait(on) {
    а карточка музея открывается по ссылке и так. */
 let mus = { book: "", at: null };     // выбранная книга и открытый предмет
 
-/* Сайт музея: поиск с «site:» по нему находит карточку предмета там, где
-   обычный поиск тонет в перепечатках. Музеев мало, список ведём руками. */
-const MUS_SITES = [
-  [/эрмитаж/i, "hermitagemuseum.org"],
-  [/третьяков/i, "my.tretyakov.ru"],
-  [/русский музей/i, "rusmuseum.ru"],
-  [/пушкин/i, "pushkinmuseum.art"],
-];
-const musSite = (музей) => (MUS_SITES.find(([re]) => re.test(String(музей || ""))) || [])[1] || "";
-
 /* Короткое имя главы: «Песнь XVII», «Февраль», «Часть первая». Берём из
    оглавления книги и обрезаем по точке — полное название в плитку не влезет. */
 const musChName = (x) => {
@@ -10117,10 +10107,6 @@ function предметHTML(x, список) {
   const имяQ = (x.q || `${x.name} ${x.museum || ""}`).trim();
   const кадр = (ш) => x.img ? x.img + (x.img.includes("?") ? "&" : "?") + `w=${ш}&h=${ш}` : "";
   const фото = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(имяQ)}`;
-  const дом = musSite(x.museum);
-  const вМузее = дом
-    ? `https://www.google.com/search?q=${encodeURIComponent(`site:${дом} ${x.inv || x.name}`)}`
-    : "";
   /* Вопрос поиску: короткий ответ с картинками, опора на карточку музея и на
      снимок предмета из его базы — без них подставляются чужие изображения. */
   const вид = musKind(x);
@@ -10171,7 +10157,11 @@ function предметHTML(x, список) {
   };
 
   return `
-    <button class="back" data-msgo="" type="button">‹ Все артефакты</button>
+    <div class="ms-top">
+      <button class="back" data-msgo="" type="button">‹ Все артефакты</button>
+      <button class="ms-heart${musLiked(x) ? " on" : ""}" data-mslike="${esc(x.id)}" type="button"
+        aria-label="${musLiked(x) ? "Убрать из понравившихся" : "Нравится"}">${musLiked(x) ? "♥" : "♡"}</button>
+    </div>
     <div id="msOne">
       <div class="ms-big">${musIcon(x)}</div>
       <h3>${esc(x.name)}</h3>
@@ -10183,13 +10173,10 @@ function предметHTML(x, список) {
         ${метка(x.status)}
       </div>
       <div class="ms-links">
-        <button class="ms-like${musLiked(x) ? " on" : ""}" data-mslike="${esc(x.id)}"
-          type="button">${musLiked(x) ? "♥ Нравится" : "♡ Нравится"}</button>
         ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${
           вид === "книга" ? "О книге" : вид === "живое" ? "Описание" : "Карточка музея"}</a>` : ""}
         <a href="${esc(история)}"${мимоМуз}>${вид === "вещь" ? "История" : "Подробнее"}</a>
         <a href="${esc(фото)}" target="_blank" rel="noopener">Фото</a>
-        ${вид === "вещь" && вМузее ? `<a href="${esc(вМузее)}" target="_blank" rel="noopener">На сайте музея</a>` : ""}
       </div>
       <div class="ms-nav">
         <button data-msgo="${esc(пред ? пред.id : "")}" type="button"
