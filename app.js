@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 268";
+const APP_VERSION = "Кэйко 269";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -151,6 +151,7 @@ function emptyData() {
     active: "book",
     usage: {},     // счётчики заходов в разделы — чтобы решать о вырезании по фактам
     musAt: {},     // когда открылся предмет музея: по этому и сортируем список
+    musLike: {},   // отмеченные сердцем артефакты: id → когда, со знаком минус — снято
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
     pastel: { course: null, entries: [] },
@@ -211,6 +212,7 @@ function migrate(obj) {
   if (obj.usage && typeof obj.usage === "object") base.usage = obj.usage;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
   if (obj.musAt && typeof obj.musAt === "object") base.musAt = obj.musAt;
+  if (obj.musLike && typeof obj.musLike === "object") base.musLike = obj.musLike;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
   if (obj.eventsV) base.eventsV = obj.eventsV;
   if (obj.pracTrimV) base.pracTrimV = obj.pracTrimV;
@@ -563,6 +565,14 @@ function musStamp(свежие) {
       data.musAt[x.id] = сейчас.has(x.id) ? now() : 1;
 }
 const musWhen = (x) => (data.musAt || {})[x.id] || 0;
+
+const musLiked = (x) => ((data.musLike || {})[x.id] || 0) > 0;
+function musLike(x) {
+  data.musLike = data.musLike || {};
+  data.musLike[x.id] = musLiked(x) ? -now() : now();   // минус — снято, и это тоже действие
+  saveData();
+  schedulePush();
+}
 
 /* Значок предмета: по типу вещи, а не по книге. Список короткий и правится
    руками — эмодзи в интерфейсе должен читаться с одного взгляда, а не быть
@@ -10106,6 +10116,8 @@ function предметHTML(x, список) {
         ${метка(x.status)}
       </div>
       <div class="ms-links">
+        <button class="ms-like${musLiked(x) ? " on" : ""}" data-mslike="${esc(x.id)}"
+          type="button">${musLiked(x) ? "♥ Нравится" : "♡ Нравится"}</button>
         ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">Карточка музея</a>` : ""}
         <a href="${esc(история)}"${мимоМуз}>История</a>
         <a href="${esc(фото)}" target="_blank" rel="noopener">Фото</a>
@@ -10128,7 +10140,11 @@ function renderMuseum() {
   const книги = [...new Set(все.map((x) => x.book))]
     .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
   if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
-  const список = (mus.book ? все.filter((x) => x.book === mus.book) : все)
+  const любимых = все.filter(musLiked).length;
+  if (mus.liked && !любимых) mus.liked = false;      // сняли последнее сердце — фильтр не залипает
+  const список = (все
+    .filter((x) => !mus.book || x.book === mus.book)
+    .filter((x) => !mus.liked || musLiked(x)))
     /* Сверху то, что открылось последним: раздел читается как лента находок,
        а не как оглавление книги. */
     .slice().sort((a, b) => (musWhen(b) - musWhen(a)) || (Number(b.ch) - Number(a.ch)));
@@ -10139,21 +10155,32 @@ function renderMuseum() {
 
   $("#view").innerHTML = открытый ? предметHTML(открытый, список) : `
     <div class="ms-head">Открыто ${список.length} из ${всего}</div>
-    ${книги.length > 1 ? `<div class="ms-tabs">
-      <button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
+    ${(книги.length > 1 || любимых) ? `<div class="ms-tabs">
+      ${книги.length > 1 ? `<button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
       ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
-        type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}
+        type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}` : ""}
+      ${любимых ? `<button class="${mus.liked ? "on" : ""}" data-msl="1" type="button">♥ ${любимых}</button>` : ""}
     </div>` : ""}
     ${список.length ? `<div id="msGrid">
       ${список.map((x) => `<button class="ms-tile" data-msi="${esc(x.id)}" type="button">
         <i>${musIcon(x)}</i>
         <b>${esc(x.name)}</b>
         <em>${esc([musChName(x), x.museum].filter(Boolean).join(" · "))}</em>
+        ${musLiked(x) ? `<u>♥</u>` : ""}
       </button>`).join("")}
     </div>` : `<div class="empty-note">Артефакты откроются по мере чтения.</div>`}`;
 
   document.querySelectorAll("[data-msb]").forEach((b) =>
     b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; renderMuseum(); }));
+  document.querySelectorAll("[data-msl]").forEach((b) =>
+    b.addEventListener("click", () => { mus.liked = !mus.liked; mus.at = null; renderMuseum(); }));
+  document.querySelectorAll("[data-mslike]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const x = musItems().find((y) => y.id === b.dataset.mslike);
+      if (!x) return;
+      musLike(x);
+      renderMuseum();
+    }));
   document.querySelectorAll("[data-msi]").forEach((b) =>
     b.addEventListener("click", () => { mus.at = b.dataset.msi; renderMuseum(); window.scrollTo(0, 0); }));
   document.querySelectorAll("[data-msgo]").forEach((b) =>
@@ -13703,7 +13730,7 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -13874,6 +13901,17 @@ async function syncNow(manual) {
       /* Время открытия предмета: берём известное вместо «когда-то» (единицы),
          а из двух настоящих — раннее: открылся он тогда, когда открылся,
          на каком устройстве это заметили первым — неважно. */
+      /* Сердце: храним время действия, у снятого — со знаком минус. При слиянии
+         побеждает более позднее действие, иначе снятый на одном телефоне лайк
+         возвращался бы со второго. */
+      if (remote.musLike) {
+        const свод = { ...(data.musLike || {}) };
+        for (const k in remote.musLike) {
+          const a = свод[k] || 0, b = remote.musLike[k] || 0;
+          свод[k] = Math.abs(b) > Math.abs(a) ? b : a;
+        }
+        data.musLike = свод;
+      }
       if (remote.musAt) {
         const свод = { ...(data.musAt || {}) };
         for (const k in remote.musAt) {
