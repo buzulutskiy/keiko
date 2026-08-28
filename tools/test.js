@@ -387,6 +387,42 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Артефакты курса: привязка к урокам, а не к главам ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    museum: t.get("MUSEUM"),
+  };
+  const ш = () => ({ k: "watch", t: "…" });
+  t.set("data.pastel", { entries: [], course: { id: "c", name: "Пастель", lessons: [
+    { title: "О материалах", steps: [ш(), ш()] },
+    { title: "Тест-драйв", steps: [ш(), ш()] },
+  ] } });
+  t.set("data.practice", { pastel: { done: { "L0:s0": "2026-08-22" } } });
+  t.set("MUSEUM", { items: [
+    { id: "m1", book: "pastel", ch: 1, name: "Жжёная сиена" },
+    { id: "m2", book: "pastel", ch: 2, name: "Клячка" },
+    { id: "m3", book: "pastel", ch: 0, name: "Что такое пастель" },
+  ] });
+
+  const открыт = (id) => t.get("musOpen")(t.get("MUSEUM").items.find((x) => x.id === id));
+  ок("курс: урок начат — предмет открыт", открыт("m1"), true);
+  ок("курс: до урока не открыт", открыт("m2"), false);
+  ок("курс: без урока открыт сразу", открыт("m3"), true);
+  ок("курс: подпись берёт название урока",
+    t.get("musChName")({ book: "pastel", ch: 1 }), "О материалах");
+  ок("курс: имя материала — название курса", t.get("musBookName")("pastel"), "Пастель");
+
+  // курса в профиле нет — предметов тоже нет ни одного
+  t.set("data.pastel", { entries: [], course: null });
+  ок("курс: нет курса — нет артефактов", [открыт("m1"), открыт("m3")], [false, false]);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("MUSEUM", было.museum);
+}
+
 /* ── Итог ── */
 if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
 console.log(`тесты: ${всего} из ${всего} прошли`);

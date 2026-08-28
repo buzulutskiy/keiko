@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 285";
+const APP_VERSION = "Кэйко 286";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -545,8 +545,25 @@ function bookProgressOf(b) {
 /* Предмет открывается, когда дочитана его глава: до этого он виден силуэтом.
    Смысл тот же, что у разборов, — не показывать то, до чего человек ещё не
    дошёл. Предмет без главы (ch = 0) открыт сразу: он про книгу целиком. */
+/* Курс — не книга: глав у него нет, есть уроки, и «дочитал до страницы» тут
+   не работает. Считаем урок начатым, как только закрыт хотя бы один его шаг:
+   мелок берёшь в руки в начале урока, а не в конце, и карточка про жжёную
+   сиену должна прийти тогда же. Ждать конца стодесятиминутного урока значило
+   бы придержать её на несколько недель. */
+const COURSE_MUS = "pastel";
+function musOpenCourse(x) {
+  const c = (data.pastel && data.pastel.course) || null;
+  if (!c || !(c.lessons || []).length) return false;
+  const n = Number(x.ch);
+  if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
+  const steps = (c.lessons[n - 1] || {}).steps || [];
+  if (!steps.length) return false;
+  return steps.some((_, m) => lessonDone(n - 1, "s" + m));
+}
+
 function musOpen(x) {
   if (!x) return false;
+  if (x.book === COURSE_MUS) return musOpenCourse(x);
   /* Сначала книга, потом глава. Раньше проверка шла в обратном порядке, и
      предмет без главы — пролог «Одиссеи», образ Пенелопы — открывался всем,
      включая тех, у кого этой книги нет вовсе. Артефакт принадлежит книге:
@@ -625,6 +642,10 @@ const musIcon = (x) => x.icon
   /* У книги значок один на всех: иначе «Листья травы» получают травинку,
      а «Уход в лес» — ёлку. Вид предмета важнее слов в названии. */
   || (musKind(x) === "книга" ? "📖" : "")
+  /* Материал и приём — тоже виды, а не слова в названии: «жжёная сиена» иначе
+     получила бы значок по слову «жжёная», а «тон важнее цвета» — по «тону». */
+  || (musKind(x) === "материал" ? "🖍" : "")
+  || (musKind(x) === "приём" ? "📐" : "")
   /* Музей тоже смотрим: у картинной галереи всё живопись, даже когда в имени
      предмета об этом ни слова — «Валентин Серов, „Одиссей и Навзикая“». */
   || (MUS_ICONS.find(([re]) => re.test(`${x.name} ${x.q || ""} ${x.museum || ""}`)) || [])[1] || "⚱️";
@@ -10327,6 +10348,11 @@ let mus = { book: "", at: null };     // выбранная книга и отк
 const musChName = (x) => {
   const n = Number(x.ch);
   if (!n) return "";
+  if (x.book === COURSE_MUS) {
+    const c = (data.pastel && data.pastel.course) || {};
+    const l = (c.lessons || [])[n - 1];
+    return (l && l.title) ? l.title : "урок " + n;
+  }
   const b = (data.book.books || []).find((y) => y.id === x.book);
   const c = b && (b.chapters || [])[n - 1];
   return c && c.name ? String(c.name).split(".")[0].trim() : "глава " + n;
@@ -10334,6 +10360,7 @@ const musChName = (x) => {
 
 /* Название книги по её id: предмет знает только id, а человеку нужно имя. */
 const musBookName = (id) => {
+  if (id === COURSE_MUS) return ((data.pastel && data.pastel.course) || {}).name || "Курс";
   const b = (data.book.books || []).find((x) => x.id === id);
   return b ? b.title : id;
 };
@@ -10417,7 +10444,8 @@ function предметHTML(x, список) {
     <div id="msOne">
       <div class="ms-big">${musIcon(x)}</div>
       <h3>${esc(x.name)}</h3>
-      <div class="ms-from">${esc(musBookName(x.book))}${x.ch ? ", глава " + x.ch : ""}</div>
+      <div class="ms-from">${esc(musBookName(x.book))}${
+        x.ch ? (x.book === COURSE_MUS ? ", урок " + x.ch : ", глава " + x.ch) : ""}</div>
       ${x.why ? `<p>${esc(x.why)}</p>` : ""}
       ${x.about ? `<p class="ms-about">${esc(x.about)}</p>` : ""}
       <div class="ms-meta">
