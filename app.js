@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 265";
+const APP_VERSION = "Кэйко 266";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1873,6 +1873,7 @@ function renderInner() {
     else if (tab === "home") renderHome();
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
+    else if (tab === "mus") renderMuseum();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
     // раздел убран, но вкладка могла остаться сохранённой — уводим на главную
@@ -1925,6 +1926,9 @@ function renderTabbar() {
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
+    /* Артефакты сразу после прогресса: смотреть, что открылось, ходят так же
+       часто, как проверять цифры. Вкладки нет, пока нечего показывать. */
+    ...(musItems().length ? [["mus", "🏺", T("tabMus")]] : []),
     /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
        написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
        можно одной строкой. */
@@ -10019,34 +10023,14 @@ function gmWait(on) {
   } else if (el) el.remove();
 }
 
-/* ══════════ Музей ══════════
-   Список карточек с фильтром по книгам. Открывается поверх приложения, как
-   карта: смотреть предметы — отдельное занятие, а не довесок к отметке чтения. */
-let mus = null;              // {book: "" | id} — какая книга сейчас выбрана
+/* ══════════ Артефакты ══════════
+   Вещи из музеев, привязанные к книгам. Раздел живёт своей вкладкой: смотреть,
+   что открылось, ходят так же часто, как проверять цифры прогресса.
+   Сетка плиток, а не список: музей — это витрина, вещи должно быть видно разом.
+   Изображения не показываем: они лежат в чужих базах, весят и грузятся по сети,
+   а карточка музея открывается по ссылке и так. */
+let mus = { book: "", at: null };     // выбранная книга и открытый предмет
 
-function openMuseum(bookId) {
-  useMark("музей");
-  const box = $("#museum");
-  if (!box) return;
-  mus = { book: bookId || "", at: null };
-  box.hidden = false;
-  box.setAttribute("aria-hidden", "false");
-  document.body.classList.add("prac-on");
-  рисуйМузей();
-  /* Спрашиваем свежий список при каждом открытии: предметы дописываются
-     в гист чаще, чем выходит новая версия приложения. */
-  pullMuseum().then((новое) => { if (новое && mus) рисуйМузей(); }).catch(() => {});
-}
-
-function closeMuseum() {
-  const box = $("#museum");
-  if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
-  document.body.classList.remove("prac-on");
-  mus = null;
-}
-
-/* Название книги по её id: предмет знает только id, а человеку нужно имя.
-   Ищем и среди своих книг, и среди чужих — музей общий на два профиля. */
 /* Сайт музея: поиск с «site:» по нему находит карточку предмета там, где
    обычный поиск тонет в перепечатках. Музеев мало, список ведём руками. */
 const MUS_SITES = [
@@ -10057,57 +10041,11 @@ const MUS_SITES = [
 ];
 const musSite = (музей) => (MUS_SITES.find(([re]) => re.test(String(музей || ""))) || [])[1] || "";
 
+/* Название книги по её id: предмет знает только id, а человеку нужно имя. */
 const musBookName = (id) => {
   const b = (data.book.books || []).find((x) => x.id === id);
   return b ? b.title : id;
 };
-
-function рисуйМузей() {
-  const box = $("#museum");
-  if (!box || !mus) return;
-  musStamp();                     // могло открыться без отметки — например, после синхронизации
-  /* Показываем только открытое. Закрытые силуэты в сетке были бы просто рядом
-     серых замков: сколько их впереди, видно по счётчику в шапке. */
-  const все = musItems().filter(musOpen);
-  const книги = [...new Set(все.map((x) => x.book))]
-    .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
-  if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
-  const список = (mus.book ? все.filter((x) => x.book === mus.book) : все)
-    /* Сверху то, что открылось последним: музей читается как лента находок,
-       а не как оглавление книги. */
-    .slice().sort((a, b) => (musWhen(b) - musWhen(a)) || (Number(b.ch) - Number(a.ch)));
-  const всего = musItems().filter((x) => !mus.book || x.book === mus.book).length;
-
-  const открытый = mus.at ? список.find((x) => x.id === mus.at) : null;
-  if (mus.at && !открытый) mus.at = null;
-
-  box.innerHTML = открытый ? предметHTML(открытый, список) : `
-    <div id="msTop">
-      <div id="msTitle">Музей · ${список.length} из ${всего}</div>
-      <button id="msClose" type="button" aria-label="Закрыть">✕</button>
-    </div>
-    ${книги.length > 1 ? `<div class="ms-tabs">
-      <button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
-      ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
-        type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}
-    </div>` : ""}
-    ${список.length ? `<div id="msGrid">
-      ${список.map((x) => `<button class="ms-tile" data-msi="${esc(x.id)}" type="button">
-        <i>${musIcon(x)}</i>
-        <b>${esc(x.name)}</b>
-        <em>${esc(x.museum || "")}</em>
-      </button>`).join("")}
-    </div>` : `<div class="empty-note">Предметы откроются по мере чтения.</div>`}`;
-
-  const закр = $("#msClose");
-  if (закр) закр.addEventListener("click", closeMuseum);
-  document.querySelectorAll("[data-msb]").forEach((b) =>
-    b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; рисуйМузей(); }));
-  document.querySelectorAll("[data-msi]").forEach((b) =>
-    b.addEventListener("click", () => { mus.at = b.dataset.msi; рисуйМузей(); }));
-  document.querySelectorAll("[data-msgo]").forEach((b) =>
-    b.addEventListener("click", () => { mus.at = b.dataset.msgo || null; рисуйМузей(); }));
-}
 
 /* Один предмет во весь экран: всё, что о нём известно, и переходы к соседям
    по списку — чтобы листать находки, не возвращаясь в сетку каждый раз. */
@@ -10122,6 +10060,8 @@ function предметHTML(x, список) {
   const вМузее = дом
     ? `https://www.google.com/search?q=${encodeURIComponent(`site:${дом} ${x.inv || x.name}`)}`
     : "";
+  /* Вопрос поиску: короткий ответ с картинками, опора на карточку музея и на
+     снимок предмета из его базы — без них подставляются чужие изображения. */
   const вопрос = encodeURIComponent(
     `Расскажи коротко о музейном предмете: ${имяQ}${
       x.inv ? `, инвентарный номер ${x.inv}` : ""}${x.museum ? `, ${x.museum}` : ""}. `
@@ -10142,14 +10082,11 @@ function предметHTML(x, список) {
   };
 
   return `
-    <div id="msTop">
-      <button class="ms-back" data-msgo="" type="button" aria-label="К списку">‹</button>
-      <div id="msTitle">${esc(musBookName(x.book))}${x.ch ? ", глава " + x.ch : ""}</div>
-      <button id="msClose" type="button" aria-label="Закрыть">✕</button>
-    </div>
+    <button class="back" data-msgo="" type="button">‹ Все артефакты</button>
     <div id="msOne">
       <div class="ms-big">${musIcon(x)}</div>
       <h3>${esc(x.name)}</h3>
+      <div class="ms-from">${esc(musBookName(x.book))}${x.ch ? ", глава " + x.ch : ""}</div>
       ${x.why ? `<p>${esc(x.why)}</p>` : ""}
       <div class="ms-meta">
         <span>${esc(x.museum || "")}${x.place ? " · " + esc(x.place) : ""}</span>
@@ -10169,6 +10106,50 @@ function предметHTML(x, список) {
           ${след ? "" : "disabled"}>${esc(след ? след.name : "")} ›</button>
       </div>
     </div>`;
+}
+
+function renderMuseum() {
+  musStamp();                     // могло открыться без отметки — например, после синхронизации
+  /* Показываем только открытое. Закрытые силуэты в сетке были бы рядом серых
+     замков: сколько их впереди, видно по счётчику в шапке. */
+  const все = musItems().filter(musOpen);
+  const книги = [...new Set(все.map((x) => x.book))]
+    .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
+  if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
+  const список = (mus.book ? все.filter((x) => x.book === mus.book) : все)
+    /* Сверху то, что открылось последним: раздел читается как лента находок,
+       а не как оглавление книги. */
+    .slice().sort((a, b) => (musWhen(b) - musWhen(a)) || (Number(b.ch) - Number(a.ch)));
+  const всего = musItems().filter((x) => !mus.book || x.book === mus.book).length;
+
+  const открытый = mus.at ? список.find((x) => x.id === mus.at) : null;
+  if (mus.at && !открытый) mus.at = null;
+
+  $("#view").innerHTML = открытый ? предметHTML(открытый, список) : `
+    <div class="ms-head">Открыто ${список.length} из ${всего}</div>
+    ${книги.length > 1 ? `<div class="ms-tabs">
+      <button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
+      ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
+        type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}
+    </div>` : ""}
+    ${список.length ? `<div id="msGrid">
+      ${список.map((x) => `<button class="ms-tile" data-msi="${esc(x.id)}" type="button">
+        <i>${musIcon(x)}</i>
+        <b>${esc(x.name)}</b>
+        <em>${esc(x.museum || "")}</em>
+      </button>`).join("")}
+    </div>` : `<div class="empty-note">Артефакты откроются по мере чтения.</div>`}`;
+
+  document.querySelectorAll("[data-msb]").forEach((b) =>
+    b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; renderMuseum(); }));
+  document.querySelectorAll("[data-msi]").forEach((b) =>
+    b.addEventListener("click", () => { mus.at = b.dataset.msi; renderMuseum(); window.scrollTo(0, 0); }));
+  document.querySelectorAll("[data-msgo]").forEach((b) =>
+    b.addEventListener("click", () => { mus.at = b.dataset.msgo || null; renderMuseum(); window.scrollTo(0, 0); }));
+
+  /* Спрашиваем свежий список при каждом заходе: предметы дописываются в гист
+     чаще, чем выходит новая версия приложения. */
+  pullMuseum().then((новое) => { if (новое && tab === "mus") renderMuseum(); }).catch(() => {});
 }
 
 function closePlaceMap() {
@@ -11387,6 +11368,7 @@ const THEMES = [
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
+  tabMus: "Артефакты",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Начать урок",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
@@ -13168,7 +13150,12 @@ function bindLibraryUI() {
   const addBook = $("#libAddBook");
   if (addBook) addBook.addEventListener("click", openAddBookSheet);
   const musBtn = $("#libMuseum");
-  if (musBtn) musBtn.addEventListener("click", () => openMuseum(""));
+  if (musBtn) musBtn.addEventListener("click", () => {
+    mus = { book: "", at: null };
+    tab = "mus"; cfg.tab = tab; saveCfg();
+    useMark("вкладка-mus");
+    renderTabbar(); renderMuseum();
+  });
   document.querySelectorAll("[data-shelf]").forEach(btn =>
     btn.addEventListener("click", () => openShelfSheet(btn.dataset.shelf)));
   /* Карта знаний уехала отдельным разделом настроек, экран наград скрыт:
