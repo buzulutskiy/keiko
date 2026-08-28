@@ -1749,6 +1749,67 @@
        строки карта висит поверх приложения с самого запуска, а «закрыть»
        ничего не меняет: атрибут снимается, а картинка на месте. */
     #gmap[hidden] { display: none; }
+    /* Музей артефактов: список карточек поверх приложения. */
+    #museum {
+      position: fixed; inset: 0; z-index: 80; background: var(--bg);
+      display: flex; flex-direction: column;
+    }
+    /* display:flex перебивает встроенное [hidden] — без этой строки экран
+       висит поверх приложения с самого запуска. Грабли уже третьи. */
+    #museum[hidden] { display: none; }
+    #msTop {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+      padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    }
+    #msTitle { flex: 1 1 auto; font-size: 0.9rem; font-weight: 700; color: var(--muted); }
+    #msClose {
+      width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+      background: var(--glass); border: 1px solid var(--glass-line); font-size: 1.1rem;
+    }
+    .ms-tabs {
+      display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0;
+      padding: 0 14px 10px; scrollbar-width: none;
+    }
+    .ms-tabs::-webkit-scrollbar { display: none; }
+    .ms-tabs button {
+      flex: 0 0 auto; padding: 7px 13px; border-radius: 11px; font-size: 0.82rem;
+      font-weight: 650; color: var(--muted);
+      background: var(--card-2); border: 1px solid var(--line);
+    }
+    .ms-tabs button.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); border-color: transparent; }
+    #msList {
+      flex: 1 1 auto; overflow-y: auto; display: grid; gap: 12px;
+      padding: 4px 14px calc(env(safe-area-inset-bottom) + 24px);
+    }
+    .ms-card {
+      padding: 16px 16px 14px; border-radius: 18px; text-align: left;
+      background: var(--card-2); border: 1px solid var(--line);
+    }
+    .ms-card b { display: block; font-size: 1.02rem; line-height: 1.35; margin-bottom: 6px; }
+    .ms-card p { margin: 0 0 10px; font-size: 0.9rem; line-height: 1.55; color: var(--muted); }
+    .ms-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+      font-size: 0.76rem; color: var(--dim); margin-bottom: 12px;
+    }
+    .ms-meta i, .ms-inv, .ms-book {
+      font-style: normal; padding: 3px 8px; border-radius: 7px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .ms-inv { font-variant-numeric: tabular-nums; }
+    .ms-live { color: var(--green); background: rgba(74, 222, 128, 0.12) !important; }
+    .ms-check { color: var(--gold); background: rgba(255, 201, 77, 0.12) !important; }
+    .ms-store { color: var(--dim); }
+    /* Закрытый предмет: тот же прямоугольник, но приглушённый и без ссылок —
+       место занято, содержимое ещё не заслужено. */
+    .ms-card.ms-lock { opacity: 0.45; padding-bottom: 6px; }
+    .ms-card.ms-lock b { font-weight: 650; color: var(--muted); }
+    .ms-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ms-links a {
+      padding: 8px 13px; border-radius: 10px; font-size: 0.83rem; font-weight: 650;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
+      text-decoration: none;
+    }
+
     #gmTop {
       display: flex; align-items: center; gap: 10px; flex-shrink: 0;
       padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
@@ -3820,6 +3881,8 @@
   </div>
 
   <!-- Карта мест во весь экран: приближается пальцами, точка открывает карточку снизу -->
+  <div id="museum" hidden aria-hidden="true"></div>
+
   <div id="gmap" hidden aria-hidden="true">
     <div id="gmTop">
       <div id="gmTitle"></div>
