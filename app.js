@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 260";
+const APP_VERSION = "Кэйко 261";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10010,6 +10010,16 @@ function closeMuseum() {
 
 /* Название книги по её id: предмет знает только id, а человеку нужно имя.
    Ищем и среди своих книг, и среди чужих — музей общий на два профиля. */
+/* Сайт музея: поиск с «site:» по нему находит карточку предмета там, где
+   обычный поиск тонет в перепечатках. Музеев мало, список ведём руками. */
+const MUS_SITES = [
+  [/эрмитаж/i, "hermitagemuseum.org"],
+  [/третьяков/i, "my.tretyakov.ru"],
+  [/русский музей/i, "rusmuseum.ru"],
+  [/пушкин/i, "pushkinmuseum.art"],
+];
+const musSite = (музей) => (MUS_SITES.find(([re]) => re.test(String(музей || ""))) || [])[1] || "";
+
 const musBookName = (id) => {
   const b = (data.book.books || []).find((x) => x.id === id);
   return b ? b.title : id;
@@ -10054,12 +10064,21 @@ function рисуйМузей() {
           <div class="ms-meta"><span>${esc(musBookName(x.book))}${
             x.ch ? ", глава " + x.ch : ""}</span></div>
         </article>`;
-        /* Поиск по инвентарному номеру ведёт прямо к карточке предмета на
-           сайте музея надёжнее, чем по названию: названий-двойников много,
-           номер один. */
-        const запрос = encodeURIComponent(`${x.inv || x.name} ${x.museum || ""}`.trim());
-        const фото = `https://www.google.com/search?tbm=isch&q=${запрос}`;
-        const найти = `https://ya.ru/search/?text=${запрос}`;
+        /* Три разных запроса вместо одного общего. Раньше всюду уходил
+           инвентарный номер — и картинки не находились вовсе: по «ГР-4155»
+           изображений в сети нет, номер живёт только внутри музейной базы.
+           Поэтому картинки ищем по названию, а номер приберегаем для поиска
+           по сайту самого музея, где он как раз и работает.
+           Если у предмета задан свой запрос (поле q), он главнее названия:
+           каталожные имена бывают неудачными для поиска. */
+        const имяQ = (x.q || `${x.name} ${x.museum || ""}`).trim();
+        const фото = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(имяQ)}`;
+        const дом = musSite(x.museum);
+        const вМузее = дом
+          ? `https://www.google.com/search?q=${encodeURIComponent(`site:${дом} ${x.inv || x.name}`)}`
+          : "";
+        const найти = `https://ya.ru/search/?text=${encodeURIComponent(
+          `${имяQ}${x.inv ? " " + x.inv : ""}`)}`;
         return `<article class="ms-card">
           <b>${esc(x.name)}</b>
           ${x.why ? `<p>${esc(x.why)}</p>` : ""}
@@ -10073,6 +10092,7 @@ function рисуйМузей() {
           <div class="ms-links">
             ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">Карточка музея</a>` : ""}
             <a href="${esc(фото)}" target="_blank" rel="noopener">Фото</a>
+            ${вМузее ? `<a href="${esc(вМузее)}" target="_blank" rel="noopener">На сайте музея</a>` : ""}
             <a href="${esc(найти)}" target="_blank" rel="noopener">Найти</a>
           </div>
         </article>`;
