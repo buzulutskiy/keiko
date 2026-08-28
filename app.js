@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 284";
+const APP_VERSION = "Кэйко 285";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9462,14 +9462,12 @@ function lessonRender(box) {
      конца не видно, занятие превращается в задание, а этого мы не хотим. */
   if (prac.screen === "blockDone" && at) {
     const bl = prac.lastBlock || {};
-    const мин = Math.floor(pracMin());
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task">
           <p class="wk-kind">\u0417\u0430\u043d\u044f\u0442\u0438\u0435 \u0437\u0430\u043a\u0440\u044b\u0442\u043e</p>
           <p class="ls-stage">${esc(bl.g || "")}</p>
           <p class="ls-text">\u041c\u043e\u0436\u043d\u043e \u0432\u0441\u0442\u0430\u0442\u044c. \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u043c\u043e\u0436\u043d\u043e \u0441 \u044d\u0442\u043e\u0433\u043e \u0436\u0435 \u043c\u0435\u0441\u0442\u0430 \u043a\u043e\u0433\u0434\u0430 \u0443\u0433\u043e\u0434\u043d\u043e.</p>
-          ${мин >= 10 ? `<p class="ls-slow">${мин} \u043c\u0438\u043d\u0443\u0442 \u043f\u043e\u0437\u0430\u0434\u0438 \u2014 \u0434\u0435\u0441\u044f\u0442\u044c \u043e\u0431\u0435\u0449\u0430\u043d\u043d\u044b\u0445 \u0443\u0436\u0435 \u0435\u0441\u0442\u044c.</p>` : ""}
           <button class="pr-go" data-les="blockNext">\u0414\u0430\u043b\u044c\u0448\u0435</button>
           <div class="wk-row">
             <button class="pr-ghost" data-prac="finish">\u041d\u0430 \u0441\u0435\u0433\u043e\u0434\u043d\u044f \u0445\u0432\u0430\u0442\u0438\u0442</button>
@@ -11749,7 +11747,7 @@ const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
   tabMus: "Артефакты",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
-  ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Позаниматься 10 минут",
+  ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Посмотреть занятие",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
   streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания"
