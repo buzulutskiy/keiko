@@ -310,6 +310,50 @@ function ок(имя, факт, надо) {
   }
 }
 
+/* ── Курс: процент по времени, а не по числу уроков ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+  };
+  // два коротких урока и один длинный: 3 + 1 + 110 минут
+  const урок = (мин, шагов) => ({ dur: мин * 60, steps: Array.from({ length: шагов }, () => ({})) });
+  t.set("data.pastel", {
+    course: { id: "c", name: "Курс", lessons: [урок(3, 3), урок(1, 3), урок(110, 10)] },
+    entries: [{ id: "e1", date: "2026-08-22", lessons: [0] }],
+  });
+  t.set("data.practice", { pastel: { done: {
+    "L0:s0": "2026-08-22", "L0:s1": "2026-08-22", "L0:s2": "2026-08-22",
+    "L1:s0": "2026-08-22",
+  } } });
+  t.set("data.active", "pastel");
+
+  const вр = t.get("courseTime")();
+  ок("курс: всего минут", Math.round(вр.totalSec / 60), 114);
+  // урок 0 целиком (180 с) + треть второго (20 с)
+  ок("курс: пройдено секунд", Math.round(вр.doneSec), 200);
+  ок("курс: прирост записан на день шага", Math.round(вр.поДням["2026-08-22"]), 200);
+
+  const s = t.get("pastelStats")();
+  ок("курс: процент по времени", Math.round(s.pct * 10) / 10, 2.9);
+  ок("курс: по урокам было бы втрое больше", Math.round(s.done / s.lessons * 100), 33);
+  ок("курс: осталось минут", s.minutesLeft, 111);
+
+  const f = t.get("paceForecast")();
+  ок("курс: прогноз считает минуты", f && f.unit, "minute");
+  ок("курс: остаток в минутах", f && f.left, 111);
+
+  // курс без длительностей считается по-старому, поштучно
+  t.set("data.pastel.course.lessons", [{ steps: [] }, { steps: [] }, { steps: [] }, { steps: [] }]);
+  ок("курс без длительностей: процент по урокам",
+    Math.round(t.get("pastelStats")().pct), 25);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+}
+
 /* ── Итог ── */
 if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
 console.log(`тесты: ${всего} из ${всего} прошли`);

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 282";
+const APP_VERSION = "Кэйко 283";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -849,12 +849,59 @@ function doneLessons() {
   return set;
 }
 
+/* ── Сколько курса пройдено: время, а не уроки ──
+   У курса уроки несопоставимой длины: два первых по три минуты, два последних
+   по два часа. Считать их поштучно значит показывать четверть курса там, где
+   сделана двадцатая часть, и обещать конец через пару заходов. Поэтому мера —
+   секунды, а внутри длинного урока ещё и доля закрытых шагов: без неё полоска
+   стояла бы неподвижно неделями, пока идёт стодесятиминутный урок.
+
+   Заодно собираем прирост по дням — из него считается срок, и считаться он
+   должен по тому же, что показывает полоска. */
+function courseTime() {
+  const c = course();
+  const done = doneLessons();
+  const st = (data.practice && data.practice.pastel && data.practice.pastel.done) || {};
+  // когда урок отметили целиком: берём самую раннюю запись с ним
+  const датаОтметки = {};
+  for (const e of courseTrack().entries.filter((x) => !x.deleted))
+    for (const i of e.lessons || [])
+      if (!датаОтметки[i] || e.date < датаОтметки[i]) датаОтметки[i] = e.date;
+
+  let totalSec = 0, doneSec = 0;
+  const поДням = {};
+  const плюс = (d, sec) => { if (d && sec > 0) поДням[d] = (поДням[d] || 0) + sec; };
+
+  c.lessons.forEach((l, i) => {
+    if (l.hidden) return;
+    const dur = Number(l.dur) || 0;
+    totalSec += dur;
+    const steps = Array.isArray(l.steps) ? l.steps : [];
+    let сек = 0;
+    if (steps.length && dur) {
+      const доля = dur / steps.length;
+      steps.forEach((_, n) => {
+        const когда = st["L" + i + ":s" + n];
+        if (!когда) return;
+        сек += доля;
+        // в старых записях вместо даты стоит единица — тогда относим ко дню отметки
+        плюс(typeof когда === "string" ? когда : датаОтметки[i], доля);
+      });
+    }
+    /* Урок, отмеченный целиком, засчитываем полностью: остаток относим на день
+       отметки. Шаги и отметка — два разных способа сказать «сделано», и один
+       не отменяет другого. */
+    if (done.has(i) && сек < dur) { плюс(датаОтметки[i], dur - сек); сек = dur; }
+    doneSec += Math.min(сек, dur);
+  });
+  return { totalSec, doneSec, поДням };
+}
+
 function pastelStats() {
   const c = course();
   const done = doneLessons();
   const list = courseTrack().entries.filter(e => !e.deleted).slice().sort((a, b) => a.date < b.date ? -1 : 1);
-  const totalSec = c.lessons.reduce((a, l) => a + (l.hidden ? 0 : l.dur), 0);
-  const doneSec = c.lessons.reduce((a, l, i) => a + (!l.hidden && done.has(i) ? l.dur : 0), 0);
+  const { totalSec, doneSec } = courseTime();
 
   let weekend = false, comeback = false, notes = 0, maxAtOnce = 0, prev = null;
   for (const e of list) {
@@ -893,8 +940,11 @@ function pastelStats() {
   return {
     lessons: shown, done: doneShown, doneSet: done,
     stepsDone, stages: stageSet.size, stageSet, lessonSet,
-    pct: shown ? doneShown / shown * 100 : 0,
+    /* Процент — по времени. Курс без проставленных длительностей считаем
+       по-старому, поштучно: лучше грубо, чем ноль навсегда. */
+    pct: totalSec ? Math.min(100, doneSec / totalSec * 100) : (shown ? doneShown / shown * 100 : 0),
     totalSec, doneSec, minutes: Math.round(doneSec / 60),
+    minutesLeft: Math.max(0, Math.round((totalSec - doneSec) / 60)),
     days: list.length, streak: streak(), streakAll: streakAll(),
     weekend, comeback, notes, maxAtOnce,
     nextLesson: next < 0 ? null : next
@@ -4023,11 +4073,27 @@ function paceForecast() {
   } else if (isWatch()) {
     return null;
   } else if (isCourse()) {
-    total = course().lessons.length;
-    unit = "lesson";
-    const seen = new Set();
-    marks.push(0);
-    for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
+    /* Курс меряем минутами, а не уроками. Прирост берём по дням из courseTime —
+       из того же, что рисует полоску: иначе срок и процент говорили бы разное.
+       Раньше здесь считались уроки штуками, и после двух трёхминутных роликов
+       приложение обещало конец курса через шесть заходов, хотя впереди лежало
+       три с половиной часа из четырёх. */
+    const t = courseTime();
+    if (t.totalSec) {
+      unit = "minute";
+      total = Math.round(t.totalSec / 60);
+      marks.push(0);
+      let сумма = 0;
+      for (const d of Object.keys(t.поДням).sort()) { сумма += t.поДням[d]; marks.push(Math.round(сумма / 60)); }
+      // длительностей нет ни у одного дня, а пройденное есть — хотя бы одна точка
+      if (marks.length === 1 && t.doneSec > 0) marks.push(Math.round(t.doneSec / 60));
+    } else {
+      total = course().lessons.length;
+      unit = "lesson";
+      const seen = new Set();
+      marks.push(0);
+      for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
+    }
   } else {
     /* Цель — не «задеть все такты», а закрыть все шаги: чтение и игру каждым
        ключом, потом вместе, и сшивку блока. Считаем по заходам занятия, а не
@@ -4124,6 +4190,7 @@ function paceForecast() {
 const UNIT_WORD = {
   page: ["страница", "страницы", "страниц"],
   lesson: ["урок", "урока", "уроков"],
+  minute: ["минута", "минуты", "минут"],
   bar: ["проход", "прохода", "проходов"]
 };
 
@@ -4134,7 +4201,8 @@ const unitWord = (unit, n) => {
 };
 
 // последний день материала заслуживает своего слова, а не общего «закрыт»
-const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден", bar: "пьеса разобрана" };
+const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден",
+  minute: "курс пройден", bar: "пьеса разобрана" };
 
 /* Сколько ещё идти. Дата отвечает «когда», а хочется знать «долго ли» — это
    разные вопросы, и на второй числом не ответишь: «осталось 34 дня» надо
