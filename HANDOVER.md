@@ -279,6 +279,7 @@ python3 tools/notes.py   <id> файл.txt     # комментарии к гл�
 python3 tools/article.py <id> файл1.txt …  # разборы песней из markdown
 python3 tools/faq.py     <id> файл1.txt …  # вопросы и ответы к песням
 python3 tools/map.py     <id> точки.txt [карта.jpg запад восток север юг]
+python3 tools/museum.py  файл.txt          # артефакты, книга заменяется целиком
 ```
 
 `material.py` проверяет поля книги, допустимые `art`/`tone`, порядок глав, наличие
