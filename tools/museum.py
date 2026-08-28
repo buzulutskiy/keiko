@@ -87,7 +87,7 @@ def записать(pack):
     sys.exit("не записалось")
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--all"]
+    args = [a for a in sys.argv[1:] if a not in ("--all", "--force")]
     только = "--all" in sys.argv
     if not args: sys.exit(__doc__)
 
@@ -99,6 +99,14 @@ def main():
     # свежее чтение прямо перед записью: между чтением и записью проходит чужая правка
     pack = файл(MUS_FILE) or {"items": []}
     было = pack.get("items") or []
+    # Предохранитель: заливка заменяет книгу целиком, и файл с двумя строками
+    # молча стирает двадцать пять предметов. Один раз так и вышло.
+    for кн in книги:
+        стало = sum(1 for x in свежие if x["book"] == кн)
+        было_кн = sum(1 for x in было if x.get("book") == кн)
+        if было_кн and стало < было_кн * 0.7 and "--force" not in sys.argv:
+            sys.exit(f"стоп: у «{кн}» было {было_кн} предметов, в файле {стало}. "
+                     f"Заливка заменяет книгу целиком — допиши недостающие или запусти с --force")
     оставить = [] if только else [x for x in было if x.get("book") not in книги]
     pack["items"] = оставить + свежие
     pack["savedAt"] = int(time.time() * 1000)
