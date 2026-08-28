@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 270";
+const APP_VERSION = "Кэйко 271";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -546,9 +546,14 @@ function bookProgressOf(b) {
    Смысл тот же, что у разборов, — не показывать то, до чего человек ещё не
    дошёл. Предмет без главы (ch = 0) открыт сразу: он про книгу целиком. */
 function musOpen(x) {
-  if (!x || !Number(x.ch)) return true;
+  if (!x) return false;
+  /* Сначала книга, потом глава. Раньше проверка шла в обратном порядке, и
+     предмет без главы — пролог «Одиссеи», образ Пенелопы — открывался всем,
+     включая тех, у кого этой книги нет вовсе. Артефакт принадлежит книге:
+     нет книги — нет и артефакта. */
   const b = (data.book.books || []).find((y) => y.id === x.book);
   if (!b) return false;
+  if (!Number(x.ch)) return true;      // без главы — открыт сразу, но только своей книге
   return bookProgressOf(b) >= chapterEnd(b, Number(x.ch) - 1);
 }
 const musOpenSet = () => new Set(musItems().filter(musOpen).map((x) => x.id));
