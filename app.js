@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 289";
+const APP_VERSION = "Кэйко 290";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1001,6 +1001,10 @@ function pctRoute() {
       for (const st of barSteps(b)) { всего += stepGoal(b, st); сделано += repCount(b, st); }
     всего += REP_GOAL;                                  // сшивка блока весит как такт
     сделано += finalPassed(bl) ? REP_GOAL : 0;
+    if (runNeeded(bl)) {                                // и прогон с начала — тоже
+      всего += REP_GOAL;
+      сделано += runPassed(bl) ? REP_GOAL : 0;
+    }
   }
   const val = всего ? сделано / всего * 100 : 0;
   pctRouteCache = { key: ck, val };
@@ -3615,7 +3619,8 @@ function renderHome() {
     : "";
 
   const wt = wishesToday();
-  $("#view").innerHTML = `
+    const кнопки = bookBtnState();   // обе кнопки — из одного снимка
+$("#view").innerHTML = `
     ${wt.length ? `
       <button class="wish-banner" id="wishTodayGo" type="button">
         <i>✧</i><span><b>${esc(wt[0].text)}${wt.length > 1 ? " · ещё " + (wt.length - 1) : ""}</b>
@@ -3637,14 +3642,15 @@ function renderHome() {
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        <button class="cta-side" id="bookTalkBtn" type="button" ${talkBtnOn() ? "" : "hidden"}
-          aria-label="${esc(talkBtnWord())}" title="${esc(talkBtnWord())}">${talkBtnIcon()}</button>
-        <button class="cta-side" id="bookMapBtn" type="button" ${mapBtnOn() ? "" : "hidden"}
+        <button class="cta-side" id="bookTalkBtn" type="button" ${кнопки.talk.on ? "" : "hidden"}
+          aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
+        <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="Карта мест" title="Карта мест">🗺</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
 
+  syncBookBtns();        // состояние кнопок — из живых данных, а не из момента сборки строки
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bt = $("#bookTalkBtn");
   if (bt) bt.addEventListener("click", () => {
@@ -3941,6 +3947,39 @@ const talkBtnWord = () => onlyMap(book()) ? "Карта мест" : "Разбо�
    лежат спойлеры. У книги, где кроме карты ничего нет, кнопка одна — та. */
 const mapBtnOn = () => isBook() && !onlyMap(book()) && mapWhole(book()).length > 0 && !!mapBox(book());
 
+/* ── Состояние двух кнопок под главной ──
+   Разбор и карта считаются РАЗОМ, одним снимком данных, и рисуются из него же.
+   Раньше каждая кнопка считала себя сама, в разное время: разметка строилась
+   при отрисовке, а когда файл разбора доезжал, руками поправлялась только
+   кнопка разбора. Отсюда и «нестабильно»: у книги, где кроме карты ничего нет,
+   разбор успевал превратиться в карту, а отдельная кнопка карты оставалась
+   висеть с прошлого расчёта — и карт становилось две. У «Одиссеи» выходило
+   наоборот: файл приезжал, а карта не появлялась до следующей перерисовки.
+
+   Теперь состояние одно на обе, и разойтись им негде. */
+function bookBtnState() {
+  const он = isBook();
+  return {
+    talk: { on: он && talkBtnOn(), icon: он ? talkBtnIcon() : "", word: он ? talkBtnWord() : "" },
+    map:  { on: он && mapBtnOn() },
+  };
+}
+
+/* Применить состояние к живым кнопкам. Зовётся и при отрисовке, и когда файл
+   разбора доехал позже: порядок приезда данных не должен ничего решать. */
+function syncBookBtns() {
+  const st = bookBtnState();
+  const talk = document.getElementById("bookTalkBtn");
+  if (talk) {
+    talk.hidden = !st.talk.on;
+    talk.textContent = st.talk.icon;
+    talk.setAttribute("aria-label", st.talk.word);
+    talk.title = st.talk.word;
+  }
+  const map = document.getElementById("bookMapBtn");
+  if (map) map.hidden = !st.map.on;
+}
+
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
    флажок «файл есть», и пока он не доехал, кнопки не было — а узнать правду
    можно прямым запросом за один заход. Спрашиваем раз на материал за сессию и
@@ -3960,22 +3999,7 @@ function artsPeek() {
   pullArts(id).then((новое) => {
     if (!новое) { artsAsked.set(id, 0); return; }   // не приехало — можно пробовать снова
     if (!isBook() || book().id !== id) return;      // пока ехало, ушли на другой материал
-    /* Обновляем ОБЕ кнопки. Раньше здесь стояла одна «Разбор», и кнопка карты
-       не появлялась до следующей полной перерисовки: у книги, чей разбор ещё
-       не лежал на устройстве, карта то была, то нет — смотря успел ли доехать
-       файл к моменту отрисовки главной. Точки карты и рамка картинки живут в
-       том же файле, что и разбор, поэтому обе кнопки зависят от одного приезда.
-       Заодно правим значок и подпись: у книги, где кроме карты ничего нет,
-       кнопка разбора превращается в карту, и это решается тем же файлом. */
-    const talk = $("#bookTalkBtn");
-    if (talk) {
-      talk.hidden = !talkBtnOn();
-      talk.textContent = talkBtnIcon();
-      talk.setAttribute("aria-label", talkBtnWord());
-      talk.title = talkBtnWord();
-    }
-    const map = $("#bookMapBtn");
-    if (map) map.hidden = !mapBtnOn();
+    syncBookBtns();
   }).catch(() => artsAsked.set(id, 0));
 }
 
@@ -4008,14 +4032,13 @@ function updateHeroInfo() {
         : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
-  const talk = $("#bookTalkBtn");
-  if (talk) {
-    talk.hidden = !talkBtnOn();
-    // значок меняется вместе с материалом: лента свайпается без полной перерисовки
-    talk.textContent = talkBtnIcon();
-    talk.title = talkBtnWord();
-    talk.setAttribute("aria-label", talkBtnWord());
-  }
+  /* Обе кнопки разом. Здесь и была та самая нестабильность: лента свайпается
+     без полной перерисовки, и эта функция правила только кнопку разбора.
+     Перелистнул с «Одиссеи» на «В лесах Сибири» — разбор превращался в карту,
+     а отдельная кнопка карты оставалась висеть от «Одиссеи», и карт делалось
+     две. В обратную сторону выходило зеркально: у «Одиссеи» карта не
+     появлялась, потому что от прошлой книги осталось «скрыта». */
+  syncBookBtns();
   artsPeek();          // вдруг разбор есть, а каталог об этом ещё не сказал
 
   const nudge = $(".nudge");
@@ -4140,6 +4163,7 @@ function paceForecast() {
       for (let b = bl.from; b <= bl.to; b++)
         for (const st of barSteps(b)) total += stepGoal(b, st);
       total += REP_GOAL;                            // сшивка блока весит как шаг
+      if (runNeeded(bl)) total += REP_GOAL;         // и прогон с начала
     }
     unit = "bar";
     // когда какой заход был — по дням; финал блока считается только зачтённый
@@ -4153,9 +4177,14 @@ function paceForecast() {
         }
       }
     for (const bl of pracBlocks()) {
-      if (!finalPassed(bl)) continue;
-      const посл = finalOf(bl)[finalOf(bl).length - 1];
-      if (посл && посл.d) поДням[посл.d] = (поДням[посл.d] || 0) + REP_GOAL;
+      if (finalPassed(bl)) {
+        const посл = finalOf(bl)[finalOf(bl).length - 1];
+        if (посл && посл.d) поДням[посл.d] = (поДням[посл.d] || 0) + REP_GOAL;
+      }
+      if (runNeeded(bl) && runPassed(bl)) {
+        const посл = runOf(bl)[runOf(bl).length - 1];
+        if (посл && посл.d) поДням[посл.d] = (поДням[посл.d] || 0) + REP_GOAL;
+      }
     }
     marks.push(0);
     let сумма = 0;
@@ -7923,11 +7952,28 @@ const finalPassed = (bl) => {
   const list = finalOf(bl);
   return list.length > 0 && (list[list.length - 1].lvl || 3) <= 2;
 };
+
+/* ── Прогон с начала ──
+   Сшивка соединяет четыре такта между собой, но пьеса от этого не становится
+   пьесой: блоки остаются отдельными островами. Поэтому после каждой сшивки
+   идёт ещё один заход — с первого такта до конца этого блока. Сшил 5–8 —
+   играешь 1–8, сшил 9–12 — играешь 1–12, и так до последнего такта.
+
+   Отдельного хранилища не нужно: прогон — это та же сшивка, только на более
+   длинном отрезке, и ключ у него выходит сам собой — «1-8». У первого блока
+   прогон совпадает со сшивкой («1-4»), поэтому там его нет. */
+const runOf = (bl) => finalOf({ from: 1, to: bl.to });
+const runNeeded = (bl) => bl.from > 1;
+const runPassed = (bl) => {
+  if (!runNeeded(bl)) return true;
+  const list = runOf(bl);
+  return list.length > 0 && (list[list.length - 1].lvl || 3) <= 2;
+};
 function blockReady(bl) {
   for (let b = bl.from; b <= bl.to; b++) if (!barReady(b)) return false;
   return true;
 }
-const blockDone = (bl) => blockReady(bl) && finalPassed(bl);
+const blockDone = (bl) => blockReady(bl) && finalPassed(bl) && runPassed(bl);
 
 function repAdd(u, lvl) {
   const st = repsStore();
@@ -8000,6 +8046,7 @@ function pracWhere() {
       return { blocks, bl, bar, step, round: repsOf(bar, step).length + 1 };
     }
     if (!finalPassed(bl)) return { blocks, bl, final: true, tries: finalOf(bl).length };
+    if (!runPassed(bl)) return { blocks, bl, final: true, run: true, tries: runOf(bl).length };
   }
   return { blocks, finished: true };
 }
@@ -8008,9 +8055,12 @@ function pracWhere() {
 function pracUnitNow() {
   const w = pracWhere();
   if (w.finished) return null;
-  return w.final
-    ? { from: w.bl.from, to: w.bl.to, final: true, bl: w.bl }
-    : { from: w.bar, to: w.bar, step: w.step, bl: w.bl, round: w.round };
+  if (!w.final) return { from: w.bar, to: w.bar, step: w.step, bl: w.bl, round: w.round };
+  /* Прогон хранится и отменяется тем же кодом, что сшивка: ключ строится из
+     from-to, и «1-8» получается сам. */
+  return w.run
+    ? { from: 1, to: w.bl.to, final: true, run: true, bl: w.bl }
+    : { from: w.bl.from, to: w.bl.to, final: true, bl: w.bl };
 }
 
 /* ── Список тактов ──
@@ -8076,11 +8126,22 @@ function pracListHTML() {
         }
         const f = finalOf(bl);
         rows.push(`
-          <div class="rp-row fin${тут && w.final ? " now" : ""}${finalPassed(bl) ? " done" : ""}">
+          <div class="rp-row fin${тут && w.final && !w.run ? " now" : ""}${finalPassed(bl) ? " done" : ""}">
             <b>вместе ${bl.from}–${bl.to}</b>
             <span class="dots">${f.length ? dotsHTML(f.slice(-5), Math.max(1, Math.min(5, f.length))) : '<i class="dot"></i>'}</span>
             <em>${finalPassed(bl) ? "сшит" : blockReady(bl) ? "пора сшивать" : "после кругов"}</em>
           </div>`);
+        /* Прогон с начала — своя строка под сшивкой: видно, что блок сшит, но
+           пьеса до этого места ещё не собрана. */
+        if (runNeeded(bl)) {
+          const r = runOf(bl);
+          rows.push(`
+            <div class="rp-row fin${тут && w.run ? " now" : ""}${runPassed(bl) ? " done" : ""}">
+              <b>с начала 1–${bl.to}</b>
+              <span class="dots">${r.length ? dotsHTML(r.slice(-5), Math.max(1, Math.min(5, r.length))) : '<i class="dot"></i>'}</span>
+              <em>${runPassed(bl) ? "пройден" : finalPassed(bl) ? "пора с начала" : "после сшивки"}</em>
+            </div>`);
+        }
         return `
           <div class="bl-part${тут ? " now" : ""}${blockDone(bl) ? " done" : ""}">
             <div class="bl-head as-text">
@@ -9944,9 +10005,10 @@ function pracRender() {
   /* Кружки — того шага, который сейчас: у чтения свой счёт, у каждого ключа
      свой, у игры двумя руками свой. Трудность у них разная, и мешать их в
      одну кучу значит не увидеть, где именно тяжело. */
-  const свои = u.final ? finalOf(w.bl) : repsOf(u.from, u.step);
+  const свои = u.run ? runOf(w.bl) : u.final ? finalOf(w.bl) : repsOf(u.from, u.step);
   const сколько = u.final ? Math.max(3, свои.length + 1) : stepGoal(u.from, u.step);
-  const шаг = u.final ? "Играю блок целиком" : STEP_NAME[u.step];
+  const шаг = u.run ? "Играю с начала до этого места"
+    : u.final ? "Играю блок целиком" : STEP_NAME[u.step];
 
   box.innerHTML = `
     <div class="wk">
@@ -9955,10 +10017,12 @@ function pracRender() {
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${esc(шаг)}</p>
         <div class="dots big">${dotsHTML(свои, сколько)}</div>
-        ${u.final ? `<p class="wk-next">пока идёт «сложно» — повторяем; «с усилием» или «легко» закрывают блок</p>` : ""}
+        ${u.final ? `<p class="wk-next">пока идёт «сложно» — повторяем; «с усилием» или «легко» ${
+          u.run ? "закрывают прогон" : "закрывают блок"}</p>` : ""}
         <div class="rep-btns">${кнопки}</div>
         <div class="wk-row">
-          ${u.final ? `<button class="pr-ghost" data-prac="again">Пройти блок ещё раз</button>` : ""}
+          ${u.final ? `<button class="pr-ghost" data-prac="again">${
+            u.run ? "Пройти ещё раз" : "Пройти блок ещё раз"}</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
           ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
@@ -13032,6 +13096,7 @@ async function applyPractice(files) {
       const t = await catText(files, name);
       return t ? JSON.parse(t) : null;
     };
+    syncBookBtns();      // каталог принёс флаг «разбор есть» — кнопки могли измениться
     const prac = await readFile(PRAC_FILE);
     if (prac && typeof prac === "object") {
       PRACTICE_DATA = prac;
