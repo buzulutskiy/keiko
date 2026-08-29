@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 295";
+const APP_VERSION = "Кэйко 296";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10603,7 +10603,7 @@ function стенаHTML(список) {
 
 /* Вид рамы: широкая золочёная, узкая рейка, светлая с паспарту или тёмное
    дерево. Хранится у работы: рама — часть картины, а не оформление списка. */
-const РАМЫ = { gold: "f-gold", thin: "f-thin", paper: "f-paper", wood: "f-wood" };
+const РАМЫ = { gold: "f-gold", thin: "f-thin", plain: "f-plain", paper: "f-paper", wood: "f-wood" };
 const wallFrame = (x) => РАМЫ[(x && x.frame) || ""] || "f-wood";
 
 function картинаHTML(x) {

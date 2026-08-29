@@ -262,6 +262,19 @@
                   inset 0 0 0 1px rgba(255, 236, 186, 0.5),
                   inset 0 0 0 5px rgba(60, 44, 14, 0.55); }
 
+    /* Широкая плоская доска красного дерева, без золота и резьбы. Ровно такая
+       рама у Серова в Третьяковке — снимок из зала это подтверждает: гладкое
+       тёплое дерево, единственная деталь — узкая тёмная выемка у самого холста.
+       Именно так вешали «Мир искусства»: рама не спорит с работой. */
+    .wl-frame.f-plain { padding: 15px;
+      background:
+        repeating-linear-gradient(96deg, rgba(255,255,255,0.035) 0 2px, rgba(0,0,0,0.03) 2px 5px),
+        linear-gradient(160deg, #7d3b2a, #5e2b1e 45%, #6f3425 72%, #4d2318);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 3px 6px rgba(0, 0, 0, 0.5),
+                  inset 0 0 0 1px rgba(255, 190, 150, 0.12),
+                  inset 0 0 0 11px rgba(40, 18, 12, 0.55),
+                  inset 0 0 0 13px rgba(120, 62, 44, 0.5); }
+
     /* Светлая рама с паспарту — для графики и акварели, как их и вешают */
     .wl-frame.f-paper { padding: 9px; background: linear-gradient(160deg, #b6a893, #8d8272 60%, #a4967f); }
     .wl-frame.f-paper > .wl-mat { display: block; background: #e8e2d5; padding: 16px; }
