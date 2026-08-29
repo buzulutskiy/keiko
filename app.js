@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 308";
+const APP_VERSION = "Кэйко 309";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9661,7 +9661,7 @@ function lessonRender(box) {
           ${Array.isArray(l.ask) && l.ask.length ? `
             <p class="ls-h">Что узнаешь</p>
             <div class="ls-ask">${l.ask.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
-          ${рамкиHTML("Что даёт именно этот урок", l.life)}
+          ${рамкиHTML("Что это даёт", l.life)}
           </div>
 
           <div class="ls-steps">
