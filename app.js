@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 306";
+const APP_VERSION = "Кэйко 307";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9620,7 +9620,7 @@ function lessonRender(box) {
               </button>`;
           }).join("")}
         </div>
-        ${рамкиHTML("Зачем это в жизни", (course() || {}).life)}
+        <div class="ls-col">${рамкиHTML("Зачем это в жизни", (course() || {}).life)}</div>
         <div class="wk-row">
           <button class="pr-ghost" data-prac="finish">Закрыть</button>
         </div>
@@ -9657,23 +9657,13 @@ function lessonRender(box) {
           <h3>${esc(l.title || "Урок " + (at.i + 1))}</h3>
           <p class="ls-when">пройдено ${Math.round(п.pct)}%</p>
           ${п.было ? `<span class="ls-bar wide"><u style="width:${п.pct.toFixed(0)}%"></u></span>` : ""}
+          <div class="ls-col">
           ${блокHTML("Что будет", l.why)}
-          ${Array.isArray(l.skills) && l.skills.length ? `
-            <p class="ls-h">Чему научишься</p>
-            <div class="ls-skills">
-              ${l.skills.map((x, k) => {
-                /* Навыки открываются по ходу, а не все разом в конце: у урока на
-                   полсотни шагов замок висел бы неделями и ничего не обещал. */
-                const порог = (k + 1) / l.skills.length * 100;
-                const открыт = п.pct >= порог - 0.001;
-                return `<span class="ls-skill${открыт ? " on" : ""}">${
-                  открыт ? "" : "🔒 "}${esc(x)}</span>`;
-              }).join("")}
-            </div>` : ""}
           ${Array.isArray(l.ask) && l.ask.length ? `
             <p class="ls-h">Что откроется</p>
             <div class="ls-ask">${l.ask.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
           ${рамкиHTML("Что даёт именно этот урок", l.life)}
+          </div>
 
           <div class="ls-steps">
             ${этапы.map((e, n) => {
