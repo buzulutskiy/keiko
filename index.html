@@ -230,20 +230,48 @@
        картина на стене. */
     .wl-wall { display: grid; gap: 30px; margin-top: 4px; }
     .wl-art { display: grid; justify-items: center; }
-    /* Рама: тёмное дерево с тонкой золотой кромкой внутри. Паспарту нет —
-       холст идёт прямо в раму, как в старой развеске. */
-    .wl-frame {
+    /* ── Рамы ──
+       Рама — часть работы, а не украшение списка: тяжёлая золочёная под
+       академический холст и узкая рейка под темперу начала века — это разные
+       картины. Поэтому вид рамы хранится у каждой работы, а здесь только
+       варианты. Общее у всех — тень: она и делает картину висящей. */
+    .wl-frame { width: 100%; border-radius: 2px;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5); }
+
+    /* Тёмное дерево — по умолчанию, спокойное и ничему не мешает */
+    .wl-frame.f-wood { padding: 8px;
       background: linear-gradient(160deg, #2a2118, #1a150f 60%, #241c14);
-      padding: 8px; border-radius: 3px; width: 100%;
       box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5),
-                  inset 0 0 0 1px rgba(255, 201, 77, 0.18);
-    }
+                  inset 0 0 0 1px rgba(255, 201, 77, 0.18); }
+
+    /* Широкая золочёная — под большой холст XVII–XIX века. Три слоя: внешний
+       вал, потёртая позолота, внутренний тёмный кант у самого холста. */
+    .wl-frame.f-gold { padding: 17px;
+      background:
+        linear-gradient(150deg, #d8ac57 0%, #8d6a26 22%, #e7c576 46%, #7d5c20 70%, #c9a052 100%);
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.6), 0 3px 6px rgba(0, 0, 0, 0.5),
+                  inset 0 0 0 2px rgba(255, 233, 176, 0.4),
+                  inset 0 0 0 12px rgba(120, 88, 30, 0.45),
+                  inset 0 0 0 14px rgba(40, 28, 8, 0.75); }
+
+    /* Узкая золотая рейка — начало XX века: темпера, гуашь, «Мир искусства».
+       Тяжёлая академическая рама такой работе не по размеру. */
+    .wl-frame.f-thin { padding: 7px;
+      background: linear-gradient(150deg, #c9a862, #8a6c30 45%, #d9bd7c);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.45),
+                  inset 0 0 0 1px rgba(255, 236, 186, 0.5),
+                  inset 0 0 0 5px rgba(60, 44, 14, 0.55); }
+
+    /* Светлая рама с паспарту — для графики и акварели, как их и вешают */
+    .wl-frame.f-paper { padding: 9px; background: linear-gradient(160deg, #b6a893, #8d8272 60%, #a4967f); }
+    .wl-frame.f-paper > .wl-mat { display: block; background: #e8e2d5; padding: 16px; }
     /* Пропорция задана на самой картинке — место под неё держится ещё до
        загрузки, и список не прыгает, когда изображения доезжают. Подложка
        тёмная: музейные файлы по 200 КБ грузятся сверху вниз, и на светлой
        недокачанная работа выглядела серой плитой во всю раму. */
     .wl-frame img { display: block; width: 100%; height: auto; background: #191521;
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+    .wl-frame.f-paper img { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
     /* Табличка под картиной — как в зале */
     .wl-plate { margin-top: 12px; text-align: center; max-width: 42ch; }
     .wl-plate b { display: block; font-size: 0.92rem; font-weight: 650; line-height: 1.35; }

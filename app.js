@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 294";
+const APP_VERSION = "Кэйко 295";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10601,14 +10601,21 @@ function стенаHTML(список) {
   return `<div class="wl-wall">${список.map(картинаHTML).join("")}</div>`;
 }
 
+/* Вид рамы: широкая золочёная, узкая рейка, светлая с паспарту или тёмное
+   дерево. Хранится у работы: рама — часть картины, а не оформление списка. */
+const РАМЫ = { gold: "f-gold", thin: "f-thin", paper: "f-paper", wood: "f-wood" };
+const wallFrame = (x) => РАМЫ[(x && x.frame) || ""] || "f-wood";
+
 function картинаHTML(x) {
   const r = wallRatio(x);
   const подпись = [x.year, x.museum].filter(Boolean).join(" · ");
+  const холст = `<img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"
+          style="aspect-ratio: ${r.toFixed(3)}">`;
+  const рама = wallFrame(x);
   return `
     <div class="wl-art">
-      <div class="wl-frame">
-        <img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"
-          style="aspect-ratio: ${r.toFixed(3)}">
+      <div class="wl-frame ${рама}">
+        ${рама === "f-paper" ? `<span class="wl-mat">${холст}</span>` : холст}
       </div>
       <div class="wl-plate">
         <b>${esc(x.artist || "Неизвестный художник")}</b>
