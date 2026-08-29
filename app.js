@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 299";
+const APP_VERSION = "Кэйко 300";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1280,10 +1280,12 @@ function currentMaterial() {
     /* Считаем не долю пройденного, а сколько раз садился и сколько минут
        просидел: у рисования награда не в проценте, и провалить «порисовал
        двенадцать минут» нельзя. */
-    const дней = s.days || 0, мин = Math.round((s.spentSec || 0) / 60);
+    /* Минуты с глаз убраны: если курс увлекает, хронометраж только мешает.
+       Остаётся имя урока, за который сейчас садишься, и общий процент. */
+    const at = lessonNext();
+    const сейчас = at ? (lessons()[at.i] || {}).title : "";
     return { icon: "🎨", title: c.name, pct: s.pct,
-      sub: дней ? `${дней} ${plural(дней, "заход", "захода", "заходов")}${мин ? ` · ${мин} мин за пастелью` : ""}`
-                : "ещё не начинали" };
+      sub: сейчас ? `${сейчас} · ${Math.round(s.pct)}%` : "курс пройден" };
   }
   const p = piece(), s = pianoStats();
   return { icon: "🎹", title: p.name,
@@ -3629,9 +3631,9 @@ function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
   if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
   if (isCourse()) {
-    const мин = Math.round((s.spentSec || 0) / 60);
-    return subLine(`${s.days || 0} ${plural(s.days || 0, "заход", "захода", "заходов")}`,
-      мин ? `${мин} мин за пастелью` : "ещё не начинали");
+    const at = lessonNext();
+    return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
+      `${Math.round(s.pct)}% курса`);
   }
   return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
 }
@@ -9584,13 +9586,12 @@ function lessonRender(box) {
         <div class="ls-grid">
           ${ls.map((l, i) => {
             const п = lessonProgress(i);
-            const мин = Math.round((l.dur || 0) / 60);
             const всё = п.всего && п.было >= п.всего;
             return `
               <button class="ls-card${всё ? " done" : ""}" data-lgo="${i}" type="button">
                 <i>${esc(l.icon || "🎨")}</i>
                 <b>${esc(l.title || "Урок " + (i + 1))}</b>
-                <em>${мин} мин${п.всего ? ` · ${п.было} из ${п.всего}` : ""}</em>
+                <em>${всё ? "пройдено" : п.было ? Math.round(п.pct) + "%" : "не начато"}</em>
                 <span class="ls-bar"><u style="width:${п.pct.toFixed(0)}%"></u></span>
               </button>`;
           }).join("")}
@@ -9603,28 +9604,35 @@ function lessonRender(box) {
   }
 
   /* ── Страница задания ──
-     Сверху — зачем это вообще и что начнёшь замечать. Ниже не кнопка «начать»,
-     а список занятий: видно, из чего урок состоит, что уже сделано и что будет
-     в следующем заходе. Пройденное открыто для перечитывания, следующее
-     подсвечено, дальнее пригашено — идти по порядку, медленно и с пониманием,
-     а не проваливаться сразу в шаг. */
+     Сверху — зачем это вообще и что начнёшь замечать. Ниже список этапов, а не
+     шагов: сколько внутри движений и минут, знать незачем, если курс интересен,
+     а вот зачем этот этап — знать надо. Деление на заходы живёт внутри этапа,
+     наружу его не выносим. Пройденное открыто для перечитывания, следующее
+     подсвечено, дальнее пригашено. */
   if (prac.screen === "intro" && at) {
     const l = ls[at.i] || {};
     const шаги = lessonSteps(at.i) || [];
-    const блоки = lessonBlocks(at.i);
-    const мин = Math.round((l.dur || 0) / 60);
     const п = lessonProgress(at.i);
     const учусь = Array.isArray(l.learn) ? l.learn : [];
-    const закрыт = (b) => шаги.slice(b.from, b.to + 1).every((_, n) => lessonDone(at.i, "s" + (b.from + n)));
-    const первыйОткрытый = блоки.findIndex((b) => !закрыт(b));
+
+    /* Этапы — по порядку и без повторов: длинный этап режется на заходы внутри,
+       но в списке остаётся одной строкой. */
+    const этапы = [];
+    шаги.forEach((st, n) => {
+      const g = st.g || "";
+      const был = этапы.find((x) => x.g === g);
+      if (был) { был.to = n; был.всего++; был.готово += lessonDone(at.i, "s" + n) ? 1 : 0; }
+      else этапы.push({ g, from: n, to: n, всего: 1, готово: lessonDone(at.i, "s" + n) ? 1 : 0 });
+    });
+    const первыйОткрытый = этапы.findIndex((e) => e.готово < e.всего);
 
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task ls-intro">
           <div class="ls-big">${esc(l.icon || "🎨")}</div>
           <h3>${esc(l.title || "Урок " + (at.i + 1))}</h3>
-          <p class="ls-when">${мин} мин · ${блоки.length} ${plural(блоки.length, "занятие", "занятия", "занятий")}${
-            п.было ? ` · пройдено ${п.было} из ${п.всего} шагов` : ""}</p>
+          <p class="ls-when">пройдено ${Math.round(п.pct)}%</p>
+          ${п.было ? `<span class="ls-bar wide"><u style="width:${п.pct.toFixed(0)}%"></u></span>` : ""}
           ${l.why ? `<p class="ls-why">${esc(l.why)}</p>` : ""}
           ${учусь.length ? `<div class="ls-learn">
             <p class="ls-learn-h">Что начнёшь замечать</p>
@@ -9632,27 +9640,24 @@ function lessonRender(box) {
           </div>` : ""}
 
           <div class="ls-steps">
-            ${блоки.map((b, n) => {
-              const готов = закрыт(b);
+            ${этапы.map((e, n) => {
+              const готов = e.готово >= e.всего;
               const сейчас = n === первыйОткрытый;
               const далеко = первыйОткрытый >= 0 && n > первыйОткрытый;
-              const дела = шаги.slice(b.from, b.to + 1).filter(lessonDoing).length;
-              const что = дела ? `${дела} ${plural(дела, "движение", "движения", "движений")} руками`
-                              : `смотреть · ${b.to - b.from + 1} ${plural(b.to - b.from + 1, "шаг", "шага", "шагов")}`;
-              /* Длинный этап режется на несколько занятий, и три «Построения углём»
-                 подряд выглядят как ошибка. Нумеруем их между собой. */
-              const свои = блоки.filter((x) => x.g === b.g);
-              const имя = (b.g || "Занятие " + (n + 1))
-                + (свои.length > 1 ? ` · ${свои.indexOf(b) + 1} из ${свои.length}` : "");
-              const первый = (шаги[b.from] || {}).t || "";
+              /* Зачем этот этап — только у того, за который сейчас садиться:
+                 шестнадцать пояснений подряд читать никто не станет. И только
+                 первый абзац: дальше в конспекте идут пункты списком, они для
+                 экрана шага, а не для «зачем». */
+              const зачем = сейчас
+                ? String((l.stages || {})[e.g] || "").split("•")[0].trim()
+                : "";
               return `
                 <button class="ls-step${готов ? " done" : ""}${сейчас ? " now" : ""}"
-                  data-lblock="${b.from}" type="button"${далеко ? " disabled" : ""}>
+                  data-lblock="${e.from}" type="button"${далеко ? " disabled" : ""}>
                   <span class="ls-step-n">${готов ? "✓" : n + 1}</span>
                   <span class="ls-step-txt">
-                    <b>${esc(имя)}</b>
-                    <em>${esc(что)}</em>
-                    ${сейчас && первый ? `<i>${esc(String(первый).slice(0, 90))}</i>` : ""}
+                    <b>${esc(e.g || "Этап " + (n + 1))}</b>
+                    ${зачем ? `<i>${esc(зачем)}</i>` : ""}
                   </span>
                 </button>`;
             }).join("")}
