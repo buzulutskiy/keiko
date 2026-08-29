@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 288";
+const APP_VERSION = "Кэйко 289";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3959,8 +3959,23 @@ function artsPeek() {
   artsAsked.set(id, now());
   pullArts(id).then((новое) => {
     if (!новое) { artsAsked.set(id, 0); return; }   // не приехало — можно пробовать снова
+    if (!isBook() || book().id !== id) return;      // пока ехало, ушли на другой материал
+    /* Обновляем ОБЕ кнопки. Раньше здесь стояла одна «Разбор», и кнопка карты
+       не появлялась до следующей полной перерисовки: у книги, чей разбор ещё
+       не лежал на устройстве, карта то была, то нет — смотря успел ли доехать
+       файл к моменту отрисовки главной. Точки карты и рамка картинки живут в
+       том же файле, что и разбор, поэтому обе кнопки зависят от одного приезда.
+       Заодно правим значок и подпись: у книги, где кроме карты ничего нет,
+       кнопка разбора превращается в карту, и это решается тем же файлом. */
     const talk = $("#bookTalkBtn");
-    if (talk) talk.hidden = !talkBtnOn();
+    if (talk) {
+      talk.hidden = !talkBtnOn();
+      talk.textContent = talkBtnIcon();
+      talk.setAttribute("aria-label", talkBtnWord());
+      talk.title = talkBtnWord();
+    }
+    const map = $("#bookMapBtn");
+    if (map) map.hidden = !mapBtnOn();
   }).catch(() => artsAsked.set(id, 0));
 }
 

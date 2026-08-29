@@ -460,6 +460,40 @@ function ок(имя, факт, надо) {
   t.set("data.palette", было);
 }
 
+/* ── Кнопка карты на главной: зависит от разбора, который едет отдельно ── */
+{
+  const было = {
+    active: t.get("data").active,
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    arts: t.get("ARTS"),
+  };
+  t.set("data.book", { activeBook: "od", books: [{ id: "od", title: "Одиссея", pages: 400 }], entries: [] });
+  t.set("data.active", "book");
+  t.set("ARTS", {});
+
+  ок("карта: пока разбор не приехал — кнопки нет", t.get("mapBtnOn")(), false);
+
+  t.set("ARTS", { od: { article: [{ ch: 1, t: "…" }],
+    map: [{ name: "Итака", ch: 1, lat: 38.4, lon: 20.7 }],
+    mapBox: { w: 100, e: 120, n: 40, s: 30 } } });
+  ок("карта: разбор приехал — кнопка нужна", t.get("mapBtnOn")(), true);
+
+  // у книги, где кроме карты ничего нет, отдельной кнопки карты не бывает:
+  // её место занимает кнопка разбора, превращённая в карту
+  t.set("ARTS", { od: { map: [{ name: "Итака", ch: 0, lat: 38.4, lon: 20.7 }],
+    mapBox: { w: 100, e: 120, n: 40, s: 30 } } });
+  ок("карта: у книги только с картой отдельной кнопки нет", t.get("mapBtnOn")(), false);
+  ок("карта: тогда её показывает кнопка разбора", t.get("talkBtnIcon")(), "🗺");
+
+  // рамки картинки нет — карту рисовать не на чем
+  t.set("ARTS", { od: { map: [{ name: "Итака", ch: 1, lat: 38.4, lon: 20.7 }], article: [{ ch: 1 }] } });
+  ок("карта: без рамки картинки кнопки нет", t.get("mapBtnOn")(), false);
+
+  t.set("data.book", было.book);
+  t.set("data.active", было.active);
+  t.set("ARTS", было.arts);
+}
+
 /* ── Итог ── */
 if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
 console.log(`тесты: ${всего} из ${всего} прошли`);
