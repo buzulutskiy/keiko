@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 298";
+const APP_VERSION = "Кэйко 299";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -965,8 +965,13 @@ function pastelStats() {
   const next = c.lessons.findIndex((l, i) => !l.hidden && !done.has(i));
   const shown = c.lessons.reduce((n, l) => n + (l.hidden ? 0 : 1), 0);
   const doneShown = c.lessons.reduce((n, l, i) => n + (!l.hidden && done.has(i) ? 1 : 0), 0);
+  /* Сколько времени реально просидел за пастелью: лог занятия пишет секунды на
+     каждый шаг, и это единственная честная мера — не хронометраж автора. */
+  const spentSec = ((data.practice && data.practice.pastel && data.practice.pastel.log) || [])
+    .reduce((n, x) => n + (Number(x.sec) || 0), 0);
+
   return {
-    lessons: shown, done: doneShown, doneSet: done,
+    lessons: shown, done: doneShown, doneSet: done, spentSec,
     stepsDone, stages: stageSet.size, stageSet, lessonSet,
     /* Процент — по времени. Курс без проставленных длительностей считаем
        по-старому, поштучно: лучше грубо, чем ноль навсегда. */
@@ -1018,7 +1023,19 @@ function pctRoute() {
   return val;
 }
 
-const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute() : s.pct;
+/* Что показывает кольцо. У курса это НЕ доля всего курса: четыре с половиной
+   часа видео делают её неподвижной неделями, а неподвижное кольцо говорит
+   «ты не сдвинулся», хотя ты сидел и рисовал. Показываем долю текущего урока —
+   она растёт за вечер. Внутренний процент (s.pct) остаётся прежним: на нём
+   держатся награды и карточки. */
+function courseRingPct() {
+  const at = lessonNext();
+  if (!at) return 100;
+  const п = lessonProgress(at.i);
+  return п.всего ? п.pct : 0;
+}
+const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
+  : isCourse() && lessons().length ? courseRingPct() : s.pct;
 
 /* ── Достижения ── */
 const ACH_PIANO = [];
@@ -1260,7 +1277,13 @@ function currentMaterial() {
   }
   if (isCourse()) {
     const c = course(), s = pastelStats();
-    return { icon: "🎨", title: c.name, sub: `${s.done} из ${s.lessons} уроков`, pct: s.pct };
+    /* Считаем не долю пройденного, а сколько раз садился и сколько минут
+       просидел: у рисования награда не в проценте, и провалить «порисовал
+       двенадцать минут» нельзя. */
+    const дней = s.days || 0, мин = Math.round((s.spentSec || 0) / 60);
+    return { icon: "🎨", title: c.name, pct: s.pct,
+      sub: дней ? `${дней} ${plural(дней, "заход", "захода", "заходов")}${мин ? ` · ${мин} мин за пастелью` : ""}`
+                : "ещё не начинали" };
   }
   const p = piece(), s = pianoStats();
   return { icon: "🎹", title: p.name,
@@ -3605,7 +3628,11 @@ const subLine = (...parts) => parts.filter(Boolean)
 function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
   if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
-  if (isCourse()) return subLine(`${s.done} из ${s.lessons} уроков`, `${s.minutes} мин пройдено`);
+  if (isCourse()) {
+    const мин = Math.round((s.spentSec || 0) / 60);
+    return subLine(`${s.days || 0} ${plural(s.days || 0, "заход", "захода", "заходов")}`,
+      мин ? `${мин} мин за пастелью` : "ещё не начинали");
+  }
   return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
 }
 
@@ -9575,28 +9602,62 @@ function lessonRender(box) {
     return;
   }
 
-  /* ── Страница занятия ──
-     До материалов и шагов — зачем оно вообще. «Чему научишься» вытащено из
-     самого урока, а не придумано: это то, что автор в нём показывает. Без
-     этого экрана садиться приходится вслепую, а вслепую садиться не хочется. */
+  /* ── Страница задания ──
+     Сверху — зачем это вообще и что начнёшь замечать. Ниже не кнопка «начать»,
+     а список занятий: видно, из чего урок состоит, что уже сделано и что будет
+     в следующем заходе. Пройденное открыто для перечитывания, следующее
+     подсвечено, дальнее пригашено — идти по порядку, медленно и с пониманием,
+     а не проваливаться сразу в шаг. */
   if (prac.screen === "intro" && at) {
     const l = ls[at.i] || {};
-    const п = lessonProgress(at.i);
+    const шаги = lessonSteps(at.i) || [];
+    const блоки = lessonBlocks(at.i);
     const мин = Math.round((l.dur || 0) / 60);
+    const п = lessonProgress(at.i);
     const учусь = Array.isArray(l.learn) ? l.learn : [];
+    const закрыт = (b) => шаги.slice(b.from, b.to + 1).every((_, n) => lessonDone(at.i, "s" + (b.from + n)));
+    const первыйОткрытый = блоки.findIndex((b) => !закрыт(b));
+
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task ls-intro">
           <div class="ls-big">${esc(l.icon || "🎨")}</div>
           <h3>${esc(l.title || "Урок " + (at.i + 1))}</h3>
-          <p class="ls-when">${мин} мин${п.всего ? ` · пройдено ${п.было} из ${п.всего}` : ""}</p>
-          ${п.было ? `<span class="ls-bar wide"><u style="width:${п.pct.toFixed(0)}%"></u></span>` : ""}
+          <p class="ls-when">${мин} мин · ${блоки.length} ${plural(блоки.length, "занятие", "занятия", "занятий")}${
+            п.было ? ` · пройдено ${п.было} из ${п.всего} шагов` : ""}</p>
           ${l.why ? `<p class="ls-why">${esc(l.why)}</p>` : ""}
           ${учусь.length ? `<div class="ls-learn">
-            <p class="ls-learn-h">Чему научишься</p>
+            <p class="ls-learn-h">Что начнёшь замечать</p>
             <ul>${учусь.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
           </div>` : ""}
-          <button class="pr-go" data-les="introGo">${п.было ? "Продолжить" : "Начать"}</button>
+
+          <div class="ls-steps">
+            ${блоки.map((b, n) => {
+              const готов = закрыт(b);
+              const сейчас = n === первыйОткрытый;
+              const далеко = первыйОткрытый >= 0 && n > первыйОткрытый;
+              const дела = шаги.slice(b.from, b.to + 1).filter(lessonDoing).length;
+              const что = дела ? `${дела} ${plural(дела, "движение", "движения", "движений")} руками`
+                              : `смотреть · ${b.to - b.from + 1} ${plural(b.to - b.from + 1, "шаг", "шага", "шагов")}`;
+              /* Длинный этап режется на несколько занятий, и три «Построения углём»
+                 подряд выглядят как ошибка. Нумеруем их между собой. */
+              const свои = блоки.filter((x) => x.g === b.g);
+              const имя = (b.g || "Занятие " + (n + 1))
+                + (свои.length > 1 ? ` · ${свои.indexOf(b) + 1} из ${свои.length}` : "");
+              const первый = (шаги[b.from] || {}).t || "";
+              return `
+                <button class="ls-step${готов ? " done" : ""}${сейчас ? " now" : ""}"
+                  data-lblock="${b.from}" type="button"${далеко ? " disabled" : ""}>
+                  <span class="ls-step-n">${готов ? "✓" : n + 1}</span>
+                  <span class="ls-step-txt">
+                    <b>${esc(имя)}</b>
+                    <em>${esc(что)}</em>
+                    ${сейчас && первый ? `<i>${esc(String(первый).slice(0, 90))}</i>` : ""}
+                  </span>
+                </button>`;
+            }).join("")}
+          </div>
+
           <div class="wk-row">
             <button class="pr-ghost" data-les="toPick">К занятиям</button>
             <button class="pr-ghost" data-prac="finish">Закрыть</button>
@@ -9606,11 +9667,6 @@ function lessonRender(box) {
     return;
   }
 
-  /* Подготовка — отдельный экран до первого шага, а не строчка посреди урока.
-     Смысл её не в списке вещей, а в том, чтобы разгребание стола перестало
-     быть барьером ко входу и стало первой частью занятия, на которую не надо
-     спешить. Показываем всегда: если доставать нечего, так и говорим — это
-     тоже ответ на «что меня там ждёт». */
   if (prac.screen === "prep" && at) {
     const l = ls[at.i] || {};
     const bl = blockOfStep(at.i, at.step || 0);
@@ -11693,6 +11749,17 @@ function bindPractice() {
 
     const b = e.target.closest("button");
     if (!b || !prac) return;
+
+    /* Занятие со страницы задания: встаём на его первый шаг и, если надо,
+       показываем подготовку. */
+    if (b.dataset.lblock !== undefined) {
+      const с = +b.dataset.lblock;
+      prac.at = { i: prac.at.i, phase: "step", step: с };
+      const бл = blockOfStep(prac.at.i, с);
+      prac.screen = lessonPrep(prac.at.i, бл).надо ? "prep" : "work";
+      prac.stepAt = Date.now();
+      return pracRender();
+    }
 
     /* Занятие из сетки: открываем его страницу, а не бросаем сразу в шаг. */
     if (b.dataset.lgo !== undefined) {
