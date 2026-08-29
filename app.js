@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 302";
+const APP_VERSION = "Кэйко 303";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -565,6 +565,12 @@ function musOpenCourse(x) {
   if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
   const steps = (c.lessons[n - 1] || {}).steps || [];
   if (!steps.length) return false;
+  /* У предмета может быть свой шаг — тогда он открывается ровно там, где курс
+     велит взять его в руки. Без шага открываем по первому закрытому шагу
+     урока; после того как четыре урока склеили в один, такой предмет открылся
+     бы вместе с одиннадцатью соседями, и весь смысл «по мере чтения» пропал. */
+  const ш = Number(x.step);
+  if (Number.isFinite(ш) && ш >= 0) return lessonDone(n - 1, "s" + ш);
   return steps.some((_, m) => lessonDone(n - 1, "s" + m));
 }
 
@@ -9613,7 +9619,6 @@ function lessonRender(box) {
     const l = ls[at.i] || {};
     const шаги = lessonSteps(at.i) || [];
     const п = lessonProgress(at.i);
-    const учусь = Array.isArray(l.learn) ? l.learn : [];
 
     /* Этапы — по порядку и без повторов: длинный этап режется на заходы внутри,
        но в списке остаётся одной строкой. */
@@ -9639,9 +9644,17 @@ function lessonRender(box) {
           ${Array.isArray(l.ask) && l.ask.length ? `<div class="ls-ask">
             ${l.ask.map((x) => `<p>${esc(x)}</p>`).join("")}
           </div>` : ""}
-          ${учусь.length ? `<div class="ls-learn">
-            <p class="ls-learn-h">Что начнёшь замечать</p>
-            <ul>${учусь.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+          ${Array.isArray(l.skills) && l.skills.length ? `<div class="ls-skills">
+            ${l.skills.map((x, k) => {
+              /* Навыки открываются по ходу, а не все разом в конце: у урока на
+                 полсотни шагов замок висел бы неделями и ничего не обещал. Делим
+                 урок поровну на число навыков — очередной снимается, когда
+                 пройдена его доля. */
+              const порог = (k + 1) / l.skills.length * 100;
+              const открыт = п.pct >= порог - 0.001;
+              return `<span class="ls-skill${открыт ? " on" : ""}">${
+                открыт ? "" : "🔒 "}${esc(x)}</span>`;
+            }).join("")}
           </div>` : ""}
 
           <div class="ls-steps">
