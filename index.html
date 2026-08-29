@@ -3900,21 +3900,24 @@
     .ls-when { font-size: 0.78rem; color: var(--dim); margin: 6px 0 0; }
     /* «Зачем это» — до списка умений: без ответа на него упражнение выглядит
        заданием ради задания. */
-    .ls-why { text-align: left; max-width: 34ch; margin: 16px auto 0; }
+    /* Заголовок раздела на странице задания */
+    .ls-h { font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--gold); text-align: left; max-width: 34ch; margin: 22px auto 8px; }
+    .ls-why { text-align: left; max-width: 34ch; margin: 0 auto; }
     .ls-why p { font-size: 0.92rem; line-height: 1.55; color: var(--ink); opacity: 0.92;
       margin: 0 0 11px; }
     .ls-why p:last-child { margin-bottom: 0; }
     /* Вопросы — интрига до объяснений. Отдельным блоком, крупнее обычного
        текста и с отбивкой: их читают, а не проглядывают. */
-    .ls-ask { text-align: left; max-width: 34ch; margin: 20px auto 4px;
+    .ls-ask { text-align: left; max-width: 34ch; margin: 0 auto;
       border-left: 2px solid rgba(255, 201, 77, 0.35); padding-left: 14px; }
     .ls-ask p { font-size: 1rem; line-height: 1.45; margin: 0 0 10px; color: var(--ink); }
     .ls-ask p:last-child { margin-bottom: 0; }
 
     /* Навыки тегами. Закрытые видны намеренно: это не список достижений, а то,
        ради чего вообще садишься, — он должен быть перед глазами с самого начала. */
-    .ls-skills { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center;
-      max-width: 34ch; margin: 20px auto 4px; }
+    .ls-skills { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-start;
+      max-width: 34ch; margin: 0 auto; }
     .ls-skill { font-size: 0.76rem; line-height: 1.3; padding: 6px 11px; border-radius: 20px;
       border: 1px dashed rgba(255, 255, 255, 0.14); color: var(--dim); }
     .ls-skill.on { border-style: solid; border-color: rgba(255, 201, 77, 0.45); color: var(--gold); }
