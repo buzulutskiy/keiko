@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 296";
+const APP_VERSION = "Кэйко 297";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9536,9 +9536,74 @@ function lessonNext() {
   return null;
 }
 
+/* Сколько шагов урока закрыто — для полоски в сетке и на странице занятия. */
+function lessonProgress(i) {
+  const шаги = lessonSteps(i) || [];
+  const было = шаги.filter((_, n) => lessonDone(i, "s" + n)).length;
+  return { всего: шаги.length, было, pct: шаги.length ? было / шаги.length * 100 : 0 };
+}
+
 function lessonRender(box) {
   const ls = lessons();
   const at = prac.at;
+
+  /* ── Сетка занятий ──
+     Курс открывается не с того места, где бросил, а целиком: видно, что уже
+     сделано, что впереди и сколько это займёт. Выбор — за тобой, а не за
+     очередью: иногда хочется досмотреть лекцию, а не рисовать. */
+  if (prac.screen === "pick") {
+    box.innerHTML = `
+      <div class="wk">
+        <div class="ls-grid">
+          ${ls.map((l, i) => {
+            const п = lessonProgress(i);
+            const мин = Math.round((l.dur || 0) / 60);
+            const всё = п.всего && п.было >= п.всего;
+            return `
+              <button class="ls-card${всё ? " done" : ""}" data-lgo="${i}" type="button">
+                <i>${esc(l.icon || "🎨")}</i>
+                <b>${esc(l.title || "Урок " + (i + 1))}</b>
+                <em>${мин} мин${п.всего ? ` · ${п.было} из ${п.всего}` : ""}</em>
+                <span class="ls-bar"><u style="width:${п.pct.toFixed(0)}%"></u></span>
+              </button>`;
+          }).join("")}
+        </div>
+        <div class="wk-row">
+          <button class="pr-ghost" data-prac="finish">Закрыть</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  /* ── Страница занятия ──
+     До материалов и шагов — зачем оно вообще. «Чему научишься» вытащено из
+     самого урока, а не придумано: это то, что автор в нём показывает. Без
+     этого экрана садиться приходится вслепую, а вслепую садиться не хочется. */
+  if (prac.screen === "intro" && at) {
+    const l = ls[at.i] || {};
+    const п = lessonProgress(at.i);
+    const мин = Math.round((l.dur || 0) / 60);
+    const учусь = Array.isArray(l.learn) ? l.learn : [];
+    box.innerHTML = `
+      <div class="wk">
+        <div class="wk-task ls-intro">
+          <div class="ls-big">${esc(l.icon || "🎨")}</div>
+          <h3>${esc(l.title || "Урок " + (at.i + 1))}</h3>
+          <p class="ls-when">${мин} мин${п.всего ? ` · пройдено ${п.было} из ${п.всего}` : ""}</p>
+          ${п.было ? `<span class="ls-bar wide"><u style="width:${п.pct.toFixed(0)}%"></u></span>` : ""}
+          ${учусь.length ? `<div class="ls-learn">
+            <p class="ls-learn-h">Чему научишься</p>
+            <ul>${учусь.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+          </div>` : ""}
+          <button class="pr-go" data-les="introGo">${п.было ? "Продолжить" : "Начать"}</button>
+          <div class="wk-row">
+            <button class="pr-ghost" data-les="toPick">К занятиям</button>
+            <button class="pr-ghost" data-prac="finish">Закрыть</button>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
 
   /* Подготовка — отдельный экран до первого шага, а не строчка посреди урока.
      Смысл её не в списке вещей, а в том, чтобы разгребание стола перестало
@@ -10056,13 +10121,12 @@ function pracNext() {
 function openLesson() {
   if (!isCourse() || !lessons().length) { toast("Уроков пока нет"); return; }
   const at = lessonNext();
-  /* Входим не в шаг, а в подготовку. Правило «Открыл — играешь» снято с
-     пианино, где готовить нечего: инструмент подключён раз и навсегда. У
-     пастели каждый раз надо разгрести стол, и именно это отталкивает сильнее
-     самого рисования. Значит подготовка — не преграда перед занятием, а его
-     первая часть, и торопиться в ней некуда. */
+  /* Входим в сетку занятий, а не в шаг. Правило «Открыл — играешь» снято с
+     пианино, где готовить нечего и выбирать не из чего: там одна пьеса и одно
+     место, с которого продолжаешь. Курс устроен иначе — восемь разных занятий,
+     и половина из них смотрится, а не рисуется. Пусть выбор будет виден. */
   prac = {
-    kind: "lesson", screen: at ? "prep" : "work", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    kind: "lesson", screen: "pick", at, taskAt: 0, stepAt: Date.now(), counted: 0,
     lastBlock: null,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
@@ -11629,6 +11693,16 @@ function bindPractice() {
     const b = e.target.closest("button");
     if (!b || !prac) return;
 
+    /* Занятие из сетки: открываем его страницу, а не бросаем сразу в шаг. */
+    if (b.dataset.lgo !== undefined) {
+      const n = +b.dataset.lgo, steps = lessonSteps(n) || [];
+      if (!steps.length) { toast("В этом занятии пока нет шагов"); return; }
+      let at0 = steps.findIndex((_, m) => !lessonDone(n, "s" + m));
+      prac.at = { i: n, phase: "step", step: at0 < 0 ? 0 : at0 };
+      prac.screen = "intro";
+      prac.pickOpen = false; prac.listOpen = false;
+      return pracRender();
+    }
     if (b.dataset.lpick !== undefined) {
       const n = +b.dataset.lpick, steps = lessonSteps(n) || [];
       if (!steps.length) { toast("\u0412 \u044d\u0442\u043e\u043c \u0443\u0440\u043e\u043a\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0448\u0430\u0433\u043e\u0432"); return; }
@@ -11688,6 +11762,16 @@ function bindPractice() {
           prac.screen = "work";
           prac.stepAt = Date.now();
           break;
+        case "toPick":
+          prac.screen = "pick";
+          break;
+        case "introGo": {
+          /* С занятия идём в подготовку, а если доставать нечего — сразу к шагам. */
+          const бл = blockOfStep(at.i, at.step || 0);
+          prac.screen = lessonPrep(at.i, бл).надо ? "prep" : "work";
+          prac.stepAt = Date.now();
+          break;
+        }
         case "blockNext": {
           /* Следующее занятие может потребовать другого — уголь сменился
              карандашом, добавился чёрный. Подготовку показываем заново только
@@ -11699,7 +11783,7 @@ function bindPractice() {
           break;
         }
         case "stepList": prac.listOpen = !prac.listOpen; prac.pickOpen = false; break;
-        case "stepPick": prac.pickOpen = !prac.pickOpen; prac.listOpen = false; break;
+        case "stepPick": prac.screen = "pick"; prac.listOpen = false; prac.pickOpen = false; break;
         case "watched":
           st.done["L" + at.i + ":watch"] = todayStr();
           lessonNote(at.i, "watch", sec);
