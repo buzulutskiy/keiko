@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 291";
+const APP_VERSION = "Кэйко 292";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -263,6 +263,12 @@ function migrate(obj) {
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
   if (typeof obj.takesId === "string") base.takesId = obj.takesId;
   if (Array.isArray(obj.wall)) base.wall = obj.wall;
+  /* Палитру сюда забыли добавить сразу, и она пропадала на ровном месте: при
+     загрузке профиля поле отбрасывалось, а первая же отправка затирала его в
+     гисте. Любое новое поле обязано появиться и здесь — экспорт без миграции
+     означает «уедет и не вернётся». */
+  if (Array.isArray(obj.palette)) base.palette = obj.palette;
+  if (typeof obj.paletteAt === "number") base.paletteAt = obj.paletteAt;
   if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
@@ -10566,36 +10572,14 @@ function предметHTML(x, список) {
 
    Порядок обратный: последняя повешенная сверху, как и в артефактах. */
 const wallItems = () => (data.wall || []).filter((x) => !x.deleted);
-const wallSeen = (x) => !!x.seenAt;
 
-function renderWall() {
-  const все = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
-  const видел = все.filter(wallSeen).length;
-  if (wall.only === "seen" && !видел) wall.only = "";
-  const список = wall.only === "seen" ? все.filter(wallSeen)
-    : wall.only === "want" ? все.filter((x) => !wallSeen(x)) : все;
-
-  if (!все.length) {
-    $("#view").innerHTML = `<div id="wall"><div class="wl-empty">
-      Стена пока пуста.<br>Картины сюда попадают из артефактов — и те, что добавишь сам.</div></div>`;
-    return;
-  }
-
-  $("#view").innerHTML = `
-    <div id="wall">
-      <div class="wl-head">В собрании ${все.length} ${plural(все.length, "работа", "работы", "работ")}${
-        видел ? " · видел вживую " + видел : ""}</div>
-      ${видел && видел < все.length ? `<div class="wl-tabs">
-        <button class="${wall.only ? "" : "on"}" data-wlf="" type="button">Все</button>
-        <button class="${wall.only === "seen" ? "on" : ""}" data-wlf="seen" type="button">Видел</button>
-        <button class="${wall.only === "want" ? "on" : ""}" data-wlf="want" type="button">Хочу увидеть</button>
-      </div>` : ""}
-      <div class="wl-wall">${список.map(картинаHTML).join("")}</div>
-    </div>`;
-
-  document.querySelectorAll("[data-wlf]").forEach((b) =>
-    b.addEventListener("click", () => { wall.only = b.dataset.wlf; renderWall(); }));
-}
+/* Пропорция картины. Держим её в данных, а не ждём загрузки картинки: иначе
+   стена собирается заново, когда изображения доезжают, и всё прыгает. Если
+   пропорции нет — считаем близкой к квадрату, потом уточним по картинке. */
+const wallRatio = (x) => {
+  const r = Number(x && x.ratio);
+  return r > 0.15 && r < 8 ? r : 1.2;
+};
 
 /* Музейные картинки без параметров отдают миниатюру: Эрмитаж на голый адрес
    присылает 2,9 КБ вместо 170 КБ, и в раме оказывается марка вместо картины.
@@ -10608,22 +10592,44 @@ function wallImg(x) {
   return u + "?w=1400&h=1400";
 }
 
-/* Одна работа на стене: рама, паспарту, под ней табличка. Год и музей — как в
-   зале; своя строка «почему повесил» — то, чего в зале не бывает и что через
-   год единственное вернёт ощущение. */
+/* ══════════ Моя галерея ══════════
+   Картины, которые понравились. Отличие от «Артефактов»: артефакт даёт книга,
+   а сюда вешаешь сам.
+
+   Развеска шпалерная — как в старых залах: работы разного размера стоят
+   вплотную, ряд к ряду, и стена читается целиком, а не по одной картине.
+   Настоящие сантиметры при этом не берём: если считать по ним, акварель 33×100
+   рядом с холстом 150×199 превращается в марку. Держим родную пропорцию каждой
+   работы, а высоту ряда подбирает раскладка — так пропорции честные, а мелкого
+   не появляется.
+
+   Подписей на стене нет намеренно: идёшь вдоль и смотришь, а не читаешь. */
+function renderWall() {
+  const все = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+  if (!все.length) {
+    $("#view").innerHTML = `<div id="wall"><div class="wl-empty">
+      Стена пока пуста.<br>Сюда попадают картины из артефактов — и те, что добавишь сам.</div></div>`;
+    return;
+  }
+  $("#view").innerHTML = `
+    <div id="wall">
+      <div class="wl-head">В собрании ${все.length} ${plural(все.length, "работа", "работы", "работ")}</div>
+      <div class="wl-wall">${все.map(картинаHTML).join("")}</div>
+    </div>`;
+}
+
+/* Одна работа: рама с паспарту, ширина — от пропорции. flex-grow по той же
+   пропорции выравнивает ряд по краям, как развешивают по стене: широкие
+   занимают больше места, но ни одна не ужимается до марки. */
 function картинаHTML(x) {
-  const подпись = [x.year, x.museum].filter(Boolean).join(" · ");
+  const r = wallRatio(x);
+  /* Пропорция уходит в стиль картинки: место под неё держится ещё до загрузки,
+     и стена не прыгает, когда изображения доезжают. */
   return `
-    <div class="wl-art">
+    <div class="wl-art" style="--r: ${r.toFixed(3)}">
       <div class="wl-frame">
-        <span class="wl-mat"><img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"></span>
-      </div>
-      <div class="wl-plate">
-        <b>${esc(x.artist || "Неизвестный художник")}</b>
-        <i>${esc(x.title || "")}</i>
-        ${подпись ? `<em>${esc(подпись)}</em>` : ""}
-        ${x.note ? `<span class="wl-note">${esc(x.note)}</span>` : ""}
-        ${x.seenAt ? `<span class="wl-seen">видел ${esc(fmtDay(x.seenAt))}</span>` : ""}
+        <span class="wl-mat"><img src="${esc(wallImg(x))}" alt="" loading="lazy"
+          style="aspect-ratio: ${r.toFixed(3)}"></span>
       </div>
     </div>`;
 }

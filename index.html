@@ -227,39 +227,32 @@
        проходом вдоль стены, а не пролистыванием ленты. */
     #wall { padding: 4px 0 26px; }
     .wl-head { font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase;
-      color: var(--dim); text-align: center; margin: 2px 0 20px; }
-    .wl-tabs { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
-    .wl-tabs button { background: var(--glass); border: 1px solid var(--glass-line); color: var(--dim);
-      border-radius: 20px; padding: 6px 13px; font: inherit; font-size: 0.78rem; cursor: pointer; }
-    .wl-tabs button.on { color: var(--gold); border-color: rgba(255, 201, 77, 0.4); }
-    .wl-wall { display: grid; gap: 34px; }
-    .wl-art { display: grid; justify-items: center; }
+      color: var(--dim); text-align: center; margin: 2px 0 18px; }
+    /* Шпалерная развеска: работы стоят вплотную, ряд к ряду. Ширина каждой —
+       от её пропорции, поэтому ряд выравнивается по краям сам, а родное
+       соотношение сторон не трогается. */
+    /* Две колонки. Высота у каждой работы своя — по её родной пропорции, —
+       поэтому колонки не выравниваются в ряды и стена читается как развеска,
+       а не как таблица. Одна картина во всю ширину смотрелась бы одиноко. */
+    .wl-wall { columns: 2; column-gap: 12px; }
+    .wl-art { break-inside: avoid; margin: 0 0 12px; }
+    /* Третьей колонки нет намеренно: приложение живёт в телефонной колонке, и
+       медиазапрос смотрит на окно, а не на неё — на широком экране картины
+       становились марками внутри той же узкой полосы. */
     /* Рама: тёмное дерево с тонкой золотой кромкой внутри, паспарту светлое.
        Тень снизу и вбок — чтобы читалось как висящее, а не вклеенное. */
     .wl-frame {
       background: linear-gradient(160deg, #2a2118, #1a150f 60%, #241c14);
-      padding: 9px; border-radius: 3px;
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5),
-                  inset 0 0 0 1px rgba(255, 201, 77, 0.18);
-      max-width: min(100%, 520px);
+      padding: 6px; border-radius: 3px;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.45),
+                  inset 0 0 0 1px rgba(255, 201, 77, 0.16);
     }
-    .wl-mat { background: #ded7c9; padding: 14px; border-radius: 1px; display: block;
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25); }
-    /* Пока картинка едет или не доехала — паспарту держит высоту, иначе рама
-       схлопывается в марку и стена скачет при подгрузке. */
-    .wl-mat img { display: block; width: 100%; height: auto; min-height: 120px; border-radius: 0;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); background: #b9b2a4; }
-    /* Табличка под картиной — как в зале: маленькая, слева от центра не уезжает */
-    .wl-plate { margin-top: 12px; text-align: center; max-width: min(100%, 460px); }
-    .wl-plate b { display: block; font-size: 0.9rem; font-weight: 650; line-height: 1.35; }
-    .wl-plate i { display: block; font-style: normal; font-size: 0.8rem; color: var(--dim); margin-top: 3px; }
-    .wl-plate em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim);
-      margin-top: 6px; opacity: 0.85; }
-    .wl-note { display: block; font-size: 0.84rem; line-height: 1.5; margin-top: 9px;
-      color: var(--ink); opacity: 0.9; }
-    .wl-seen { display: inline-block; margin-top: 8px; font-size: 0.7rem; letter-spacing: 0.05em;
-      text-transform: uppercase; color: var(--gold); border: 1px solid rgba(255, 201, 77, 0.35);
-      border-radius: 20px; padding: 3px 10px; }
+    .wl-mat { background: #ded7c9; padding: 8px; border-radius: 1px; display: block;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22); }
+    /* Пропорция задана на самой картинке — место под неё держится ещё до
+       загрузки, и стена не прыгает, когда изображения доезжают. */
+    .wl-mat img { display: block; width: 100%; height: auto; border-radius: 0;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); background: #b9b2a4; }
     .wl-empty { text-align: center; color: var(--dim); font-size: 0.88rem; line-height: 1.55;
       padding: 40px 24px; }
 
