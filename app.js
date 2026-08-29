@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 290";
+const APP_VERSION = "Кэйко 291";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -262,6 +262,7 @@ function migrate(obj) {
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
   if (typeof obj.takesId === "string") base.takesId = obj.takesId;
+  if (Array.isArray(obj.wall)) base.wall = obj.wall;
   if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
@@ -1582,6 +1583,8 @@ function saveEntry() {
   showDone(before, after, !!existing, ctx);
 }
 
+let wall = { only: "" };      // фильтр стены: всё · видел · хочу увидеть
+
 let overlayQueue = [];
 /* Сколько предметов показываем поодиночке, прежде чем свести остальные в один
    список. Три — потолок, за которым листание перестаёт быть подарком. */
@@ -2044,6 +2047,7 @@ function renderInner() {
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
     else if (tab === "mus") renderMuseum();
+    else if (tab === "wall") renderWall();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
     // раздел убран, но вкладка могла остаться сохранённой — уводим на главную
@@ -2103,6 +2107,7 @@ function renderMusBtn() {
 }
 
 function renderTabbar() {
+  renderWallBtn();
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
@@ -10553,6 +10558,85 @@ function предметHTML(x, список) {
     </div>`;
 }
 
+/* ══════════ Моя галерея ══════════
+   Картины, которые понравились. Отличие от «Артефактов» простое: артефакт даёт
+   книга, а сюда вешаешь сам. И отличие от пинтереста — тоже: коллекция не
+   начинается с пустого экрана (в неё переезжает то, что уже открылось при
+   чтении) и не ждёт, пока про неё вспомнят, — картина сама приходит на глаза.
+
+   Порядок обратный: последняя повешенная сверху, как и в артефактах. */
+const wallItems = () => (data.wall || []).filter((x) => !x.deleted);
+const wallSeen = (x) => !!x.seenAt;
+
+function renderWall() {
+  const все = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+  const видел = все.filter(wallSeen).length;
+  if (wall.only === "seen" && !видел) wall.only = "";
+  const список = wall.only === "seen" ? все.filter(wallSeen)
+    : wall.only === "want" ? все.filter((x) => !wallSeen(x)) : все;
+
+  if (!все.length) {
+    $("#view").innerHTML = `<div id="wall"><div class="wl-empty">
+      Стена пока пуста.<br>Картины сюда попадают из артефактов — и те, что добавишь сам.</div></div>`;
+    return;
+  }
+
+  $("#view").innerHTML = `
+    <div id="wall">
+      <div class="wl-head">В собрании ${все.length} ${plural(все.length, "работа", "работы", "работ")}${
+        видел ? " · видел вживую " + видел : ""}</div>
+      ${видел && видел < все.length ? `<div class="wl-tabs">
+        <button class="${wall.only ? "" : "on"}" data-wlf="" type="button">Все</button>
+        <button class="${wall.only === "seen" ? "on" : ""}" data-wlf="seen" type="button">Видел</button>
+        <button class="${wall.only === "want" ? "on" : ""}" data-wlf="want" type="button">Хочу увидеть</button>
+      </div>` : ""}
+      <div class="wl-wall">${список.map(картинаHTML).join("")}</div>
+    </div>`;
+
+  document.querySelectorAll("[data-wlf]").forEach((b) =>
+    b.addEventListener("click", () => { wall.only = b.dataset.wlf; renderWall(); }));
+}
+
+/* Музейные картинки без параметров отдают миниатюру: Эрмитаж на голый адрес
+   присылает 2,9 КБ вместо 170 КБ, и в раме оказывается марка вместо картины.
+   Размер надо спрашивать явно, причём обе стороны сразу — по одной ширине
+   сервер отвечает той же миниатюрой. */
+const МУЗЕЙНЫЕ = /collections\.hermitage\.ru|collection\.pushkinmuseum\.art/;
+function wallImg(x) {
+  const u = String((x && x.img) || "");
+  if (!u || u.includes("?") || !МУЗЕЙНЫЕ.test(u)) return u;
+  return u + "?w=1400&h=1400";
+}
+
+/* Одна работа на стене: рама, паспарту, под ней табличка. Год и музей — как в
+   зале; своя строка «почему повесил» — то, чего в зале не бывает и что через
+   год единственное вернёт ощущение. */
+function картинаHTML(x) {
+  const подпись = [x.year, x.museum].filter(Boolean).join(" · ");
+  return `
+    <div class="wl-art">
+      <div class="wl-frame">
+        <span class="wl-mat"><img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"></span>
+      </div>
+      <div class="wl-plate">
+        <b>${esc(x.artist || "Неизвестный художник")}</b>
+        <i>${esc(x.title || "")}</i>
+        ${подпись ? `<em>${esc(подпись)}</em>` : ""}
+        ${x.note ? `<span class="wl-note">${esc(x.note)}</span>` : ""}
+        ${x.seenAt ? `<span class="wl-seen">видел ${esc(fmtDay(x.seenAt))}</span>` : ""}
+      </div>
+    </div>`;
+}
+
+/* Кнопка галереи в шапке — рядом с артефактами. Прячется, пока стена пуста:
+   пустой раздел в шапке только мешает. */
+function renderWallBtn() {
+  const b = $("#wallBtn");
+  if (!b) return;
+  b.hidden = !wallItems().length;
+  b.classList.toggle("on", tab === "wall");
+}
+
 function renderMuseum() {
   musStamp();                     // могло открыться без отметки — например, после синхронизации
   /* Показываем только открытое. Закрытые силуэты в сетке были бы рядом серых
@@ -14328,7 +14412,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, wall: data.wall, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
   pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
@@ -14516,6 +14600,7 @@ async function syncNow(manual) {
         data.shop.themeAt = remote.shop.themeAt;
       }
       data.archive = mergeLists(data.archive, remote.archive);
+      data.wall = mergeLists(data.wall || [], remote.wall || []);
       data.takes = mergeLists(data.takes || [], remote.takes || []);
       /* Разбор уезжал в гист, но обратно не возвращался никогда. На чистом
          устройстве он оставался пустым — и первой же записью затирал в гисте
@@ -14730,6 +14815,14 @@ function boot() {
        как переключатель, а не как ещё одна вкладка. */
     if (tab === "mus") { tab = cfg.tabBack || "home"; }
     else { cfg.tabBack = tab; mus = { book: "", at: null }; tab = "mus"; useMark("вкладка-mus"); }
+    cfg.tab = tab; saveCfg();
+    settingsOpen = false;
+    renderTabbar();
+    render();
+  });
+  $("#wallBtn").addEventListener("click", () => {
+    if (tab === "wall") { tab = cfg.tabBack || "home"; }
+    else { cfg.tabBack = tab; wall = { only: "" }; tab = "wall"; useMark("вкладка-wall"); }
     cfg.tab = tab; saveCfg();
     settingsOpen = false;
     renderTabbar();
