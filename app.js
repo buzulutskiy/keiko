@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 305";
+const APP_VERSION = "Кэйко 306";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9571,6 +9571,15 @@ function lessonNext() {
   return null;
 }
 
+/* Именованные рамки «зачем это в жизни»: имя и абзац. Одним кодом и на курсе,
+   и на уроке — часть рамок общая для всего курса, часть только своя. */
+function рамкиHTML(заголовок, список) {
+  if (!Array.isArray(список) || !список.length) return "";
+  return `<p class="ls-h">${esc(заголовок)}</p>
+    <div class="ls-life">${список.map((x) => `
+      <div class="ls-life-i"><b>${esc(x.n || "")}</b><p>${esc(x.t || "")}</p></div>`).join("")}</div>`;
+}
+
 /* Блок страницы задания: заголовок и текст абзацами. Пустой блок не рисуется —
    у урока может не быть какой-то части, и дыры от неё быть не должно. */
 function блокHTML(заголовок, текст) {
@@ -9611,6 +9620,7 @@ function lessonRender(box) {
               </button>`;
           }).join("")}
         </div>
+        ${рамкиHTML("Зачем это в жизни", (course() || {}).life)}
         <div class="wk-row">
           <button class="pr-ghost" data-prac="finish">Закрыть</button>
         </div>
@@ -9663,13 +9673,7 @@ function lessonRender(box) {
           ${Array.isArray(l.ask) && l.ask.length ? `
             <p class="ls-h">Что откроется</p>
             <div class="ls-ask">${l.ask.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
-          ${Array.isArray(l.life) && l.life.length ? `
-            <p class="ls-h">Зачем это в жизни</p>
-            <div class="ls-life">${l.life.map((x) => `
-              <div class="ls-life-i">
-                <b>${esc(x.n || "")}</b>
-                <p>${esc(x.t || "")}</p>
-              </div>`).join("")}</div>` : блокHTML("Зачем это в жизни", l.life)}
+          ${рамкиHTML("Что даёт именно этот урок", l.life)}
 
           <div class="ls-steps">
             ${этапы.map((e, n) => {

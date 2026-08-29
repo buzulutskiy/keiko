@@ -3880,6 +3880,8 @@
     .ls-slow { font-size: 0.74rem; line-height: 1.45; color: var(--dim); margin: 0 0 14px; max-width: 34ch; }
     /* ── Сетка занятий курса ── */
     .ls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 14px; }
+    /* Рамки курса под сеткой занятий — той же колонкой, что и на странице урока */
+    .wk-task > .ls-h, .wk-task > .ls-life { max-width: 34ch; margin-left: auto; margin-right: auto; }
     .ls-card { display: grid; justify-items: start; gap: 3px; text-align: left;
       background: var(--glass); border: 1px solid var(--glass-line); border-radius: 16px;
       padding: 13px 13px 11px; color: var(--ink); font: inherit; cursor: pointer; }
@@ -3894,41 +3896,38 @@
     .ls-bar.wide { max-width: 220px; margin: 8px auto 0; }
 
     /* ── Страница занятия ── */
+    /* Шапка по центру, всё остальное — одной колонкой по левому краю */
     .ls-intro { text-align: center; }
+    .ls-intro .ls-h,
+    .ls-intro .ls-why, .ls-intro .ls-ask, .ls-intro .ls-life,
+    .ls-intro .ls-skills, .ls-intro .ls-steps {
+      text-align: left; max-width: 34ch; margin-left: auto; margin-right: auto; }
     .ls-big { font-size: 2.4rem; line-height: 1; margin-bottom: 8px; }
     .ls-intro h3 { font-size: 1.22rem; line-height: 1.3; margin: 0; }
     .ls-when { font-size: 0.78rem; color: var(--dim); margin: 6px 0 0; }
     /* «Зачем это» — до списка умений: без ответа на него упражнение выглядит
        заданием ради задания. */
-    /* Заголовок раздела на странице задания */
-    .ls-h { font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
-      color: var(--gold); text-align: left; max-width: 34ch; margin: 22px auto 8px; }
-    .ls-why { text-align: left; max-width: 34ch; margin: 0 auto; }
+    /* ── Страница задания: все блоки одного вида ──
+       Заголовок золотыми капителями, под ним текст одного кегля. Раньше у каждого
+       блока была своя манера — рамка слева у вопросов, свои отступы у списка, —
+       и страница выглядела собранной из кусков. */
+    .ls-h { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--gold); margin: 24px 0 9px; }
+    .ls-intro .ls-h:first-of-type { margin-top: 20px; }
+    .ls-why, .ls-ask, .ls-life { display: grid; gap: 10px; }
+    .ls-why p, .ls-ask p, .ls-life-i p {
+      font-size: 0.92rem; line-height: 1.55; color: var(--ink); opacity: 0.9; margin: 0; }
+    .ls-life { gap: 16px; }
+    .ls-life-i b { display: block; font-size: 0.92rem; font-weight: 650; line-height: 1.4;
+      margin-bottom: 4px; opacity: 1; }
+    /* Вопрос — тот же кегль, отличается только тем, что это вопрос */
+    .ls-ask p { opacity: 1; }
 
-    /* «Зачем это в жизни» — именованные рамки, а не сплошной текст: у каждой своё
-       имя, и оно не растворяется в абзаце. */
-    .ls-life { text-align: left; max-width: 34ch; margin: 0 auto; display: grid; gap: 15px; }
-    .ls-life-i b { display: block; font-size: 0.95rem; font-weight: 650; line-height: 1.3;
-      margin-bottom: 5px; }
-    .ls-life-i p { font-size: 0.9rem; line-height: 1.55; color: var(--ink); opacity: 0.88;
-      margin: 0; }
-    .ls-why p { font-size: 0.92rem; line-height: 1.55; color: var(--ink); opacity: 0.92;
-      margin: 0 0 11px; }
-    .ls-why p:last-child { margin-bottom: 0; }
-    /* Вопросы — интрига до объяснений. Отдельным блоком, крупнее обычного
-       текста и с отбивкой: их читают, а не проглядывают. */
-    .ls-ask { text-align: left; max-width: 34ch; margin: 0 auto;
-      border-left: 2px solid rgba(255, 201, 77, 0.35); padding-left: 14px; }
-    .ls-ask p { font-size: 1rem; line-height: 1.45; margin: 0 0 10px; color: var(--ink); }
-    .ls-ask p:last-child { margin-bottom: 0; }
-
-    /* Навыки тегами. Закрытые видны намеренно: это не список достижений, а то,
-       ради чего вообще садишься, — он должен быть перед глазами с самого начала. */
-    .ls-skills { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-start;
-      max-width: 34ch; margin: 0 auto; }
-    .ls-skill { font-size: 0.76rem; line-height: 1.3; padding: 6px 11px; border-radius: 20px;
-      border: 1px dashed rgba(255, 255, 255, 0.14); color: var(--dim); }
-    .ls-skill.on { border-style: solid; border-color: rgba(255, 201, 77, 0.45); color: var(--gold); }
+    /* Навыки: те же пилюли, но тише — они не должны перебивать текст */
+    .ls-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ls-skill { font-size: 0.76rem; line-height: 1.3; padding: 5px 10px; border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1); color: var(--dim); }
+    .ls-skill.on { border-color: rgba(255, 201, 77, 0.4); color: var(--gold); }
 
     .ls-learn { text-align: left; margin: 18px auto 20px; max-width: 34ch; }
     .ls-learn-h { font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
