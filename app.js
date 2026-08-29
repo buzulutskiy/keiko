@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 293";
+const APP_VERSION = "Кэйко 294";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1589,8 +1589,6 @@ function saveEntry() {
   showDone(before, after, !!existing, ctx);
 }
 
-let wall = { only: "" };      // фильтр стены: всё · видел · хочу увидеть
-
 let overlayQueue = [];
 /* Сколько предметов показываем поодиночке, прежде чем свести остальные в один
    список. Три — потолок, за которым листание перестаёт быть подарком. */
@@ -2053,7 +2051,6 @@ function renderInner() {
     else if (tab === "progress") renderProgress();
     else if (tab === "notes") renderNotes();
     else if (tab === "mus") renderMuseum();
-    else if (tab === "wall") renderWall();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
     // раздел убран, но вкладка могла остаться сохранённой — уводим на главную
@@ -2113,7 +2110,6 @@ function renderMusBtn() {
 }
 
 function renderTabbar() {
-  renderWallBtn();
   $("#tabbar").innerHTML = [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), T("tabProgress")],
@@ -10593,54 +10589,34 @@ function wallImg(x) {
 }
 
 /* ══════════ Моя галерея ══════════
-   Картины, которые понравились. Отличие от «Артефактов»: артефакт даёт книга,
-   а сюда вешаешь сам.
+   Картины, которые понравились. Живёт внутри «Артефактов» отдельным фильтром,
+   рядом с книгами: своей вкладки не заслуживает, а рядом с музейными вещами
+   стоит на своём месте — только эти вешаешь сам.
 
-   Развеска шпалерная — как в старых залах: работы разного размера стоят
-   вплотную, ряд к ряду, и стена читается целиком, а не по одной картине.
-   Настоящие сантиметры при этом не берём: если считать по ним, акварель 33×100
-   рядом с холстом 150×199 превращается в марку. Держим родную пропорцию каждой
-   работы, а высоту ряда подбирает раскладка — так пропорции честные, а мелкого
-   не появляется.
-
-   Подписей на стене нет намеренно: идёшь вдоль и смотришь, а не читаешь. */
-function renderWall() {
-  const все = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
-  if (!все.length) {
-    $("#view").innerHTML = `<div id="wall"><div class="wl-empty">
-      Стена пока пуста.<br>Сюда попадают картины из артефактов — и те, что добавишь сам.</div></div>`;
-    return;
-  }
-  $("#view").innerHTML = `
-    <div id="wall">
-      <div class="wl-head">В собрании ${все.length} ${plural(все.length, "работа", "работы", "работ")}</div>
-      <div class="wl-wall">${все.map(картинаHTML).join("")}</div>
-    </div>`;
+   Одна работа в ряд, во всю ширину: две колонки читались мелко, а картина
+   должна занимать столько места, сколько занимает картина на стене. Пропорция
+   родная — та, что у самого холста. Под каждой подпись, как в зале. */
+function стенаHTML(список) {
+  if (!список.length) return `<div class="empty-note">В галерее пока пусто.</div>`;
+  return `<div class="wl-wall">${список.map(картинаHTML).join("")}</div>`;
 }
 
-/* Одна работа: рама с паспарту, ширина — от пропорции. flex-grow по той же
-   пропорции выравнивает ряд по краям, как развешивают по стене: широкие
-   занимают больше места, но ни одна не ужимается до марки. */
 function картинаHTML(x) {
   const r = wallRatio(x);
-  /* Пропорция уходит в стиль картинки: место под неё держится ещё до загрузки,
-     и стена не прыгает, когда изображения доезжают. */
+  const подпись = [x.year, x.museum].filter(Boolean).join(" · ");
   return `
-    <div class="wl-art" style="--r: ${r.toFixed(3)}">
+    <div class="wl-art">
       <div class="wl-frame">
-        <span class="wl-mat"><img src="${esc(wallImg(x))}" alt="" loading="lazy"
-          style="aspect-ratio: ${r.toFixed(3)}"></span>
+        <img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"
+          style="aspect-ratio: ${r.toFixed(3)}">
+      </div>
+      <div class="wl-plate">
+        <b>${esc(x.artist || "Неизвестный художник")}</b>
+        <i>${esc(x.title || "")}</i>
+        ${подпись ? `<em>${esc(подпись)}</em>` : ""}
+        ${x.note ? `<span class="wl-note">${esc(x.note)}</span>` : ""}
       </div>
     </div>`;
-}
-
-/* Кнопка галереи в шапке — рядом с артефактами. Прячется, пока стена пуста:
-   пустой раздел в шапке только мешает. */
-function renderWallBtn() {
-  const b = $("#wallBtn");
-  if (!b) return;
-  b.hidden = !wallItems().length;
-  b.classList.toggle("on", tab === "wall");
 }
 
 function renderMuseum() {
@@ -10650,7 +10626,7 @@ function renderMuseum() {
   const все = musItems().filter(musOpen);
   const книги = [...new Set(все.map((x) => x.book))]
     .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
-  if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
+  if (mus.book && mus.book !== "wall" && !книги.some((k) => k.id === mus.book)) mus.book = "";
   const любимых = все.filter(musLiked).length;
   if (mus.liked && !любимых) mus.liked = false;      // сняли последнее сердце — фильтр не залипает
   const список = (все
@@ -10664,14 +10640,34 @@ function renderMuseum() {
   const открытый = mus.at ? список.find((x) => x.id === mus.at) : null;
   if (mus.at && !открытый) mus.at = null;
 
-  $("#view").innerHTML = открытый ? предметHTML(открытый, список) : `
-    <div class="ms-head">Открыто ${список.length} из ${всего}</div>
-    ${(книги.length > 1 || любимых) ? `<div class="ms-tabs">
+  /* Галерея — такой же фильтр, как книга: своя вкладка в том же ряду. Внутри
+     не плитки, а сами работы во всю ширину: артефакт открывают, чтобы
+     прочитать, а картину — чтобы смотреть. */
+  const картины = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+  const вГалерее = mus.book === "wall";
+  const вкладки = (книги.length > 1 || любимых || картины.length) ? `<div class="ms-tabs">
       ${книги.length > 1 ? `<button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
       ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
         type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}` : ""}
+      ${картины.length ? `<button class="${вГалерее ? "on" : ""}" data-msb="wall" type="button">Галерея · ${картины.length}</button>` : ""}
       ${любимых ? `<button class="${mus.liked ? "on" : ""}" data-msl="1" type="button">♥ ${любимых}</button>` : ""}
-    </div>` : ""}
+    </div>` : "";
+
+  if (вГалерее) {
+    $("#view").innerHTML = `
+      <div class="ms-head">В галерее ${картины.length} ${plural(картины.length, "работа", "работы", "работ")}</div>
+      ${вкладки}
+      ${стенаHTML(картины)}`;
+    document.querySelectorAll("[data-msb]").forEach((b) =>
+      b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; renderMuseum(); }));
+    document.querySelectorAll("[data-msl]").forEach((b) =>
+      b.addEventListener("click", () => { mus.book = ""; mus.liked = true; mus.at = null; renderMuseum(); }));
+    return;
+  }
+
+  $("#view").innerHTML = открытый ? предметHTML(открытый, список) : `
+    <div class="ms-head">Открыто ${список.length} из ${всего}</div>
+    ${вкладки}
     ${список.length ? `<div id="msGrid">
       ${список.map((x) => `<button class="ms-tile" data-msi="${esc(x.id)}" type="button">
         <i>${musIcon(x)}</i>
@@ -14821,14 +14817,6 @@ function boot() {
        как переключатель, а не как ещё одна вкладка. */
     if (tab === "mus") { tab = cfg.tabBack || "home"; }
     else { cfg.tabBack = tab; mus = { book: "", at: null }; tab = "mus"; useMark("вкладка-mus"); }
-    cfg.tab = tab; saveCfg();
-    settingsOpen = false;
-    renderTabbar();
-    render();
-  });
-  $("#wallBtn").addEventListener("click", () => {
-    if (tab === "wall") { tab = cfg.tabBack || "home"; }
-    else { cfg.tabBack = tab; wall = { only: "" }; tab = "wall"; useMark("вкладка-wall"); }
     cfg.tab = tab; saveCfg();
     settingsOpen = false;
     renderTabbar();

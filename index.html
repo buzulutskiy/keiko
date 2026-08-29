@@ -225,40 +225,33 @@
        Не сетка плиток, а стена: тёмный фон, картина в раме с паспарту, под ней
        музейная табличка. Одна картина занимает почти всю ширину — скролл выходит
        проходом вдоль стены, а не пролистыванием ленты. */
-    #wall { padding: 4px 0 26px; }
-    .wl-head { font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase;
-      color: var(--dim); text-align: center; margin: 2px 0 18px; }
-    /* Шпалерная развеска: работы стоят вплотную, ряд к ряду. Ширина каждой —
-       от её пропорции, поэтому ряд выравнивается по краям сам, а родное
-       соотношение сторон не трогается. */
-    /* Две колонки. Высота у каждой работы своя — по её родной пропорции, —
-       поэтому колонки не выравниваются в ряды и стена читается как развеска,
-       а не как таблица. Одна картина во всю ширину смотрелась бы одиноко. */
-    .wl-wall { columns: 2; column-gap: 12px; }
-    .wl-art { break-inside: avoid; margin: 0 0 12px; }
-    /* Третьей колонки нет намеренно: приложение живёт в телефонной колонке, и
-       медиазапрос смотрит на окно, а не на неё — на широком экране картины
-       становились марками внутри той же узкой полосы. */
-    /* Рама: тёмное дерево с тонкой золотой кромкой внутри, паспарту светлое.
-       Тень снизу и вбок — чтобы читалось как висящее, а не вклеенное. */
+    /* Галерея внутри артефактов: одна работа в ряд, во всю ширину. Две колонки
+       читались мелко — картина должна занимать столько места, сколько занимает
+       картина на стене. */
+    .wl-wall { display: grid; gap: 30px; margin-top: 4px; }
+    .wl-art { display: grid; justify-items: center; }
+    /* Рама: тёмное дерево с тонкой золотой кромкой внутри. Паспарту нет —
+       холст идёт прямо в раму, как в старой развеске. */
     .wl-frame {
       background: linear-gradient(160deg, #2a2118, #1a150f 60%, #241c14);
-      padding: 7px; border-radius: 3px;
-      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.45),
-                  inset 0 0 0 1px rgba(255, 201, 77, 0.16);
+      padding: 8px; border-radius: 3px; width: 100%;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5),
+                  inset 0 0 0 1px rgba(255, 201, 77, 0.18);
     }
-    /* Паспарту убрано: светлая рамка вокруг каждой работы дробила стену на
-       белые прямоугольники и спорила с самими картинами. Холст идёт прямо
-       в раму, как в старой развеске. */
-    .wl-mat { display: block; }
     /* Пропорция задана на самой картинке — место под неё держится ещё до
-       загрузки, и стена не прыгает, когда изображения доезжают. */
-    .wl-mat img { display: block; width: 100%; height: auto; border-radius: 0;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); background: #191521; }
-    /* Подложка тёмная: картинки музеев по 200 КБ и грузятся сверху вниз, а на
-       светлой недокачанная работа выглядела серой плитой во всю раму. */
-    .wl-empty { text-align: center; color: var(--dim); font-size: 0.88rem; line-height: 1.55;
-      padding: 40px 24px; }
+       загрузки, и список не прыгает, когда изображения доезжают. Подложка
+       тёмная: музейные файлы по 200 КБ грузятся сверху вниз, и на светлой
+       недокачанная работа выглядела серой плитой во всю раму. */
+    .wl-frame img { display: block; width: 100%; height: auto; background: #191521;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+    /* Табличка под картиной — как в зале */
+    .wl-plate { margin-top: 12px; text-align: center; max-width: 42ch; }
+    .wl-plate b { display: block; font-size: 0.92rem; font-weight: 650; line-height: 1.35; }
+    .wl-plate i { display: block; font-style: normal; font-size: 0.82rem; color: var(--dim); margin-top: 3px; }
+    .wl-plate em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim);
+      margin-top: 6px; opacity: 0.85; }
+    .wl-note { display: block; font-size: 0.86rem; line-height: 1.55; margin-top: 10px;
+      color: var(--ink); opacity: 0.9; text-align: left; }
 
     /* ── Сегмент-переключатель хобби ───── */
     .seg {
@@ -3907,7 +3900,6 @@
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
       <button class="gear" id="musBtn" aria-label="Артефакты" title="Артефакты" hidden>◈</button>
-      <button class="gear" id="wallBtn" aria-label="Моя галерея" title="Моя галерея" hidden>🖼</button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
