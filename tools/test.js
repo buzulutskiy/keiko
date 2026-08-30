@@ -423,6 +423,64 @@ function ок(имя, факт, надо) {
   t.set("MUSEUM", было.museum);
 }
 
+/* ── Несколько курсов: каждый — отдельный материал ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    hidden: JSON.parse(JSON.stringify(t.get("data").hidden || {})),
+    piano: t.get("data").piano, book: t.get("data").book, watch: t.get("data").watch,
+  };
+  const ш = (k) => ({ k, g: "Э", t: "…" });
+  t.set("data.hidden", {});
+  t.set("data.piano", { pieces: [], activePiece: "" });
+  t.set("data.book", { books: [], activeBook: "" });
+  t.set("data.watch", { videos: [], activeVideo: "", entries: [] });
+  t.set("data.pastel", {
+    entries: [], course: null, activeCourse: "",
+    courses: [
+      { id: "c", name: "Пастель", lessons: [{ dur: 600, steps: [ш("do"), ш("do")] }] },
+      { id: "argos", name: "Аргос", plain: true, lessons: [{ dur: 600, steps: [ш("do"), ш("do")] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+
+  ок("курсы: без выбора берётся первый", t.get("course")().id, "c");
+  t.set("data.pastel.activeCourse", "argos");
+  ок("курсы: активный выбирается по id", t.get("course")().id, "argos");
+  ок("курсы: ключ материала — id курса", t.get("curKey")(), "argos");
+
+  // ход разбора у курсов раздельный, первый остаётся под старым ключом
+  t.set("data.pastel.activeCourse", "c");
+  t.get("lessonStore")().done["L0:s0"] = "2026-01-01";
+  t.set("data.pastel.activeCourse", "argos");
+  ок("курсы: свой ход разбора", !!t.get("lessonStore")().done["L0:s0"], false);
+  ок("курсы: второй курс под своим ключом",
+    Object.keys(t.get("data").practice).sort(), ["pastel", "pastel:argos"]);
+
+  // оба курса стоят в ленте как отдельные материалы
+  const лента = t.get("railItems")().filter((i) => i.track === "pastel");
+  ок("курсы: два материала в ленте", лента.length, 2);
+  ок("курсы: ключи материалов", лента.map(t.get("libKey")), ["ps", "ps:argos"]);
+
+  // у простого материала нет подготовки
+  ок("курсы: простой материал без подготовки",
+    t.get("lessonPrep")(0, { doing: 3 }).надо, false);
+  t.set("data.pastel.activeCourse", "c");
+  ок("курсы: у обычного подготовка есть",
+    t.get("lessonPrep")(0, { doing: 3 }).надо, true);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+  t.set("data.hidden", было.hidden);
+  t.set("data.piano", было.piano);
+  t.set("data.book", было.book);
+  t.set("data.watch", было.watch);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;

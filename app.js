@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 310";
+const APP_VERSION = "Кэйко 311";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -154,7 +154,7 @@ function emptyData() {
     musLike: {},   // отмеченные сердцем артефакты: id → когда, со знаком минус — снято
     piano: { pieces: [], activePiece: "", entries: [] },
     book: { books: [], activeBook: "", entries: [] },
-    pastel: { course: null, entries: [] },
+    pastel: { course: null, courses: [], activeCourse: "", entries: [] },
     watch:  { videos: [], activeVideo: "", entries: [] },
     practice: {},   // ход разбора по пьесам: { pieceId: { done, session } }
     hidden: {},     // материалы, убранные с главной: { «bk:id»: 1 }
@@ -202,6 +202,8 @@ function migrate(obj) {
   if (obj.pastel) {
     base.pastel.entries = Array.isArray(obj.pastel.entries) ? obj.pastel.entries : [];
     if (obj.pastel.course) base.pastel.course = obj.pastel.course;
+    if (Array.isArray(obj.pastel.courses)) base.pastel.courses = obj.pastel.courses;
+    if (obj.pastel.activeCourse) base.pastel.activeCourse = obj.pastel.activeCourse;
   }
 
   if (obj.practice && typeof obj.practice === "object") base.practice = obj.practice;
@@ -321,6 +323,7 @@ const isBook = () => data.active === "book";
 const isPastel = () => data.active === "pastel";
 const isWatch  = () => data.active === "watch";
 const isCourse = () => isPastel();
+const curCourseId = () => (courseTrack().activeCourse || (courses()[0] || {}).id || "");
 const courseTrack = () => data.pastel;
 
 // каждое видео — самостоятельный материал: со своим прогрессом, мыслями и завершением
@@ -332,7 +335,23 @@ const isPiano = () => data.active === "piano";
 const trackOf = () => data[data.active];
 const EMPTY_PIECE = { id: "", name: "", author: "", bars: 0, tone: "violet" };
 const piece = () => data.piano.pieces.find(p => p.id === data.piano.activePiece) || data.piano.pieces[0] || EMPTY_PIECE;
-const course = () => courseTrack().course || { id: "", name: "", author: "", lessons: [] };
+/* У пастели, как у книг и пьес, может быть несколько материалов. Старое поле
+   course — единственный курс из времён, когда он был один; оно осталось для
+   данных, которые ещё не переехали. */
+const courses = () => {
+  const t = courseTrack();
+  const list = Array.isArray(t.courses) ? t.courses.filter((c) => c && !c.archived) : [];
+  if (list.length) return list;
+  return t.course ? [t.course] : [];
+};
+const course = () => {
+  const list = courses();
+  return list.find((c) => c.id === courseTrack().activeCourse) || list[0] ||
+    { id: "", name: "", author: "", lessons: [] };
+};
+/* Материал без подготовки и без сетки занятий: открыл — и сразу шаг, как у
+   пианино. Нужен там, где занятие одно и выбирать не из чего. */
+const plainCourse = () => !!course().plain;
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
@@ -895,7 +914,7 @@ function doneLessons() {
 function courseTime() {
   const c = course();
   const done = doneLessons();
-  const st = (data.practice && data.practice.pastel && data.practice.pastel.done) || {};
+  const st = lessonStore().done || {};
   // когда урок отметили целиком: берём самую раннюю запись с ним
   const датаОтметки = {};
   for (const e of courseTrack().entries.filter((x) => !x.deleted))
@@ -949,7 +968,7 @@ function pastelStats() {
 
   /* Шаги и этапы — чтобы награда могла цепляться не только за урок целиком.
      Этап считается пройденным, когда закрыты все его шаги. */
-  const st = (data.practice && data.practice.pastel && data.practice.pastel.done) || {};
+  const st = lessonStore().done || {};
   const isDone = (i, n) => !!st["L" + i + ":s" + n];
   let stepsDone = 0;
   const stageSet = new Set(), lessonSet = new Set();
@@ -973,7 +992,7 @@ function pastelStats() {
   const doneShown = c.lessons.reduce((n, l, i) => n + (!l.hidden && done.has(i) ? 1 : 0), 0);
   /* Сколько времени реально просидел за пастелью: лог занятия пишет секунды на
      каждый шаг, и это единственная честная мера — не хронометраж автора. */
-  const spentSec = ((data.practice && data.practice.pastel && data.practice.pastel.log) || [])
+  const spentSec = (lessonStore().log || [])
     .reduce((n, x) => n + (Number(x.sec) || 0), 0);
 
   return {
@@ -1112,7 +1131,7 @@ const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
   return OPS[op] ? OPS[op](Number(s[m]) || 0, Number(v)) : false;
 });
 
-const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : (piece() ? piece().id : "");
+const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? (course().id || "pastel") : (piece() ? piece().id : "");
 const catOf = (id) => CATALOG[id] || null;
 
 const achCache = new Map();
@@ -2228,7 +2247,7 @@ function railItems() {
   const out = data.piano.pieces.filter(p => !p.archived)
     .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
-  if ((data.pastel.course || { lessons: [] }).lessons.length) out.push({ track: "pastel" });
+  for (const c of courses()) if ((c.lessons || []).length) out.push({ track: "pastel", courseId: c.id, course: c });
   for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
   /* Завершённая книга уходит с ленты: место тем, что читаешь сейчас. Но если
      завершено вообще всё, показывать пустоту хуже, чем показать закрытое. */
@@ -2248,7 +2267,9 @@ function libKey(i) {
   if (i.track === "piano") return "pf:" + i.pieceId;
   if (i.track === "book") return "bk:" + i.bookId;
   if (i.track === "watch") return "wt:" + i.videoId;
-  return "ps";
+  /* Первый курс жил под ключом «ps» ещё до того, как курсов стало несколько.
+     Оставляем его как есть, иначе спрятанный материал вернётся на главную. */
+  return !i.courseId || i.courseId === (courses()[0] || {}).id ? "ps" : "ps:" + i.courseId;
 }
 const matHidden = (key) => !!(data.hidden || {})[key];
 function matToggle(key) {
@@ -2268,20 +2289,23 @@ function normalizeActive() {
   const ok = items.some(i => i.track === data.active
     && (i.track !== "piano" || i.pieceId === data.piano.activePiece)
     && (i.track !== "book" || i.bookId === data.book.activeBook)
-    && (i.track !== "watch" || i.videoId === data.watch.activeVideo));
+    && (i.track !== "watch" || i.videoId === data.watch.activeVideo)
+    && (i.track !== "pastel" || i.courseId === curCourseId()));
   if (ok) return;
   const first = items[0];
   data.active = first.track;
   if (first.pieceId) data.piano.activePiece = first.pieceId;
   if (first.bookId) data.book.activeBook = first.bookId;
   if (first.videoId) data.watch.activeVideo = first.videoId;
+  if (first.courseId) data.pastel.activeCourse = first.courseId;
 }
 
 function activeRailIndex(items) {
   const i = items.findIndex(it => it.track === data.active &&
     (it.track !== "piano" || it.pieceId === data.piano.activePiece) &&
     (it.track !== "book" || it.bookId === data.book.activeBook) &&
-    (it.track !== "watch" || it.videoId === data.watch.activeVideo));
+    (it.track !== "watch" || it.videoId === data.watch.activeVideo) &&
+    (it.track !== "pastel" || it.courseId === curCourseId()));
   return Math.max(0, i);
 }
 
@@ -3935,13 +3959,15 @@ function setActiveMaterial(item) {
   const same = data.active === item.track &&
     (item.track !== "piano" || data.piano.activePiece === item.pieceId) &&
     (item.track !== "book" || data.book.activeBook === item.bookId) &&
-    (item.track !== "watch" || data.watch.activeVideo === item.videoId);
+    (item.track !== "watch" || data.watch.activeVideo === item.videoId) &&
+    (item.track !== "pastel" || curCourseId() === item.courseId);
   if (same) return;
 
   data.active = item.track;
   if (item.pieceId) data.piano.activePiece = item.pieceId;
   if (item.bookId) data.book.activeBook = item.bookId;
   if (item.videoId) data.watch.activeVideo = item.videoId;
+  if (item.courseId) data.pastel.activeCourse = item.courseId;
   /* Пауза погружения держалась на всё приложение: тапнул один раз — и следующие
      три минуты музыка не включалась ни на одном материале. Но смена обложки —
      это новое намерение, поэтому пауза снимается вместе с ней. */
@@ -9480,10 +9506,21 @@ function vidFail(box, code) {
    а не заставляют. Час, проведённый над десятиминутным уроком, — это
    не провал, а честное число, и оно записывается как есть. */
 const lessons = () => (course().lessons || []);
+/* Ход разбора хранится отдельно по курсам: у двух материалов свои занятия,
+   и номера шагов у них совпадают. Первый курс остаётся под старым ключом
+   «pastel», иначе его прогресс потерялся бы при переезде. */
+const pracCourseKey = () => {
+  const list = courses();
+  const id = course().id;
+  // первый курс всегда остаётся под старым ключом: его ход разбора уже записан
+  if (!id || list.length <= 1 || id === (list[0] || {}).id) return "pastel";
+  return "pastel:" + id;
+};
 const lessonStore = () => {
   data.practice = data.practice || {};
-  data.practice.pastel = data.practice.pastel || { done: {}, session: 0, log: [] };
-  return data.practice.pastel;
+  const k = pracCourseKey();
+  data.practice[k] = data.practice[k] || { done: {}, session: 0, log: [] };
+  return data.practice[k];
 };
 const lessonDone = (i, step) => !!lessonStore().done["L" + i + ":" + step];
 
@@ -9545,7 +9582,7 @@ const BASE_KIT = [
 
 function lessonPrep(i, bl) {
   const steps = lessonSteps(i) || [];
-  const надо = (bl && bl.doing) > 0;
+  const надо = !plainCourse() && (bl && bl.doing) > 0;
   const свои = steps.filter((st) => st.k === "read")
     .map((st) => сНомерами(String(st.t || "").replace(/^Приготовь:\s*/i, "").trim()))
     .filter(Boolean);
@@ -10213,7 +10250,7 @@ function openLesson() {
      место, с которого продолжаешь. Курс устроен иначе — восемь разных занятий,
      и половина из них смотрится, а не рисуется. Пусть выбор будет виден. */
   prac = {
-    kind: "lesson", screen: "pick", at, taskAt: 0, stepAt: Date.now(), counted: 0,
+    kind: "lesson", screen: plainCourse() ? "work" : "pick", at, taskAt: 0, stepAt: Date.now(), counted: 0,
     lastBlock: null,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
@@ -11797,7 +11834,7 @@ function bindPractice() {
       if (!steps.length) { toast("В этом занятии пока нет шагов"); return; }
       let at0 = steps.findIndex((_, m) => !lessonDone(n, "s" + m));
       prac.at = { i: n, phase: "step", step: at0 < 0 ? 0 : at0 };
-      prac.screen = "intro";
+      prac.screen = plainCourse() ? "work" : "intro";
       prac.pickOpen = false; prac.listOpen = false;
       return pracRender();
     }
@@ -11875,7 +11912,7 @@ function bindPractice() {
              карандашом, добавился чёрный. Подготовку показываем заново только
              когда впереди снова рисование, иначе просто идём дальше. */
           const сл = prac.at && blockOfStep(prac.at.i, prac.at.step || 0);
-          prac.screen = (сл && сл.doing && (!prac.lastBlock || !prac.lastBlock.doing)) ? "prep" : "work";
+          prac.screen = (!plainCourse() && сл && сл.doing && (!prac.lastBlock || !prac.lastBlock.doing)) ? "prep" : "work";
           prac.lastBlock = null;
           prac.stepAt = Date.now();
           break;
