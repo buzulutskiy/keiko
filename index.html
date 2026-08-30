@@ -1193,6 +1193,28 @@
       text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
     }
 
+    /* ── Тело шага: текст занятия как он написан ── */
+    .ls-body { margin: 14px 0 4px; text-align: left; font-size: 0.9rem; line-height: 1.55; }
+    .ls-body p { margin: 0 0 9px; }
+    .ls-body ul { margin: 0 0 10px; padding-left: 18px; }
+    .ls-body li { margin: 3px 0; }
+    .ls-body li::marker { color: var(--dim); }
+    .ls-body b { font-weight: 700; }
+    /* Схема держится пробелами: моноширинный шрифт и никаких переносов.
+       Широкая уезжает прокруткой внутри себя, а не растягивает экран. */
+    .ls-pre {
+      margin: 0 0 12px; padding: 12px 14px; border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      font: 400 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre; overflow-x: auto; color: rgba(255, 255, 255, 0.82);
+    }
+    .ls-why { color: var(--muted); }
+    .ls-why b { color: rgba(255, 255, 255, 0.9); }
+    .ls-note {
+      border-left: 2px solid rgba(255, 255, 255, 0.18); padding-left: 11px;
+      color: var(--muted);
+    }
+
     /* ── Просмотр лекции: отмечаем минуту, как страницу в книге ── */
     .lc h3 { margin: 0 0 18px; font-size: 1.05rem; }
     .lc-cap {

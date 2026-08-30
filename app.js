@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 317";
+const APP_VERSION = "Кэйко 318";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3752,7 +3752,7 @@ $("#view").innerHTML = `
           ? "🔒 Подключить синхронизацию"
           : doneToday
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
+            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
         <button class="cta-side" id="bookTalkBtn" type="button" ${кнопки.talk.on ? "" : "hidden"}
           aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
@@ -4143,7 +4143,7 @@ function updateHeroInfo() {
       ? "🔒 Подключить синхронизацию"
       : doneToday
         ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T("ctaLesson") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
+        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
   /* Обе кнопки разом. Здесь и была та самая нестабильность: лента свайпается
@@ -9716,6 +9716,35 @@ async function lcPick(i, file) {
   toast("Видео на месте");
 }
 
+/* Тело шага. Текст приходит как есть, вместе со схемами в тройных кавычках:
+   схема держится только пробелами, поэтому идёт в моноширинный блок без
+   переносов, а всё остальное — обычными абзацами и списком. Разметки тут
+   ровно столько, сколько встретилось в исходном тексте. */
+function stepBody(txt) {
+  return String(txt).split(/```[a-z]*\n?/).map((кусок, i) => {
+    if (i % 2) return `<pre class="ls-pre">${esc(кусок.replace(/\n$/, ""))}</pre>`;
+    const строки = кусок.split("\n");
+    let out = "", список = false;
+    const жирный = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    for (const raw of строки) {
+      const t = raw.trim();
+      if (!t) { if (список) { out += "</ul>"; список = false; } continue; }
+      if (t.startsWith("- ")) {
+        if (!список) { out += "<ul>"; список = true; }
+        out += `<li>${жирный(t.slice(2))}</li>`;
+        continue;
+      }
+      if (список) { out += "</ul>"; список = false; }
+      if (t.startsWith("> ")) { out += `<p class="ls-note">${жирный(t.slice(2))}</p>`; continue; }
+      out += t.startsWith("**Зачем:**")
+        ? `<p class="ls-why">${жирный(t)}</p>`
+        : `<p>${жирный(t)}</p>`;
+    }
+    if (список) out += "</ul>";
+    return out;
+  }).join("");
+}
+
 /* Сколько шагов урока закрыто — для полоски в сетке и на странице занятия. */
 function lessonProgress(i) {
   if (courseWatch()) {
@@ -9879,6 +9908,7 @@ function lessonRender(box) {
       pause: ["\u{1F590}", "\u041f\u043e\u0432\u0442\u043e\u0440\u0438 \u0437\u0430 \u0430\u0432\u0442\u043e\u0440\u043e\u043c", true],
       do:    ["\u270D\uFE0F", "\u0421\u0434\u0435\u043b\u0430\u0439 \u0441\u0430\u043c", true],
       read:  ["\u{1F4CB}", "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u044c", false],
+      note:  ["\u{1F4D6}", "\u041f\u0440\u043e\u0447\u0442\u0438", false],
     };
     const kind = KIND[st.k] || KIND.pause;
     const doing = kind[2];
@@ -9900,7 +9930,9 @@ function lessonRender(box) {
     const бл = блоки.find((x) => at.step >= x.from && at.step <= x.to);
     const номер = бл ? блоки.indexOf(бл) + 1 : 0;
     const движНомер = бл ? steps.slice(бл.from, at.step + 1).filter(lessonDoing).length : 0;
-    const blockLabel = бл
+    /* У материала, где занятие одно, счётчик «занятие 3 из 14» только повторяет
+       слово и сбивает: там не занятия, а один процесс от начала до конца. */
+    const blockLabel = (бл && !plainCourse())
       ? ` \u00b7 \u0437\u0430\u043d\u044f\u0442\u0438\u0435 ${номер} \u0438\u0437 ${блоки.length}`
         + (бл.doing ? ` \u00b7 \u0434\u0432\u0438\u0436\u0435\u043d\u0438\u0435 ${Math.max(1, движНомер)} \u0438\u0437 ${бл.doing}` : "")
       : "";
@@ -9918,8 +9950,9 @@ function lessonRender(box) {
           ${stage ? `<p class="ls-stage">${esc(stage)}</p>` : ""}
           <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` \u00b7 ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
+          ${st.d ? `<div class="ls-body">${stepBody(st.d)}</div>` : ""}
           ${stepDone ? `<p class="wk-passed">\u2713 \u0443\u0436\u0435 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e \u2014 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044c</p>` : ""}
-          ${doing && !stepDone ? `<p class="ls-slow">\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0438 \u043a\u0443\u0441\u043e\u043a, \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0440\u043e\u043b\u0438\u043a \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438 \u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e. \u041e\u0442\u043c\u0435\u0442\u044c, \u043a\u043e\u0433\u0434\u0430 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0441\u043f\u0435\u0448\u0438\u0442\u044c \u043d\u0435\u043a\u0443\u0434\u0430.</p>` : ""}
+          ${doing && !stepDone && st.at ? `<p class="ls-slow">\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0438 \u043a\u0443\u0441\u043e\u043a, \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0440\u043e\u043b\u0438\u043a \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438 \u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e. \u041e\u0442\u043c\u0435\u0442\u044c, \u043a\u043e\u0433\u0434\u0430 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0441\u043f\u0435\u0448\u0438\u0442\u044c \u043d\u0435\u043a\u0443\u0434\u0430.</p>` : ""}
           <button class="pr-go" data-les="stepOk">${esc(goLabel)}</button>
           <div class="wk-row">
             <button class="pr-ghost" data-les="stepBack" aria-label="\u0428\u0430\u0433 \u043d\u0430\u0437\u0430\u0434"${at.step ? "" : " disabled"}>\u2039</button>
@@ -12258,6 +12291,7 @@ const WORDS_BASE = {
   tabMus: "Артефакты",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Посмотреть занятие",
+  ctaLessonGo: "🎨 Начать занятие", ctaLessonSeen: "🎬 Отметить просмотр",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",
   streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания"
