@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 316";
+const APP_VERSION = "Кэйко 317";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1077,18 +1077,19 @@ function courseRingPct() {
 const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
   : isCourse() && lessons().length ? courseRingPct() : s.pct;
 
-/* Что написать в кольце. У курса процент мало что говорит: «0%» на материале,
-   к которому ещё не садился, выглядит упрёком, а размер — приглашением.
-   Поэтому у занятий по шагам там количество шагов, у лекций — минуты видео. */
-function ringLabel() {
-  if (!isCourse() || !lessons().length) return null;
+/* Размер материала словами: столько-то шагов у занятия по шагам, столько-то
+   минут у лекции. Стоит в подписи под названием вместо доли пройденного:
+   процент уже нарисован кольцом, а размер отвечает на другой вопрос — во что
+   вообще ввязываешься. */
+function courseSize() {
+  if (!isCourse() || !lessons().length) return "";
   const ls = lessons();
   if (courseWatch()) {
     const m = Math.round(ls.reduce((a, l) => a + (Number(l.dur) || 0), 0) / 60);
-    return m ? { big: m, small: plural(m, "минута", "минуты", "минут") } : null;
+    return m ? m + " " + plural(m, "минута", "минуты", "минут") : "";
   }
   const n = ls.reduce((a, _, i) => a + (lessonSteps(i) || []).length, 0);
-  return n ? { big: n, small: plural(n, "шаг", "шага", "шагов") } : null;
+  return n ? n + " " + plural(n, "шаг", "шага", "шагов") : "";
 }
 
 /* ── Достижения ── */
@@ -3683,7 +3684,7 @@ function coverRailHTML() {
   return `<div class="rail${n > 1 ? "" : " one"}" id="rail">${html}</div>`;
 }
 
-function ringHTML(pct, метка) {
+function ringHTML(pct) {
   const r = 52, c = 2 * Math.PI * r;
   const on = c * Math.min(1, pct / 100);
   return `
@@ -3692,9 +3693,7 @@ function ringHTML(pct, метка) {
         <circle class="bg" cx="64" cy="64" r="${r}"></circle>
         ${pct > 0 ? `<circle class="fg" cx="64" cy="64" r="${r}" stroke-dasharray="${on.toFixed(1)} ${c.toFixed(1)}"></circle>` : ""}
       </svg>
-      <div class="ring-txt">${метка
-        ? `<b>${метка.big}</b><span>${esc(метка.small)}</span>`
-        : `<b>${Math.round(pct)}%</b>`}</div>
+      <div class="ring-txt"><b>${Math.round(pct)}%</b></div>
     </div>`;
 }
 
@@ -3710,7 +3709,7 @@ function heroSub(s) {
   if (isCourse()) {
     const at = lessonNext();
     return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
-      `${Math.round(s.pct)}% курса`);
+      courseSize());
   }
   return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
 }
@@ -3741,7 +3740,7 @@ $("#view").innerHTML = `
       </button>` : ""}
     <div class="hero">
       ${coverRailHTML()}
-      ${ringHTML(shownPct(s), ringLabel())}
+      ${ringHTML(shownPct(s))}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
@@ -4126,7 +4125,7 @@ function updateHeroInfo() {
   const ring = $(".ring-wrap");
   if (ring) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = ringHTML(shownPct(s), ringLabel());
+    tmp.innerHTML = ringHTML(shownPct(s));
     ring.innerHTML = tmp.firstElementChild.innerHTML;
   }
 
