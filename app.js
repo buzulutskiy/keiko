@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 314";
+const APP_VERSION = "Кэйко 315";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -378,7 +378,7 @@ const entries = () => isPiano()
     ? bookEntriesOf(book().id)
     : isWatch()
       ? watchEntriesOf(video().id)
-      : courseTrack().entries.filter(e => !e.deleted && (e.courseId || course().id) === course().id);
+      : courseEntries();
 const entryFor = d => entries().find(e => e.date === d);
 
 // день попадает в паузу (отпуск) — такие дни серию не рвут
@@ -895,9 +895,17 @@ async function pullWatchThumb(vid) {
 
 const watchEntries = () => (data.watch && data.watch.entries) || [];
 
+/* Запись без courseId — из времён единственного курса, и принадлежит она
+   первому. Без этого правила старые занятия засчитывались бы любому новому
+   материалу, и он открывался бы уже наполовину пройденным. */
+function courseEntries() {
+  const id = course().id, first = (courses()[0] || {}).id;
+  return courseTrack().entries.filter((e) => !e.deleted && (e.courseId || first) === id);
+}
+
 function doneLessons() {
   const set = new Set();
-  for (const e of courseTrack().entries.filter(e => !e.deleted))
+  for (const e of courseEntries())
     for (const i of e.lessons || []) set.add(i);
   return set;
 }
@@ -917,7 +925,7 @@ function courseTime() {
   const st = lessonStore().done || {};
   // когда урок отметили целиком: берём самую раннюю запись с ним
   const датаОтметки = {};
-  for (const e of courseTrack().entries.filter((x) => !x.deleted))
+  for (const e of courseEntries())
     for (const i of e.lessons || [])
       if (!датаОтметки[i] || e.date < датаОтметки[i]) датаОтметки[i] = e.date;
 
@@ -934,7 +942,7 @@ function courseTime() {
     if (courseWatch()) {
       const s = seenOf(i);
       сек = Math.min(s.at || 0, dur || s.dur || 0);
-      плюс(датаОтметки[i] || todayStr(), сек);
+      for (const [d, v] of Object.entries(s.byDay || {})) плюс(d, v);
     } else if (steps.length && dur) {
       const доля = dur / steps.length;
       steps.forEach((_, n) => {
@@ -948,7 +956,10 @@ function courseTime() {
     /* Урок, отмеченный целиком, засчитываем полностью: остаток относим на день
        отметки. Шаги и отметка — два разных способа сказать «сделано», и один
        не отменяет другого. */
-    if (done.has(i) && сек < dur) { плюс(датаОтметки[i], dur - сек); сек = dur; }
+    /* Лекция считается только по отмеченным минутам: старая отметка «урок
+       пройден» осталась от прежнего устройства курса и досматривать за тебя
+       не должна. */
+    if (!courseWatch() && done.has(i) && сек < dur) { плюс(датаОтметки[i], dur - сек); сек = dur; }
     doneSec += Math.min(сек, dur);
   });
   return { totalSec, doneSec, поДням };
@@ -3474,7 +3485,7 @@ function coverOf(item) {
         <div class="smears"><i></i><i></i><i></i><i></i></div>
         <div>
           <div class="cv-title">${esc(c.name)}</div>
-          <div class="cv-sub">${c.lessons.length} уроков</div>
+          <div class="cv-sub">${esc(c.note || c.lessons.length + " уроков")}</div>
         </div>
       </div>`;
   }
@@ -9653,15 +9664,23 @@ const seenStore = () => {
   return st.seen;
 };
 const seenOf = (i) => seenStore()["L" + i] || { at: 0, dur: 0 };
+/* Отмечаем не «сколько посмотрел за раз», а «докуда дошёл» — как страницу в
+   книге: так не надо помнить, где остановился в прошлый раз. Прирост считается
+   сам и ложится на сегодняшний день, иначе весь просмотр каждый раз падал бы
+   в один день и портил график. */
 function seenSet(i, at, dur) {
   const было = seenOf(i);
-  seenStore()["L" + i] = {
-    at: Math.max(0, Math.round(at || 0)),
-    dur: Math.round(dur || было.dur || 0),
-  };
+  const предел = Math.round(dur || было.dur || 0);
+  const стало = Math.max(0, предел ? Math.min(Math.round(at || 0), предел) : Math.round(at || 0));
+  const поДням = { ...(было.byDay || {}) };
+  const прирост = стало - (было.at || 0);
+  if (прирост > 0) {
+    const d = todayStr();
+    поДням[d] = (поДням[d] || 0) + прирост;
+  }
+  seenStore()["L" + i] = { at: стало, dur: предел, byDay: поДням };
   saveData(); schedulePush();
 }
-const lessonVidId = (i) => "course:" + courseKey() + ":L" + i;
 
 /* Часы показываем только когда они есть: «12:30» читается быстрее, чем
    «0:12:30», а лекции бывают и на два часа. */
@@ -9669,49 +9688,6 @@ function lcClock(t) {
   if (!isFinite(t) || t < 0) return "0:00";
   const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = Math.floor(t % 60);
   return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(sec).padStart(2, "0");
-}
-
-let lcSaveAt = 0;
-async function lcMount(i) {
-  const frame = $("#lcFrame");
-  if (!frame) return;
-  const url = await videoLoad(lessonVidId(i));
-  if (!prac || prac.screen !== "watch") return;
-  if (!url) {
-    frame.innerHTML = `<div class="lc-empty">Видео этого занятия ещё нет на устройстве.
-      Выбери файл — он останется здесь и в сеть не уйдёт.</div>`;
-    return;
-  }
-  const s = seenOf(i);
-  frame.innerHTML = `<video controls playsinline preload="metadata" src="${esc(url)}"></video>`;
-  const v = frame.querySelector("video");
-  v.addEventListener("loadedmetadata", () => {
-    /* К самому концу не возвращаемся: досмотрел — значит в следующий раз
-       открывать надо сначала, а не на титрах. */
-    const конец = v.duration && s.at >= v.duration - 3;
-    if (s.at && !конец) v.currentTime = s.at;
-    seenSet(i, конец ? 0 : s.at, v.duration);
-    lcWhen(i);
-  });
-  const пиши = () => {
-    const t = Date.now();
-    if (t - lcSaveAt < 4000) return;          // раз в четыре секунды, а не каждый кадр
-    lcSaveAt = t;
-    seenSet(i, v.currentTime, v.duration);
-    lcWhen(i);
-  };
-  v.addEventListener("timeupdate", пиши);
-  v.addEventListener("pause", () => { lcSaveAt = 0; пиши(); });
-  v.addEventListener("ended", () => { seenSet(i, v.duration, v.duration); lcWhen(i); });
-}
-
-function lcWhen(i) {
-  const el = $("#lcWhen");
-  if (!el) return;
-  const s = seenOf(i);
-  el.textContent = s.at
-    ? "смотрел до " + lcClock(s.at) + (s.dur ? " из " + lcClock(s.dur) : "")
-    : "ещё не начинал";
 }
 
 async function lcPick(i, file) {
@@ -9754,7 +9730,7 @@ function lessonRender(box) {
                 <i>${esc(l.icon || "🎨")}</i>
                 <b>${esc(l.title || "Урок " + (i + 1))}</b>
                 <em>${courseWatch()
-                  ? (п.seen && п.seen.at ? "до " + lcClock(п.seen.at) : "не начинал")
+                  ? (п.seen && п.seen.at ? "до " + Math.round(п.seen.at / 60) + " мин" : "не начинал")
                   : всё ? "пройдено" : п.было ? Math.round(п.pct) + "%" : "не начато"}</em>
                 <span class="ls-bar"><u style="width:${п.pct.toFixed(0)}%"></u></span>
               </button>`;
@@ -9770,24 +9746,42 @@ function lessonRender(box) {
 
   if (prac.screen === "watch" && at) {
     const l = ls[at.i] || {};
+    const s = seenOf(at.i);
+    const всего = Math.round((l.dur || s.dur || 0) / 60);
+    const мин = Math.round((s.at || 0) / 60);
+    const pct = всего ? Math.min(100, мин / всего * 100) : 0;
     box.innerHTML = `
       <div class="wk">
         <div class="wk-task lc">
           <h3>${esc(l.title || "Занятие " + (at.i + 1))}</h3>
-          <div class="lc-frame" id="lcFrame"></div>
-          <p class="lc-when" id="lcWhen"></p>
+          <p class="lc-cap">досмотрел до</p>
+          <div class="lc-big">
+            <input class="lc-num" id="lcNum" type="number" inputmode="numeric"
+              min="0" ${всего ? `max="${всего}"` : ""} value="${мин}">
+            <em>мин</em>
+          </div>
+          <p class="lc-when">${всего ? "из " + всего + " " + plural(всего, "минуты", "минут", "минут")
+            + " · " + Math.round(pct) + "%" : "длительность не задана"}</p>
+          ${всего ? `<span class="ls-bar wide"><u style="width:${pct.toFixed(0)}%"></u></span>` : ""}
+          <div class="lc-row">
+            ${[-10, -5, 5, 10, 15].map((n) =>
+              `<button data-lcadd="${n}" type="button">${n > 0 ? "+" + n : n}</button>`).join("")}
+          </div>
           <div class="wk-row">
-            <label class="pr-ghost lc-file">Выбрать файл
-              <input type="file" accept="video/*" id="lcFile"></label>
             <button class="pr-ghost" data-les="toPick">К занятиям</button>
             <button class="pr-ghost" data-prac="finish">Закрыть</button>
           </div>
         </div>
       </div>`;
-    lcWhen(at.i);
-    lcMount(at.i);
-    const inp = $("#lcFile");
-    if (inp) inp.addEventListener("change", (e) => lcPick(at.i, e.target.files[0]));
+
+    const пиши = (мин2) => { seenSet(at.i, Math.max(0, мин2) * 60, l.dur || s.dur || 0); pracRender(); };
+    const num = $("#lcNum");
+    if (num) {
+      num.addEventListener("change", () => пиши(+num.value || 0));
+      num.addEventListener("keydown", (e) => { if (e.key === "Enter") num.blur(); });
+    }
+    box.querySelectorAll("[data-lcadd]").forEach((b) =>
+      b.addEventListener("click", () => пиши(мин + (+b.dataset.lcadd))));
     return;
   }
 

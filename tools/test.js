@@ -544,8 +544,60 @@ function ок(имя, факт, надо) {
   ок("лекция: время курса по просмотру",
     Math.round(t.get("courseTime")().doneSec), 7650);
 
+  // прирост ложится на сегодняшний день, а не сваливается весь разом
+  const сегодня = t.get("todayStr")();
+  ок("лекция: прирост записан на сегодня",
+    t.get("seenOf")(0).byDay[сегодня], 1650);
+  t.get("seenSet")(0, 1950, 6600);
+  ок("лекция: второй заход добавил только разницу",
+    t.get("seenOf")(0).byDay[сегодня], 1950);
+  t.get("seenSet")(0, 900, 6600);
+  ок("лекция: откат назад ничего не приписывает",
+    [t.get("seenOf")(0).at, t.get("seenOf")(0).byDay[сегодня]], [900, 1950]);
+  t.get("seenSet")(0, 99999, 6600);
+  ок("лекция: дальше конца не уедешь", t.get("seenOf")(0).at, 6600);
+
+  // старая отметка «урок пройден» не досматривает лекцию за тебя
+  t.set("data.pastel.entries", [{ id: "e1", date: сегодня, lessons: [0] }]);
+  t.get("seenSet")(0, 0, 6600);
+  ок("лекция: отметка не даёт процентов", Math.round(t.get("lessonProgress")(0).pct), 0);
+  t.set("data.pastel.entries", []);
+
   // часы в подписи появляются только когда они есть
   ок("лекция: часы в подписи", [t.get("lcClock")(750), t.get("lcClock")(3750)], ["12:30", "1:02:30"]);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+}
+
+/* ── Старые записи не засчитываются новому материалу ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+  };
+  t.set("data.pastel", {
+    entries: [
+      { id: "old", date: "2026-08-01", lessons: [0] },              // без courseId — из времён одного курса
+      { id: "new", date: "2026-08-02", courseId: "b", lessons: [0] },
+    ],
+    course: null, activeCourse: "a",
+    courses: [
+      { id: "a", name: "Первый", lessons: [{ dur: 600, steps: [] }] },
+      { id: "b", name: "Второй", lessons: [{ dur: 600, steps: [] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+
+  ок("записи: старая принадлежит первому курсу", [...t.get("doneLessons")()], [0]);
+  t.set("data.pastel.activeCourse", "b");
+  ок("записи: второму курсу засчитана только своя", [...t.get("doneLessons")()], [0]);
+  t.set("data.pastel.entries", [{ id: "old", date: "2026-08-01", lessons: [0] }]);
+  ок("записи: чужая старая не делает новый курс пройденным",
+    [...t.get("doneLessons")()], []);
 
   t.set("data.pastel", было.pastel);
   t.set("data.practice", было.practice);
