@@ -482,6 +482,11 @@ function ок(имя, факт, надо) {
   ок("курсы: у обычного подготовка есть",
     t.get("lessonPrep")(0, { doing: 3 }).надо, true);
 
+  // в кольце у занятия по шагам — сколько всего шагов
+  t.set("data.pastel.activeCourse", "argos");
+  const мш = t.get("ringLabel")();
+  ок("курсы: в кольце шаги", [мш.big, мш.small], [2, "шага"]);
+
   t.set("data.pastel", было.pastel);
   t.set("data.practice", было.practice);
   t.set("data.active", было.active);
@@ -565,6 +570,10 @@ function ок(имя, факт, надо) {
 
   // часы в подписи появляются только когда они есть
   ок("лекция: часы в подписи", [t.get("lcClock")(750), t.get("lcClock")(3750)], ["12:30", "1:02:30"]);
+
+  // в кольце у лекции — минуты видео, а не процент
+  const мл = t.get("ringLabel")();
+  ок("лекция: в кольце минуты", [мл.big, мл.small], [210, "минут"]);
 
   t.set("data.pastel", было.pastel);
   t.set("data.practice", было.practice);

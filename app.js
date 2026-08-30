@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 315";
+const APP_VERSION = "Кэйко 316";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1076,6 +1076,20 @@ function courseRingPct() {
 }
 const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
   : isCourse() && lessons().length ? courseRingPct() : s.pct;
+
+/* Что написать в кольце. У курса процент мало что говорит: «0%» на материале,
+   к которому ещё не садился, выглядит упрёком, а размер — приглашением.
+   Поэтому у занятий по шагам там количество шагов, у лекций — минуты видео. */
+function ringLabel() {
+  if (!isCourse() || !lessons().length) return null;
+  const ls = lessons();
+  if (courseWatch()) {
+    const m = Math.round(ls.reduce((a, l) => a + (Number(l.dur) || 0), 0) / 60);
+    return m ? { big: m, small: plural(m, "минута", "минуты", "минут") } : null;
+  }
+  const n = ls.reduce((a, _, i) => a + (lessonSteps(i) || []).length, 0);
+  return n ? { big: n, small: plural(n, "шаг", "шага", "шагов") } : null;
+}
 
 /* ── Достижения ── */
 const ACH_PIANO = [];
@@ -3417,11 +3431,14 @@ async function coverLoadAll() {
 
 function coverSrc(id, fallback) {
   if (!id) return fallback || "";
-  const c = catOf(id);
-  if (!c || !c.cover) return fallback || "";
   const have = coverCache.get(id);
   if (have) return have;
-  if (!coverCache.has(id)) { coverCache.set(id, ""); coverAsk(id); }   // пока качаем — запасной файл
+  const c = catOf(id);
+  /* Пробуем достать обложку и тогда, когда материала ещё нет в описи: файл в
+     каталоге появляется раньше записи о нём, а промах стоит одного запроса.
+     Раньше здесь стоял ранний выход, и новый материал оставался без картинки,
+     пока опись не обновят руками. */
+  if (!coverCache.has(id) && (!c || c.cover)) { coverCache.set(id, ""); coverAsk(id); }
   return fallback || "";
 }
 
@@ -3666,7 +3683,7 @@ function coverRailHTML() {
   return `<div class="rail${n > 1 ? "" : " one"}" id="rail">${html}</div>`;
 }
 
-function ringHTML(pct) {
+function ringHTML(pct, метка) {
   const r = 52, c = 2 * Math.PI * r;
   const on = c * Math.min(1, pct / 100);
   return `
@@ -3675,7 +3692,9 @@ function ringHTML(pct) {
         <circle class="bg" cx="64" cy="64" r="${r}"></circle>
         ${pct > 0 ? `<circle class="fg" cx="64" cy="64" r="${r}" stroke-dasharray="${on.toFixed(1)} ${c.toFixed(1)}"></circle>` : ""}
       </svg>
-      <div class="ring-txt"><b>${Math.round(pct)}%</b></div>
+      <div class="ring-txt">${метка
+        ? `<b>${метка.big}</b><span>${esc(метка.small)}</span>`
+        : `<b>${Math.round(pct)}%</b>`}</div>
     </div>`;
 }
 
@@ -3722,7 +3741,7 @@ $("#view").innerHTML = `
       </button>` : ""}
     <div class="hero">
       ${coverRailHTML()}
-      ${ringHTML(shownPct(s))}
+      ${ringHTML(shownPct(s), ringLabel())}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
@@ -4107,7 +4126,7 @@ function updateHeroInfo() {
   const ring = $(".ring-wrap");
   if (ring) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = ringHTML(shownPct(s));
+    tmp.innerHTML = ringHTML(shownPct(s), ringLabel());
     ring.innerHTML = tmp.firstElementChild.innerHTML;
   }
 
