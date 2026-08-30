@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 311";
+const APP_VERSION = "Кэйко 312";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14781,6 +14781,13 @@ async function syncNow(manual) {
           (remote.pastel.course.updatedAt || 0) >= (data.pastel.course.updatedAt || 0))) {
         data.pastel.course = remote.pastel.course;
       }
+      /* Курсы — такие же определения материалов, как пьесы и книги. Пока этой
+         строки не было, устройство со старым списком отправляло его обратно и
+         стирало курс, добавленный с другого. */
+      data.pastel.courses = mergeLists(data.pastel.courses || [], remote.pastel.courses || []);
+      if (data.pastel.activeCourse &&
+          !data.pastel.courses.some((c) => c && c.id === data.pastel.activeCourse))
+        data.pastel.activeCourse = "";
       if (!data.piano.activePiece && data.piano.pieces[0]) data.piano.activePiece = data.piano.pieces[0].id;
       if (!data.book.activeBook && data.book.books[0]) data.book.activeBook = data.book.books[0].id;
 
