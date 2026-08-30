@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 313";
+const APP_VERSION = "Кэйко 314";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -931,7 +931,11 @@ function courseTime() {
     totalSec += dur;
     const steps = Array.isArray(l.steps) ? l.steps : [];
     let сек = 0;
-    if (steps.length && dur) {
+    if (courseWatch()) {
+      const s = seenOf(i);
+      сек = Math.min(s.at || 0, dur || s.dur || 0);
+      плюс(датаОтметки[i] || todayStr(), сек);
+    } else if (steps.length && dur) {
       const доля = dur / steps.length;
       steps.forEach((_, n) => {
         const когда = st["L" + i + ":s" + n];
@@ -9636,8 +9640,95 @@ function блокHTML(заголовок, текст) {
     <div class="ls-why">${абзацы.map((x) => `<p>${esc(x)}</p>`).join("")}</div>`;
 }
 
+/* ── Просмотр лекции ──
+   Курс может быть не занятием по шагам, а видео, которое досматриваешь с того
+   места, где бросил. Плеер разбора сюда не тащим: там петли, метки по тактам и
+   скорость — всё из работы над пьесой. Лекцию просто смотрят, поэтому здесь
+   родной плеер браузера со своей дорожкой и одна запомненная секунда. */
+const courseWatch = () => course().mode === "watch";
+
+const seenStore = () => {
+  const st = lessonStore();
+  st.seen = st.seen || {};
+  return st.seen;
+};
+const seenOf = (i) => seenStore()["L" + i] || { at: 0, dur: 0 };
+function seenSet(i, at, dur) {
+  const было = seenOf(i);
+  seenStore()["L" + i] = {
+    at: Math.max(0, Math.round(at || 0)),
+    dur: Math.round(dur || было.dur || 0),
+  };
+  saveData(); schedulePush();
+}
+const lessonVidId = (i) => "course:" + courseKey() + ":L" + i;
+
+/* Часы показываем только когда они есть: «12:30» читается быстрее, чем
+   «0:12:30», а лекции бывают и на два часа. */
+function lcClock(t) {
+  if (!isFinite(t) || t < 0) return "0:00";
+  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = Math.floor(t % 60);
+  return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(sec).padStart(2, "0");
+}
+
+let lcSaveAt = 0;
+async function lcMount(i) {
+  const frame = $("#lcFrame");
+  if (!frame) return;
+  const url = await videoLoad(lessonVidId(i));
+  if (!prac || prac.screen !== "watch") return;
+  if (!url) {
+    frame.innerHTML = `<div class="lc-empty">Видео этого занятия ещё нет на устройстве.
+      Выбери файл — он останется здесь и в сеть не уйдёт.</div>`;
+    return;
+  }
+  const s = seenOf(i);
+  frame.innerHTML = `<video controls playsinline preload="metadata" src="${esc(url)}"></video>`;
+  const v = frame.querySelector("video");
+  v.addEventListener("loadedmetadata", () => {
+    /* К самому концу не возвращаемся: досмотрел — значит в следующий раз
+       открывать надо сначала, а не на титрах. */
+    const конец = v.duration && s.at >= v.duration - 3;
+    if (s.at && !конец) v.currentTime = s.at;
+    seenSet(i, конец ? 0 : s.at, v.duration);
+    lcWhen(i);
+  });
+  const пиши = () => {
+    const t = Date.now();
+    if (t - lcSaveAt < 4000) return;          // раз в четыре секунды, а не каждый кадр
+    lcSaveAt = t;
+    seenSet(i, v.currentTime, v.duration);
+    lcWhen(i);
+  };
+  v.addEventListener("timeupdate", пиши);
+  v.addEventListener("pause", () => { lcSaveAt = 0; пиши(); });
+  v.addEventListener("ended", () => { seenSet(i, v.duration, v.duration); lcWhen(i); });
+}
+
+function lcWhen(i) {
+  const el = $("#lcWhen");
+  if (!el) return;
+  const s = seenOf(i);
+  el.textContent = s.at
+    ? "смотрел до " + lcClock(s.at) + (s.dur ? " из " + lcClock(s.dur) : "")
+    : "ещё не начинал";
+}
+
+async function lcPick(i, file) {
+  if (!file) return;
+  await videoSave(lessonVidId(i), file);
+  seenSet(i, 0, 0);
+  lcMount(i);
+  toast("Видео на месте");
+}
+
 /* Сколько шагов урока закрыто — для полоски в сетке и на странице занятия. */
 function lessonProgress(i) {
+  if (courseWatch()) {
+    const s = seenOf(i);
+    const pct = s.dur ? Math.min(100, s.at / s.dur * 100) : 0;
+    return { всего: s.dur ? 1 : 0, было: pct >= 98 ? 1 : 0, pct, seen: s };
+  }
   const шаги = lessonSteps(i) || [];
   const было = шаги.filter((_, n) => lessonDone(i, "s" + n)).length;
   return { всего: шаги.length, было, pct: шаги.length ? было / шаги.length * 100 : 0 };
@@ -9662,7 +9753,9 @@ function lessonRender(box) {
               <button class="ls-card${всё ? " done" : ""}" data-lgo="${i}" type="button">
                 <i>${esc(l.icon || "🎨")}</i>
                 <b>${esc(l.title || "Урок " + (i + 1))}</b>
-                <em>${всё ? "пройдено" : п.было ? Math.round(п.pct) + "%" : "не начато"}</em>
+                <em>${courseWatch()
+                  ? (п.seen && п.seen.at ? "до " + lcClock(п.seen.at) : "не начинал")
+                  : всё ? "пройдено" : п.было ? Math.round(п.pct) + "%" : "не начато"}</em>
                 <span class="ls-bar"><u style="width:${п.pct.toFixed(0)}%"></u></span>
               </button>`;
           }).join("")}
@@ -9672,6 +9765,29 @@ function lessonRender(box) {
           <button class="pr-ghost" data-prac="finish">Закрыть</button>
         </div>
       </div>`;
+    return;
+  }
+
+  if (prac.screen === "watch" && at) {
+    const l = ls[at.i] || {};
+    box.innerHTML = `
+      <div class="wk">
+        <div class="wk-task lc">
+          <h3>${esc(l.title || "Занятие " + (at.i + 1))}</h3>
+          <div class="lc-frame" id="lcFrame"></div>
+          <p class="lc-when" id="lcWhen"></p>
+          <div class="wk-row">
+            <label class="pr-ghost lc-file">Выбрать файл
+              <input type="file" accept="video/*" id="lcFile"></label>
+            <button class="pr-ghost" data-les="toPick">К занятиям</button>
+            <button class="pr-ghost" data-prac="finish">Закрыть</button>
+          </div>
+        </div>
+      </div>`;
+    lcWhen(at.i);
+    lcMount(at.i);
+    const inp = $("#lcFile");
+    if (inp) inp.addEventListener("change", (e) => lcPick(at.i, e.target.files[0]));
     return;
   }
 
@@ -11779,6 +11895,12 @@ function bindPractice() {
     /* Занятие из сетки: открываем его страницу, а не бросаем сразу в шаг. */
     if (b.dataset.lgo !== undefined) {
       const n = +b.dataset.lgo, steps = lessonSteps(n) || [];
+      if (courseWatch()) {
+        prac.at = { i: n, phase: "watch", step: 0 };
+        prac.screen = "watch";
+        prac.pickOpen = false; prac.listOpen = false;
+        return pracRender();
+      }
       if (!steps.length) { toast("В этом занятии пока нет шагов"); return; }
       let at0 = steps.findIndex((_, m) => !lessonDone(n, "s" + m));
       prac.at = { i: n, phase: "step", step: at0 < 0 ? 0 : at0 };

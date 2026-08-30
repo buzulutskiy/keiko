@@ -32,7 +32,17 @@ const sandbox = {
   Date, Math, JSON, Intl, URL, fetch: async () => { throw new Error("сети в тестах нет"); },
   crypto: globalThis.crypto,
   navigator: { onLine: false, serviceWorker: null, clipboard: null, vibrate() {} },
-  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  /* Настоящее хранилище в памяти: saveData пишет и тут же перечитывает запись,
+     а с заглушкой, отдающей null, оно считало это сбоем диска и падало. */
+  localStorage: (() => {
+    const m = new Map();
+    return {
+      getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)),
+      removeItem: (k) => m.delete(k),
+      clear: () => m.clear(),
+    };
+  })(),
   matchMedia: () => ({ matches: false, addEventListener() {} }),
   Image: function () { return стубЭл(); },
   Audio: function () { return стубЭл(); },
@@ -499,6 +509,47 @@ function ок(имя, факт, надо) {
   const правленый = { id: "argos", name: "Аргос", updatedAt: 30, lessons: [{}, {}, {}] };
   ок("курсы: свежая правка побеждает",
     mergeLists([новый], [правленый]).find((c) => c.id === "argos").lessons.length, 3);
+}
+
+/* ── Курс-лекция: помним, до какой секунды досмотрел ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+  };
+  t.set("data.pastel", {
+    entries: [], course: null, activeCourse: "",
+    courses: [{ id: "lec", name: "Лекции", mode: "watch", lessons: [
+      { title: "Собака", dur: 6600 },
+      { title: "Цвет", dur: 6000 },
+    ] }],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+
+  ок("лекция: режим просмотра", t.get("courseWatch")(), true);
+  ок("лекция: пока не смотрел — ноль", t.get("lessonProgress")(0).pct, 0);
+
+  t.get("seenSet")(0, 1650, 6600);
+  ок("лекция: секунда запомнилась", t.get("seenOf")(0).at, 1650);
+  ок("лекция: процент по просмотренному", Math.round(t.get("lessonProgress")(0).pct), 25);
+  ок("лекция: соседнее занятие не тронуто", t.get("seenOf")(1).at, 0);
+
+  // досмотренное до конца считается пройденным
+  t.get("seenSet")(1, 6000, 6000);
+  ок("лекция: досмотрел — пройдено", t.get("lessonProgress")(1).было, 1);
+
+  // просмотренные секунды идут в общее время курса
+  ок("лекция: время курса по просмотру",
+    Math.round(t.get("courseTime")().doneSec), 7650);
+
+  // часы в подписи появляются только когда они есть
+  ок("лекция: часы в подписи", [t.get("lcClock")(750), t.get("lcClock")(3750)], ["12:30", "1:02:30"]);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
 }
 
 /* ── Палитра: слово курса → номера мелков ── */
