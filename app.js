@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 312";
+const APP_VERSION = "Кэйко 313";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1131,7 +1131,14 @@ const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
   return OPS[op] ? OPS[op](Number(s[m]) || 0, Number(v)) : false;
 });
 
-const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? (course().id || "pastel") : (piece() ? piece().id : "");
+/* Ключ материала у курса: первый остаётся «pastel» — под этим именем лежат
+   его награды, артефакты и записи занятий. Остальные зовутся своим id. */
+const courseKey = () => {
+  const list = courses(), id = course().id;
+  if (!id || list.length <= 1 || id === (list[0] || {}).id) return "pastel";
+  return id;
+};
+const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? courseKey() : (piece() ? piece().id : "");
 const catOf = (id) => CATALOG[id] || null;
 
 const achCache = new Map();
@@ -3436,19 +3443,25 @@ function coverOf(item) {
       </div>`;
   }
   if (item.track === "pastel") {
-    const c = data.pastel.course;
+    const c = item.course || course();
     /* На обложке вместо слова «курс» — сколько всего уроков: материал один и
-       пополняется, и полезнее видеть его размер, а не подпись «Первый курс». */
+       пополняется, и полезнее видеть его размер, а не подпись «Первый курс».
+       Но материал может сказать про себя иначе: у «Аргоса» сверху стоит
+       «рисую», потому что урок там один и считать нечего. */
     const n = (c.lessons || []).filter(l => !l.hidden).length;
-    const sub = n ? n + " " + plural(n, "урок", "урока", "уроков") : "";
+    const sub = c.top || (n ? n + " " + plural(n, "урок", "урока", "уроков") : "");
     // у курса обложка тоже может лежать в каталоге — раньше эту ветку пропускали
-    const csrc = coverSrc("pastel", c.cover || "");
+    const ck = !c.id || c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+    const csrc = coverSrc(ck, c.cover || "");
     if (csrc) return `
       <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
         <img src="${esc(csrc)}" alt="" loading="lazy" decoding="async">
         <div class="cv-over">
           <div class="cv-author">${esc(sub)}</div>
-          <div class="cv-title">${esc(c.name)}</div>
+          <div>
+            <div class="cv-title">${esc(c.name)}</div>
+            ${c.note ? `<div class="cv-sub">${esc(c.note)}</div>` : ""}
+          </div>
         </div>
       </div>`;
     return `
@@ -9510,11 +9523,8 @@ const lessons = () => (course().lessons || []);
    и номера шагов у них совпадают. Первый курс остаётся под старым ключом
    «pastel», иначе его прогресс потерялся бы при переезде. */
 const pracCourseKey = () => {
-  const list = courses();
-  const id = course().id;
-  // первый курс всегда остаётся под старым ключом: его ход разбора уже записан
-  if (!id || list.length <= 1 || id === (list[0] || {}).id) return "pastel";
-  return "pastel:" + id;
+  const k = courseKey();
+  return k === "pastel" ? "pastel" : "pastel:" + k;
 };
 const lessonStore = () => {
   data.practice = data.practice || {};
@@ -9671,68 +9681,6 @@ function lessonRender(box) {
      а вот зачем этот этап — знать надо. Деление на заходы живёт внутри этапа,
      наружу его не выносим. Пройденное открыто для перечитывания, следующее
      подсвечено, дальнее пригашено. */
-  if (prac.screen === "intro" && at) {
-    const l = ls[at.i] || {};
-    const шаги = lessonSteps(at.i) || [];
-    const п = lessonProgress(at.i);
-
-    /* Этапы — по порядку и без повторов: длинный этап режется на заходы внутри,
-       но в списке остаётся одной строкой. */
-    const этапы = [];
-    шаги.forEach((st, n) => {
-      const g = st.g || "";
-      const был = этапы.find((x) => x.g === g);
-      if (был) { был.to = n; был.всего++; был.готово += lessonDone(at.i, "s" + n) ? 1 : 0; }
-      else этапы.push({ g, from: n, to: n, всего: 1, готово: lessonDone(at.i, "s" + n) ? 1 : 0 });
-    });
-    const первыйОткрытый = этапы.findIndex((e) => e.готово < e.всего);
-
-    box.innerHTML = `
-      <div class="wk">
-        <div class="wk-task ls-intro">
-          <div class="ls-big">${esc(l.icon || "🎨")}</div>
-          <h3>${esc(l.title || "Урок " + (at.i + 1))}</h3>
-          <p class="ls-when">пройдено ${Math.round(п.pct)}%</p>
-          ${п.было ? `<span class="ls-bar wide"><u style="width:${п.pct.toFixed(0)}%"></u></span>` : ""}
-          <div class="ls-col">
-          ${Array.isArray(l.ask) && l.ask.length ? `
-            <p class="ls-h">Что узнаешь</p>
-            <div class="ls-ask">${l.ask.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
-          ${рамкиHTML("Что это даёт", l.life)}
-          </div>
-
-          <div class="ls-steps">
-            ${этапы.map((e, n) => {
-              const готов = e.готово >= e.всего;
-              const сейчас = n === первыйОткрытый;
-              const далеко = первыйОткрытый >= 0 && n > первыйОткрытый;
-              /* Зачем этот этап — только у того, за который сейчас садиться:
-                 шестнадцать пояснений подряд читать никто не станет. И только
-                 первый абзац: дальше в конспекте идут пункты списком, они для
-                 экрана шага, а не для «зачем». */
-              const зачем = сейчас
-                ? String((l.stages || {})[e.g] || "").split("•")[0].trim()
-                : "";
-              return `
-                <button class="ls-step${готов ? " done" : ""}${сейчас ? " now" : ""}"
-                  data-lblock="${e.from}" type="button"${далеко ? " disabled" : ""}>
-                  <span class="ls-step-n">${готов ? "✓" : n + 1}</span>
-                  <span class="ls-step-txt">
-                    <b>${esc(e.g || "Этап " + (n + 1))}</b>
-                    ${зачем ? `<i>${esc(зачем)}</i>` : ""}
-                  </span>
-                </button>`;
-            }).join("")}
-          </div>
-
-          <div class="wk-row">
-            <button class="pr-ghost" data-les="toPick">К занятиям</button>
-            <button class="pr-ghost" data-prac="finish">Закрыть</button>
-          </div>
-        </div>
-      </div>`;
-    return;
-  }
 
   if (prac.screen === "prep" && at) {
     const l = ls[at.i] || {};
@@ -11834,7 +11782,10 @@ function bindPractice() {
       if (!steps.length) { toast("В этом занятии пока нет шагов"); return; }
       let at0 = steps.findIndex((_, m) => !lessonDone(n, "s" + m));
       prac.at = { i: n, phase: "step", step: at0 < 0 ? 0 : at0 };
-      prac.screen = plainCourse() ? "work" : "intro";
+      /* Раньше здесь стоял экран с описанием занятия. Он был лишней
+         остановкой: между «хочу заниматься» и шагом ничего не нужно. */
+      const бл0 = blockOfStep(n, prac.at.step);
+      prac.screen = lessonPrep(n, бл0).надо ? "prep" : "work";
       prac.pickOpen = false; prac.listOpen = false;
       return pracRender();
     }
