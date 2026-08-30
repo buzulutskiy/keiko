@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 318";
+const APP_VERSION = "Кэйко 319";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1085,8 +1085,8 @@ function courseSize() {
   if (!isCourse() || !lessons().length) return "";
   const ls = lessons();
   if (courseWatch()) {
-    const m = Math.round(ls.reduce((a, l) => a + (Number(l.dur) || 0), 0) / 60);
-    return m ? m + " " + plural(m, "минута", "минуты", "минут") : "";
+    const n = ls.filter((l) => !l.hidden).length;
+    return n ? n + " " + plural(n, "урок", "урока", "уроков") : "";
   }
   const n = ls.reduce((a, _, i) => a + (lessonSteps(i) || []).length, 0);
   return n ? n + " " + plural(n, "шаг", "шага", "шагов") : "";
