@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 331";
+const APP_VERSION = "Кэйко 332";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3513,7 +3513,7 @@ function coverOf(item) {
     const src = coverSrc(b.id, b.cover);
     if (src) return `
       <div class="cover photo" style="aspect-ratio:${esc(b.ratio || "3 / 4.4")}">
-        <img src="${esc(src)}" alt="" width="465" height="720" decoding="async" fetchpriority="high">
+        <img src="${esc(src)}" data-cov="${esc(b.id)}" alt="" width="465" height="720" decoding="async" fetchpriority="high">
       </div>`;
     return `
       <div class="cover book ${esc(b.tone || "sea")}">
@@ -3534,7 +3534,7 @@ function coverOf(item) {
     return `
       <div class="cover-fit">
         <div class="cover clip ${src ? "photo" : "watch"}">
-          ${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="cv-mark">🎬</div>`}
+          ${src ? `<img src="${esc(src)}" data-cov="${esc((item.video || video() || {}).id || "")}" alt="" loading="lazy" decoding="async">` : `<div class="cv-mark">🎬</div>`}
         </div>
       </div>`;
   }
@@ -3551,7 +3551,7 @@ function coverOf(item) {
     const csrc = coverSrc(ck, c.cover || "");
     if (csrc) return `
       <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
-        <img src="${esc(csrc)}" alt="" loading="lazy" decoding="async">
+        <img src="${esc(csrc)}" data-cov="${esc(ck)}" alt="" loading="lazy" decoding="async">
         <div class="cv-over">
           <div class="cv-author">${esc(sub)}</div>
           <div>
@@ -3574,7 +3574,7 @@ function coverOf(item) {
   const psrc = coverSrc(p.id, p.cover);
   if (psrc) return `
     <div class="cover photo" style="aspect-ratio:${esc(p.ratio || "3 / 4.4")}">
-      <img src="${esc(psrc)}" alt="" width="509" height="720" decoding="async" fetchpriority="high">
+      <img src="${esc(psrc)}" data-cov="${esc(p.id)}" alt="" width="509" height="720" decoding="async" fetchpriority="high">
     </div>`;
   return `
     <div class="cover piano ${esc(p.tone || "violet")}">
@@ -10116,7 +10116,7 @@ function lessonRender(box) {
             return `<button class="ls-shot${src ? "" : " wait"}" type="button"
               data-lspic="${esc(st.img)}" aria-label="Открыть картинку"
               ${rat ? `style="${rat}"` : ""}>
-              ${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : ""}
+              ${src ? `<img src="${esc(src)}" data-cov="${esc(st.img)}" alt="" loading="lazy" decoding="async">` : ""}
             </button>`;
           })()}
           ${st.d ? `<div class="ls-body">${stepBody(st.d)}</div>` : ""}
