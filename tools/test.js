@@ -708,6 +708,52 @@ function ок(имя, факт, надо) {
   ок("слияние: и в обратную сторону тоже", mp(b, a).p.seen.L0.at, 1800);
 }
 
+/* ── Артефакты курса-лекции: приходят по минуте, а не по шагу ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    museum: t.get("MUSEUM"),
+  };
+  t.set("data.pastel", {
+    entries: [], course: null, activeCourse: "",
+    courses: [{
+      id: "lec", name: "Лекции", mode: "watch",
+      lessons: [{ title: "Собака", dur: 6600, archive: { steps: [
+        { at: "3:00" }, { at: "10:00" }, { at: "37:30" },
+      ] } }],
+    }],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+  t.set("MUSEUM", [
+    { id: "m1", book: "pastel", ch: 1, step: 2, name: "Клячка" },
+    { id: "m2", book: "pastel", ch: 1, step: 0, name: "Уголь" },
+    { id: "m3", book: "pastel", ch: 1, name: "Без шага" },
+  ]);
+  const открыт = (id) => t.get("musOpen")(t.get("MUSEUM").find((x) => x.id === id));
+
+  ок("предметы: до просмотра закрыты", [открыт("m1"), открыт("m2"), открыт("m3")],
+    [false, false, false]);
+
+  t.get("seenSet")(0, 5 * 60, 6600);          // досмотрел до пятой минуты
+  ок("предметы: ранний открылся, поздний нет", [открыт("m2"), открыт("m1")], [true, false]);
+  ок("предметы: без шага — с начала просмотра", открыт("m3"), true);
+
+  t.get("seenSet")(0, 38 * 60, 6600);         // дошёл до 37:30
+  ок("предметы: дошёл до минуты — открылся", открыт("m1"), true);
+
+  ок("тайм-код в секунды",
+    [t.get("stepSec")("37:30"), t.get("stepSec")("1:02:30"), t.get("stepSec")("")],
+    [2250, 3750, null]);
+
+  t.set("MUSEUM", было.museum);
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;

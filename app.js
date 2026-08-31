@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 320";
+const APP_VERSION = "Кэйко 321";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -583,11 +583,35 @@ function bookProgressOf(b) {
    сиену должна прийти тогда же. Ждать конца стодесятиминутного урока значило
    бы придержать её на несколько недель. */
 const COURSE_MUS = "pastel";
+/* «37:30» → 2250 секунд. Часы бывают у длинных лекций. */
+function stepSec(at) {
+  const m = String(at || "").trim().match(/^(?:(\d+):)?(\d+):(\d+)$/);
+  return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) : NaN;
+}
+
+/* Просмотренное занятие конкретного курса, а не открытого сейчас: музей
+   спрашивает про первый курс, даже когда на экране другой материал. */
+function seenIn(c, i) {
+  const k = keyOfCourse(c);
+  const st = (data.practice || {})[k === "pastel" ? "pastel" : "pastel:" + k] || {};
+  return (st.seen || {})["L" + i] || { at: 0, dur: 0 };
+}
+
 function musOpenCourse(x) {
   const c = courses()[0] || (data.pastel && data.pastel.course) || null;
   if (!c || !(c.lessons || []).length) return false;
   const n = Number(x.ch);
   if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
+  /* Курс мог стать лекцией: шаги уехали в архив, а предметы по-прежнему
+     привязаны к ним. Открываем по тайм-коду того же шага — предмет приходит
+     ровно на той минуте, что и раньше. */
+  if (c.mode === "watch") {
+    const arch = ((c.lessons[n - 1] || {}).archive || {}).steps || [];
+    const ш = Number(x.step);
+    const t = Number.isFinite(ш) ? stepSec((arch[ш] || {}).at) : NaN;
+    const было = seenIn(c, n - 1).at || 0;
+    return isFinite(t) ? было >= t : было > 0;
+  }
   const steps = (c.lessons[n - 1] || {}).steps || [];
   if (!steps.length) return false;
   /* У предмета может быть свой шаг — тогда он открывается ровно там, где курс
@@ -9843,7 +9867,7 @@ function lessonRender(box) {
               min="0" ${всего ? `max="${всего}"` : ""} value="${мин}">
             <em>мин</em>
           </div>
-          <p class="lc-when">${всего ? "из " + всего + " " + plural(всего, "минуты", "минут", "минут")
+          <p class="lc-when">${всего ? "из " + всего + " " + plural(всего, "минута", "минуты", "минут")
             + " · " + Math.round(pct) + "%" : "длительность не задана"}</p>
           ${всего ? `<span class="ls-bar wide"><u style="width:${pct.toFixed(0)}%"></u></span>` : ""}
           <div class="lc-row">
