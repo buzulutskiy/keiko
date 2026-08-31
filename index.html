@@ -1197,7 +1197,7 @@
     /* Страница шага выключена по центру, и тело шага тоже. Но список и схему
        центрируем целиком, а внутри оставляем влево: у списка иначе разъезжаются
        маркеры, а у схемы — сама схема, она держится на пробелах. */
-    .ls-body { margin: 14px 0 4px; font-size: 0.9rem; line-height: 1.55; }
+    .ls-body { margin: 14px 0 4px; font-size: 0.9rem; line-height: 1.55; min-width: 0; }
     .ls-body p { margin: 0 0 9px; }
     .ls-body ul {
       display: inline-block; text-align: left;
@@ -1565,8 +1565,11 @@
       display: block;
     }
 
-    .wk { display: grid; gap: 0; }
-    .wk-task { padding: 10px 0 4px; text-align: center; }
+    /* minmax(0,1fr) и min-width — чтобы длинная схема внутри не растягивала
+       колонку: элемент сетки по умолчанию не сжимается уже своего содержимого,
+       и одна строка в моноширинном блоке разносила всю страницу вширь. */
+    .wk { display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); }
+    .wk-task { padding: 10px 0 4px; text-align: center; min-width: 0; }
     .wk-kind {
       font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
       color: var(--dim); margin: 0 0 10px;
