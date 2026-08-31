@@ -573,6 +573,12 @@ function ок(имя, факт, надо) {
   // под названием — размер материала, а не доля пройденного
   ок("лекция: размер в уроках", t.get("courseSize")(), "2 урока");
 
+  // следующее занятие — первое недосмотренное, а не всегда первое
+  ок("лекция: следующее — недосмотренное", t.get("lessonNext")().i, 0);
+  t.get("seenSet")(0, 6600, 6600);
+  t.get("seenSet")(1, 6000, 6000);
+  ок("лекция: досмотрел оба — курс пройден", t.get("lessonNext")(), null);
+
   t.set("data.pastel", было.pastel);
   t.set("data.practice", было.practice);
   t.set("data.active", было.active);
@@ -638,6 +644,68 @@ function ок(имя, факт, надо) {
   ок("шаг: список закрыт", (out.match(/<ul>/g) || []).length, (out.match(/<\/ul>/g) || []).length);
   ок("шаг: пустое тело ничего не ломает", body(""), "");
   ок("шаг: угловые скобки экранированы", body("a < b").includes("&lt;"), true);
+}
+
+/* ── Починенное: курсы не путаются между собой ── */
+{
+  const было = {
+    active: t.get("data").active,
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    catalog: t.get("CATALOG"),
+  };
+  t.set("data.pastel", {
+    entries: [
+      { id: "e1", date: "2026-08-01", courseId: "a", lessons: [0] },
+      { id: "e2", date: "2026-08-01", courseId: "b", lessons: [0] },
+    ],
+    course: null, activeCourse: "a",
+    courses: [
+      { id: "a", name: "Пастель", lessons: [{ dur: 600, steps: [] }] },
+      { id: "b", name: "Аргос", lessons: [{ dur: 600, steps: [] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+
+  // ключ материала для любого курса, не только открытого
+  ок("курсы: ключ первого — старый",
+    [t.get("keyOfCourse")({ id: "a" }), t.get("keyOfCourse")({ id: "b" })], ["pastel", "b"]);
+
+  // звук у каждого курса свой, а не общий
+  ок("курсы: свой ключ звука",
+    [t.get("railKey")({ track: "pastel", course: { id: "a" } }),
+     t.get("railKey")({ track: "pastel", course: { id: "b" } })], ["pastel", "b"]);
+
+  // в ленте дня запись подписана именем своего курса
+  const лента = t.get("allEntriesOn")("2026-08-01").filter((x) => x.track === "pastel");
+  ок("курсы: в ленте дня имя своего курса",
+    лента.map((x) => x.title).sort(), ["Аргос", "Пастель"]);
+
+  // незнакомый материал заставляет обновить каталог сразу
+  t.set("CATALOG", { pastel: { cover: true } });
+  ок("каталог: новый курс считается незнакомым", t.get("catalogMissing")(), true);
+  t.set("CATALOG", { pastel: { cover: true }, b: { cover: true } });
+  ок("каталог: когда все известны — не дёргаем", t.get("catalogMissing")(), false);
+
+  t.set("CATALOG", было.catalog);
+  t.set("data.pastel", было.pastel);
+  t.set("data.active", было.active);
+}
+
+/* ── Слияние: просмотренные минуты не пропадают ── */
+{
+  const mp = t.get("mergePrac");
+  const мой   = { pastel: { at: 100, done: {}, seen: { L0: { at: 600, dur: 6600, byDay: { "2026-08-01": 600 } } } } };
+  const чужой = { pastel: { at: 200, done: {}, seen: { L1: { at: 300, dur: 6000, byDay: { "2026-08-02": 300 } } } } };
+  const out = mp(мой, чужой).pastel.seen;
+  ок("слияние: занятие с другого телефона не пропало",
+    [!!out.L0, !!out.L1], [true, true]);
+  ок("слияние: минуты своего занятия целы", out.L0.at, 600);
+
+  // одно и то же занятие: побеждает тот, кто досмотрел дальше
+  const a = { p: { at: 1, done: {}, seen: { L0: { at: 600, byDay: { d1: 600 } } } } };
+  const b = { p: { at: 2, done: {}, seen: { L0: { at: 1800, byDay: { d1: 1800 } } } } };
+  ок("слияние: берём того, кто дальше", mp(a, b).p.seen.L0.at, 1800);
+  ок("слияние: и в обратную сторону тоже", mp(b, a).p.seen.L0.at, 1800);
 }
 
 /* ── Палитра: слово курса → номера мелков ── */

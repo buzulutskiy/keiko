@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 319";
+const APP_VERSION = "Кэйко 320";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -352,6 +352,12 @@ const course = () => {
 /* Материал без подготовки и без сетки занятий: открыл — и сразу шаг, как у
    пианино. Нужен там, где занятие одно и выбирать не из чего. */
 const plainCourse = () => !!course().plain;
+/* Курс по его id, с запасным вариантом на первый: артефакты, названия в ленте
+   дня и музей помнят курс по имени, а курс мог уехать в архив. */
+const courseById = (id) => courses().find((c) => c.id === id)
+  || courses()[0] || courseTrack().course || { lessons: [] };
+/* Ключ материала для любого курса, не только открытого сейчас. */
+const keyOfCourse = (c) => !c || !c.id || c.id === (courses()[0] || {}).id ? "pastel" : c.id;
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
@@ -578,7 +584,7 @@ function bookProgressOf(b) {
    бы придержать её на несколько недель. */
 const COURSE_MUS = "pastel";
 function musOpenCourse(x) {
-  const c = (data.pastel && data.pastel.course) || null;
+  const c = courses()[0] || (data.pastel && data.pastel.course) || null;
   if (!c || !(c.lessons || []).length) return false;
   const n = Number(x.ch);
   if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
@@ -3659,7 +3665,7 @@ const RAIL_MID = 2;      // рабочая копия — центральная
 // лента бесконечная: рендерим несколько копий и незаметно возвращаемся в середину
 // ключ материала карточки ленты — совпадает с ключом, по которому лежит звук
 const railKey = (it) => it.track === "book" ? it.bookId
-  : it.track === "pastel" ? "pastel" : it.pieceId;
+  : it.track === "pastel" ? keyOfCourse(it.course || course()) : it.pieceId;
 
 function coverRailHTML() {
   const items = railItems();
@@ -4794,7 +4800,7 @@ function allEntriesOn(ds) {
       what: e.page ? `до ${e.page}-й стр.` : "читал" });
   }
   for (const e of data.pastel.entries.filter(e => !e.deleted && e.date === ds)) {
-    out.push({ track: "pastel", icon: "🎨", title: (data.pastel.course || {}).name || "Курс", entry: e,
+    out.push({ track: "pastel", icon: "🎨", title: courseById(e.courseId).name || "Курс", entry: e,
       what: (e.lessons || []).length ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}` : "занимался" });
   }
   for (const e of watchEntries().filter(e => !e.deleted && e.date === ds)) {
@@ -4964,7 +4970,7 @@ function withMaterial(view, fn) {
 function viewMaterialExists(v) {
   if (!v || !v.track) return false;
   if (v.track === "book") return (data.book.books || []).some(b => b.id === v.bookId);
-  if (v.track === "pastel") return !!(data.pastel && data.pastel.course);
+  if (v.track === "pastel") return !!courses().length;
   if (v.track === "watch") return videos().some(x => x.id === v.videoId);
   return (data.piano.pieces || []).some(p => p.id === v.pieceId);
 }
@@ -7887,6 +7893,28 @@ function mergePrac(mine, theirs) {
     /* Пройденное не выбирают, его складывают: иначе такты, закрытые на втором
        телефоне, пропадут молча. */
     out[id].done = Object.assign({}, old.done || {}, fresh.done || {});
+    /* Просмотренные минуты лекций — тоже свёртка по занятиям, и брать её
+       целиком со свежей стороны нельзя: занятие, которое смотрели только на
+       втором телефоне, пропало бы молча. Сравниваем каждое занятие отдельно. */
+    if (old.seen || fresh.seen) {
+      const seen = {};
+      for (const k of new Set([...Object.keys(old.seen || {}), ...Object.keys(fresh.seen || {})])) {
+        const a = (old.seen || {})[k], b = (fresh.seen || {})[k];
+        if (!a) { seen[k] = b; continue; }
+        if (!b) { seen[k] = a; continue; }
+        // дальше досмотрели — та запись и главная; при равенстве складываем дни
+        const дальше = (b.at || 0) > (a.at || 0) ? b : a;
+        const другой = дальше === a ? b : a;
+        seen[k] = { ...дальше };
+        if ((a.at || 0) === (b.at || 0)) {
+          const дни = { ...(другой.byDay || {}) };
+          for (const [d, v] of Object.entries(дальше.byDay || {}))
+            дни[d] = Math.max(дни[d] || 0, v);
+          seen[k].byDay = дни;
+        }
+      }
+      out[id].seen = seen;
+    }
     /* Заходы — списки, и складывать их надо по-своему: берём тот список, где
        заходов больше. Они дописываются только в конец, так что длинный
        включает короткий; выбрать «свежий целиком» значило бы потерять то, что
@@ -9634,6 +9662,14 @@ function lessonPrep(i, bl) {
 
 function lessonNext() {
   const ls = lessons();
+  /* У лекции шагов нет, и старые ступени «посмотрел → повторил → сделал» к ней
+     не применяются: следующее — первое недосмотренное занятие. Без этой ветки
+     на главной вечно висело первое, сколько его ни смотри. */
+  if (courseWatch()) {
+    for (let i = 0; i < ls.length; i++)
+      if (!ls[i].hidden && lessonProgress(i).pct < 98) return { i, phase: "watch" };
+    return null;
+  }
   for (let i = 0; i < ls.length; i++) {
     const steps = lessonSteps(i);
     if (steps) {
@@ -10738,7 +10774,7 @@ const musChName = (x) => {
   const n = Number(x.ch);
   if (!n) return "";
   if (x.book === COURSE_MUS) {
-    const c = (data.pastel && data.pastel.course) || {};
+    const c = courses()[0] || (data.pastel && data.pastel.course) || {};
     const l = (c.lessons || [])[n - 1];
     return (l && l.title) ? l.title : "урок " + n;
   }
@@ -10749,7 +10785,7 @@ const musChName = (x) => {
 
 /* Название книги по её id: предмет знает только id, а человеку нужно имя. */
 const musBookName = (id) => {
-  if (id === COURSE_MUS) return ((data.pastel && data.pastel.course) || {}).name || "Курс";
+  if (id === COURSE_MUS) return (courses()[0] || (data.pastel && data.pastel.course) || {}).name || "Курс";
   const b = (data.book.books || []).find((x) => x.id === id);
   return b ? b.title : id;
 };
@@ -13502,7 +13538,10 @@ function catalogMissing() {
   const keys = [];
   for (const b of (data.book.books || [])) if (!b.archived) keys.push(b.id);
   for (const p of (data.piano.pieces || [])) if (!p.archived) keys.push(p.id);
-  if ((data.pastel.course || { lessons: [] }).lessons.length) keys.push("pastel");
+  /* Раньше здесь стоял единственный курс, и новый материал каталог не тянул:
+     без записи в описи у него нет ни обложки, ни наград — выглядит поломкой.
+     Именно из-за этой строки обложка «Аргоса» не приезжала. */
+  for (const c of courses()) if ((c.lessons || []).length) keys.push(keyOfCourse(c));
   return keys.some((k) => k && !CATALOG[k]);
 }
 
