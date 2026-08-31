@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 324";
+const APP_VERSION = "Кэйко 325";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10079,8 +10079,14 @@ function lessonRender(box) {
           ${(() => {
             if (!st.img) return "";
             const src = coverSrc(st.img, "");
+            /* Пропорция известна заранее и стоит на самой кнопке: пока картинка
+               качается, место под неё уже отведено ровно то, какое нужно, и
+               текст под ней не прыгает, когда она приезжает. Картинки разные:
+               фотографии узкие, схемы широкие. */
+            const rat = st.iw && st.ih ? `aspect-ratio:${st.iw} / ${st.ih}` : "";
             return `<button class="ls-shot${src ? "" : " wait"}" type="button"
-              data-lspic="${esc(st.img)}" aria-label="Открыть картинку">
+              data-lspic="${esc(st.img)}" aria-label="Открыть картинку"
+              ${rat ? `style="${rat}"` : ""}>
               ${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : ""}
             </button>`;
           })()}
@@ -12139,8 +12145,10 @@ function bindPractice() {
           else prac.at = lessonNext();
           /* Занятие кончилось — останавливаемся и говорим об этом. Без этой
              остановки шаги идут сплошняком, конца не видно, и всё превращается
-             в задание. Останавливаемся и на границе урока тоже. */
-          if (бл && at.step >= бл.to && prac.at) {
+             в задание. Останавливаемся и на границе урока тоже.
+             У материала с одним занятием остановки нет: там не занятия, а один
+             процесс, и «можно встать» посреди него только сбивает. */
+          if (!plainCourse() && бл && at.step >= бл.to && prac.at) {
             prac.lastBlock = бл;
             prac.screen = "blockDone";
           }
@@ -13737,6 +13745,8 @@ function coversArrived() {
   clearTimeout(coversTimer);
   coversTimer = setTimeout(() => {
     render(true);
+    // картинка шага приезжает уже после того, как шаг открыт: показываем её
+    if (prac && prac.kind === "lesson") pracRender();
   }, 260);
 }
 

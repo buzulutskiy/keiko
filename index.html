@@ -1929,8 +1929,11 @@
       border: 1px solid var(--glass-line); border-radius: 12px; overflow: hidden;
       background: rgba(255, 255, 255, 0.04); cursor: zoom-in;
     }
-    .ls-shot img { display: block; width: 100%; height: auto; }
-    .ls-shot.wait { aspect-ratio: 3 / 4; }
+    .ls-shot img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    /* Пропорция приходит из данных шага и стоит на самой кнопке. Здесь — запас
+       на случай картинки, у которой размеры не записаны: без него рамка с
+       картинкой во всю высоту схлопнулась бы в ноль. */
+    .ls-shot { aspect-ratio: 3 / 4; }
     /* Подзаголовки внутри шага: «Что делаем», «Зачем», «Частая ошибка» */
     .ls-h3 {
       margin: 16px 0 6px; font: 600 0.74rem/1 ui-monospace, monospace;
