@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 330";
+const APP_VERSION = "Кэйко 331";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -613,9 +613,18 @@ function musOpenCourse(x) {
      привязаны к ним. Открываем по тайм-коду того же шага — предмет приходит
      ровно на той минуте, что и раньше. */
   if (c.mode === "watch") {
-    const arch = ((c.lessons[n - 1] || {}).archive || {}).steps || [];
+    const l = c.lessons[n - 1] || {};
     const ш = Number(x.step);
-    const t = Number.isFinite(ш) ? stepSec((arch[ш] || {}).at) : NaN;
+    /* Минута, на которой предмет берут в руки. Раньше её доставали из архива
+       прежних шагов — ради десяти чисел в профиле лежало полсотни килобайт.
+       Теперь эти числа хранятся отдельным списком cues, а архив уехал из
+       профиля целиком. Ветка с архивом оставлена для старых данных. */
+    const cues = l.cues || {};
+    let t = Number.isFinite(ш) ? Number(cues[ш]) : NaN;
+    if (!isFinite(t)) {
+      const arch = (l.archive || {}).steps || [];
+      t = Number.isFinite(ш) ? stepSec((arch[ш] || {}).at) : NaN;
+    }
     const было = seenIn(c, n - 1).at || 0;
     return isFinite(t) ? было >= t : было > 0;
   }
@@ -4899,7 +4908,7 @@ function renderCalendar() {
     if (ds === today) cls += " today";
     if (ds === selectedDate) cls += " sel";
     if (ds > today) cls += " future";
-    const dots = [...tracks].map(t => `<i class="dot ${t === "piano" ? "p" : t === "book" ? "b" : "c"}"></i>`).join("");
+    const dots = [...tracks].map(t => `<i class="cal-dot ${t === "piano" ? "p" : t === "book" ? "b" : "c"}"></i>`).join("");
     html += `<div class="${cls}" data-date="${ds}"><b>${d}</b><span class="dots-row">${dots}</span></div>`;
   }
   $("#calGrid").innerHTML = html;
@@ -4908,7 +4917,7 @@ function renderCalendar() {
   const L = { piano: ["p", "пианино"], book: ["b", "чтение"], pastel: ["c", "пастель"] };
   const leg = $("#calLegend");
   if (leg) leg.innerHTML = [...monthTracks].filter(t => L[t])
-    .map(t => `<span><i class="dot ${L[t][0]}"></i> ${L[t][1]}</span>`).join("");
+    .map(t => `<span><i class="cal-dot ${L[t][0]}"></i> ${L[t][1]}</span>`).join("");
 
   document.querySelectorAll(".day[data-date]").forEach(el =>
     el.addEventListener("click", () => goToDate(el.dataset.date)));
