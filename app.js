@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 326";
+const APP_VERSION = "Кэйко 327";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4975,8 +4975,9 @@ function achMaterials() {
 // выполняет функцию в контексте выбранного материала
 function withMaterial(view, fn) {
   const save = data.active, savePiece = data.piano.activePiece, saveBook = data.book.activeBook;
-  const saveVideo = data.watch.activeVideo;
+  const saveVideo = data.watch.activeVideo, saveCourse = data.pastel.activeCourse;
   data.active = view.track;
+  if (view.track === "pastel" && view.courseId) data.pastel.activeCourse = view.courseId;
   if (view.track === "piano" && view.pieceId) data.piano.activePiece = view.pieceId;
   if (view.track === "book" && view.bookId) data.book.activeBook = view.bookId;
   if (view.track === "watch" && view.videoId) data.watch.activeVideo = view.videoId;
@@ -4986,7 +4987,7 @@ function withMaterial(view, fn) {
     return fn();
   } finally {
     data.active = save; data.piano.activePiece = savePiece; data.book.activeBook = saveBook;
-    data.watch.activeVideo = saveVideo;
+    data.watch.activeVideo = saveVideo; data.pastel.activeCourse = saveCourse;
   }
 }
 
@@ -9859,7 +9860,10 @@ function picOpen(src) {
   img.style.transform = "";
   box.hidden = false;
   box.setAttribute("aria-hidden", "false");
-  shZoom(box.querySelector(".sh-zoom"));
+  /* Рамка здесь во весь экран, а не по размеру картинки: иначе увеличение
+     упиралось в её же формат, и на большом приближении оставалось маленькое
+     окошко посреди чёрного. Предел выше обычного — разглядывать штрихи. */
+  shZoom(box.querySelector(".sh-zoom"), 12);
 }
 
 function picClose() {
@@ -11641,8 +11645,9 @@ function рисуйСнимки(ожидание) {
 /* Снимок можно рассмотреть: щипок приближает, палец таскает, двойное касание
    возвращает к целому кадру. На старых фотографиях самое интересное — мелочи:
    вывески, экипажи, лица в окнах. */
-function shZoom(рамка) {
+function shZoom(рамка, макс) {
   if (!рамка) return;
+  const предел = макс || 6;
   const img = рамка.querySelector("img");
   let scale = 1, tx = 0, ty = 0;
   const точки = new Map();
@@ -11682,7 +11687,7 @@ function shZoom(рамка) {
       e.preventDefault();
     } else if (точки.size === 2 && старт.d) {
       const [a, b] = [...точки.values()];
-      const k = Math.min(6, Math.max(1, старт.scale * (Math.hypot(a.x - b.x, a.y - b.y) / старт.d)));
+      const k = Math.min(предел, Math.max(1, старт.scale * (Math.hypot(a.x - b.x, a.y - b.y) / старт.d)));
       const r = рамка.getBoundingClientRect();
       const cx = старт.cx - r.left, cy = старт.cy - r.top;
       tx = cx - (cx - старт.tx) * (k / старт.scale);
@@ -13808,6 +13813,55 @@ function bookSpanDates(b) {
   return с === по ? с : с + " — " + по;
 }
 
+/* ── Начать материал заново ──
+   Снимаем только «сколько сделано»: отметки разбора, записи занятий и открытые
+   награды. Сам материал, его разбор, обложка и отзыв остаются на месте.
+   Записи убираем пометкой, а не вычёркиванием: выкинутую из списка запись
+   другое устройство вернёт первой же синхронизацией — «нет записи» читается
+   там как «ещё не доехала». */
+function resetMaterial(kind, id) {
+  const t = now();
+  const похоронить = (список, годится) => {
+    let n = 0;
+    for (const e of список || []) if (!e.deleted && годится(e)) { e.deleted = true; e.updatedAt = t; n++; }
+    return n;
+  };
+  const снятьНаграды = (ключ) => {
+    for (const поле of ["achAt", "factAt"]) {
+      const o = data[поле] || {};
+      for (const k of Object.keys(o)) if (k.startsWith(ключ + ":")) delete o[k];
+    }
+    // артефакты помечены не ключом материала, а своим id — ищем по книге
+    for (const x of MUSEUM || []) if (x && x.book === ключ) delete (data.musAt || {})[x.id];
+  };
+
+  let убрано = 0;
+  if (kind === "pf") {
+    delete (data.practice || {})[id];
+    убрано = похоронить(data.piano.entries, (e) => (e.pieceId || "bwv853") === id);
+    снятьНаграды(id);
+  } else if (kind === "bk") {
+    const b = (data.book.books || []).find((x) => x.id === id);
+    if (b) { b.done = false; b.doneAt = ""; b.updatedAt = t; }
+    убрано = похоронить(data.book.entries, (e) => (e.bookId || "snow-1") === id);
+    снятьНаграды(id);
+  } else if (kind === "wt") {
+    const v = (data.watch.videos || []).find((x) => x.id === id);
+    if (v) { v.done = false; v.doneAt = 0; v.updatedAt = t; }
+    убрано = похоронить(data.watch.entries, (e) => (e.videoId || "") === id);
+    снятьНаграды(id);
+  } else if (kind === "ps") {
+    const первый = (courses()[0] || {}).id;
+    const c = courses().find((x) => x.id === id) || courses()[0] || {};
+    const ключ = !c.id || c.id === первый ? "pastel" : c.id;
+    delete (data.practice || {})[ключ === "pastel" ? "pastel" : "pastel:" + ключ];
+    убрано = похоронить(data.pastel.entries, (e) => (e.courseId || первый) === c.id);
+    снятьНаграды(ключ);
+  }
+  saveData(); schedulePush();
+  return убрано;
+}
+
 /* ── Библиотека: все материалы, у каждого своя страница со всем, что известно ── */
 function libraryUI() {
   useMark("библиотека");
@@ -13824,7 +13878,7 @@ function libraryUI() {
       const pc = (data.piano.pieces || []).find(x => x.id === id);
       if (pc) return piecePageUI(pc);
     }
-    if (kind === "ps" && hasPastel) return pastelPageUI();
+    if (kind === "ps" && hasPastel) return pastelPageUI(id || "");
     if (kind === "wt") { const v = videos().find(x => x.id === id); if (v) return watchPageUI(v); libBook = null; }
     libBook = null;
   }
@@ -13878,12 +13932,17 @@ function libraryUI() {
       v.done ? `посмотрено${last ? " · " + last : ""}` : "в очереди", true);
   });
 
-  const pastelRows = hasPastel ? (() => {
-    const st = withMaterial({ track: "pastel" }, pastelStats);
+  /* Строка на каждый курс: их стало несколько, а список показывал только
+     открытый сейчас — «Аргоса» в библиотеке было просто не найти. Ключ берём
+     тот же, что у ленты, иначе глазик прятал бы не то, что показывает. */
+  const pastelRows = courses().filter((c) => (c.lessons || []).length).map((c) => {
+    const st = withMaterial({ track: "pastel", courseId: c.id }, pastelStats);
     const pct = Math.round(st.pct);
-    return [row("ps:pastel", coverSrc("pastel", ""), "🎨", course().name, course().author, pct,
-      `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`)];
-  })() : [];
+    const key = libKey({ track: "pastel", courseId: c.id });
+    const ck = key === "ps" ? "pastel" : c.id;
+    return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct,
+      `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`);
+  });
 
   /* Полка переехала сюда из «Достижений»: прочитанное — такая же часть
      библиотеки, как то, что сейчас в работе, и искать его на другом экране
@@ -14035,6 +14094,7 @@ function bookPageUI(b) {
       </div>
     </div>
 
+    ${resetBtnHTML("bk", b.id)}
     <button class="btn lib-arch" data-libarch="bk:${esc(b.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
@@ -14075,6 +14135,7 @@ function watchPageUI(v) {
         ? `<button class="btn" data-wtback="${esc(v.id)}" type="button" style="margin-top:10px">Вернуть на главную</button>`
         : `<button class="btn" data-wtdone="${esc(v.id)}" type="button" style="margin-top:10px">Отметить посмотренным</button>`}
       <button class="btn" data-wtdel="${esc(v.id)}" type="button" style="margin-top:10px">Убрать из библиотеки</button>
+      ${resetBtnHTML("wt", v.id)}
     </div>`;
 }
 /* Где застреваешь: сколько времени уходило на отрезки. Это единственное,
@@ -14168,14 +14229,18 @@ function piecePageUI(pc) {
 
     <div class="freeze"><div class="fz-head">🎹 <b>Как считается</b> — такт считается выученным после ${FIRM_AT} проходов, поэтому процент строже, чем «задет»</div></div>
 
+    ${resetBtnHTML("pf", pc.id)}
     <button class="btn lib-arch" data-libarch="pf:${esc(pc.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
 // страница курса — тоже только чтение
-function pastelPageUI() {
-  const c  = course();
-  const st = withMaterial({ track: "pastel" }, pastelStats);
-  const ent = data.pastel.entries.filter(e => !e.deleted).slice().sort((x, y) => x.date < y.date ? -1 : 1);
+function pastelPageUI(id) {
+  const c  = courses().find((x) => x.id === id) || courses()[0] || course();
+  const st = withMaterial({ track: "pastel", courseId: c.id }, pastelStats);
+  const первый = (courses()[0] || {}).id;
+  const ent = data.pastel.entries
+    .filter(e => !e.deleted && (e.courseId || первый) === c.id)
+    .slice().sort((x, y) => x.date < y.date ? -1 : 1);
   const notes = ent.filter(e => e.note).length;
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
   const days = new Set(ent.map(e => e.date)).size;
@@ -14184,8 +14249,11 @@ function pastelPageUI() {
     <button class="back" id="libBack" type="button">‹ Все материалы</button>
 
     <div class="panel lib-head">
-      <div class="lib-cover big">${coverSrc("pastel", "")
-        ? `<img src="${esc(coverSrc("pastel", ""))}" alt="">` : `<i>🎨</i>`}</div>
+      <div class="lib-cover big">${(() => {
+        const ck = c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+        const src = coverSrc(ck, "");
+        return src ? `<img src="${esc(src)}" alt="">` : `<i>🎨</i>`;
+      })()}</div>
       <div class="lib-title"><b>${esc(c.name)}</b><em>${esc(c.author || "")}</em></div>
     </div>
 
@@ -14218,10 +14286,26 @@ function pastelPageUI() {
       </div>
     </div>
 
-    <button class="btn lib-arch" data-libarch="ps:pastel" type="button">Завершить и убрать в архив</button>`;
+    ${resetBtnHTML("ps", c.id)}
+    <button class="btn lib-arch" data-libarch="ps:${esc(c.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
+/* Кнопка стоит на странице самого материала, рядом с «в архив»: там видно,
+   что именно начинаешь заново. */
+const resetBtnHTML = (kind, id) => `
+  <button class="btn lib-arch" data-reset="${esc(kind)}:${esc(id)}" type="button">Начать заново</button>
+  <p class="lib-hint">Снимет отметки, записи занятий и открытые награды этого материала.
+    Сам материал и разбор останутся.</p>`;
+
 function bindLibraryUI() {
+  document.querySelectorAll("[data-reset]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const [kind, id] = btn.dataset.reset.split(":");
+      if (!confirm("Начать материал заново? Отметки, записи и награды по нему будут сняты.")) return;
+      const n = resetMaterial(kind, id || "");
+      render();
+      toast(n ? "Сброшено · записей убрано: " + n : "Сброшено");
+    }));
   document.querySelectorAll("[data-eye]").forEach(btn =>
     btn.addEventListener("click", (e) => { e.stopPropagation(); matToggle(btn.dataset.eye); }));
   document.querySelectorAll("[data-lib]").forEach(btn =>
@@ -14248,7 +14332,7 @@ function bindLibraryUI() {
       const [kind, id] = btn.dataset.libarch.split(":");
       if (kind === "bk") { data.active = "book"; data.book.activeBook = id; }
       else if (kind === "pf") { data.active = "piano"; data.piano.activePiece = id; }
-      else if (kind === "ps") data.active = "pastel";
+      else if (kind === "ps") { data.active = "pastel"; if (id) data.pastel.activeCourse = id; }
       libBook = null;
       archiveCurrent();
     }));

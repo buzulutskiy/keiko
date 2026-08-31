@@ -798,6 +798,58 @@ function ок(имя, факт, надо) {
   t.set("prac", было);
 }
 
+/* ── Начать материал заново ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    piano: t.get("data").piano, achAt: t.get("data").achAt, factAt: t.get("data").factAt,
+    musAt: t.get("data").musAt, museum: t.get("MUSEUM"), active: t.get("data").active,
+  };
+  t.set("data.pastel", {
+    entries: [
+      { id: "e1", date: "2026-08-01", lessons: [0] },                 // без courseId — первого курса
+      { id: "e2", date: "2026-08-02", courseId: "argos", lessons: [] },
+    ],
+    course: null, activeCourse: "argos",
+    courses: [
+      { id: "test-drive", name: "Пастель", lessons: [{ dur: 600, steps: [] }] },
+      { id: "argos", name: "Аргос", plain: true, lessons: [{ dur: 600, steps: [{ k: "do", t: "…" }] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", { "pastel": { done: { "L0:s0": "2026-08-01" } },
+                           "pastel:argos": { done: { "L0:s0": "2026-08-02" } } });
+  t.set("data.achAt", { "argos:first": 1, "pastel:first": 1 });
+  t.set("data.factAt", { "argos:f1": 1, "pastel:f1": 1 });
+  t.set("data.musAt", { m1: 1, m2: 1 });
+  t.set("MUSEUM", [{ id: "m1", book: "argos" }, { id: "m2", book: "pastel" }]);
+
+  const убрано = t.get("resetMaterial")("ps", "argos");
+
+  ок("сброс: запись помечена, а не выкинута",
+    [t.get("data").pastel.entries.length, t.get("data").pastel.entries[1].deleted], [2, true]);
+  ок("сброс: убрана одна запись", убрано, 1);
+  ок("сброс: ход разбора очищен", t.get("data").practice["pastel:argos"], undefined);
+  ок("сброс: чужой курс не тронут",
+    Object.keys(t.get("data").practice.pastel.done).length, 1);
+  ок("сброс: чужая запись жива", !!t.get("data").pastel.entries[0].deleted, false);
+  ок("сброс: награды сняты только свои",
+    [t.get("data").achAt["argos:first"], t.get("data").achAt["pastel:first"]], [undefined, 1]);
+  ок("сброс: карточки сняты только свои",
+    [t.get("data").factAt["argos:f1"], t.get("data").factAt["pastel:f1"]], [undefined, 1]);
+  ок("сброс: артефакты сняты только свои",
+    [t.get("data").musAt.m1, t.get("data").musAt.m2], [undefined, 1]);
+
+  // после сброса материал открывается с первого шага
+  ок("сброс: занятие с начала", t.get("lessonNext")(), { i: 0, phase: "step", step: 0 });
+
+  t.set("MUSEUM", было.museum);
+  t.set("data.pastel", было.pastel); t.set("data.practice", было.practice);
+  t.set("data.achAt", было.achAt); t.set("data.factAt", было.factAt);
+  t.set("data.musAt", было.musAt); t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
