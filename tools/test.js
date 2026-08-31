@@ -889,6 +889,65 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Аудит: то, что курсы делили между собой ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    active: t.get("data").active, pills: t.get("data").pills,
+  };
+  const ш = () => ({ k: "do", g: "Э", t: "…" });
+  t.set("data.pastel", {
+    entries: [
+      { id: "e1", date: "2026-08-01", courseId: "one", lessons: [] },
+      { id: "e2", date: "2026-08-01", courseId: "two", lessons: [] },
+      { id: "e3", date: "2026-08-02", courseId: "two", lessons: [] },
+    ],
+    course: null, activeCourse: "two",
+    courses: [
+      { id: "one", name: "Первый", lessons: [{ dur: 600, steps: [ш(), ш()] }] },
+      { id: "two", name: "Второй", lessons: [{ dur: 600, steps: [ш(), ш()] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {
+    "pastel": { done: { "L0:s0": "2026-08-01" } },
+    "pastel:two": { done: { "L0:s0": "2026-08-01" } },
+  });
+
+  // статистика считает свои дни, а не все дни трека
+  ок("аудит: дни считаются по своему курсу", t.get("pastelStats")().days, 2);
+  t.set("data.pastel.activeCourse", "one");
+  ок("аудит: у первого курса свой счёт дней", t.get("pastelStats")().days, 1);
+
+  // удаление дня гасит шаги своего курса, а не соседнего
+  t.set("data.pastel.activeCourse", "two");
+  t.get("dropEntry")(t.get("data").pastel.entries[1], "pastel");
+  ок("аудит: свои шаги за этот день сняты",
+    !!t.get("data").practice["pastel:two"].done["L0:s0"], false);
+  ок("аудит: шаги соседнего курса целы",
+    t.get("data").practice.pastel.done["L0:s0"], "2026-08-01");
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+  t.set("data.pills", было.pills);
+}
+
+/* ── Аудит: перенос данных ничего не выбрасывает ── */
+{
+  const внутрь = {
+    v: 1, pills: [{ id: "p1", name: "витамин", updatedAt: 5 }],
+    piano: { pieces: [], entries: [] }, book: { books: [], entries: [] },
+    pastel: { entries: [], courses: [{ id: "c", name: "К", lessons: [] }], activeCourse: "c" },
+    watch: { videos: [], entries: [] }, practice: {},
+  };
+  const из = t.get("migrate")(внутрь);
+  ок("перенос: таблетки не теряются", (из.pills || []).length, 1);
+  ок("перенос: курсы доезжают", (из.pastel.courses || []).length, 1);
+  ок("перенос: выбранный курс доезжает", из.pastel.activeCourse, "c");
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;

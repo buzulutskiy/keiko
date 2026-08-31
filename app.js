@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 329";
+const APP_VERSION = "Кэйко 330";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -216,6 +216,7 @@ function migrate(obj) {
   // след недолгой «ровной сетки» видео: идея не прижилась, поле вычищаем
   for (const k of Object.keys(base.practice || {}))
     if (base.practice[k] && base.practice[k].vmap !== undefined) delete base.practice[k].vmap;
+  if (Array.isArray(obj.pills)) base.pills = obj.pills;
   if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
   if (obj.usage && typeof obj.usage === "object") base.usage = obj.usage;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
@@ -1004,7 +1005,9 @@ function courseTime() {
 function pastelStats() {
   const c = course();
   const done = doneLessons();
-  const list = courseTrack().entries.filter(e => !e.deleted).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  /* Записи только своего курса: раньше брались все записи трека, и дни,
+     заметки и «возвращения» одного курса засчитывались другому. */
+  const list = courseEntries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
   const { totalSec, doneSec } = courseTime();
 
   let weekend = false, comeback = false, notes = 0, maxAtOnce = 0, prev = null;
@@ -1283,7 +1286,8 @@ const FACTS = {};
    У курса занятий мало (уроки), поэтому там за раз открывается несколько.
    Когда материал пройден до конца — открывается всё, что осталось. */
 function factsState() {
-  const key = isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : piece().id;
+  // ключ материала общий для всех: у второго курса свои карточки, а не чужие
+  const key = curKey();
   const list = (catOf(key) || {}).facts || FACTS[key] || [];
   if (!list.length) return [];
   // у курса шагом служат пройденные уроки: их мало, поэтому за раз открывается несколько карточек
@@ -1440,11 +1444,21 @@ function archiveCurrent() {
     if (name === null || !name.trim()) { data.archive.pop(); return; }
     const cnt = Math.round(Number((prompt("Сколько в нём уроков?", "10") || "").replace(",", ".")));
     if (!cnt || cnt < 1) { data.archive.pop(); toast("Не понял число уроков"); return; }
-    data.pastel.course = {
+    /* Новый курс уходит в список courses, а не в старое одиночное поле:
+       список — то, что читает приложение, и запись мимо него просто пропадала
+       из виду. Прежний курс помечаем архивным, иначе он остался бы на ленте. */
+    const прежний = course();
+    data.pastel.courses = Array.isArray(data.pastel.courses) ? data.pastel.courses : [];
+    if (!data.pastel.courses.length && data.pastel.course) data.pastel.courses.push(data.pastel.course);
+    const старый = data.pastel.courses.find((x) => x.id === прежний.id);
+    if (старый) { старый.archived = true; старый.updatedAt = now(); }
+    const свежий = {
       id: uid(), name: name.trim(), author: "",
       lessons: Array.from({ length: cnt }, (_, i) => ({ title: `Урок ${i + 1}`, dur: 600 })),
       updatedAt: now()
     };
+    data.pastel.courses.push(свежий);
+    data.pastel.activeCourse = свежий.id;
   } else {
     const p = piece();
     p.archived = true; p.updatedAt = now();
@@ -1966,7 +1980,9 @@ function dropEntry(e, track) {
      по-прежнему числятся пройденными. Ровно то враньё, от которого пианино
      защитили с самого начала. Ключи «нет» это не трогает: они значат
      «задания в уроке не было», а не дату. */
-  if (track === "pastel") pracForgetDay("pastel", e.date);
+  /* Ключ курса, а не строка «pastel»: курсов стало несколько, и удаление дня
+     у одного гасило шаги другого, а свои оставляло пройденными. */
+  if (track === "pastel") pracForgetDay(pracCourseKey(), e.date);
   const key = dayKeyOf(e, track);
   if (key && !stillHasDay(track, key, e.date)) dropDayCard(track, key, e.date);
   saveData();
@@ -9777,14 +9793,6 @@ function lcClock(t) {
   return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(sec).padStart(2, "0");
 }
 
-async function lcPick(i, file) {
-  if (!file) return;
-  await videoSave(lessonVidId(i), file);
-  seenSet(i, 0, 0);
-  lcMount(i);
-  toast("Видео на месте");
-}
-
 /* Тело шага. Текст приходит как есть, вместе со схемами в тройных кавычках:
    схема держится только пробелами, поэтому идёт в моноширинный блок без
    переносов, а всё остальное — обычными абзацами и списком. Разметки тут
@@ -13417,6 +13425,8 @@ function restoreBackup(file) {
     // материалы, которых у нас нет, тоже возвращаем
     for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
     for (const b of ((d.book && d.book.books) || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
+    // курсы — такие же определения материалов: без этой строки копия их теряла
+    data.pastel.courses = mergeLists(data.pastel.courses || [], (d.pastel && d.pastel.courses) || []);
 
     normalizeActive();
     saveData(); schedulePush();
@@ -14256,6 +14266,11 @@ function pastelPageUI(id) {
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
   const days = new Set(ent.map(e => e.date)).size;
   const лекция = c.mode === "watch";
+  /* Ход разбора берём у того курса, чью страницу открыли, а не у активного:
+     иначе карта шагов и список этапов показывали чужое, споря с числами
+     над ними, которые уже считались правильно. */
+  const отметки = withMaterial({ track: "pastel", courseId: c.id },
+    () => ({ ...(lessonStore().done || {}) }));
   const этапов = new Set(c.lessons.flatMap((l) => (l.steps || []).map((x) => x.g || ""))).size;
 
   return `
@@ -14276,7 +14291,7 @@ function pastelPageUI(id) {
            дыры. У лекции ходов нет, там карта по занятиям. */
         if (лекция) return `<div class="lib-map">${c.lessons.map((_, i) =>
           `<i style="opacity:${st.doneSet.has(i) ? 1 : 0.10}"></i>`).join("")}</div>`;
-        const сделан = (i, n) => !!(lessonStore().done || {})["L" + i + ":s" + n];
+        const сделан = (i, n) => !!отметки["L" + i + ":s" + n];
         return `<div class="lib-map">${c.lessons.map((l, i) =>
           (l.steps || []).map((_, n) =>
             `<i style="opacity:${сделан(i, n) ? 1 : 0.10}"></i>`).join("")).join("")}</div>`;
@@ -14312,7 +14327,7 @@ function pastelPageUI(id) {
           </div>`).join("")
         : (() => {
             /* Этап показываем полосой: сколько его ходов закрыто. */
-            const сделан = (i, n) => !!(lessonStore().done || {})["L" + i + ":s" + n];
+            const сделан = (i, n) => !!отметки["L" + i + ":s" + n];
             const по = new Map();
             c.lessons.forEach((l, i) => (l.steps || []).forEach((x, n) => {
               const g = x.g || "Без этапа";
