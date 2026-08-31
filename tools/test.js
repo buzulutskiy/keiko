@@ -484,7 +484,7 @@ function ок(имя, факт, надо) {
 
   // под названием — размер материала
   t.set("data.pastel.activeCourse", "argos");
-  ок("курсы: размер в шагах", t.get("courseSize")(), "2 шага");
+  ок("курсы: размер в ходах", t.get("courseSize")(), "2 хода");
 
   t.set("data.pastel", было.pastel);
   t.set("data.practice", было.practice);
@@ -572,6 +572,10 @@ function ок(имя, факт, надо) {
 
   // под названием — размер материала, а не доля пройденного
   ок("лекция: размер в уроках", t.get("courseSize")(), "2 урока");
+  ок("ходы склоняются", [t.get("hody")(1), t.get("hody")(3), t.get("hody")(24)],
+    ["1 ход", "3 хода", "24 хода"]);
+  ок("после «из» — родительный", [t.get("hodov")(1), t.get("hodov")(2), t.get("hodov")(24)],
+    ["1 хода", "2 ходов", "24 ходов"]);
 
   // следующее занятие — первое недосмотренное, а не всегда первое
   ок("лекция: следующее — недосмотренное", t.get("lessonNext")().i, 0);
@@ -848,6 +852,41 @@ function ок(имя, факт, надо) {
   t.set("data.pastel", было.pastel); t.set("data.practice", было.practice);
   t.set("data.achAt", было.achAt); t.set("data.factAt", было.factAt);
   t.set("data.musAt", было.musAt); t.set("data.active", было.active);
+}
+
+/* ── Статистика курса: ходы у рисунка, минуты у лекции ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    active: t.get("data").active,
+  };
+  const ш = (g) => ({ k: "do", g, t: "…" });
+  t.set("data.pastel", {
+    entries: [], course: null, activeCourse: "risunok",
+    courses: [{
+      id: "risunok", name: "Рисунок", plain: true,
+      lessons: [{ dur: 600, steps: [ш("Первый"), ш("Первый"), ш("Второй"), ш("Второй")] }],
+    }],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+
+  let st = t.get("pastelStats")();
+  ок("ходы: всего посчитаны", st.steps, 4);
+  ок("ходы: пока ни одного", st.stepsDone, 0);
+  ок("ходы: этапов пройдено нет", st.stages, 0);
+
+  const done = t.get("lessonStore")().done;
+  done["L0:s0"] = "2026-08-31"; done["L0:s1"] = "2026-08-31"; done["L0:s2"] = "2026-08-31";
+  st = t.get("pastelStats")();
+  ок("ходы: три закрыто", st.stepsDone, 3);
+  ок("ходы: этап засчитан целиком", st.stages, 1);
+  ок("ходы: уроков по-прежнему один", st.lessons, 1);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
 }
 
 /* ── Палитра: слово курса → номера мелков ── */

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 327";
+const APP_VERSION = "Кэйко 328";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -128,6 +128,12 @@ function plural(n, one, few, many) {
   return many;
 }
 const takty = n => `${n} ${plural(n, "такт", "такта", "тактов")}`;
+/* Ход — единица разбора рисунка, как такт у пьесы. «Шаг» слишком общее слово:
+   им называется и весь этап, и одно движение карандашом; «ход» короткое и
+   говорит именно про продвижение по работе. */
+const hody = n => `${n} ${plural(n, "ход", "хода", "ходов")}`;
+/* После «из» слово встаёт в родительный: «12 из 24 ходов», а не «24 хода». */
+const hodov = n => `${n} ${plural(n, "хода", "ходов", "ходов")}`;
 const stranic = n => `${n} ${plural(n, "страница", "страницы", "страниц")}`;
 const handIcon = h => h === "left" ? "𝄢" : "𝄞";
 const spanText = s => `${handIcon(s.hand)} ${s.from === s.to ? s.from + "-й" : s.from + "–" + s.to}`;
@@ -1042,11 +1048,13 @@ function pastelStats() {
 
   return {
     lessons: shown, done: doneShown, doneSet: done, spentSec,
-    stepsDone, stages: stageSet.size, stageSet, lessonSet,
+    stepsDone, steps: c.lessons.reduce((n, l) => n + (Array.isArray(l.steps) ? l.steps.length : 0), 0),
+    stages: stageSet.size, stageSet, lessonSet,
     /* Процент — по времени. Курс без проставленных длительностей считаем
        по-старому, поштучно: лучше грубо, чем ноль навсегда. */
     pct: totalSec ? Math.min(100, doneSec / totalSec * 100) : (shown ? doneShown / shown * 100 : 0),
     totalSec, doneSec, minutes: Math.round(doneSec / 60),
+    minutesAll: Math.round(totalSec / 60),
     minutesLeft: Math.max(0, Math.round((totalSec - doneSec) / 60)),
     days: list.length, streak: streak(), streakAll: streakAll(),
     weekend, comeback, notes, maxAtOnce,
@@ -1119,7 +1127,7 @@ function courseSize() {
     return n ? n + " " + plural(n, "урок", "урока", "уроков") : "";
   }
   const n = ls.reduce((a, _, i) => a + (lessonSteps(i) || []).length, 0);
-  return n ? n + " " + plural(n, "шаг", "шага", "шагов") : "";
+  return n ? hody(n) : "";
 }
 
 /* ── Достижения ── */
@@ -13940,8 +13948,11 @@ function libraryUI() {
     const pct = Math.round(st.pct);
     const key = libKey({ track: "pastel", courseId: c.id });
     const ck = key === "ps" ? "pastel" : c.id;
-    return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct,
-      `${pct}% · ${st.done} из ${st.lessons} уроков · ${st.minutes} мин`);
+    /* Уроками больше не меряем: у рисунка мера — ходы, у лекции — минуты. */
+    const мера = c.mode === "watch"
+      ? `${st.minutes} из ${st.minutesAll} мин`
+      : `${st.stepsDone} из ${hodov(st.steps)}`;
+    return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct, `${pct}% · ${мера}`);
   });
 
   /* Полка переехала сюда из «Достижений»: прочитанное — такая же часть
@@ -14244,6 +14255,8 @@ function pastelPageUI(id) {
   const notes = ent.filter(e => e.note).length;
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
   const days = new Set(ent.map(e => e.date)).size;
+  const лекция = c.mode === "watch";
+  const этапов = new Set(c.lessons.flatMap((l) => (l.steps || []).map((x) => x.g || ""))).size;
 
   return `
     <button class="back" id="libBack" type="button">‹ Все материалы</button>
@@ -14258,13 +14271,25 @@ function pastelPageUI(id) {
     </div>
 
     <div class="panel">
-      <div class="lib-map">${c.lessons.map((_, i) =>
-        `<i style="opacity:${st.doneSet.has(i) ? 1 : 0.10}"></i>`).join("")}</div>
+      ${(() => {
+        /* Карта — по ходам, как у пьесы по тактам: видно, сколько позади и где
+           дыры. У лекции ходов нет, там карта по занятиям. */
+        if (лекция) return `<div class="lib-map">${c.lessons.map((_, i) =>
+          `<i style="opacity:${st.doneSet.has(i) ? 1 : 0.10}"></i>`).join("")}</div>`;
+        const сделан = (i, n) => !!(lessonStore().done || {})["L" + i + ":s" + n];
+        return `<div class="lib-map">${c.lessons.map((l, i) =>
+          (l.steps || []).map((_, n) =>
+            `<i style="opacity:${сделан(i, n) ? 1 : 0.10}"></i>`).join("")).join("")}</div>`;
+      })()}
       <div class="lib-num">
         <div><b>${Math.round(st.pct)}%</b><span>пройдено</span></div>
-        <div><b>${st.done}</b><span>из ${st.lessons} уроков</span></div>
+        ${лекция
+          ? `<div><b>${st.minutes}</b><span>из ${st.minutesAll} мин</span></div>`
+          : `<div><b>${st.stepsDone}</b><span>из ${hodov(st.steps)}</span></div>`}
         <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
-        <div><b>${st.minutes}</b><span>мин</span></div>
+        ${лекция
+          ? `<div><b>${st.days}</b><span>${plural(st.days, "запись", "записи", "записей")}</span></div>`
+          : `<div><b>${st.stages}</b><span>из ${этапов} ${plural(этапов, "этапа", "этапов", "этапов")}</span></div>`}
       </div>
       <div class="lib-rows">
         <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
@@ -14275,14 +14300,36 @@ function pastelPageUI(id) {
     </div>
 
     <div class="freeze">
-      <div class="fz-head">🎨 <b>Уроки</b> — ${st.lessons} ${plural(st.lessons, "урок", "урока", "уроков")}</div>
+      <div class="fz-head">🎨 <b>${лекция ? "Занятия" : "Этапы"}</b> — ${
+        лекция ? st.lessons + " " + plural(st.lessons, "занятие", "занятия", "занятий")
+               : этапов + " " + plural(этапов, "этап", "этапа", "этапов")}</div>
       <div class="parts">
-        ${c.lessons.map((l, i) => `
+        ${лекция ? c.lessons.map((l, i) => `
           <div class="pt-main ${st.doneSet.has(i) ? "full" : ""}" style="cursor:default">
             <span class="pt-fill" style="width:${st.doneSet.has(i) ? 100 : 0}%"></span>
-            <span class="pt-name">${esc(l.name || "Урок " + (i + 1))}</span>
-            <span class="pt-meta">${st.doneSet.has(i) ? "пройден" : Math.round(l.dur / 60) + " мин"}</span>
-          </div>`).join("")}
+            <span class="pt-name">${esc(l.title || l.name || "Занятие " + (i + 1))}</span>
+            <span class="pt-meta">${st.doneSet.has(i) ? "пройдено" : Math.round(l.dur / 60) + " мин"}</span>
+          </div>`).join("")
+        : (() => {
+            /* Этап показываем полосой: сколько его ходов закрыто. */
+            const сделан = (i, n) => !!(lessonStore().done || {})["L" + i + ":s" + n];
+            const по = new Map();
+            c.lessons.forEach((l, i) => (l.steps || []).forEach((x, n) => {
+              const g = x.g || "Без этапа";
+              const v = по.get(g) || { all: 0, ok: 0 };
+              v.all++; if (сделан(i, n)) v.ok++;
+              по.set(g, v);
+            }));
+            return [...по].map(([g, v]) => {
+              const p = v.all ? Math.round(v.ok / v.all * 100) : 0;
+              return `
+          <div class="pt-main ${p >= 100 ? "full" : ""}" style="cursor:default">
+            <span class="pt-fill" style="width:${p}%"></span>
+            <span class="pt-name">${esc(g)}</span>
+            <span class="pt-meta">${p >= 100 ? "пройден" : v.ok + " из " + hodov(v.all)}</span>
+          </div>`;
+            }).join("");
+          })()}
       </div>
     </div>
 
