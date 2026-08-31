@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 325";
+const APP_VERSION = "Кэйко 326";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10514,7 +10514,7 @@ function openLesson() {
   pracTimer = setInterval(() => {
     if (!prac) return;
     pracClock();
-    if (prac.taskAt) pracRender();
+    if (pracTicking()) pracRender();
     pracWatch();
   }, 1000);
   keepAwake(true);
@@ -10552,6 +10552,13 @@ function openPractice() {
    двадцать минут, а вверху всё те же «0 мин». Перерисовывать целиком раз в
    секунду нельзя — схлопнутся раскрытые списки и собьётся прокрутка, поэтому
    трогаем ровно одну строку. */
+/* Раз в секунду перерисовывается только тот экран, где бегут секунды: старые
+   фазы урока, у которых время стоит цифрами во весь экран. У шага и у лекции
+   секунд нет, а перерисовка пересоздаёт разметку целиком — из-за неё картинка
+   шага мигала каждую секунду, заново подставляясь в новый <img>. */
+const pracTicking = () => !!(prac && prac.taskAt && prac.at
+  && prac.screen !== "watch" && prac.at.phase !== "step");
+
 function pracClock() {
   const el = $("#pracWhere");
   if (!el || !prac) return;

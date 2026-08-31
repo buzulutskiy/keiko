@@ -775,6 +775,29 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Раз в секунду перерисовываем только экран с секундами ── */
+{
+  const было = t.get("prac");
+  const тикает = t.get("pracTicking");
+
+  t.set("prac", null);
+  ок("тик: без занятия не тикаем", тикает(), false);
+
+  t.set("prac", { kind: "lesson", screen: "work", taskAt: 111, at: { i: 0, phase: "step", step: 3 } });
+  ок("тик: на шаге не перерисовываем", тикает(), false);
+
+  t.set("prac", { kind: "lesson", screen: "watch", taskAt: 111, at: { i: 0, phase: "watch" } });
+  ок("тик: на лекции не перерисовываем", тикает(), false);
+
+  t.set("prac", { kind: "lesson", screen: "work", taskAt: 111, at: { i: 0, phase: "repeat" } });
+  ок("тик: на старом экране с секундами перерисовываем", тикает(), true);
+
+  t.set("prac", { kind: "lesson", screen: "work", taskAt: 0, at: { i: 0, phase: "repeat" } });
+  ок("тик: без отсчёта не перерисовываем", тикает(), false);
+
+  t.set("prac", было);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
