@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 332";
+const APP_VERSION = "Кэйко 333";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -346,7 +346,8 @@ const piece = () => data.piano.pieces.find(p => p.id === data.piano.activePiece)
    course — единственный курс из времён, когда он был один; оно осталось для
    данных, которые ещё не переехали. */
 const courses = () => {
-  const t = courseTrack();
+  // трека может не быть вовсе — у нового профиля или в старом файле
+  const t = courseTrack() || {};
   const list = Array.isArray(t.courses) ? t.courses.filter((c) => c && !c.archived) : [];
   if (list.length) return list;
   return t.course ? [t.course] : [];
@@ -590,6 +591,15 @@ function bookProgressOf(b) {
    сиену должна прийти тогда же. Ждать конца стодесятиминутного урока значило
    бы придержать её на несколько недель. */
 const COURSE_MUS = "pastel";
+/* Курс, которому принадлежит предмет. «pastel» — имя первого курса с тех пор,
+   когда курс был один; остальные зовутся своим id. Раньше музей знал ровно
+   одно это имя, и предметы второго курса не открывались никогда. */
+const courseByBook = (book) => {
+  const list = courses();
+  if (book === COURSE_MUS) return list[0] || (data.pastel && data.pastel.course) || null;
+  return list.find((c) => c.id === book) || null;
+};
+const isCourseBook = (book) => !!courseByBook(book);
 /* «37:30» → 2250 секунд. Часы бывают у длинных лекций. */
 function stepSec(at) {
   const m = String(at || "").trim().match(/^(?:(\d+):)?(\d+):(\d+)$/);
@@ -605,7 +615,7 @@ function seenIn(c, i) {
 }
 
 function musOpenCourse(x) {
-  const c = courses()[0] || (data.pastel && data.pastel.course) || null;
+  const c = courseByBook(x.book);
   if (!c || !(c.lessons || []).length) return false;
   const n = Number(x.ch);
   if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
@@ -641,7 +651,7 @@ function musOpenCourse(x) {
 
 function musOpen(x) {
   if (!x) return false;
-  if (x.book === COURSE_MUS) return musOpenCourse(x);
+  if (isCourseBook(x.book)) return musOpenCourse(x);
   /* Сначала книга, потом глава. Раньше проверка шла в обратном порядке, и
      предмет без главы — пролог «Одиссеи», образ Пенелопы — открывался всем,
      включая тех, у кого этой книги нет вовсе. Артефакт принадлежит книге:
@@ -10925,7 +10935,8 @@ const musChName = (x) => {
 
 /* Название книги по её id: предмет знает только id, а человеку нужно имя. */
 const musBookName = (id) => {
-  if (id === COURSE_MUS) return (courses()[0] || (data.pastel && data.pastel.course) || {}).name || "Курс";
+  const c = courseByBook(id);
+  if (c) return c.name || "Курс";
   const b = (data.book.books || []).find((x) => x.id === id);
   return b ? b.title : id;
 };

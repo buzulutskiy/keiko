@@ -958,6 +958,45 @@ function ок(имя, факт, надо) {
   ок("перенос: выбранный курс доезжает", из.pastel.activeCourse, "c");
 }
 
+/* ── Предметы и награды второго курса ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    practice: JSON.parse(JSON.stringify(t.get("data").practice || {})),
+    museum: t.get("MUSEUM"), active: t.get("data").active,
+  };
+  const ш = (g) => ({ k: "do", g, t: "…" });
+  t.set("data.pastel", {
+    entries: [], course: null, activeCourse: "vtoroy",
+    courses: [
+      { id: "test-drive", name: "Первый", mode: "watch", lessons: [{ dur: 600 }] },
+      { id: "vtoroy", name: "Второй", plain: true,
+        lessons: [{ dur: 600, steps: [ш("А"), ш("А"), ш("Б")] }] },
+    ],
+  });
+  t.set("data.active", "pastel");
+  t.set("data.practice", {});
+  t.set("MUSEUM", [
+    { id: "v1", book: "vtoroy", ch: 1, step: 0, name: "Карандаш" },
+    { id: "v2", book: "vtoroy", ch: 1, step: 2, name: "Клячка" },
+    { id: "p1", book: "pastel", ch: 1, step: 0, name: "Чужой" },
+  ]);
+  const открыт = (id) => t.get("musOpen")(t.get("MUSEUM").find((x) => x.id === id));
+
+  ок("второй курс: имя в музее", t.get("musBookName")("vtoroy"), "Второй");
+  ок("второй курс: до работы всё закрыто", [открыт("v1"), открыт("v2")], [false, false]);
+
+  t.get("lessonStore")().done["L0:s0"] = "2026-08-31";
+  ок("второй курс: предмет своего шага открылся", открыт("v1"), true);
+  ок("второй курс: предмет дальнего шага ещё закрыт", открыт("v2"), false);
+  ок("второй курс: чужой предмет не тронут", открыт("p1"), false);
+
+  t.set("MUSEUM", было.museum);
+  t.set("data.pastel", было.pastel);
+  t.set("data.practice", было.practice);
+  t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
