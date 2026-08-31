@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 328";
+const APP_VERSION = "Кэйко 329";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -128,12 +128,12 @@ function plural(n, one, few, many) {
   return many;
 }
 const takty = n => `${n} ${plural(n, "такт", "такта", "тактов")}`;
-/* Ход — единица разбора рисунка, как такт у пьесы. «Шаг» слишком общее слово:
-   им называется и весь этап, и одно движение карандашом; «ход» короткое и
-   говорит именно про продвижение по работе. */
-const hody = n => `${n} ${plural(n, "ход", "хода", "ходов")}`;
-/* После «из» слово встаёт в родительный: «12 из 24 ходов», а не «24 хода». */
-const hodov = n => `${n} ${plural(n, "хода", "ходов", "ходов")}`;
+/* Единица разбора рисунка — шаг, как такт у пьесы. Слово «шаг» само по себе
+   слишком общее, поэтому в статистике оно всегда с уточнением: «шаги рисунка».
+   Второй вариант — для позиции после «из», там нужен родительный падеж:
+   «12 из 24 шагов рисунка», а не «24 шага». */
+const shagi  = n => `${n} ${plural(n, "шаг", "шага", "шагов")} рисунка`;
+const shagov = n => `${n} ${plural(n, "шага", "шагов", "шагов")} рисунка`;
 const stranic = n => `${n} ${plural(n, "страница", "страницы", "страниц")}`;
 const handIcon = h => h === "left" ? "𝄢" : "𝄞";
 const spanText = s => `${handIcon(s.hand)} ${s.from === s.to ? s.from + "-й" : s.from + "–" + s.to}`;
@@ -1127,7 +1127,7 @@ function courseSize() {
     return n ? n + " " + plural(n, "урок", "урока", "уроков") : "";
   }
   const n = ls.reduce((a, _, i) => a + (lessonSteps(i) || []).length, 0);
-  return n ? hody(n) : "";
+  return n ? shagi(n) : "";
 }
 
 /* ── Достижения ── */
@@ -13951,7 +13951,7 @@ function libraryUI() {
     /* Уроками больше не меряем: у рисунка мера — ходы, у лекции — минуты. */
     const мера = c.mode === "watch"
       ? `${st.minutes} из ${st.minutesAll} мин`
-      : `${st.stepsDone} из ${hodov(st.steps)}`;
+      : `${st.stepsDone} из ${shagov(st.steps)}`;
     return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct, `${pct}% · ${мера}`);
   });
 
@@ -14285,7 +14285,7 @@ function pastelPageUI(id) {
         <div><b>${Math.round(st.pct)}%</b><span>пройдено</span></div>
         ${лекция
           ? `<div><b>${st.minutes}</b><span>из ${st.minutesAll} мин</span></div>`
-          : `<div><b>${st.stepsDone}</b><span>из ${hodov(st.steps)}</span></div>`}
+          : `<div><b>${st.stepsDone}</b><span>из ${shagov(st.steps)}</span></div>`}
         <div><b>${days}</b><span>${plural(days, "день", "дня", "дней")}</span></div>
         ${лекция
           ? `<div><b>${st.days}</b><span>${plural(st.days, "запись", "записи", "записей")}</span></div>`
@@ -14326,7 +14326,7 @@ function pastelPageUI(id) {
           <div class="pt-main ${p >= 100 ? "full" : ""}" style="cursor:default">
             <span class="pt-fill" style="width:${p}%"></span>
             <span class="pt-name">${esc(g)}</span>
-            <span class="pt-meta">${p >= 100 ? "пройден" : v.ok + " из " + hodov(v.all)}</span>
+            <span class="pt-meta">${p >= 100 ? "пройден" : v.ok + " из " + shagov(v.all)}</span>
           </div>`;
             }).join("");
           })()}
