@@ -1194,22 +1194,22 @@
     }
 
     /* ── Тело шага: текст занятия как он написан ── */
-    /* Страница шага выключена по центру, и тело шага тоже. Но список и схему
-       центрируем целиком, а внутри оставляем влево: у списка иначе разъезжаются
-       маркеры, а у схемы — сама схема, она держится на пробелах. */
-    .ls-body { margin: 14px 0 4px; font-size: 0.9rem; line-height: 1.55; min-width: 0; }
-    .ls-body p { margin: 0 0 9px; }
-    .ls-body ul {
-      display: inline-block; text-align: left;
-      margin: 0 0 10px; padding-left: 18px;
+    /* По центру стоит только шапка шага: материал, этап, вид и название.
+       Само содержание выключено влево — длинный текст по центру читается
+       рвано, глазу негде зацепиться за начало строки. */
+    .ls-body {
+      margin: 14px 0 4px; font-size: 0.9rem; line-height: 1.55;
+      min-width: 0; text-align: left;
     }
+    .ls-body p { margin: 0 0 9px; }
+    .ls-body ul { margin: 0 0 10px; padding-left: 18px; }
     .ls-body li { margin: 3px 0; }
     .ls-body li::marker { color: var(--dim); }
     .ls-body b { font-weight: 700; }
     /* Схема держится пробелами: моноширинный шрифт и никаких переносов.
        Широкая уезжает прокруткой внутри себя, а не растягивает экран. */
     .ls-pre {
-      display: inline-block; text-align: left; max-width: 100%;
+      max-width: 100%;
       margin: 0 0 12px; padding: 12px 14px; border-radius: 8px;
       background: rgba(255, 255, 255, 0.05);
       font: 400 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1218,7 +1218,6 @@
     .ls-why { color: var(--muted); }
     .ls-why b { color: rgba(255, 255, 255, 0.9); }
     .ls-note {
-      display: inline-block; text-align: left; max-width: 100%;
       border-left: 2px solid rgba(255, 255, 255, 0.18); padding-left: 11px;
       color: var(--muted);
     }
@@ -1942,7 +1941,7 @@
       background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.86);
     }
     .ls-tab {
-      display: inline-table; text-align: left; margin: 0 0 12px;
+      width: 100%; margin: 0 0 12px;
       border-collapse: collapse; font-size: 0.86rem;
     }
     .ls-tab td { padding: 6px 14px 6px 0; border-bottom: 1px solid var(--glass-line); }
