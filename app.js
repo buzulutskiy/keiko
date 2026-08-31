@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 321";
+const APP_VERSION = "Кэйко 322";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9784,25 +9784,72 @@ function stepBody(txt) {
   return String(txt).split(/```[a-z]*\n?/).map((кусок, i) => {
     if (i % 2) return `<pre class="ls-pre">${esc(кусок.replace(/\n$/, ""))}</pre>`;
     const строки = кусок.split("\n");
-    let out = "", список = false;
-    const жирный = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    let out = "", список = false, таблица = [];
+    /* Жирное и строчный код — единственная разметка, которая встречается внутри
+       строки. Экранируем сначала, размечаем потом: иначе чужая угловая скобка
+       уехала бы в разметку. */
+    const внутри = (t) => esc(t)
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+    const закрой = () => {
+      if (список) { out += "</ul>"; список = false; }
+      if (таблица.length) {
+        out += `<table class="ls-tab"><tbody>${таблица.map((r) =>
+          `<tr>${r.map((c) => `<td>${внутри(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+        таблица = [];
+      }
+    };
     for (const raw of строки) {
       const t = raw.trim();
-      if (!t) { if (список) { out += "</ul>"; список = false; } continue; }
-      if (t.startsWith("- ")) {
-        if (!список) { out += "<ul>"; список = true; }
-        out += `<li>${жирный(t.slice(2))}</li>`;
+      if (!t) { закрой(); continue; }
+      if (t.startsWith("|") && t.endsWith("|")) {
+        const ячейки = t.slice(1, -1).split("|").map((x) => x.trim());
+        // строка-разделитель заголовка ничего не значит: таблицы здесь без шапки
+        if (!ячейки.every((c) => /^:?-{2,}:?$/.test(c))) таблица.push(ячейки);
         continue;
       }
-      if (список) { out += "</ul>"; список = false; }
-      if (t.startsWith("> ")) { out += `<p class="ls-note">${жирный(t.slice(2))}</p>`; continue; }
+      if (t.startsWith("- ")) {
+        if (таблица.length) закрой();
+        if (!список) { out += "<ul>"; список = true; }
+        out += `<li>${внутри(t.slice(2))}</li>`;
+        continue;
+      }
+      закрой();
+      if (t.startsWith("> ")) { out += `<p class="ls-note">${внутри(t.slice(2))}</p>`; continue; }
+      // строка целиком жирная — это подзаголовок внутри шага: «Что делаем», «Зачем»
+      const один = t.match(/^\*\*([^*]+)\*\*$/);
+      if (один) { out += `<p class="ls-h3">${esc(один[1])}</p>`; continue; }
       out += t.startsWith("**Зачем:**")
-        ? `<p class="ls-why">${жирный(t)}</p>`
-        : `<p>${жирный(t)}</p>`;
+        ? `<p class="ls-why">${внутри(t)}</p>`
+        : `<p>${внутри(t)}</p>`;
     }
-    if (список) out += "</ul>";
+    закрой();
     return out;
   }).join("");
+}
+
+/* ── Картинка шага ──
+   Лежит в каталоге рядом с обложками и тянется тем же путём: файл с data-URI,
+   копия в Cache Storage, показ по готовности. Открывается на весь экран с
+   тем же щипком, что и снимки работ. */
+function picOpen(src) {
+  if (!src) { toast("Картинка ещё качается"); return; }
+  const box = $("#picBox");
+  const img = box.querySelector("img");
+  img.src = src;
+  img.style.transform = "";
+  box.hidden = false;
+  box.setAttribute("aria-hidden", "false");
+  shZoom(box.querySelector(".sh-zoom"));
+}
+
+function picClose() {
+  const box = $("#picBox");
+  if (!box || box.hidden) return false;
+  box.hidden = true;
+  box.setAttribute("aria-hidden", "true");
+  box.querySelector("img").src = "";
+  return true;
 }
 
 /* Сколько шагов урока закрыто — для полоски в сетке и на странице занятия. */
@@ -10010,6 +10057,14 @@ function lessonRender(box) {
           ${stage ? `<p class="ls-stage">${esc(stage)}</p>` : ""}
           <div class="ls-kind">${kind[0]} ${esc(kind[1])}${span ? ` \u00b7 ${esc(span)}` : ""}</div>
           <p class="ls-text">${esc(st.t || "")}</p>
+          ${(() => {
+            if (!st.img) return "";
+            const src = coverSrc(st.img, "");
+            return `<button class="ls-shot${src ? "" : " wait"}" type="button"
+              data-lspic="${esc(st.img)}" aria-label="Открыть картинку">
+              ${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : ""}
+            </button>`;
+          })()}
           ${st.d ? `<div class="ls-body">${stepBody(st.d)}</div>` : ""}
           ${stepDone ? `<p class="wk-passed">\u2713 \u0443\u0436\u0435 \u043f\u0440\u043e\u0439\u0434\u0435\u043d\u043e \u2014 \u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0442\u0430\u0442\u044c</p>` : ""}
           ${doing && !stepDone && st.at ? `<p class="ls-slow">\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0438 \u043a\u0443\u0441\u043e\u043a, \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0440\u043e\u043b\u0438\u043a \u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u0438 \u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e. \u041e\u0442\u043c\u0435\u0442\u044c, \u043a\u043e\u0433\u0434\u0430 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u2014 \u0441\u043f\u0435\u0448\u0438\u0442\u044c \u043d\u0435\u043a\u0443\u0434\u0430.</p>` : ""}
@@ -11803,6 +11858,15 @@ function bindPlaceMap() {
 
 function bindPractice() {
   $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
+
+  /* Картинку закрывает и крестик, и тап мимо неё, и Escape: она открывается
+     поверх занятия, и выйти из неё должно быть проще, чем войти. */
+  $("#picClose").addEventListener("click", picClose);
+  $("#picBox").addEventListener("click", (e) => {
+    if (e.target.closest(".sh-zoom") || e.target.closest("#picClose")) return;
+    picClose();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") picClose(); });
   $("#pracPlayer").addEventListener("pointerdown", plDrag);
   $("#pracVideo").addEventListener("pointerdown", vidDrag);
 
@@ -11988,6 +12052,10 @@ function bindPractice() {
 
     /* Занятие со страницы задания: встаём на его первый шаг и, если надо,
        показываем подготовку. */
+    if (b.dataset.lspic !== undefined) {
+      picOpen(coverSrc(b.dataset.lspic, ""));
+      return;
+    }
     if (b.dataset.lblock !== undefined) {
       const с = +b.dataset.lblock;
       prac.at = { i: prac.at.i, phase: "step", step: с };

@@ -1899,6 +1899,53 @@
     /* display:flex перебивает встроенное [hidden]{display:none} — без этой
        строки карта висит поверх приложения с самого запуска, а «закрыть»
        ничего не меняет: атрибут снимается, а картинка на месте. */
+    /* ── Картинка шага ── */
+    /* display у оверлея перебивает встроенный [hidden] — без этой пары
+       картинка висела бы поверх приложения. */
+    #picBox[hidden] { display: none; }
+    #picBox {
+      position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+      background: rgba(6, 8, 12, 0.94); padding: 16px;
+    }
+    #picBox .sh-zoom {
+      width: 100%; max-width: 900px; max-height: calc(100vh - 90px);
+      background: none; border-radius: 10px;
+    }
+    #picBox .sh-zoom img {
+      display: block; width: 100%; max-height: calc(100vh - 90px);
+      object-fit: contain; transform-origin: 0 0; will-change: transform;
+      user-select: none; -webkit-user-drag: none;
+    }
+    #picClose {
+      position: absolute; top: 14px; right: 14px; width: 40px; height: 40px;
+      border: 0; border-radius: 999px; cursor: pointer;
+      background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 1rem;
+    }
+    /* Картинка внутри шага: кнопка, потому что по ней жмут */
+    .ls-shot {
+      display: block; width: 100%; margin: 12px 0 4px; padding: 0;
+      border: 1px solid var(--glass-line); border-radius: 12px; overflow: hidden;
+      background: rgba(255, 255, 255, 0.04); cursor: zoom-in;
+    }
+    .ls-shot img { display: block; width: 100%; height: auto; }
+    .ls-shot.wait { aspect-ratio: 3 / 4; }
+    /* Подзаголовки внутри шага: «Что делаем», «Зачем», «Частая ошибка» */
+    .ls-h3 {
+      margin: 16px 0 6px; font: 600 0.74rem/1 ui-monospace, monospace;
+      letter-spacing: 0.13em; text-transform: uppercase; color: var(--gold);
+    }
+    .ls-body code {
+      font: 500 0.82em/1 ui-monospace, monospace; padding: 2px 6px; border-radius: 5px;
+      background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.86);
+    }
+    .ls-tab {
+      display: inline-table; text-align: left; margin: 0 0 12px;
+      border-collapse: collapse; font-size: 0.86rem;
+    }
+    .ls-tab td { padding: 6px 14px 6px 0; border-bottom: 1px solid var(--glass-line); }
+    .ls-tab tr:last-child td { border-bottom: 0; }
+    .ls-tab td:first-child { color: var(--muted); white-space: nowrap; }
+
     #gmap[hidden] { display: none; }
     /* Артефакты: раздел живёт вкладкой, поэтому ни своей шапки, ни крестика. */
     .ms-head {
@@ -4095,6 +4142,12 @@
     <div id="pracStage"></div>
     <div id="pracVideo" hidden></div>
   <div id="pracPlayer" hidden></div>
+  </div>
+
+  <!-- Картинка шага во весь экран: щипком приближается, тап мимо закрывает -->
+  <div id="picBox" hidden aria-hidden="true">
+    <div class="sh-zoom"><img alt="" draggable="false"></div>
+    <button id="picClose" type="button" aria-label="Закрыть">✕</button>
   </div>
 
   <!-- Карта мест во весь экран: приближается пальцами, точка открывает карточку снизу -->
