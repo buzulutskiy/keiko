@@ -997,6 +997,55 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Общие награды: накопленные дни у каждого материала ── */
+{
+  const было = { cat: t.get("CATALOG"), active: t.get("data").active,
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    piano: JSON.parse(JSON.stringify(t.get("data").piano || {})) };
+
+  t.set("CATALOG", {
+    __common__: { ach: [
+      { id: "d5", icon: "🌱", name: "Пять дней", hint: "", secret: false, when: [["days", ">=", 5]] },
+      { id: "d30", icon: "🌘", name: "Месяц", hint: "", secret: false, when: [["days", ">=", 30]] },
+    ] },
+    kniga: { ach: [{ id: "own", icon: "📖", name: "Своя", hint: "", secret: false, when: [["days", ">=", 1]] }] },
+  });
+  t.set("data.piano", { pieces: [], activePiece: "", entries: [] });
+  t.set("data.watch", { videos: [], activeVideo: "", entries: [] });
+  t.set("data.pastel", { entries: [], courses: [], course: null, activeCourse: "" });
+  t.set("data.book", {
+    activeBook: "kniga",
+    books: [{ id: "kniga", title: "Книга", pages: 100, startPage: 0 }],
+    entries: [
+      { id: "1", date: "2026-08-01", bookId: "kniga", page: 10 },
+      { id: "2", date: "2026-08-05", bookId: "kniga", page: 20 },
+      { id: "3", date: "2026-08-09", bookId: "kniga", page: 30 },
+    ],
+  });
+  t.set("data.active", "book");
+
+  const имена = t.get("achList")().map((a) => a.name);
+  ок("общие: добавились к своим", имена, ["Своя", "Пять дней", "Месяц"]);
+
+  const сост = t.get("achState")();
+  const дано = (n) => (сост.find((a) => a.name === n) || {}).done;
+  ок("общие: за три дня пять ещё не дали", [дано("Своя"), дано("Пять дней")], [true, false]);
+
+  // пропуски дней не мешают: считаются все дни, а не подряд
+  t.get("data").book.entries.push(
+    { id: "4", date: "2026-08-20", bookId: "kniga", page: 40 },
+    { id: "5", date: "2026-09-01", bookId: "kniga", page: 50 });
+  const сост2 = t.get("achState")();
+  ок("общие: пять дней вразбивку засчитаны",
+    (сост2.find((a) => a.name === "Пять дней") || {}).done, true);
+  ок("общие: месяц ещё не набран",
+    (сост2.find((a) => a.name === "Месяц") || {}).done, false);
+
+  t.set("CATALOG", было.cat);
+  t.set("data.book", было.book); t.set("data.piano", было.piano);
+  t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;

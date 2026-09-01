@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 333";
+const APP_VERSION = "Кэйко 334";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1239,8 +1239,24 @@ function achFromCatalog(id) {
   return achCache.get(id);
 }
 
-const achList = () => achFromCatalog(curKey()) ||
-  (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isCourse() ? ACH_PASTEL : ACH_PIANO);
+/* Общие награды — те, что есть у каждого материала: накопленные дни. Лежат в
+   каталоге отдельной записью, чтобы не расходиться в десяти местах. Серии
+   отсюда убраны намеренно: пропуск не отменяет сделанного, и наказывать за
+   него нечем. Считаются все дни подряд и вразбивку. */
+const COMMON_ACH = "__common__";
+function achCommon() {
+  const c = CATALOG[COMMON_ACH];
+  if (!c || !Array.isArray(c.ach)) return [];
+  if (!achCache.has(COMMON_ACH))
+    achCache.set(COMMON_ACH, c.ach.map(a => ({ ...a, test: testFromWhen(a.when) })));
+  return achCache.get(COMMON_ACH);
+}
+
+const achList = () => {
+  const свои = achFromCatalog(curKey()) ||
+    (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isCourse() ? ACH_PASTEL : ACH_PIANO);
+  return свои.concat(achCommon());
+};
 const achWords = () => (catOf(curKey()) || {}).words ||
   (isBook() ? (BOOK_WORDS[book().id] || WORDS_BOOK) : isCourse() ? WORDS_PASTEL : WORDS_PIANO);
 const flavor = () => (!isBook() && !isCourse() && PIECE_FLAVOR[piece().id]) || {};
