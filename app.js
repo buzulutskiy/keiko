@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 336";
+const APP_VERSION = "Кэйко 337";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1249,7 +1249,14 @@ function achCommon() {
   if (!c || !Array.isArray(c.ach)) return [];
   if (!achCache.has(COMMON_ACH))
     achCache.set(COMMON_ACH, c.ach.map(a => ({ ...a, test: testFromWhen(a.when) })));
-  return achCache.get(COMMON_ACH);
+  /* Лестница у всех одна, но обрезается под материал: книга читается за
+     три-четыре недели, и ступени на полгода висели бы у неё мёртвыми. Не
+     растягиваем по размеру материала, а именно обрезаем — растянутая лестница
+     стала бы вторым процентом и открывалась бы одновременно с наградами за
+     прогресс, а время должно отвечать на свой вопрос: сколько ты с этим живёшь. */
+  const предел = Number((catOf(curKey()) || {}).maxDays) || 0;
+  const все = achCache.get(COMMON_ACH);
+  return предел ? все.filter((a) => Number((a.when[0] || [])[2]) <= предел) : все;
 }
 
 const achList = () => {

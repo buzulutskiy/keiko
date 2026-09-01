@@ -1055,6 +1055,19 @@ function ок(имя, факт, надо) {
   ок("вкус: без своего имени остаётся общее",
     свои.find((a) => a.id === "d30").name, "Месяц");
 
+  // лестница обрезается под материал: книге не нужны ступени на полгода
+  t.set("CATALOG", { ...t.get("CATALOG"), kniga: {
+    ach: [{ id: "own", icon: "📖", name: "Своя", hint: "", secret: false, when: [["days", ">=", 1]] }],
+    maxDays: 5,
+  } });
+  ок("потолок: дальние ступени отрезаны",
+    t.get("achList")().map((a) => a.id), ["own", "d5"]);
+  t.set("CATALOG", { ...t.get("CATALOG"), kniga: {
+    ach: [{ id: "own", icon: "📖", name: "Своя", hint: "", secret: false, when: [["days", ">=", 1]] }],
+  } });
+  ок("потолок: без потолка лестница целиком",
+    t.get("achList")().map((a) => a.id), ["own", "d5", "d30"]);
+
   t.set("CATALOG", было.cat);
   t.set("data.book", было.book); t.set("data.piano", было.piano);
   t.set("data.active", было.active);
