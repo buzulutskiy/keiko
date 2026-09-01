@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 334";
+const APP_VERSION = "Кэйко 335";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1259,7 +1259,13 @@ const achList = () => {
 };
 const achWords = () => (catOf(curKey()) || {}).words ||
   (isBook() ? (BOOK_WORDS[book().id] || WORDS_BOOK) : isCourse() ? WORDS_PASTEL : WORDS_PIANO);
-const flavor = () => (!isBook() && !isCourse() && PIECE_FLAVOR[piece().id]) || {};
+/* Своё имя награды у материала. Общие награды считаются одинаково — по
+   накопленным дням, — но называются в мире своего материала: у пьесы это
+   вечера за клавиром, у книги про зимовье — поленница и прорубь. Лежит в
+   каталоге рядом с наградами: { d5: { name, icon } }. Старая форма массивом
+   осталась для пьес, у которых так уже записано. */
+const flavor = () => (catOf(curKey()) || {}).flavor
+  || ((!isBook() && !isCourse() && PIECE_FLAVOR[piece().id]) || {});
 const lastName = (author) => String(author || "").trim().split(/\s+/).pop();
 
 function achState() {
@@ -1268,7 +1274,13 @@ function achState() {
   const fl = flavor();
   return achList().map(a => {
     const item = { ...a, done: !!a.test(s) };
-    if (fl[a.id]) { item.name = fl[a.id][0]; item.word = fl[a.id][1]; }
+    const f = fl[a.id];
+    if (Array.isArray(f)) { item.name = f[0]; item.word = f[1]; }
+    else if (f && typeof f === "object") {
+      if (f.name) item.name = f.name;
+      if (f.icon) item.icon = f.icon;
+      if (f.word) item.word = f.word;
+    }
     // финальная награда носит имя автора текущей композиции
     if (isPiano() && a.id === "bach") item.name = `${lastName(piece().author)} доволен`;
     return item;
