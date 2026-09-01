@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 335";
+const APP_VERSION = "Кэйко 336";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5004,6 +5004,7 @@ function achMaterials() {
     const list = achState(); let f = factsState();
     out.push({ track: "piano", pieceId: p.id, icon: "🎹", title: p.name, sub: p.author,
       cover: coverSrc(p.id, p.cover || ""), ratio: p.ratio || "",
+      done: false, hidden: matHidden("pf:" + p.id),
       open: list.filter(a => a.done).length, total: list.length,
       fOpen: f.filter(x => x.open).length, fTotal: f.length });
   }
@@ -5013,17 +5014,27 @@ function achMaterials() {
     const l = achState(), fx = factsState();
     out.push({ track: "book", bookId: b.id, icon: "📖", title: b.title, sub: b.author,
       cover: coverSrc(b.id, b.cover || ""), ratio: b.ratio || "",
+      done: !!b.done, hidden: matHidden("bk:" + b.id),
       open: l.filter(a => a.done).length, total: l.length,
       fOpen: fx.filter(x => x.open).length, fTotal: fx.length });
   }
 
+  /* Курсов может быть несколько: раньше сюда попадал только открытый сейчас,
+     и о втором нельзя было даже написать заметку. */
   data.active = "pastel";
-  let list = course().lessons.length ? achState() : []; let f = course().lessons.length ? factsState() : [];
-  if (course().lessons.length)
-    out.push({ track: "pastel", icon: "🎨", title: course().name, sub: course().author,
-      cover: coverSrc("pastel", course().cover || ""), ratio: course().ratio || "",
+  const saveCourse = data.pastel.activeCourse;
+  for (const c of courses()) {
+    if (!(c.lessons || []).length) continue;
+    data.pastel.activeCourse = c.id;
+    const list = achState(), f = factsState();
+    const ck = keyOfCourse(c);
+    out.push({ track: "pastel", courseId: c.id, icon: "🎨", title: c.name, sub: c.author,
+      cover: coverSrc(ck, c.cover || ""), ratio: c.ratio || "",
+      done: false, hidden: matHidden(ck === "pastel" ? "ps" : "ps:" + c.id),
       open: list.filter(a => a.done).length, total: list.length,
       fOpen: f.filter(x => x.open).length, fTotal: f.length });
+  }
+  data.pastel.activeCourse = saveCourse;
 
   /* Завершённые видео остаются здесь: мысль о фильме приходит и после того,
      как он досмотрен, — а с главной он уже ушёл. */
@@ -5033,7 +5044,7 @@ function achMaterials() {
     data.watch.activeVideo = v.id;
     const l = achState(), fx = factsState();
     out.push({ track: "watch", videoId: v.id, icon: "🎬", title: v.title, sub: v.author,
-      cover: watchThumb(v), ratio: "16 / 9", done: v.done,
+      cover: watchThumb(v), ratio: "16 / 9", done: !!v.done, hidden: matHidden("wt:" + v.id),
       open: l.filter(a => a.done).length, total: l.length,
       fOpen: fx.filter(x => x.open).length, fTotal: fx.length });
   }
@@ -5795,11 +5806,11 @@ const thoughtsOf = (key) => thoughts().filter(t => t.key === key)
 // ключ материала — тот же, по которому лежат карточки знаний
 function keyOf(m) {
   if (m.track === "book") return m.bookId || "";
-  if (m.track === "pastel") return "pastel";
+  if (m.track === "pastel") return m.courseId ? keyOfCourse({ id: m.courseId }) : "pastel";
   if (m.track === "watch") return m.videoId || "";
   return m.pieceId || "";
 }
-const currentKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? "pastel" : (piece() ? piece().id : "");
+const currentKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? courseKey() : (piece() ? piece().id : "");
 
 /* Строка над лентой появляется, только когда лента чем-то сужена:
    фильтром любимых или случайной мыслью — и даёт путь обратно ко всей ленте. */
@@ -7439,7 +7450,10 @@ function renderNotes() {
      здесь речь только о том, к чему привязать новую.
      И первым пунктом — ничего: мысль не обязана быть о материале. */
   const allMats = achMaterials();
-  const mats = allMats.filter(m => !m.done);
+  /* Пройденное и спрятанное сюда не попадает: книга дочитана — писать о ней
+     заметку из этого списка незачем, материал убран с главной — тем более.
+     Ролики остаются: мысль о фильме приходит и после того, как он досмотрен. */
+  const mats = allMats.filter(m => (m.track === "watch" || !m.done) && !m.hidden);
   const key = cfg.thoughtKey === NO_MAT ? NO_MAT
     : (cfg.thoughtKey && mats.some(m => keyOf(m) === cfg.thoughtKey)) ? cfg.thoughtKey
     : (mats.some(m => keyOf(m) === currentKey()) ? currentKey() : NO_MAT);
@@ -13792,8 +13806,12 @@ async function coverPump() {
   coverBusy = true;
   try {
     while (coverQueue.length) {
-      // активная могла смениться, пока шла очередь: каждый раз выбираем заново
-      const at = Math.max(0, coverQueue.indexOf(curKey()));
+      /* Активная могла смениться, пока шла очередь: каждый раз выбираем заново.
+         И материала может уже не быть вовсе — очередь живёт дольше, чем список,
+         и падать из-за этого ей незачем. */
+      let активный = "";
+      try { активный = curKey(); } catch { активный = ""; }
+      const at = Math.max(0, coverQueue.indexOf(активный));
       await pullCover(coverQueue.splice(at, 1)[0]);
     }
   } finally { coverBusy = false; }

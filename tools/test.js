@@ -1060,6 +1060,50 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Что предлагается для заметки ── */
+{
+  const было = {
+    active: t.get("data").active, hidden: JSON.parse(JSON.stringify(t.get("data").hidden || {})),
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    piano: JSON.parse(JSON.stringify(t.get("data").piano || {})),
+    watch: JSON.parse(JSON.stringify(t.get("data").watch || {})),
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    cat: t.get("CATALOG"),
+  };
+  t.set("CATALOG", {});
+  t.set("data.hidden", { "bk:spryatana": 1 });
+  t.set("data.piano", { pieces: [], activePiece: "", entries: [] });
+  t.set("data.watch", { videos: [{ id: "kino", title: "Кино", done: true }], activeVideo: "kino", entries: [] });
+  t.set("data.pastel", { entries: [], course: null, activeCourse: "",
+    courses: [{ id: "k1", name: "Курс", lessons: [{ dur: 60, steps: [] }] }] });
+  t.set("data.book", {
+    activeBook: "chitayu",
+    books: [
+      { id: "chitayu", title: "Читаю", pages: 100 },
+      { id: "prochitana", title: "Прочитана", pages: 100, done: true },
+      { id: "spryatana", title: "Спрятана", pages: 100 },
+    ],
+    entries: [],
+  });
+  t.set("data.active", "book");
+
+  const все = t.get("achMaterials")();
+  const имена = все.map((m) => m.title).sort();
+  ок("материалы: в списке все", имена, ["Кино", "Курс", "Прочитана", "Спрятана", "Читаю"]);
+
+  const годится = (m) => (m.track === "watch" || !m.done) && !m.hidden;
+  ок("заметка: прочитанной книги нет", все.filter(годится).map((m) => m.title).includes("Прочитана"), false);
+  ок("заметка: спрятанной книги нет", все.filter(годится).map((m) => m.title).includes("Спрятана"), false);
+  ок("заметка: досмотренный ролик остаётся", все.filter(годится).map((m) => m.title).includes("Кино"), true);
+  ок("заметка: остаётся то, что в работе",
+    все.filter(годится).map((m) => m.title).sort(), ["Кино", "Курс", "Читаю"]);
+
+  t.set("CATALOG", было.cat);
+  t.set("data.book", было.book); t.set("data.piano", было.piano);
+  t.set("data.watch", было.watch); t.set("data.pastel", было.pastel);
+  t.set("data.hidden", было.hidden); t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
