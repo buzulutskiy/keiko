@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 340";
+const APP_VERSION = "Кэйко 341";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -805,6 +805,21 @@ const mapWhole = (b) => {
   return без.length ? без : все;
 };
 const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
+
+/* Точки главы, которую читаешь сейчас. Карта открывается целиком — иначе с
+   неё не увидеть, где Итака, а где Троя, — но вид наводится на текущую главу:
+   место и глава должны совпадать, чтобы не листать карту к себе руками.
+   Книга не начата или в её главе точек нет — открывается как была, вся. */
+function mapHerePoints(b) {
+  const bk = b || book();
+  const главы = bk.chapters || [];
+  if (!главы.length) return [];
+  const стр = bookProgressOf(bk);
+  if (!стр || стр <= (bk.startPage || 0)) return [];      // ещё не начата
+  let i = -1;
+  главы.forEach((c, n) => { if (стр >= c.from) i = n; });
+  return i >= 0 ? mapOfChapter(bk, i) : [];
+}
 const mapBox = (b) => {
   const a = artsOf((b || book()).id);
   return (a && a.mapBox) ? a.mapBox : null;
@@ -10940,7 +10955,10 @@ function openPlaceMap(bk, i, выбрать) {
   if (!места.length || !рамка) { toast("Карты пока нет"); return; }
   const box = $("#gmap");
   if (!box) return;
-  gm = { места, рамка, at: выбрать || null, scale: 1, tx: 0, ty: 0, id: bk.id, i,
+  /* Куда навести вид при открытии: точки текущей главы, если карта открыта
+     целиком и книга начата. Выбранная точка важнее — на неё и наводимся. */
+  const сюда = (i < 0 && !выбрать) ? mapHerePoints(bk) : [];
+  gm = { места, рамка, at: выбрать || null, сюда, scale: 1, tx: 0, ty: 0, id: bk.id, i,
          части: mapPartsOf(bk), часть: 0,
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
@@ -11513,6 +11531,7 @@ function gmFit() {
     gm.ty = Math.max(0, (sh - h) / 2);
     gmApply();
     if (gm.at) gmFocus(gm.at, 2.2);
+    else if (gm.сюда && gm.сюда.length) gmFitTo(gm.сюда);
   };
   if (img.complete && img.naturalWidth) прим();
   else img.onload = прим;

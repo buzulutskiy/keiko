@@ -1160,6 +1160,48 @@ function ок(имя, факт, надо) {
   t.set("data.pastel", было.pastel); t.set("data.watch", было.watch);
 }
 
+/* ── Карта открывается там, где читаешь ── */
+{
+  const было = {
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    arts: t.get("ARTS"), active: t.get("data").active,
+  };
+  t.set("ARTS", { kniga: { map: [
+    { ch: 1, name: "Итака", lat: 38.4, lon: 20.7 },
+    { ch: 2, name: "Пилос", lat: 36.9, lon: 21.7 },
+    { ch: 4, name: "Спарта", lat: 37.1, lon: 22.4 },
+  ], mapBox: { west: 8, east: 31, north: 42, south: 30 } } });
+  t.set("data.book", {
+    activeBook: "kniga",
+    books: [{ id: "kniga", title: "Книга", pages: 100, startPage: 0, chapters: [
+      { name: "I", from: 1 }, { name: "II", from: 20 },
+      { name: "III", from: 40 }, { name: "IV", from: 60 },
+    ] }],
+    entries: [],
+  });
+  t.set("data.active", "book");
+
+  ок("карта: книга не начата — наводить некуда", t.get("mapHerePoints")().length, 0);
+
+  t.get("data").book.entries.push({ id: "1", date: "2026-08-01", bookId: "kniga", page: 25 });
+  ок("карта: наводимся на текущую главу",
+    t.get("mapHerePoints")().map((p) => p.name), ["Пилос"]);
+
+  // в третьей главе точек нет — наводиться не на что, карта остаётся общей
+  t.get("data").book.entries.push({ id: "2", date: "2026-08-02", bookId: "kniga", page: 45 });
+  ок("карта: в главе без точек ничего не наводим", t.get("mapHerePoints")().length, 0);
+
+  t.get("data").book.entries.push({ id: "3", date: "2026-08-03", bookId: "kniga", page: 65 });
+  ок("карта: дальше по книге — своя глава",
+    t.get("mapHerePoints")().map((p) => p.name), ["Спарта"]);
+
+  // сама карта при этом всегда со всеми точками
+  ок("карта: точки не теряются", t.get("mapPoints")(t.get("book")(), -1).length, 3);
+
+  t.set("ARTS", было.arts);
+  t.set("data.book", было.book); t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
