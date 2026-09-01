@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 342";
+const APP_VERSION = "Кэйко 343";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -794,7 +794,10 @@ const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
    Читая про Пилос, полезно увидеть, что это юго-запад Пелопоннеса, а Троя —
    на другом берегу моря. */
 const bookMap = (b) => artsPart(b, "map");
-const mapOfChapter = (b, i) => bookMap(b).filter((x) => Number(x.ch) === i + 1);
+/* Глава точки — то же самое, что в фильтре карты: part, а если его нет — ch.
+   Раньше здесь сравнивался только ch, и у книг вроде «Столпов моря», где точки
+   размечены полем part, глава не находилась никогда. */
+const mapOfChapter = (b, i) => bookMap(b).filter((x) => (Number(x.part) || Number(x.ch) || 0) === i + 1);
 /* Карта на всю книгу. Обычно это места без главы (ch = 0): у «Столпов моря»
    стеки разбросаны по свету и к главам не привязаны. Но если у книги все
    точки разложены по главам, как в «Одиссее», карта всей книги — это просто
@@ -11387,11 +11390,14 @@ function gmToc() {
      Достоевского так стоят адреса из его записной книжки и разбора краеведов.
      Отдельной строкой, чтобы было видно, что они не выпали, а стоят особняком. */
   const вне = gm.места.filter((p) => !частьТочки(p)).length;
-  box.innerHTML = `<button data-part="0" type="button">Все места
+  // выбранная глава отмечена галочкой: иначе не видно, что карта чем-то сужена
+  const выбрана = (n) => Number(gm.часть || 0) === n ? " class=\"on\"" : "";
+  const птица = (n) => Number(gm.часть || 0) === n ? "✓ " : "";
+  box.innerHTML = `<button data-part="0"${выбрана(0)} type="button">${птица(0)}Все места
       <em>${слово(gm.места.length)}</em></button>`
-    + части.map((c) => `<button data-part="${esc(String(c.n))}" type="button">${esc(c.name)}
+    + части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(c.name)}
         <em>${слово(c.k)}</em></button>`).join("")
-    + (вне ? `<button data-part="-1" type="button">Вокруг романа
+    + (вне ? `<button data-part="-1"${выбрана(-1)} type="button">${птица(-1)}Вокруг романа
         <em>${слово(вне)} · не сцены книги</em></button>` : "");
 }
 
@@ -11497,23 +11503,6 @@ function gmApply() {
    метку с числом: Фарос и Египет на карте Средиземноморья стоят в двенадцати
    пикселях друг от друга, и «а где Фарос?» — законный вопрос. Выбрал песнь —
    карта подъезжает к её местам, и они расходятся. */
-function gmFitTo(места) {
-  if (!gm || !gm.base || !места || !места.length) return;
-  const тчк = места.map((p) => mapXY(gm.рамка, p));
-  const x1 = Math.min(...тчк.map((t) => t.x)), x2 = Math.max(...тчк.map((t) => t.x));
-  const y1 = Math.min(...тчк.map((t) => t.y)), y2 = Math.max(...тчк.map((t) => t.y));
-  // размах в пикселях невеличенной карты; минимум — чтобы одна точка не давала деление на ноль
-  const пw = Math.max(1.5, x2 - x1) / 100 * gm.base.w;
-  const пh = Math.max(1.5, y2 - y1) / 100 * gm.base.h;
-  const поле = 0.7;                       // по краям оставляем воздух
-  const k = Math.max(1, Math.min(GM_MAX,
-    Math.min(gm.base.sw * поле / пw, gm.base.sh * поле / пh)));
-  gm.scale = k;
-  gm.tx = gm.base.sw / 2 - (x1 + x2) / 2 / 100 * gm.base.w * k;
-  gm.ty = gm.base.sh / 2 - (y1 + y2) / 2 / 100 * gm.base.h * k;
-  gmClamp();
-  gmApply();
-}
 
 function gmFit() {
   const stage = $("#gmStage"), wrap = $("#gmWrap"), img = $("#gmImg");
@@ -11530,8 +11519,10 @@ function gmFit() {
     gm.tx = 0;
     gm.ty = Math.max(0, (sh - h) / 2);
     gmApply();
+    /* Карта всегда показывается целиком, даже когда в главе одна метка:
+       приближаться к ней незачем, а вот увидеть, где она относительно всего
+       остального, — единственное, ради чего карту открывают. */
     if (gm.at) gmFocus(gm.at, 2.2);
-    else if (gm.часть) gmFitTo(gmВидимые());
   };
   if (img.complete && img.naturalWidth) прим();
   else img.onload = прим;
@@ -11916,7 +11907,7 @@ function bindPlaceMap() {
       gmTitle();
       gmPins();
       gmCard();
-      if (gm.часть) gmFitTo(gmВидимые()); else gmFit();
+      gmFit();
       return;
     }
     const b = e.target.closest("[data-hit]");
