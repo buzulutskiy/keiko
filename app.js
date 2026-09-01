@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 345";
+const APP_VERSION = "Кэйко 346";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10049,9 +10049,13 @@ function stepBody(txt) {
 function termOpen(слово) {
   const т = courseTerms()[слово];
   if (!т) return;
+  /* Ищем по-английски. У анатомии и учебных рисунков английские запросы дают
+     в разы больше: русские выдачи забиты стоками и готовыми работами.
+     Русский запрос остаётся третьей ссылкой — на случай, когда английский
+     термин уводит не туда. */
+  const en = encodeURIComponent(т.en || т.q || слово);
+  const draw = encodeURIComponent(т.enDraw || ((т.en || слово) + " pencil drawing tutorial"));
   const q = encodeURIComponent(т.q || слово);
-  const draw = encodeURIComponent(т.draw || ((т.q || слово) + " рисунок карандашом"));
-  const en = т.en ? encodeURIComponent(т.en) : "";
   /* Установленная с домашнего экрана Кэйко открывает target="_blank" во
      встроенном мини-браузере — из него приложения не запускаются. */
   const мимо = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
@@ -10059,9 +10063,9 @@ function termOpen(слово) {
     <h3>${esc(слово[0].toUpperCase() + слово.slice(1))}</h3>
     ${т.t ? `<p class="sub">${esc(т.t)}</p>` : ""}
     <div class="term-links">
-      <a href="https://yandex.ru/images/search?text=${q}"${мимо}>Как выглядит</a>
+      <a href="https://www.google.com/search?tbm=isch&q=${en}"${мимо}>Как выглядит</a>
       <a href="https://ru.pinterest.com/search/pins/?q=${draw}"${мимо}>Как рисуют</a>
-      <a href="https://www.google.com/search?tbm=isch&q=${en || q}"${мимо}>Ещё картинки</a>
+      <a href="https://yandex.ru/images/search?text=${q}"${мимо}>По-русски</a>
     </div>`);
 }
 
