@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 346";
+const APP_VERSION = "Кэйко 347";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10056,6 +10056,16 @@ function termOpen(слово) {
   const en = encodeURIComponent(т.en || т.q || слово);
   const draw = encodeURIComponent(т.enDraw || ((т.en || слово) + " pencil drawing tutorial"));
   const q = encodeURIComponent(т.q || слово);
+  /* Вопрос один и тот же для обоих: что это, где искать на натуре и как
+     строится в рисунке. Длину задаём жёстко — иначе ответ разрастается на
+     две страницы, а нужно понять за полминуты и вернуться к листу. */
+  const вопрос = encodeURIComponent(
+    `${слово} у собаки — что это такое.${т.t ? " Коротко: " + т.t : ""} `
+    + `Ответь тремя абзацами: `
+    + `1) что это анатомически и где находится; `
+    + `2) как это выглядит и по какому признаку найти на фотографии живой собаки; `
+    + `3) как это строят в карандашном рисунке головы и какую ошибку делают чаще всего. `
+    + `Пиши коротко и конкретно, без вступлений. Покажи изображения.`);
   /* Установленная с домашнего экрана Кэйко открывает target="_blank" во
      встроенном мини-браузере — из него приложения не запускаются. */
   const мимо = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
@@ -10066,6 +10076,8 @@ function termOpen(слово) {
       <a href="https://www.google.com/search?tbm=isch&q=${en}"${мимо}>Как выглядит</a>
       <a href="https://ru.pinterest.com/search/pins/?q=${draw}"${мимо}>Как рисуют</a>
       <a href="https://yandex.ru/images/search?text=${q}"${мимо}>По-русски</a>
+      <a href="https://www.perplexity.ai/search?q=${вопрос}"${мимо}>Perplexity</a>
+      <a href="https://chatgpt.com/?q=${вопрос}"${мимо}>ChatGPT</a>
     </div>`);
 }
 
