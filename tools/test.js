@@ -1200,6 +1200,47 @@ function ок(имя, факт, надо) {
   t.set("data.book", было.book); t.set("data.active", было.active);
 }
 
+/* ── Слова, которые можно посмотреть глазами ── */
+{
+  const было = {
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    active: t.get("data").active,
+  };
+  t.set("data.pastel", { entries: [], course: null, activeCourse: "к",
+    courses: [{ id: "к", name: "Курс", lessons: [], terms: {
+      "валик": { q: "надбровные дуги собаки" },
+      "мочка": { q: "мочка носа собаки", draw: "как нарисовать нос собаки" },
+      "нос": { q: "нос" },
+    } }] });
+  t.set("data.active", "pastel");
+  const body = t.get("stepBody");
+
+  ок("слова: термин подчёркнут",
+    /<button type="button" class="term" data-term="валик">Валик<\/button>/
+      .test(body("Валик над глазом.")), true);
+
+  ок("слова: падеж пойман",
+    /data-term="глазница"/.test(body("Отметь глазницу овалом.")) === false, true);   // нет в словаре
+
+  ок("слова: склонение ловится",
+    /data-term="мочка">мочку</.test(body("Отметь мочку носа.")), true);
+
+  ок("слова: одно слово — одна отметка за шаг",
+    (body("Валик. Ещё валик. И валиком.").match(/data-term/g) || []).length, 1);
+
+  ок("слова: короткое в словарь не идёт",
+    /data-term="нос"/.test(body("Нос собаки.")), false);
+
+  ок("слова: за тегом тоже ловится",
+    /data-term="валик"/.test(body("**Валик** — это бугор.")), true);
+
+  ок("слова: внутри атрибута не срабатывает",
+    (body("Валик и снова валик").match(/data-term/g) || []).length, 1);
+
+  t.set("data.pastel", было.pastel);
+  t.set("data.active", было.active);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 344";
+const APP_VERSION = "Кэйко 345";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9934,7 +9934,49 @@ function lcClock(t) {
    схема держится только пробелами, поэтому идёт в моноширинный блок без
    переносов, а всё остальное — обычными абзацами и списком. Разметки тут
    ровно столько, сколько встретилось в исходном тексте. */
+/* ── Слова, которые можно посмотреть глазами ──
+   В тексте шага встречаются вещи, которых человек не видел: надбровный валик,
+   мочка, брыли. Объяснять их словами можно бесконечно, а показать — одно
+   касание. Слово подчёркивается, по нажатию открывается шторка со ссылками:
+   фотография, рисунки, разбор.
+
+   Совпадение ищется по основе: «валик», «валика», «валиком» — одно слово.
+   Основа берётся из самого термина, поэтому короткие слова (меньше четырёх
+   букв) в словарь не годятся: «нос» поймал бы «носить». Отмечается только
+   первое вхождение в шаге — подчёркнутый текст читать тяжело. */
+const courseTerms = () => (course() || {}).terms || {};
+
+function termStem(слово) {
+  const w = String(слово).toLowerCase();
+  return w.length > 6 ? w.slice(0, -2) : w.length > 4 ? w.slice(0, -1) : w;
+}
+
+let termSeen = null;      // какие слова уже отмечены в этом шаге
+
+function markTerms(html) {
+  const словарь = courseTerms();
+  const слова = Object.keys(словарь);
+  if (!слова.length || !termSeen) return html;
+  for (const слово of слова) {
+    if (termSeen.has(слово)) continue;
+    const основа = termStem(слово);
+    if (основа.length < 4) continue;
+    /* Ищем только в тексте, мимо тегов: (?![^<]*>) отсекает совпадения внутри
+       атрибутов, иначе слово из data-term подчеркнулось бы само в себе. */
+    // «>» в начале — слово сразу за тегом: в словаре термины набраны жирным
+    const re = new RegExp("(^|[>\\s(«„\"—-])(" + основа + "[а-яё]{0,3})(?![^<]*>)", "iu");
+    const m = re.exec(html);
+    if (!m) continue;
+    termSeen.add(слово);
+    html = html.slice(0, m.index) + m[1]
+      + `<button type="button" class="term" data-term="${esc(слово)}">${m[2]}</button>`
+      + html.slice(m.index + m[0].length);
+  }
+  return html;
+}
+
 function stepBody(txt) {
+  termSeen = new Set();
   return String(txt).split(/```[a-z]*\n?/).map((кусок, i) => {
     if (i % 2) return `<pre class="ls-pre">${esc(кусок.replace(/\n$/, ""))}</pre>`;
     const строки = кусок.split("\n");
@@ -9955,8 +9997,8 @@ function stepBody(txt) {
       const один = t.match(/^\*\*([^*]+)\*\*$/);
       if (один) { out += `<p class="ls-h3">${esc(один[1])}</p>`; return; }
       out += t.startsWith("**Зачем:**")
-        ? `<p class="ls-why">${внутри(t)}</p>`
-        : `<p>${внутри(t)}</p>`;
+        ? `<p class="ls-why">${markTerms(внутри(t))}</p>`
+        : `<p>${markTerms(внутри(t))}</p>`;
     };
     const сдайЦитату = () => {
       if (!цитата.length) return;
@@ -9999,6 +10041,28 @@ function stepBody(txt) {
     всёСдать();
     return out;
   }).join("");
+}
+
+/* Три места, где смотрят вещь: как она выглядит, как её рисуют, что это такое.
+   Яндекс для русских запросов даёт более близкое, Pinterest — единственное
+   место, где ищутся именно учебные рисунки, а не фотографии. */
+function termOpen(слово) {
+  const т = courseTerms()[слово];
+  if (!т) return;
+  const q = encodeURIComponent(т.q || слово);
+  const draw = encodeURIComponent(т.draw || ((т.q || слово) + " рисунок карандашом"));
+  const en = т.en ? encodeURIComponent(т.en) : "";
+  /* Установленная с домашнего экрана Кэйко открывает target="_blank" во
+     встроенном мини-браузере — из него приложения не запускаются. */
+  const мимо = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
+  openSheet(`
+    <h3>${esc(слово[0].toUpperCase() + слово.slice(1))}</h3>
+    ${т.t ? `<p class="sub">${esc(т.t)}</p>` : ""}
+    <div class="term-links">
+      <a href="https://yandex.ru/images/search?text=${q}"${мимо}>Как выглядит</a>
+      <a href="https://ru.pinterest.com/search/pins/?q=${draw}"${мимо}>Как рисуют</a>
+      <a href="https://www.google.com/search?tbm=isch&q=${en || q}"${мимо}>Ещё картинки</a>
+    </div>`);
 }
 
 /* ── Картинка шага ──
@@ -12235,6 +12299,10 @@ function bindPractice() {
 
     /* Занятие со страницы задания: встаём на его первый шаг и, если надо,
        показываем подготовку. */
+    if (b.dataset.term !== undefined) {
+      termOpen(b.dataset.term);
+      return;
+    }
     if (b.dataset.lspic !== undefined) {
       picOpen(coverSrc(b.dataset.lspic, ""));
       return;
