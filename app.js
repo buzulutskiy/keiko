@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 337";
+const APP_VERSION = "Кэйко 338";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5080,6 +5080,56 @@ function withMaterial(view, fn) {
   }
 }
 
+/* ── Путь: дни, когда занимался чем угодно ──
+   Отдельно от материалов и намеренно. У материала лестница дней короткая: книга
+   живёт три недели, и сотня дней ей не по росту. А привычка сама по себе живёт
+   годами — и мерить её надо не книгой, а всем сразу. Конфликтовать этому счёту
+   не с чем: он не привязан ни к одному материалу и не спорит ни с одним
+   процентом. То самое «правило десяти тысяч часов», переведённое в дни. */
+function pathDays() {
+  const дни = new Set();
+  const собрать = (список) => {
+    for (const e of список || []) if (e && !e.deleted && e.date) дни.add(e.date);
+  };
+  собрать(data.piano && data.piano.entries);
+  собрать(data.book && data.book.entries);
+  собрать(data.pastel && data.pastel.entries);
+  собрать(data.watch && data.watch.entries);
+  return дни.size;
+}
+
+const PATH_ACH = "__path__";
+function pathState() {
+  const c = CATALOG[PATH_ACH];
+  const список = (c && Array.isArray(c.ach)) ? c.ach : [];
+  const дней = pathDays();
+  return список.map((a) => ({ ...a, need: Number((a.when[0] || [])[2]) || 0,
+    done: дней >= (Number((a.when[0] || [])[2]) || 0) }));
+}
+
+function pathHTML() {
+  const все = pathState();
+  if (!все.length) return "";
+  const дней = pathDays();
+  const взято = все.filter((a) => a.done);
+  const дальше = все.find((a) => !a.done);
+  return `
+    <div class="path">
+      <div class="path-head">
+        <b>${дней}</b><span>${plural(дней, "день", "дня", "дней")} занятий — всего, по всем материалам</span>
+      </div>
+      <div class="path-row">
+        ${все.map((a) => `
+          <span class="path-step${a.done ? " on" : ""}" title="${esc(a.name)} · ${a.need} ${plural(a.need, "день", "дня", "дней")}">
+            ${a.done ? a.icon : "·"}
+          </span>`).join("")}
+      </div>
+      <p class="path-note">${дальше
+        ? `${esc(дальше.name)} — через ${дальше.need - дней} ${plural(дальше.need - дней, "день", "дня", "дней")}`
+        : "Пройдено до конца"}${взято.length ? ` · взято ${взято.length} из ${все.length}` : ""}</p>
+    </div>`;
+}
+
 // материал из achView мог остаться от другого профиля — тогда его тут нет
 function viewMaterialExists(v) {
   if (!v || !v.track) return false;
@@ -5104,6 +5154,7 @@ function renderAchList() {
 
   $("#view").innerHTML = `
     ${achTopHTML()}
+    ${achTop === "mats" ? pathHTML() : ""}
     <div class="mat-list">
       ${mats.map(m => `
         <button class="mat-card" data-track="${m.track}" data-piece="${m.pieceId || ""}" data-book="${m.bookId || ""}" type="button">

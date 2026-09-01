@@ -1117,6 +1117,49 @@ function ок(имя, факт, надо) {
   t.set("data.hidden", было.hidden); t.set("data.active", было.active);
 }
 
+/* ── Путь: дни занятий по всем материалам сразу ── */
+{
+  const было = {
+    cat: t.get("CATALOG"),
+    piano: JSON.parse(JSON.stringify(t.get("data").piano || {})),
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+    watch: JSON.parse(JSON.stringify(t.get("data").watch || {})),
+  };
+  t.set("CATALOG", { __path__: { ach: [
+    { id: "p3", icon: "🌱", name: "Три дня", hint: "", secret: false, when: [["days", ">=", 3]] },
+    { id: "p10", icon: "🌳", name: "Десять дней", hint: "", secret: false, when: [["days", ">=", 10]] },
+  ] } });
+  t.set("data.piano", { pieces: [], activePiece: "", entries: [
+    { id: "1", date: "2026-08-01" }, { id: "2", date: "2026-08-02" },
+  ] });
+  t.set("data.book", { books: [], activeBook: "", entries: [
+    { id: "3", date: "2026-08-02" },                       // тот же день — считается один раз
+    { id: "4", date: "2026-08-03" },
+    { id: "5", date: "2026-08-04", deleted: true },         // удалённая запись не в счёт
+  ] });
+  t.set("data.pastel", { entries: [{ id: "6", date: "2026-08-05" }], courses: [], course: null });
+  t.set("data.watch", { videos: [], activeVideo: "", entries: [] });
+
+  ок("путь: день считается один раз на все материалы", t.get("pathDays")(), 4);
+
+  const сост = t.get("pathState")();
+  ок("путь: три дня взяты, десять нет",
+    сост.map((a) => a.done), [true, false]);
+
+  t.get("data").watch.entries.push({ id: "7", date: "2026-08-06" }, { id: "8", date: "2026-08-07" });
+  ок("путь: ролики тоже идут в счёт", t.get("pathDays")(), 6);
+
+  ок("путь: без описи ничего не показываем", (() => {
+    t.set("CATALOG", {});
+    return t.get("pathState")().length;
+  })(), 0);
+
+  t.set("CATALOG", было.cat);
+  t.set("data.piano", было.piano); t.set("data.book", было.book);
+  t.set("data.pastel", было.pastel); t.set("data.watch", было.watch);
+}
+
 /* ── Палитра: слово курса → номера мелков ── */
 {
   const было = t.get("data").palette;
