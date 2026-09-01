@@ -1181,19 +1181,17 @@ function ок(имя, факт, надо) {
   });
   t.set("data.active", "book");
 
-  ок("карта: книга не начата — наводить некуда", t.get("mapHerePoints")().length, 0);
+  ок("карта: книга не начата — глава не подставляется", t.get("mapHereChapter")(), 0);
 
   t.get("data").book.entries.push({ id: "1", date: "2026-08-01", bookId: "kniga", page: 25 });
-  ок("карта: наводимся на текущую главу",
-    t.get("mapHerePoints")().map((p) => p.name), ["Пилос"]);
+  ок("карта: подставлена вторая глава", t.get("mapHereChapter")(), 2);
 
-  // в третьей главе точек нет — наводиться не на что, карта остаётся общей
+  // в третьей главе точек нет — подставлять нечего, открывается вся карта
   t.get("data").book.entries.push({ id: "2", date: "2026-08-02", bookId: "kniga", page: 45 });
-  ок("карта: в главе без точек ничего не наводим", t.get("mapHerePoints")().length, 0);
+  ок("карта: глава без точек не подставляется", t.get("mapHereChapter")(), 0);
 
   t.get("data").book.entries.push({ id: "3", date: "2026-08-03", bookId: "kniga", page: 65 });
-  ок("карта: дальше по книге — своя глава",
-    t.get("mapHerePoints")().map((p) => p.name), ["Спарта"]);
+  ок("карта: дальше по книге — своя глава", t.get("mapHereChapter")(), 4);
 
   // сама карта при этом всегда со всеми точками
   ок("карта: точки не теряются", t.get("mapPoints")(t.get("book")(), -1).length, 3);

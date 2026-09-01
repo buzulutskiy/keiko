@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 341";
+const APP_VERSION = "Кэйко 342";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -806,19 +806,19 @@ const mapWhole = (b) => {
 };
 const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
 
-/* Точки главы, которую читаешь сейчас. Карта открывается целиком — иначе с
-   неё не увидеть, где Итака, а где Троя, — но вид наводится на текущую главу:
-   место и глава должны совпадать, чтобы не листать карту к себе руками.
-   Книга не начата или в её главе точек нет — открывается как была, вся. */
-function mapHerePoints(b) {
+/* Номер главы, которую читаешь сейчас, — с ней карта и открывается: в её
+   содержании глава уже выбрана, показаны только её места. Вернуться ко всем
+   можно там же, пунктом «Все места».
+   Книга не начата или в её главе точек нет — открывается вся карта. */
+function mapHereChapter(b) {
   const bk = b || book();
   const главы = bk.chapters || [];
-  if (!главы.length) return [];
+  if (!главы.length) return 0;
   const стр = bookProgressOf(bk);
-  if (!стр || стр <= (bk.startPage || 0)) return [];      // ещё не начата
+  if (!стр || стр <= (bk.startPage || 0)) return 0;       // ещё не начата
   let i = -1;
   главы.forEach((c, n) => { if (стр >= c.from) i = n; });
-  return i >= 0 ? mapOfChapter(bk, i) : [];
+  return i >= 0 && mapOfChapter(bk, i).length ? i + 1 : 0;
 }
 const mapBox = (b) => {
   const a = artsOf((b || book()).id);
@@ -10955,11 +10955,11 @@ function openPlaceMap(bk, i, выбрать) {
   if (!места.length || !рамка) { toast("Карты пока нет"); return; }
   const box = $("#gmap");
   if (!box) return;
-  /* Куда навести вид при открытии: точки текущей главы, если карта открыта
-     целиком и книга начата. Выбранная точка важнее — на неё и наводимся. */
-  const сюда = (i < 0 && !выбрать) ? mapHerePoints(bk) : [];
-  gm = { места, рамка, at: выбрать || null, сюда, scale: 1, tx: 0, ty: 0, id: bk.id, i,
-         части: mapPartsOf(bk), часть: 0,
+  /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
+     важнее — если пришли из разбора к месту, глава не подставляется. */
+  const часть = (i < 0 && !выбрать) ? mapHereChapter(bk) : 0;
+  gm = { места, рамка, at: выбрать || null, часть, scale: 1, tx: 0, ty: 0, id: bk.id, i,
+         части: mapPartsOf(bk),
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
   gmTocBtn();
@@ -11531,7 +11531,7 @@ function gmFit() {
     gm.ty = Math.max(0, (sh - h) / 2);
     gmApply();
     if (gm.at) gmFocus(gm.at, 2.2);
-    else if (gm.сюда && gm.сюда.length) gmFitTo(gm.сюда);
+    else if (gm.часть) gmFitTo(gmВидимые());
   };
   if (img.complete && img.naturalWidth) прим();
   else img.onload = прим;
