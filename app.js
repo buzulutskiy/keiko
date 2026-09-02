@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 357";
+const APP_VERSION = "Кэйко 358";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -87,9 +87,18 @@ const now = () => Date.now();
 function todayStr() { return dateStr(new Date()); }
 
 function copyText(text, word) {
-  const t = String(text || "");
   const ok_ = (word || "Название") + " скопировано";
-  if (!t) return;
+  return copyRaw(text).then((ok) => {
+    toast(ok ? ok_ : "Не вышло скопировать");
+    return ok;
+  });
+}
+
+/* Копия без отклика: кто зовёт, тот и решает, как подтвердить — тостом или
+   надписью на самой кнопке. */
+function copyRaw(text) {
+  const t = String(text || "");
+  if (!t) return Promise.resolve(false);
   /* Сначала старый способ через выделение: он синхронный и потому переживает
      жест надёжнее, чем обещание clipboard API. */
   try {
@@ -100,13 +109,27 @@ function copyText(text, word) {
     ta.select();
     const ok = document.execCommand("copy");
     ta.remove();
-    if (ok) { toast(ok_); return; }
+    if (ok) return Promise.resolve(true);
   } catch {}
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(t)
-      .then(() => toast(ok_))
-      .catch(() => toast("Не вышло скопировать"));
-  } else toast("Не вышло скопировать");
+  if (navigator.clipboard) return navigator.clipboard.writeText(t).then(() => true, () => false);
+  return Promise.resolve(false);
+}
+
+/* Подтверждение прямо на кнопке: нажал — надпись сменилась на «✓ Готово» и
+   через пару секунд вернулась. Тост для этого лишний: глаз уже на кнопке,
+   а всплывающая полоска уводит внимание в другой угол экрана. */
+function btnSay(кнопка, слово, мс) {
+  if (!кнопка) return;
+  const было = кнопка.dataset.was || кнопка.textContent;
+  кнопка.dataset.was = было;
+  кнопка.textContent = слово;
+  кнопка.classList.add("said");
+  clearTimeout(Number(кнопка.dataset.timer));
+  кнопка.dataset.timer = String(setTimeout(() => {
+    кнопка.textContent = кнопка.dataset.was || было;
+    кнопка.classList.remove("said");
+    delete кнопка.dataset.was;
+  }, мс || 1900));
 }
 function dateStr(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function fromStr(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
@@ -10205,6 +10228,7 @@ async function toPNG(src) {
    Где листа нет (настольный браузер) — обычная ссылка на скачивание. */
 async function giveBookFile(b, кнопка) {
   const bk = b || book();
+  let готово = "";
   const было = кнопка ? кнопка.textContent : "";
   if (кнопка) { кнопка.disabled = true; кнопка.textContent = "Качаю…"; }
   try {
@@ -10219,6 +10243,7 @@ async function giveBookFile(b, кнопка) {
     const файл = (typeof File === "function") ? new File([blob], имя, { type: "text/markdown" }) : null;
     if (файл && navigator.canShare && navigator.canShare({ files: [файл] })) {
       await navigator.share({ files: [файл], title: bk.title || "Книга" });
+      готово = "✓ Отдано";
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -10226,12 +10251,17 @@ async function giveBookFile(b, кнопка) {
     a.href = url; a.download = имя;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    toast("Скачано");
+    готово = "✓ Скачано";
   } catch (e) {
     // отмена листа «Поделиться» — не ошибка, ругаться тут не на что
     if (!(e && e.name === "AbortError")) toast("Не вышло отдать файл");
   } finally {
-    if (кнопка) { кнопка.disabled = false; кнопка.textContent = было; }
+    if (кнопка) {
+      кнопка.disabled = false;
+      кнопка.textContent = было;
+      delete кнопка.dataset.was;
+      if (готово) btnSay(кнопка, готово);
+    }
   }
 }
 
@@ -13480,7 +13510,8 @@ function bindBookSheet() {
   if (ac) ac.addEventListener("click", () => {
     const главы = book().chapters || [];
     const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
-    copyText(askText(book(), i), "Промт");
+    copyRaw(askText(book(), i)).then((ok) =>
+      btnSay(ac, ok ? "✓ Скопировано" : "Не вышло"));
   });
   const bf = $("#bookFile");
   if (bf) bf.addEventListener("click", () => giveBookFile(book(), bf));
