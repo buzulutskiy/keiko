@@ -1384,6 +1384,19 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Выключенная часть разбора ── */
+{
+  const cat = t.get("CATALOG");
+  cat.__t = { article: [{ ch: 1, p: "а" }], faq: [{ ch: 1, q: "б", a: "в" }] };
+  const кн = { id: "__t", chapters: [{ from: 0, name: "I" }] };
+  ок("разбор: обе части на месте",
+    [t.get("bookArticle")(кн).length, t.get("bookFaq")(кн).length], [1, 1]);
+  cat.__t.off = ["article"];
+  ок("разбор: выключенная часть не показывается", t.get("bookArticle")(кн).length, 0);
+  ок("разбор: соседняя часть не задета", t.get("bookFaq")(кн).length, 1);
+  delete cat.__t;
+}
+
 /* ── Задание для ChatGPT по слову из шага ── */
 {
   const tp = t.get("termPrompt");
