@@ -1899,17 +1899,21 @@
     /* Кнопка вынута из потока и привязана к правому краю: в ряду она тянулась
        на всю высоту блока с заголовком и подписью и вставала ниже строки
        «Что прочитал?». Сдвиг вверх равняет её середину с серединой заголовка. */
-    .sh-top { position: relative; padding-right: 44px; }
-    .mini-menu { position: absolute; top: -3px; right: 0; }
-    .mm-btn {
-      width: 34px; height: 34px; padding: 0; border-radius: 11px;
-      display: grid; place-items: center;      /* точки ровно по центру */
-      font-size: 1.1rem; line-height: 1; color: var(--dim);
-      background: var(--glass); border: 1px solid var(--glass-line);
+    /* Точки стоят в одном ряду с «Подтвердить»: та же высота, но тише — без
+       заливки и с приглушённым цветом, чтобы не спорить с главной кнопкой. */
+    .sheet-actions.with-more { grid-template-columns: minmax(0, 1fr) auto; }
+    .mini-menu { position: relative; display: grid; }
+    .btn.mm-btn {
+      width: 58px; padding: 0; display: grid; place-items: center;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--dim);
     }
+    /* Точки рисуем, а не набираем: у знака «⋯» свои боковые поля и своя
+       высота над базовой линией, и по центру кнопки он не встаёт. */
+    .mm-btn svg { display: block; width: 18px; height: 18px; fill: currentColor; }
     .mm-pop[hidden] { display: none; }      /* display ниже перебивает встроенный [hidden] */
     .mm-pop {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
+      /* Ряд стоит внизу шторки — раскрываемся вверх, иначе меню уедет за край. */
+      position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 5;
       /* Ширину задаёт самый длинный пункт: с min-width короткий «Книга .md»
          оставлял справа пустоту, и отступы читались разными. */
       display: grid; gap: 2px; padding: 6px;

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 362";
+const APP_VERSION = "Кэйко 363";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13298,29 +13298,25 @@ function openLogSheet() {
      в теле они спорили с главным делом — отметить страницу. */
   const меню = isBook() && (book().chapters || []).length > 0;
   openSheet(`
-    <div class="sh-top">
-      <div class="sh-top-txt">
-        <h3>${title}</h3>
-        ${sub ? `<p class="sub">${sub}</p>` : ""}
-      </div>
+    <h3>${title}</h3>
+    ${sub ? `<p class="sub">${sub}</p>` : ""}
+    <div id="sheetBody"></div>
+    <div class="sheet-actions${меню ? " with-more" : ""}">
+      <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
       ${меню ? `
       <div class="mini-menu">
-        <button class="mm-btn" id="aiMenu" type="button" aria-label="Ещё" aria-expanded="false">⋯</button>
+        <button class="btn mm-btn" id="aiMenu" type="button" aria-label="Ещё" aria-expanded="false"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="16" cy="10" r="1.7"/></svg></button>
         <div class="mm-pop" id="aiPop" hidden>
           <button class="mm-item" id="askCopy" type="button">Промт для ИИ</button>
           ${hasBookFile() ? `<button class="mm-item" id="bookFile" type="button">Книга .md</button>` : ""}
         </div>
       </div>` : ""}
-    </div>
-    <div id="sheetBody"></div>
-    <div class="sheet-actions">
-      <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
-      <button class="btn" id="sheetCancel" type="button">Отмена</button>
     </div>`);
 
   renderSheetBody();
+  /* Отмену убрали: шторку закрывают протяжкой вниз или касанием мимо неё,
+     а место в ряду отдано точкам. */
   $("#sheetSave").addEventListener("click", saveEntry);
-  $("#sheetCancel").addEventListener("click", closeSheet);
   if (меню) bindAiMenu();
 }
 
