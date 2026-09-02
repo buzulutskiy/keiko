@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 365";
+const APP_VERSION = "Кэйко 366";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13486,7 +13486,7 @@ function stageSheetUI() {
         const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
         g = x.g || g;
         return шапка + `
-          <button class="sg ${выбран ? "pick" : ""}${закрыт ? " was" : ""}" data-sg="${i}" type="button">
+          <button class="sg ${выбран ? "sel" : ""}${закрыт ? " was" : ""}" data-sg="${i}" type="button">
             <span class="sg-n">${i + 1}</span>
             <span class="sg-t">${esc(x.t || "Этап " + (i + 1))}${
               i === тек && !закрыт ? `<i>сейчас здесь</i>` : закрыт ? `<i>закрыт ${esc(fmtDay(stageDoneAt(i)))}</i>` : ""}</span>
@@ -15045,7 +15045,7 @@ function stagesPageHTML(c, ent, отметки, st, notes, thoughts) {
           const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
           g = x.g || g;
           return шапка + `
-            <div class="sg${d ? " was" : ""}${i === тек ? " pick" : ""}">
+            <div class="sg${d ? " was" : ""}${i === тек ? " sel" : ""}">
               <span class="sg-n">${i + 1}</span>
               <span class="sg-t">${esc(x.t || "")}${
                 d ? `<i>закрыт ${esc(fmtDay(d))}${n ? ` · ${n} ${plural(n, "подход", "подхода", "подходов")}` : ""}</i>`

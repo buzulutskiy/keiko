@@ -1914,8 +1914,10 @@
     .sg-t i { display: block; font-style: normal; font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
     .sg-c { text-align: center; color: var(--dim); }
     .sg.was .sg-c { color: var(--green); }
-    .sg.pick { border-color: var(--gold); background: rgba(255, 201, 77, .08); }
-    .sg.pick .sg-c { color: var(--gold); }
+    /* Класс «sel», а не «pick»: глобальный .pick — это инлайновая пилюля,
+       она ломала сетку строки. */
+    .sg.sel { border-color: var(--gold); background: rgba(255, 201, 77, .08); }
+    .sg.sel .sg-c { color: var(--gold); }
 
     /* ── День за днём на странице курса ── */
     .pd-list { display: grid; gap: 8px; margin-top: 10px; }
