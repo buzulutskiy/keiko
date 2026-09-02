@@ -1899,6 +1899,17 @@
     /* Кнопка вынута из потока и привязана к правому краю: в ряду она тянулась
        на всю высоту блока с заголовком и подписью и вставала ниже строки
        «Что прочитал?». Сдвиг вверх равняет её середину с серединой заголовка. */
+    /* ── Простая отметка рисования ── */
+    .dw { display: grid; gap: 10px; }
+    .dw-cam { width: 100%; }
+    .dw-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; }
+    .dw-shots.wide { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); margin-top: 10px; }
+    .dw-sh { margin: 0; border-radius: 12px; overflow: hidden; background: var(--glass);
+      border: 1px solid var(--glass-line); }
+    .dw-sh img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+    .dw-sh i { display: grid; place-items: center; aspect-ratio: 3 / 4; font-style: normal; opacity: .5; }
+    .dw-sh figcaption { padding: 5px 7px; font-size: 0.7rem; color: var(--muted); text-align: center; }
+
     /* ── Этапы рисунка в шторке отметки ── */
     .stages { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; }
     .sg-head { margin: 10px 0 2px; font-size: 0.74rem; letter-spacing: .06em;

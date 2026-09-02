@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 366";
+const APP_VERSION = "Кэйко 367";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -68,6 +68,7 @@ let pickPage = 0;
 let pickDone = false;    // нажата ли «Прочитана» в открытой шторке
 let pickLessons = [];
 let pickStage = 0, pickStageDone = false;   // этап, над которым сидел, и закрыт ли он
+let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
 let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
@@ -1135,6 +1136,18 @@ function pastelStats() {
     prev = e.date;
   }
 
+  if (plainDraw()) {
+    const c2 = course(), готов = !!c2.done;
+    return {
+      lessons: 1, done: готов ? 1 : 0, doneSet: new Set(), spentSec: 0,
+      stepsDone: готов ? 1 : 0, steps: 1, stages: 0, stageSet: new Set(), lessonSet: new Set(),
+      pct: готов ? 100 : 0, totalSec: 0, doneSec: 0, minutes: 0, minutesAll: 0, minutesLeft: 0,
+      days: list.length, streak: streak(), streakAll: streakAll(),
+      weekend, comeback, notes, maxAtOnce, nextLesson: null, drawDone: готов,
+      shots: takesFor(curKey()).filter((t) => t.kind === "photo").length,
+    };
+  }
+
   if (byStages()) {
     const все = stages(), готово = stagesDone();
     const сеансы = new Set(все.filter((_, i) => stageDoneAt(i)).map((x) => x.g || ""));
@@ -1484,6 +1497,10 @@ const evIcon = (t, id) => (evList(t, "ach").get(id) || {}).icon || "";
    в счёт не идут. */
 const stages = () => (course().stages || []);
 const byStages = () => stages().length > 0;
+/* Совсем простой материал: ни уроков, ни этапов. Отметка значит «сегодня
+   рисовал», к ней можно приложить снимок, а когда рисунок готов — одна
+   кнопка «завершён». Больше в этом ничего нет и не должно быть. */
+const plainDraw = () => isCourse() && !lessons().length && !byStages();
 const stageKey = (i) => "S" + i;
 const stageDoneAt = (i) => (lessonStore().done || {})[stageKey(i)] || "";
 const stagesDone = () => stages().reduce((n, _, i) => n + (stageDoneAt(i) ? 1 : 0), 0);
@@ -1820,6 +1837,7 @@ function saveEntry() {
        чтения, и запрещать это на полсуток незачем. Ноль по-прежнему не
        принимаем: это не выбор, а неоткрытый выбор страницы. */
     } else if (isBook()) existing.page = pickPage > 0 ? pickPage : (existing.page || 0);
+    else if (isCourse() && plainDraw()) markDraw(existing);
     else if (isCourse() && byStages()) markStage(existing);
     else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
@@ -1831,11 +1849,14 @@ function saveEntry() {
       isWatch() ? { videoId: video().id } :
       isBook() ? Object.assign({ bookId: book().id },
         bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage })
-      : isCourse() ? (byStages()
+      : isCourse() ? (plainDraw()
+          ? { courseId: course().id, lessons: [] }
+          : byStages()
           ? { courseId: course().id, stage: pickStage, stageDone: pickStageDone, lessons: [] }
           : { lessons: pickLessons.slice() })
       : { pieceId: piece().id, spans: currentSpans() }
     ));
+    if (isCourse() && plainDraw()) markDraw(null);
     if (isCourse() && byStages()) markStage(null);
   }
 
@@ -3978,6 +3999,11 @@ const subLine = (...parts) => parts.filter(Boolean)
 function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
   if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
+  if (isCourse() && plainDraw()) {
+    const n = s.days;
+    return subLine(course().done ? "Рисунок закончен" : "Рисую",
+      n ? `${n} ${plural(n, "день", "дня", "дней")} за листом` : "ещё ни одного дня");
+  }
   if (isCourse() && byStages()) {
     const i = stageNow(), все = stages();
     const закрыто = stagesDone();
@@ -4066,7 +4092,7 @@ $("#view").innerHTML = `
        и когда уже отмечен: второе занятие за день это нормально, отрезки
        допишутся в ту же запись. Ручная шторка остаётся у остальных треков. */
     if (isPiano() && piece().bars) { openPractice(); return; }
-    if (isPastel() && byStages()) { openLogSheet(); return; }
+    if (isPastel() && (byStages() || plainDraw())) { openLogSheet(); return; }
     if (isPastel() && lessons().length) { openLesson(); return; }
     openLogSheet();
   });
@@ -13354,9 +13380,10 @@ function openLogSheet() {
   sheetMode = "log";
   pickSpans = []; partOpen = null; partUpto = {};
   if (isCourse() && byStages()) { pickStage = stageNow(); pickStageDone = false; }
+  if (isCourse() && plainDraw()) pickDrawDone = false;
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
   /* «Сегодня» подписывать незачем: отмечают почти всегда сегодняшний день, и
      строка только отодвигала главное. Дата остаётся, когда она другая, и
      остаётся предупреждение, что запись за этот день уже есть. */
@@ -13422,7 +13449,7 @@ function renderSheetBody() {
   if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
   else if (isWatch()) { /* выбирать нечего: у ролика одно состояние */ }
-  else if (isCourse()) { if (byStages()) bindStageSheet(); else bindPastelSheet(); }
+  else if (isCourse()) { if (plainDraw()) bindDrawSheet(); else if (byStages()) bindStageSheet(); else bindPastelSheet(); }
   else bindPianoSheet();
 }
 
@@ -13448,6 +13475,7 @@ function watchSheetUI() {
 }
 
 function pastelSheetUI() {
+  if (plainDraw()) return drawSheetUI();
   if (byStages()) return stageSheetUI();
   const done = doneLessons();
   return `
@@ -13469,6 +13497,46 @@ function pastelSheetUI() {
           ? plural(pickLessons.length, "ролик", "ролика", "роликов")
           : plural(pickLessons.length, "урок", "урока", "уроков")}`
       : isWatch() ? "Отметь, что посмотрел" : "Отметь уроки, которые прошёл"}</div>`;
+}
+
+/* Простая отметка рисования. Выбирать нечего: нажал — значит сегодня рисовал.
+   Снимок кладётся сразу, не дожидаясь «Подтвердить»: он и сам по себе ценен,
+   а если передумать отмечать — снимок всё равно нужен. */
+function drawSheetUI() {
+  const снимки = takesFor(curKey()).filter((t) => t.kind === "photo");
+  const сегодня = снимки.filter((t) => dateStr(new Date(t.at)) === selectedDate);
+  const готов = !!course().done;
+  return `
+    <div class="dw">
+      <button class="qbtn dw-cam" id="dwCam" type="button">📷 Сфотографировать лист</button>
+      ${сегодня.length ? `<div class="dw-shots">${сегодня.map((t) => `
+        <figure class="dw-sh" data-shot="${esc(t.id)}">
+          ${takeUrls.get(t.id) ? `<img src="${esc(takeUrls.get(t.id))}" alt="" loading="lazy">` : `<i>🖼</i>`}
+        </figure>`).join("")}</div>` : ""}
+      <div class="lesson-hint">${сегодня.length
+        ? `Сегодня ${сегодня.length} ${plural(сегодня.length, "снимок", "снимка", "снимков")} · всего ${снимки.length}`
+        : снимки.length ? `Всего снимков: ${снимки.length}` : "Снимок не обязателен — можно просто отметить день"}</div>
+      <button class="qbtn fin ${pickDrawDone ? "on" : ""}" id="dwFin" type="button">
+        ${готов ? "✓ Рисунок уже завершён" : pickDrawDone ? "✓ Рисунок завершён" : "Рисунок завершён"}
+      </button>
+    </div>`;
+}
+
+function bindDrawSheet() {
+  const cam = $("#dwCam");
+  if (cam) cam.addEventListener("click", async () => {
+    const f = await pickPhoto();
+    if (!f) return;
+    cam.disabled = true; cam.textContent = "Готовлю снимок…";
+    try {
+      await saveTake(await shrinkPhoto(f), 0, "photo");
+      renderSheetBody();
+    } catch { toast("Не получилось прочитать снимок"); cam.disabled = false; }
+  });
+  const fin = $("#dwFin");
+  if (fin && !course().done) fin.addEventListener("click", () => { pickDrawDone = !pickDrawDone; renderSheetBody(); });
+  document.querySelectorAll("#sheetBody [data-shot]").forEach((el) =>
+    el.addEventListener("click", () => openShotSheet(el.dataset.shot)));
 }
 
 /* Список этапов: один выбран — над ним сегодня и сидел. Отдельным
@@ -13500,6 +13568,16 @@ function stageSheetUI() {
     <div class="lesson-hint">${pickStageDone
       ? "Закроем этап и встанем на следующий."
       : "Просто подход: этап останется текущим, вернёшься к нему сколько понадобится."}</div>`;
+}
+
+/* Завершение рисунка живёт на самом курсе, как «прочитана» у книги: это
+   решение, а не накопленный процент. Снять его можно тем же «Начать заново». */
+function markDraw(existing) {
+  if (existing) existing.courseId = existing.courseId || course().id;
+  if (!pickDrawDone) return;
+  const c = course();
+  if (!c.done) { c.done = true; c.doneAt = now(); c.updatedAt = now(); }
+  if (existing) existing.drawDone = true;
 }
 
 /* Закрытие этапа держим в том же хранилище, что и шаги: ключ «S<номер>» с
@@ -14910,6 +14988,7 @@ function pastelPageUI(id) {
   const days = new Set(ent.map(e => e.date)).size;
   const лекция = c.mode === "watch";
   const этапный = (c.stages || []).length > 0;
+  const простой = !этапный && !c.lessons.length;
   /* Ход разбора берём у того курса, чью страницу открыли, а не у активного:
      иначе карта шагов и список этапов показывали чужое, споря с числами
      над ними, которые уже считались правильно. */
@@ -14929,8 +15008,9 @@ function pastelPageUI(id) {
       <div class="lib-title"><b>${esc(c.name)}</b><em>${esc(c.author || "")}</em></div>
     </div>
     ${этапный ? stagesPageHTML(c, ent, отметки, st, notes, thoughts) : ""}
+    ${простой ? drawPageHTML(c, ent, notes, thoughts) : ""}
 
-    ${этапный ? "" : `
+    ${этапный || простой ? "" : `
     <div class="panel">
       ${(() => {
         /* Карта — по ходам, как у пьесы по тактам: видно, сколько позади и где
@@ -15000,6 +15080,44 @@ function pastelPageUI(id) {
 
     ${resetBtnHTML("ps", c.id)}
     <button class="btn lib-arch" data-libarch="ps:${esc(c.id)}" type="button">Завершить и убрать в архив</button>`;
+}
+
+/* ── Страница простого рисунка ──
+   Считать тут нечего: сколько дней сидел, сколько снимков накопилось и
+   закончен ли лист. Снимки — главное: по ним видно движение лучше любых
+   процентов. */
+function drawPageHTML(c, ent, notes, thoughts) {
+  const ключ = c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+  const снимки = takesFor(ключ).filter((t) => t.kind === "photo");
+  const дни = new Set(ent.map((e) => e.date)).size;
+  return `
+    <div class="panel">
+      <div class="lib-num">
+        <div><b>${c.done ? "✓" : "—"}</b><span>${c.done ? "закончен" : "в работе"}</span></div>
+        <div><b>${дни}</b><span>${plural(дни, "день", "дня", "дней")}</span></div>
+        <div><b>${ent.length}</b><span>${plural(ent.length, "подход", "подхода", "подходов")}</span></div>
+        <div><b>${снимки.length}</b><span>${plural(снимки.length, "снимок", "снимка", "снимков")}</span></div>
+      </div>
+      <div class="lib-rows">
+        <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
+        <div><span>Последняя</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
+        ${c.doneAt ? `<div><span>Завершён</span><b>${esc(fmtDay(dateStr(new Date(c.doneAt))))}</b></div>` : ""}
+        <div><span>Заметок при отметке</span><b>${notes}</b></div>
+        <div><span>Моментов о курсе</span><b>${thoughts}</b></div>
+      </div>
+    </div>
+
+    ${снимки.length ? `
+    <div class="freeze">
+      <div class="fz-head">🖼 <b>Как шёл лист</b> — ${снимки.length} ${plural(снимки.length, "снимок", "снимка", "снимков")}, от первого к последнему</div>
+      <div class="dw-shots wide">
+        ${снимки.map((t) => `
+          <figure class="dw-sh" data-shot="${esc(t.id)}">
+            ${takeUrls.get(t.id) ? `<img src="${esc(takeUrls.get(t.id))}" alt="" loading="lazy">` : `<i>🖼</i>`}
+            <figcaption>${esc(fmtDay(dateStr(new Date(t.at))))}</figcaption>
+          </figure>`).join("")}
+      </div>
+    </div>` : ""}`;
 }
 
 /* ── Страница курса по этапам ──
