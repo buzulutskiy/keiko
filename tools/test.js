@@ -461,18 +461,18 @@ function ок(имя, факт, надо) {
   ок("курсы: активный выбирается по id", t.get("course")().id, "argos");
   ок("курсы: ключ материала — id курса", t.get("curKey")(), "argos");
 
-  // ход разбора у курсов раздельный, первый остаётся под старым ключом
+  // ход разбора у курсов раздельный, у каждого свой ключ
   t.set("data.pastel.activeCourse", "c");
   t.get("lessonStore")().done["L0:s0"] = "2026-01-01";
   t.set("data.pastel.activeCourse", "argos");
   ок("курсы: свой ход разбора", !!t.get("lessonStore")().done["L0:s0"], false);
-  ок("курсы: второй курс под своим ключом",
-    Object.keys(t.get("data").practice).sort(), ["pastel", "pastel:argos"]);
+  ок("курсы: у каждого курса свой ход разбора",
+    Object.keys(t.get("data").practice).sort(), ["pastel:argos", "pastel:c"]);
 
   // оба курса стоят в ленте как отдельные материалы
   const лента = t.get("railItems")().filter((i) => i.track === "pastel");
   ок("курсы: два материала в ленте", лента.length, 2);
-  ок("курсы: ключи материалов", лента.map(t.get("libKey")), ["ps", "ps:argos"]);
+  ок("курсы: ключи материалов", лента.map(t.get("libKey")), ["ps:c", "ps:argos"]);
 
   // у простого материала нет подготовки
   ок("курсы: простой материал без подготовки",
@@ -690,13 +690,13 @@ function ок(имя, факт, надо) {
   t.set("data.active", "pastel");
 
   // ключ материала для любого курса, не только открытого
-  ок("курсы: ключ первого — старый",
-    [t.get("keyOfCourse")({ id: "a" }), t.get("keyOfCourse")({ id: "b" })], ["pastel", "b"]);
+  ок("курсы: ключ курса — его id",
+    [t.get("keyOfCourse")({ id: "a" }), t.get("keyOfCourse")({ id: "b" })], ["a", "b"]);
 
   // звук у каждого курса свой, а не общий
   ок("курсы: свой ключ звука",
     [t.get("railKey")({ track: "pastel", course: { id: "a" } }),
-     t.get("railKey")({ track: "pastel", course: { id: "b" } })], ["pastel", "b"]);
+     t.get("railKey")({ track: "pastel", course: { id: "b" } })], ["a", "b"]);
 
   // в ленте дня запись подписана именем своего курса
   const лента = t.get("allEntriesOn")("2026-08-01").filter((x) => x.track === "pastel");
@@ -704,9 +704,9 @@ function ок(имя, факт, надо) {
     лента.map((x) => x.title).sort(), ["Аргос", "Пастель"]);
 
   // незнакомый материал заставляет обновить каталог сразу
-  t.set("CATALOG", { pastel: { cover: true } });
+  t.set("CATALOG", { a: { cover: true } });
   ок("каталог: новый курс считается незнакомым", t.get("catalogMissing")(), true);
-  t.set("CATALOG", { pastel: { cover: true }, b: { cover: true } });
+  t.set("CATALOG", { a: { cover: true }, b: { cover: true } });
   ок("каталог: когда все известны — не дёргаем", t.get("catalogMissing")(), false);
 
   t.set("CATALOG", было.catalog);
@@ -1388,19 +1388,15 @@ function ок(имя, факт, надо) {
   sandbox.document.activeElement = было;
 }
 
-/* ── Первый курс не меняется от архива ── */
+/* ── Ключ курса — это его id ── */
 {
   const было = JSON.parse(JSON.stringify(t.get("data").pastel));
-  t.set("data.pastel.courses", [
-    { id: "__old", name: "Пастель", lessons: [{ steps: [] }], archived: true },
-    { id: "__new", name: "Рисунок", lessons: [] }]);
+  t.set("data.pastel.courses", [{ id: "__new", name: "Рисунок", lessons: [] }]);
   t.set("data.pastel.activeCourse", "__new");
   t.set("data.active", "pastel");
-  ок("ключ: первым остаётся заведённый раньше, даже из архива", t.get("firstCourseId")(), "__old");
-  ок("ключ: единственный живой курс не забирает чужой ключ", t.get("courseKey")(), "__new");
-  ок("ключ: архивный держит наследный ключ",
-    t.get("keyOfCourse")({ id: "__old" }), "pastel");
-  ок("лента: материал курса не прячется под чужой пометкой",
+  ок("ключ: курс отвечает своим id", t.get("courseKey")(), "__new");
+  ок("ключ: без id — наследный «pastel»", t.get("keyOfCourse")({}), "pastel");
+  ок("лента: материал курса помечен своим ключом",
     t.get("libKey")({ track: "pastel", courseId: "__new" }), "ps:__new");
   t.set("data.pastel", было);
 }

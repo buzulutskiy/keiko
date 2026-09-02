@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 380";
+const APP_VERSION = "Кэйко 381";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -387,13 +387,24 @@ const courseById = (id) => courses().find((c) => c.id === id)
    Считать его по живому списку нельзя: отправили пастель в архив, и «первым»
    стал «Аргус» — вместе с чужим ключом «pastel», чужой пометкой «спрятан»
    и подписью «Архив» в ленте. */
+/* Наследный ключ «pastel» остался от времён единственного курса. Курс, который
+   его носил, удалён вместе со своими записями, и наследовать его теперь некому:
+   ключ курса — это его id. Пустой id (совсем старые данные) по-прежнему
+   отвечает «pastel», чтобы такие записи нашли свой материал. */
+const keyOfCourse = (c) => {
+  if (!c || !c.id) return "pastel";
+  const t = courseTrack() || {};
+  // совсем старая форма — один курс в поле course: он и живёт под «pastel»
+  if (!Array.isArray(t.courses) || !t.courses.length) return "pastel";
+  return c.id;
+};
+/* Курс, которому принадлежат записи без courseId, — заведённый первым.
+   Старую форму (один курс в поле course) учитываем тоже. */
 const firstCourseId = () => {
   const t = courseTrack() || {};
-  const все = Array.isArray(t.courses) ? t.courses : [];
-  return (все[0] || t.course || {}).id || "";
+  const все = (Array.isArray(t.courses) && t.courses.length) ? t.courses : (t.course ? [t.course] : []);
+  return (все[0] || {}).id || "";
 };
-/* Ключ материала для любого курса, не только открытого сейчас. */
-const keyOfCourse = (c) => !c || !c.id || c.id === firstCourseId() ? "pastel" : c.id;
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
@@ -2449,7 +2460,7 @@ function libKey(i) {
   if (i.track === "watch") return "wt:" + i.videoId;
   /* Первый курс жил под ключом «ps» ещё до того, как курсов стало несколько.
      Оставляем его как есть, иначе спрятанный материал вернётся на главную. */
-  return !i.courseId || i.courseId === firstCourseId() ? "ps" : "ps:" + i.courseId;
+  return i.courseId ? "ps:" + i.courseId : "ps";
 }
 const matHidden = (key) => !!(data.hidden || {})[key];
 function matToggle(key) {
@@ -2840,34 +2851,15 @@ const LS_ENV = "keiko-envelopes-v1";
 let ENVEL = null;
 try { ENVEL = JSON.parse(localStorage.getItem(LS_ENV) || "null"); } catch {}
 
+/* Фон главной — одна настройка на всё: раньше их было четыре, и разница
+   между «тихой водой» и «дыханием» ловилась разве что рядом. */
 const BG_PRESETS = [
-  { id: "still", name: "Тихая вода", hint: "почти неподвижно", blur: 22,
-    cfg: { gain:0.85, gamma:1.25, smooth:1.6, speed:0.42, amp:0.85, bright:1.05, tone:0.7, hit:0.25 },
-    layers: [[0.34,0,0.030,1.5,2.6,0.060,1.10,0.50],[0.52,1,0.024,1.2,2.1,0.075,1.00,0.46],
-             [0.70,2,0.036,1.9,3.0,0.050,0.88,0.36],[0.86,0,0.020,1.0,1.8,0.090,1.06,0.30]] },
   { id: "breath", name: "Дыхание", hint: "золотая середина", blur: 18,
     cfg: { gain:1.05, gamma:1.15, smooth:0.85, speed:0.75, amp:1.10, bright:1.20, tone:0.85, hit:0.55 },
     layers: [[0.30,0,0.055,2.1,3.7,0.055,1.18,0.55],[0.46,1,0.041,1.6,2.9,0.070,1.00,0.50],
-             [0.62,2,0.068,2.7,4.3,0.048,0.84,0.42],[0.78,0,0.033,1.3,2.3,0.085,1.10,0.38]] },
-  { id: "tide", name: "Прилив", hint: "крупные валы", blur: 16,
-    cfg: { gain:1.25, gamma:1.0, smooth:0.55, speed:0.9, amp:1.55, bright:1.25, tone:0.8, hit:0.7 },
-    layers: [[0.38,0,0.045,0.9,1.7,0.135,1.15,0.60],[0.58,1,0.033,0.7,1.4,0.160,1.02,0.54],
-             [0.76,0,0.026,0.6,1.1,0.180,1.10,0.42]] },
-  { id: "aurora", name: "Сияние", hint: "перелив цвета", blur: 26,
-    cfg: { gain:1.15, gamma:1.35, smooth:1.1, speed:0.6, amp:1.0, bright:1.45, tone:1.6, hit:0.4 },
-    layers: [[0.22,2,0.050,3.1,5.2,0.045,0.78,0.50],[0.36,1,0.038,2.4,4.0,0.058,0.95,0.52],
-             [0.50,0,0.030,1.7,3.1,0.070,1.25,0.48],[0.66,2,0.062,3.6,5.8,0.038,0.80,0.38],
-             [0.82,1,0.026,1.4,2.5,0.080,1.00,0.32]] },
-  { id: "pulse", name: "Пульс", hint: "точно в ритм", blur: 14,
-    cfg: { gain:1.2, gamma:1.0, smooth:0.28, speed:1.0, amp:1.15, bright:1.2, tone:0.7, hit:1.3 },
-    layers: [[0.32,0,0.060,2.4,4.1,0.055,1.16,0.58],[0.48,1,0.048,1.9,3.3,0.068,1.00,0.54],
-             [0.64,2,0.075,3.0,4.9,0.046,0.86,0.46],[0.80,0,0.038,1.5,2.7,0.080,1.08,0.40]] },
-  { id: "mist", name: "Туман", hint: "движение угадывается", blur: 34,
-    cfg: { gain:0.75, gamma:1.4, smooth:2.2, speed:0.30, amp:0.70, bright:1.0, tone:0.6, hit:0.15 },
-    layers: [[0.40,0,0.018,0.8,1.5,0.075,1.08,0.44],[0.60,1,0.014,0.6,1.2,0.090,1.00,0.40],
-             [0.80,2,0.022,1.1,1.9,0.065,0.90,0.32]] },
+             [0.62,2,0.068,2.7,4.3,0.048,0.84,0.42],[0.78,0,0.033,1.3,2.3,0.085,1.10,0.38]] }
 ];
-const bgPreset = () => BG_PRESETS.find(p => p.id === cfg.bgPreset) || BG_PRESETS[1];
+const bgPreset = () => BG_PRESETS[0];
 
 async function pullEnvelopes() {
   if (!cfg.token || !cfg.catalogId || ENVEL) return;
@@ -5760,7 +5752,9 @@ const wishOpenCount = () => wishes().filter(w => !w.done).length;
 
 let wishFilter = "open";         // «хочется» | «сбылось»
 let wishEditing = null;
-let wishDuePick = "";            // срок нового желания: пусто — когда-нибудь
+/* Новое желание по умолчанию на сегодня: почти всё, что записывают, хотят
+   сделать сейчас, а «когда-нибудь» — редкий случай и выбирается вручную. */
+let wishDuePick = todayStr();
 let wishEditDue = "";            // срок в открытой правке
 let wishKindPick = "";           // категория нового: пусто — без полки
 let wishEditKind = "";           // категория в правке
@@ -6643,7 +6637,7 @@ function renderWishes() {
   const area = $("#wiText");
   const save = () => {
     if (wishAdd(area.value, wishDuePick, wishKindPick)) {
-      area.value = ""; wishDuePick = ""; wishKindPick = "";
+      area.value = ""; wishDuePick = todayStr(); wishKindPick = "";
       renderWishes();
     } else toast("Напиши пару слов");
   };
@@ -7666,10 +7660,6 @@ function soundUI() {
         <button class="pick ${cfg.sound ? "on" : ""}" data-sound="on" type="button"><span class="pk-name">Включить</span></button>
         <button class="pick ${!cfg.sound ? "on" : ""}" data-sound="off" type="button"><span class="pk-name">Тишина</span></button>
       </div>
-      ${cfg.sound ? `<div class="pick-row bg-row">${BG_PRESETS.map(p => `
-        <button class="pick ${bgPreset().id === p.id ? "on" : ""}" data-bg="${p.id}" type="button">
-          <span class="pk-name">${p.name}</span><span class="pk-hint">${p.hint}</span>
-        </button>`).join("")}</div>` : ""}
       <div class="fz-note">${cfg.sound
         ? (has ? "У текущего материала звук есть" : "У текущего материала звука пока нет — тишина")
         : "Звук есть не у всех материалов"}</div>
@@ -7685,13 +7675,6 @@ function bindSoundUI() {
       audioUnlocked = true;         // это и есть нужный жест
       render();
       toast(cfg.sound ? "Атмосфера включена" : "Тишина");
-    }));
-  document.querySelectorAll("[data-bg]").forEach(b =>
-    b.addEventListener("click", () => {
-      cfg.bgPreset = b.dataset.bg; saveCfg();
-      if (window.waveRebuild) waveRebuild();
-      render();
-      toast("Фон: " + bgPreset().name);
     }));
 }
 
@@ -13868,7 +13851,6 @@ function libraryUI() {
   useMark("библиотека");
   const books  = (data.book.books || []).filter(b => !b.archived);
   const pieces = (data.piano.pieces || []).filter(p => !p.archived);
-  const hasPastel = course().lessons.length > 0;
   if (libBook) {
     const [kind, id] = libBook.split(":");
     if (kind === "bk") {
@@ -13879,7 +13861,7 @@ function libraryUI() {
       const pc = (data.piano.pieces || []).find(x => x.id === id);
       if (pc) return piecePageUI(pc);
     }
-    if (kind === "ps" && hasPastel) return pastelPageUI(id || "");
+    if (kind === "ps") return pastelPageUI(id || "");
     if (kind === "wt") { const v = videos().find(x => x.id === id); if (v) return watchPageUI(v); libBook = null; }
     libBook = null;
   }
@@ -13936,16 +13918,21 @@ function libraryUI() {
   /* Строка на каждый курс: их стало несколько, а список показывал только
      открытый сейчас — «Аргоса» в библиотеке было просто не найти. Ключ берём
      тот же, что у ленты, иначе глазик прятал бы не то, что показывает. */
-  const pastelRows = courses().filter((c) => (c.lessons || []).length).map((c) => {
+  const pastelRows = courses().map((c) => {
     const st = withMaterial({ track: "pastel", courseId: c.id }, pastelStats);
     const pct = Math.round(st.pct);
     const key = libKey({ track: "pastel", courseId: c.id });
     const ck = key === "ps" ? "pastel" : c.id;
     /* Уроками больше не меряем: у рисунка мера — ходы, у лекции — минуты. */
-    const мера = c.mode === "watch"
-      ? `${st.minutes} из ${st.minutesAll} мин`
-      : `${st.stepsDone} из ${shagov(st.steps)}`;
-    return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct, `${pct}% · ${мера}`);
+    const дней = new Set(withMaterial({ track: "pastel", courseId: c.id },
+      () => courseEntries().map((e) => e.date))).size;
+    const мера = c.mode === "watch" ? `${st.minutes} из ${st.minutesAll} мин`
+      : (c.lessons || []).length ? `${st.stepsDone} из ${shagov(st.steps)}`
+      : `${дней} ${plural(дней, "день", "дня", "дней")} за листом`;
+    /* У рисунка процента нет — он или идёт, или закончен. */
+    const слева = (c.lessons || []).length || c.mode === "watch"
+      ? `${pct}% · ${мера}` : (c.done ? `закончен · ${мера}` : мера);
+    return row(key, coverSrc(ck, ""), "🎨", c.name, c.author, pct, слева);
   });
 
   /* Полка переехала сюда из «Достижений»: прочитанное — такая же часть
@@ -13997,22 +13984,7 @@ function libraryUI() {
     + `<div class="lib-group">Прочитано · ${прочитано.length}</div>`
     + (прочитано.length ? `<div class="lib-list">${прочитано.join("")}</div>`
         : `<div class="empty-note">Здесь копится пройденное — с датами, оценкой и отзывом.</div>`)
-    /* Музей стоит между «прочитано» и «добавить»: это не материал со своим
-       прогрессом, а то, куда можно сходить по прочитанному. */
-    + `<div class="lib-group">Музей</div>
-       <div class="lib-list">
-         <button class="lib-row" id="libMuseum" type="button">
-           <span class="lib-cover"><i>🏺</i></span>
-           <span class="lib-body">
-             <b>Артефакты книг</b>
-             <em>вещи из музеев, которые можно пойти и увидеть</em>
-             <span class="lib-meta">${musItems().length
-               ? musItems().length + " " + plural(musItems().length, "предмет", "предмета", "предметов")
-               : "загрузится при открытии"}</span>
-           </span>
-           <span class="mc-go">›</span>
-         </button>
-       </div>`
+    /* Артефакты отсюда убраны: это не материал, и у них своя кнопка в шапке. */
     + `<div class="lib-group">Добавить</div>`
     /* Добавление роликов с ютуба убрано: отмечать просмотр видео оказалось
        занятием без смысла. Уже добавленные материалы остаются на месте. */
@@ -14438,13 +14410,6 @@ function bindLibraryUI() {
     btn.addEventListener("click", () => { libBook = btn.dataset.lib; render(); $("#view").scrollTop = 0; }));
   const addBook = $("#libAddBook");
   if (addBook) addBook.addEventListener("click", openAddBookSheet);
-  const musBtn = $("#libMuseum");
-  if (musBtn) musBtn.addEventListener("click", () => {
-    mus = { book: "", at: null };
-    tab = "mus"; cfg.tab = tab; saveCfg();
-    useMark("вкладка-mus");
-    renderTabbar(); renderMuseum();
-  });
   document.querySelectorAll("[data-shelf]").forEach(btn =>
     btn.addEventListener("click", () => openShelfSheet(btn.dataset.shelf)));
   /* Экран наград скрыт: награды и карточки видны в «Моментах», внутри своей
