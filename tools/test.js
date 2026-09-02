@@ -1401,15 +1401,12 @@ function ок(имя, факт, надо) {
   ок("промт: пустой шаблон не в счёт", t.get("askText")(кн, 0).includes("Структура ответа"), true);
   delete cat.__a;
 
-  // глава, с которой открывается шторка
-  const было = t.get("data").book;
-  t.set("data.book", { activeBook: "__a", books: [кн], entries: [] });
-  ок("промт: книга не начата — первая глава", t.get("askHere")(кн), 0);
-  t.set("data.book.entries", [{ bookId: "__a", date: "2026-09-01", page: 60 }]);
-  ок("промт: середина главы — она сама", t.get("askHere")(кн), 1);
-  t.set("data.book.entries", [{ bookId: "__a", date: "2026-09-01", page: 90 }]);
-  ок("промт: ровно на стыке — предыдущая, её и дочитал", t.get("askHere")(кн), 1);
-  t.set("data.book", было);
+  // файл книги показываем только тогда, когда каталог говорит, что он есть
+  ок("книга .md: без пометки кнопки нет", t.get("hasBookFile")(кн), false);
+  cat.__a = { md: true };
+  ок("книга .md: с пометкой кнопка есть", t.get("hasBookFile")(кн), true);
+  ок("книга .md: имя файла по материалу", t.get("CAT_BOOK_FILE")("__a"), "book-__a.md");
+  delete cat.__a;
 }
 
 /* ── Выключенная часть разбора ── */

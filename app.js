@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 356";
+const APP_VERSION = "Кэйко 357";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -814,6 +814,12 @@ const ASK_DEFAULT =
 
 Отделяй то, что прямо сказано в тексте, от интерпретаций. Не перечисляй много версий. Пиши простым русским языком, лаконично, но содержательно. Главное — отвечать на вопросы: «зачем это здесь?», «что это говорит о герое?» и «какой в этом смысл?»`;
 
+/* Книга целиком одним markdown-файлом: его прикладывают к запросу, чтобы
+   нейросеть разбирала по тексту, а не по памяти. Лежит в каталоге рядом с
+   обложками; в описи материала стоит только флажок, что файл есть. */
+const CAT_BOOK_FILE = (id) => `book-${id}.md`;
+const hasBookFile = (b) => !!(catOf((b || book()).id) || {}).md;
+
 const askTpl = (b) => {
   const c = catOf((b || book()).id);
   return (c && typeof c.ask === "string" && c.ask.trim()) ? c.ask : ASK_DEFAULT;
@@ -829,19 +835,6 @@ function askText(b, i) {
     .split("{n}").join(String(i + 1))
     .split("{всего}").join(String(главы.length));
 }
-/* Глава, с которой открывать промт, — та, что читаешь. Ровно на стыке берём
-   предыдущую: страница совпала с началом новой главы значит, что прошлую
-   только что дочитал, и разбирать хочется её. */
-function askHere(b) {
-  const bk = b || book();
-  const главы = bk.chapters || [];
-  const стр = bookProgressOf(bk);
-  let i = 0;
-  главы.forEach((c, n) => { if (стр >= c.from) i = n; });
-  if (i > 0 && стр === главы[i].from) i -= 1;
-  return i;
-}
-
 /* ── Карта мест ──
    Третий этап разбора: где всё это происходит. Карта — обычная современная,
    картинкой, а точки расставлены по координатам; у каждой короткий рассказ.
@@ -3944,8 +3937,6 @@ $("#view").innerHTML = `
           aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="Карта мест" title="Карта мест">🗺</button>
-        <button class="cta-side" id="bookAskBtn" type="button" ${кнопки.ask.on ? "" : "hidden"}
-          aria-label="Промт для разбора" title="Промт для разбора">⧉</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3959,8 +3950,6 @@ $("#view").innerHTML = `
   });
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(book(), -1));
-  const ba = $("#bookAskBtn");
-  if (ba) ba.addEventListener("click", () => askOpen(book(), askHere(book())));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4266,8 +4255,6 @@ function bookBtnState() {
   return {
     talk: { on: он && talkBtnOn(), icon: он ? talkBtnIcon() : "", word: он ? talkBtnWord() : "" },
     map:  { on: он && mapBtnOn() },
-    // промт собирается по главам — без них подставлять нечего
-    ask:  { on: он && (book().chapters || []).length > 0 },
   };
 }
 
@@ -4284,8 +4271,6 @@ function syncBookBtns() {
   }
   const map = document.getElementById("bookMapBtn");
   if (map) map.hidden = !st.map.on;
-  const ask = document.getElementById("bookAskBtn");
-  if (ask) ask.hidden = !st.ask.on;
 }
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
@@ -10214,39 +10199,40 @@ async function toPNG(src) {
   return await new Promise(r => c.toBlob(r, "image/png"));
 }
 
-/* ── Шторка с промтом ──
-   Показываем целиком то, что уйдёт в буфер: копировать вслепую неприятно,
-   а главу иногда нужно сменить — дочитал одну, разбирать хочется другую. */
-let askAt = 0;
-function askOpen(b, i) {
+/* ── Отдать файл книги ──
+   На телефоне «скачать» — это лист «Поделиться»: оттуда файл кладут в Файлы
+   или сразу отправляют в приложение нейросети, ради чего всё и затевалось.
+   Где листа нет (настольный браузер) — обычная ссылка на скачивание. */
+async function giveBookFile(b, кнопка) {
   const bk = b || book();
-  const главы = bk.chapters || [];
-  if (!главы.length) { toast("У книги не размечены главы"); return; }
-  askAt = Math.max(0, Math.min(главы.length - 1, i || 0));
-  askRender(bk);
-}
-function askRender(bk) {
-  sheetMode = "ask";
-  const главы = bk.chapters || [];
-  const текст = askText(bk, askAt);
-  openSheet(`
-    <div class="bn-head">
-      <button class="bn-nav" data-ask="prev" type="button"${askAt > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
-      <div>
-        <h3>Промт для разбора</h3>
-        <p class="sub">${esc(главы[askAt].name || "")} · ${askAt + 1} из ${главы.length}</p>
-      </div>
-      <button class="bn-nav" data-ask="next" type="button"${askAt + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
-    </div>
-    <pre class="ask-pre">${esc(текст)}</pre>
-    <div class="sheet-actions"><button class="btn" id="askCopy" type="button">Скопировать</button></div>`);
-  const c = $("#askCopy");
-  if (c) c.addEventListener("click", () => copyText(текст, "Промт"));
-  for (const el of $("#sheet").querySelectorAll("[data-ask]"))
-    el.addEventListener("click", () => {
-      askAt += el.dataset.ask === "next" ? 1 : -1;
-      askRender(bk);
-    });
+  const было = кнопка ? кнопка.textContent : "";
+  if (кнопка) { кнопка.disabled = true; кнопка.textContent = "Качаю…"; }
+  try {
+    let текст = await catRaw(CAT_BOOK_FILE(bk.id), 60000);
+    if (!текст) {
+      const files = await catalogFiles(false);
+      текст = await catText(files, CAT_BOOK_FILE(bk.id), 60000);
+    }
+    if (!текст) { toast("Файл книги не приехал"); return; }
+    const имя = (bk.title || "Книга").replace(/[\/:*?"<>|]/g, "") + ".md";
+    const blob = new Blob([текст], { type: "text/markdown" });
+    const файл = (typeof File === "function") ? new File([blob], имя, { type: "text/markdown" }) : null;
+    if (файл && navigator.canShare && navigator.canShare({ files: [файл] })) {
+      await navigator.share({ files: [файл], title: bk.title || "Книга" });
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = имя;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Скачано");
+  } catch (e) {
+    // отмена листа «Поделиться» — не ошибка, ругаться тут не на что
+    if (!(e && e.name === "AbortError")) toast("Не вышло отдать файл");
+  } finally {
+    if (кнопка) { кнопка.disabled = false; кнопка.textContent = было; }
+  }
 }
 
 /* ── Картинка шага ──
@@ -13466,7 +13452,12 @@ function bookSheetUI() {
       ${pickDone
         ? `<button class="qbtn fin on" data-fin="0" type="button">✓ Завершена — уйдёт в библиотеку</button>`
         : `<button class="qbtn fin" data-fin="1" type="button">Завершить книгу</button>`}</div>
-    <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>`;
+    <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>
+    ${(book().chapters || []).length ? `
+    <div class="ai-row">
+      <button class="qbtn" id="askCopy" type="button">Промт для ИИ</button>
+      ${hasBookFile() ? `<button class="qbtn" id="bookFile" type="button">Книга .md</button>` : ""}
+    </div>` : ""}`;
 }
 
 function bindBookSheet() {
@@ -13482,6 +13473,17 @@ function bindBookSheet() {
      тем, какой есть — врать про «100%» из-за закрытия книги незачем. */
   document.querySelectorAll(".qbtn[data-fin]").forEach(b =>
     b.addEventListener("click", () => { pickDone = b.dataset.fin === "1"; renderSheetBody(); }));
+  /* Промт по той же главе, что показана строкой выше: никаких «а какую он
+     взял» — что видно, то и копируется. Деталей не показываем, ответ один —
+     тост: разглядывать запрос человеку незачем, он уходит в чужое окно. */
+  const ac = $("#askCopy");
+  if (ac) ac.addEventListener("click", () => {
+    const главы = book().chapters || [];
+    const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
+    copyText(askText(book(), i), "Промт");
+  });
+  const bf = $("#bookFile");
+  if (bf) bf.addEventListener("click", () => giveBookFile(book(), bf));
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;

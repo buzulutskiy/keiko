@@ -1893,6 +1893,11 @@
       padding: 10px 14px; border-radius: 11px; font-size: 0.86rem;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
     }
+    /* Две кнопки для нейросети под строкой главы: копия запроса и файл книги.
+       Живут в шторке отметки — там же, где человек закрывает главу. */
+    .ai-row { display: flex; gap: 8px; margin-top: 10px; }
+    .ai-row .qbtn { flex: 1 1 0; min-width: 0; }
+
     /* Промт показываем как есть: переносы автора важны, но длинная строка
        должна заворачиваться, а не уезжать вбок. */
     .ask-pre {
