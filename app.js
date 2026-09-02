@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 364";
+const APP_VERSION = "Кэйко 365";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -67,6 +67,7 @@ let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
 let pickPage = 0;
 let pickDone = false;    // нажата ли «Прочитана» в открытой шторке
 let pickLessons = [];
+let pickStage = 0, pickStageDone = false;   // этап, над которым сидел, и закрыт ли он
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
 let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
@@ -1134,6 +1135,20 @@ function pastelStats() {
     prev = e.date;
   }
 
+  if (byStages()) {
+    const все = stages(), готово = stagesDone();
+    const сеансы = new Set(все.filter((_, i) => stageDoneAt(i)).map((x) => x.g || ""));
+    return {
+      lessons: все.length, done: готово, doneSet: new Set(), spentSec: 0,
+      stepsDone: готово, steps: все.length,
+      stages: сеансы.size, stageSet: сеансы, lessonSet: new Set(),
+      pct: все.length ? готово / все.length * 100 : 0,
+      totalSec: 0, doneSec: 0, minutes: 0, minutesAll: 0, minutesLeft: 0,
+      days: list.length, streak: streak(), streakAll: streakAll(),
+      weekend, comeback, notes, maxAtOnce, nextLesson: null, stageNow: stageNow(),
+    };
+  }
+
   /* Шаги и этапы — чтобы награда могла цепляться не только за урок целиком.
      Этап считается пройденным, когда закрыты все его шаги. */
   const st = lessonStore().done || {};
@@ -1355,6 +1370,10 @@ function achCommon() {
 }
 
 const achList = () => {
+  /* Материал может попросить обойтись без наград вовсе: noAch в каталоге.
+     Нужно, пока устройство материала ещё меняется — награда за то, что
+     завтра перепишут, это шум. */
+  if ((catOf(curKey()) || {}).noAch) return [];
   const свои = achFromCatalog(curKey()) ||
     (isBook() ? (BOOK_ACH[book().id] || ACH_BOOK) : isCourse() ? ACH_PASTEL : ACH_PIANO);
   return свои.concat(achCommon());
@@ -1456,6 +1475,23 @@ function evName(t, id, вид, запас) {
   return (x && (вид === "fact" ? x.t : x.name)) || запас || "";
 }
 const evIcon = (t, id) => (evList(t, "ach").get(id) || {}).icon || "";
+
+/* ── Курс по этапам ──
+   Рисование трекается не по шагам с таймером, а как книга: отмечаешь, над
+   каким этапом сидел сегодня, и говоришь — ещё вернёшься или закончил.
+   Один этап держит сколько угодно подходов, и это нормально: этап «Глаза»
+   за один присест не делается. Пока у курса есть stages, шаги и уроки
+   в счёт не идут. */
+const stages = () => (course().stages || []);
+const byStages = () => stages().length > 0;
+const stageKey = (i) => "S" + i;
+const stageDoneAt = (i) => (lessonStore().done || {})[stageKey(i)] || "";
+const stagesDone = () => stages().reduce((n, _, i) => n + (stageDoneAt(i) ? 1 : 0), 0);
+/* Текущий — первый незакрытый. Когда закрыты все, стоим на последнем. */
+const stageNow = () => {
+  const i = stages().findIndex((_, n) => !stageDoneAt(n));
+  return i < 0 ? Math.max(0, stages().length - 1) : i;
+};
 
 // карточки текущего материала: сколько открыто по числу дней занятий
 /* Карточка открывается за занятие: одно занятие — одна карточка.
@@ -1784,6 +1820,7 @@ function saveEntry() {
        чтения, и запрещать это на полсуток незачем. Ноль по-прежнему не
        принимаем: это не выбор, а неоткрытый выбор страницы. */
     } else if (isBook()) existing.page = pickPage > 0 ? pickPage : (existing.page || 0);
+    else if (isCourse() && byStages()) markStage(existing);
     else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
     if (note) existing.note = existing.note ? existing.note + "; " + note : note;
@@ -1793,8 +1830,13 @@ function saveEntry() {
       { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
       isWatch() ? { videoId: video().id } :
       isBook() ? Object.assign({ bookId: book().id },
-        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage }) : isCourse() ? { lessons: pickLessons.slice() } : { pieceId: piece().id, spans: currentSpans() }
+        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage })
+      : isCourse() ? (byStages()
+          ? { courseId: course().id, stage: pickStage, stageDone: pickStageDone, lessons: [] }
+          : { lessons: pickLessons.slice() })
+      : { pieceId: piece().id, spans: currentSpans() }
     ));
+    if (isCourse() && byStages()) markStage(null);
   }
 
   if (isWatch()) {
@@ -3936,6 +3978,13 @@ const subLine = (...parts) => parts.filter(Boolean)
 function heroSub(s) {
   if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
   if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
+  if (isCourse() && byStages()) {
+    const i = stageNow(), все = stages();
+    const закрыто = stagesDone();
+    return subLine(esc((все[i] || {}).t || "Этап"),
+      закрыто >= все.length ? "рисунок закончен"
+        : `этап ${i + 1} из ${все.length}`);
+  }
   if (isCourse()) {
     const at = lessonNext();
     return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
@@ -4017,6 +4066,7 @@ $("#view").innerHTML = `
        и когда уже отмечен: второе занятие за день это нормально, отрезки
        допишутся в ту же запись. Ручная шторка остаётся у остальных треков. */
     if (isPiano() && piece().bars) { openPractice(); return; }
+    if (isPastel() && byStages()) { openLogSheet(); return; }
     if (isPastel() && lessons().length) { openLesson(); return; }
     openLogSheet();
   });
@@ -13303,9 +13353,10 @@ function openLogSheet() {
   }
   sheetMode = "log";
   pickSpans = []; partOpen = null; partUpto = {};
+  if (isCourse() && byStages()) { pickStage = stageNow(); pickStageDone = false; }
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
   /* «Сегодня» подписывать незачем: отмечают почти всегда сегодняшний день, и
      строка только отодвигала главное. Дата остаётся, когда она другая, и
      остаётся предупреждение, что запись за этот день уже есть. */
@@ -13371,7 +13422,7 @@ function renderSheetBody() {
   if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
   else if (isWatch()) { /* выбирать нечего: у ролика одно состояние */ }
-  else if (isCourse()) bindPastelSheet();
+  else if (isCourse()) { if (byStages()) bindStageSheet(); else bindPastelSheet(); }
   else bindPianoSheet();
 }
 
@@ -13397,6 +13448,7 @@ function watchSheetUI() {
 }
 
 function pastelSheetUI() {
+  if (byStages()) return stageSheetUI();
   const done = doneLessons();
   return `
     <div class="lessons">
@@ -13417,6 +13469,66 @@ function pastelSheetUI() {
           ? plural(pickLessons.length, "ролик", "ролика", "роликов")
           : plural(pickLessons.length, "урок", "урока", "уроков")}`
       : isWatch() ? "Отметь, что посмотрел" : "Отметь уроки, которые прошёл"}</div>`;
+}
+
+/* Список этапов: один выбран — над ним сегодня и сидел. Отдельным
+   переключателем говорим, закончен он или ещё вернёмся. Закрытые этапы
+   выбрать тоже можно: вернуться и доправить — обычное дело. */
+function stageSheetUI() {
+  const все = stages();
+  const тек = stageNow();
+  let g = null;
+  return `
+    <div class="stages">
+      ${все.map((x, i) => {
+        const закрыт = !!stageDoneAt(i);
+        const выбран = i === pickStage;
+        const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
+        g = x.g || g;
+        return шапка + `
+          <button class="sg ${выбран ? "pick" : ""}${закрыт ? " was" : ""}" data-sg="${i}" type="button">
+            <span class="sg-n">${i + 1}</span>
+            <span class="sg-t">${esc(x.t || "Этап " + (i + 1))}${
+              i === тек && !закрыт ? `<i>сейчас здесь</i>` : закрыт ? `<i>закрыт ${esc(fmtDay(stageDoneAt(i)))}</i>` : ""}</span>
+            <span class="sg-c">${выбран ? "●" : закрыт ? "✓" : "○"}</span>
+          </button>`;
+      }).join("")}
+    </div>
+    <button class="qbtn fin ${pickStageDone ? "on" : ""}" id="sgFin" type="button" style="margin-top:12px;width:100%">
+      ${pickStageDone ? "✓ Этап закончен — дальше следующий" : "Отметить этап законченным"}
+    </button>
+    <div class="lesson-hint">${pickStageDone
+      ? "Закроем этап и встанем на следующий."
+      : "Просто подход: этап останется текущим, вернёшься к нему сколько понадобится."}</div>`;
+}
+
+/* Закрытие этапа держим в том же хранилище, что и шаги: ключ «S<номер>» с
+   датой. Запись дня хранит номер этапа отдельно — по ней потом видно, над
+   чем сидел, даже если этап позже переоткрыли. */
+function markStage(existing) {
+  if (existing) {
+    existing.courseId = existing.courseId || course().id;
+    existing.stage = pickStage;
+    if (pickStageDone) existing.stageDone = true;
+  }
+  const st = lessonStore();
+  st.done = st.done || {};
+  if (pickStageDone) st.done[stageKey(pickStage)] = selectedDate;
+  st.at = now();
+  pracStamp(true);
+}
+
+function bindStageSheet() {
+  document.querySelectorAll("[data-sg]").forEach((b) =>
+    b.addEventListener("click", () => {
+      pickStage = Number(b.dataset.sg);
+      /* Переставили выбор на другой этап — «закончен» сбрасываем: галочка
+         относилась к прошлому и молча закрыла бы не тот. */
+      pickStageDone = false;
+      renderSheetBody();
+    }));
+  const f = $("#sgFin");
+  if (f) f.addEventListener("click", () => { pickStageDone = !pickStageDone; renderSheetBody(); });
 }
 
 function bindPastelSheet() {
@@ -13966,7 +14078,10 @@ const MUS_FILE = "museum.json";
 const LS_MUS = "keiko-museum";
 let MUSEUM = null, musPulling = false;
 try { MUSEUM = JSON.parse(localStorage.getItem(LS_MUS) || "null"); } catch {}
-const musItems = () => (MUSEUM && Array.isArray(MUSEUM.items)) ? MUSEUM.items : [];
+/* Скрытый предмет не показываем и не открываем: он остаётся в файле, но
+   выходит из игры, пока материал перекраивают. */
+const musItems = () => (MUSEUM && Array.isArray(MUSEUM.items))
+  ? MUSEUM.items.filter((x) => !x.hidden) : [];
 const musOf = (bookId) => musItems().filter((x) => x.book === bookId);
 
 async function pullMuseum() {
@@ -14794,6 +14909,7 @@ function pastelPageUI(id) {
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
   const days = new Set(ent.map(e => e.date)).size;
   const лекция = c.mode === "watch";
+  const этапный = (c.stages || []).length > 0;
   /* Ход разбора берём у того курса, чью страницу открыли, а не у активного:
      иначе карта шагов и список этапов показывали чужое, споря с числами
      над ними, которые уже считались правильно. */
@@ -14812,7 +14928,9 @@ function pastelPageUI(id) {
       })()}</div>
       <div class="lib-title"><b>${esc(c.name)}</b><em>${esc(c.author || "")}</em></div>
     </div>
+    ${этапный ? stagesPageHTML(c, ent, отметки, st, notes, thoughts) : ""}
 
+    ${этапный ? "" : `
     <div class="panel">
       ${(() => {
         /* Карта — по ходам, как у пьесы по тактам: видно, сколько позади и где
@@ -14878,8 +14996,84 @@ function pastelPageUI(id) {
       </div>
     </div>
 
+    `}
+
     ${resetBtnHTML("ps", c.id)}
     <button class="btn lib-arch" data-libarch="ps:${esc(c.id)}" type="button">Завершить и убрать в архив</button>`;
+}
+
+/* ── Страница курса по этапам ──
+   Здесь нет ни минут, ни шагов: только лестница этапов, сколько подходов
+   в каждый вложено и когда он закрыт. Подход — это отметка дня, у которой
+   стоит номер этапа. */
+function stagesPageHTML(c, ent, отметки, st, notes, thoughts) {
+  const все = c.stages || [];
+  const закрыт = (i) => отметки["S" + i] || "";
+  const готово = все.reduce((n, _, i) => n + (закрыт(i) ? 1 : 0), 0);
+  const подходы = new Map();
+  for (const e of ent) {
+    if (typeof e.stage !== "number") continue;
+    подходы.set(e.stage, (подходы.get(e.stage) || 0) + 1);
+  }
+  const дни = new Set(ent.map((e) => e.date)).size;
+  const тек = все.findIndex((_, i) => !закрыт(i));
+  let g = null;
+  return `
+    <div class="panel">
+      <div class="lib-map">${все.map((_, i) =>
+        `<i style="opacity:${закрыт(i) ? 1 : 0.10}"></i>`).join("")}</div>
+      <div class="lib-num">
+        <div><b>${Math.round(все.length ? готово / все.length * 100 : 0)}%</b><span>пройдено</span></div>
+        <div><b>${готово}</b><span>из ${все.length} ${plural(все.length, "этапа", "этапов", "этапов")}</span></div>
+        <div><b>${дни}</b><span>${plural(дни, "день", "дня", "дней")}</span></div>
+        <div><b>${ent.length}</b><span>${plural(ent.length, "подход", "подхода", "подходов")}</span></div>
+      </div>
+      <div class="lib-rows">
+        <div><span>Сейчас над чем</span><b>${esc(тек < 0 ? "рисунок закончен" : (все[тек] || {}).t || "")}</b></div>
+        <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
+        <div><span>Последняя</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
+        <div><span>Заметок при отметке</span><b>${notes}</b></div>
+        <div><span>Моментов о курсе</span><b>${thoughts}</b></div>
+      </div>
+    </div>
+
+    <div class="freeze">
+      <div class="fz-head">🪜 <b>Этапы</b> — ${все.length}, по одному за раз и сколько угодно подходов</div>
+      <div class="stages">
+        ${все.map((x, i) => {
+          const d = закрыт(i), n = подходы.get(i) || 0;
+          const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
+          g = x.g || g;
+          return шапка + `
+            <div class="sg${d ? " was" : ""}${i === тек ? " pick" : ""}">
+              <span class="sg-n">${i + 1}</span>
+              <span class="sg-t">${esc(x.t || "")}${
+                d ? `<i>закрыт ${esc(fmtDay(d))}${n ? ` · ${n} ${plural(n, "подход", "подхода", "подходов")}` : ""}</i>`
+                  : n ? `<i>${n} ${plural(n, "подход", "подхода", "подходов")}</i>`
+                  : i === тек ? `<i>сейчас здесь</i>` : ""}</span>
+              <span class="sg-c">${d ? "✓" : i === тек ? "●" : "○"}</span>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>
+
+    ${(() => {
+      const дни = ent.slice().reverse();
+      if (!дни.length) return "";
+      return `<div class="freeze">
+        <div class="fz-head">📅 <b>День за днём</b> — ${дни.length} ${plural(дни.length, "подход", "подхода", "подходов")}</div>
+        <div class="pd-list">
+          ${дни.map((e) => {
+            const x = все[e.stage] || {};
+            return `<div class="pd"><div class="pd-top">
+              <b>${esc(fmtDay(e.date))}</b>
+              <span>${e.stageDone ? "закрыл этап" : "подход"}</span></div>
+              <p>${typeof e.stage === "number" ? esc((e.stage + 1) + ". " + (x.t || "")) : esc(e.note || "")}</p>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    })()}`;
 }
 
 /* Кнопка стоит на странице самого материала, рядом с «в архив»: там видно,

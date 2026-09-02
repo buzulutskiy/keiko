@@ -1384,6 +1384,30 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Курс по этапам ── */
+{
+  const было = JSON.parse(JSON.stringify(t.get("data").pastel));
+  const cat = t.get("CATALOG");
+  /* Первый курс в списке всегда живёт под ключом «pastel» — поэтому наш
+     этапный ставим вторым, как он и лежит у профиля. */
+  t.set("data.pastel.courses", [{ id: "__first", name: "П", lessons: [] },
+    { id: "__s", name: "Э", lessons: [], stages: [
+      { t: "Один", g: "Сеанс 1" }, { t: "Два", g: "Сеанс 2" }, { t: "Три", g: "Сеанс 2" }] }]);
+  t.set("data.pastel.activeCourse", "__s");
+  t.set("data.active", "pastel");
+  t.set("data.practice", Object.assign({}, t.get("data").practice, { "pastel:__s": { done: {}, session: 0, log: [] } }));
+  ок("этапы: курс распознан", t.get("byStages")(), true);
+  ок("этапы: сейчас первый", t.get("stageNow")(), 0);
+  t.get("data").practice["pastel:__s"].done = { S0: "2026-09-01" };
+  ок("этапы: закрыт первый — стоим на втором", t.get("stageNow")(), 1);
+  ок("этапы: счёт закрытых", t.get("stagesDone")(), 1);
+  ок("этапы: процент по этапам", Math.round(t.get("pastelStats")().pct), 33);
+  cat.__s = { noAch: true };
+  ок("этапы: награды выключены флагом", t.get("achList")().length, 0);
+  delete cat.__s;
+  t.set("data.pastel", было);
+}
+
 /* ── День за днём на странице курса ── */
 {
   const c = { id: "__c", name: "Курс", lessons: [{ steps: [
