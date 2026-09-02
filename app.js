@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 368";
+const APP_VERSION = "Кэйко 369";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -69,6 +69,7 @@ let pickDone = false;    // нажата ли «Прочитана» в откр
 let pickLessons = [];
 let pickStage = 0, pickStageDone = false;   // этап, над которым сидел, и закрыт ли он
 let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
+let drawShots = [];                         // снимки, сделанные в этой шторке
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
 let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
@@ -1817,7 +1818,10 @@ function diagLine() {
 
 function saveEntry() {
   if (!gistReady()) { closeSheet(); openSettingsSheet(); return; }
-  const existing = entryFor(selectedDate);
+  /* У рисунка каждая отметка — своя сессия, а не дописка к дню: за день
+     можно сесть за лист дважды, и это два разных подхода со своим снимком.
+     У остальных материалов день по-прежнему один. */
+  const existing = (isCourse() && plainDraw()) ? null : entryFor(selectedDate);
   /* Отметку записываем всегда, даже когда прогресс не сдвинулся: день за
      инструментом или над книгой — это день, а перечитывать и возвращаться
      назад — нормальная часть чтения. */
@@ -1916,6 +1920,7 @@ function saveEntry() {
   musStamp(freshMus);
   render();
 
+  drawShots = [];
   overlayQueue = [];
   // итог по книге идёт первым: он про саму книгу, награды и карточки — после
   if (justClosed) overlayQueue.push({ type: "bookDone", book: justClosed });
@@ -1946,10 +1951,15 @@ function saveEntry() {
     const текст = justClosed
       ? sessionText(trackNow, entNow).replace(/^Читал:/, "Дочитал:")
       : sessionText(trackNow, entNow);
+    /* У рисунка метка своя на каждую сессию: общая «ключ+дата» склеивала бы
+       два подхода за день в одну карточку. Снимок, сделанный в этой шторке,
+       уходит с ней же — в ленте сессия видна вместе с листом. */
+    const рисунок = trackNow === "pastel" && plainDraw();
     addEvent("session", keyNow, trackNow, текст, {
-      tag: keyNow, date: selectedDate,
+      tag: рисунок ? keyNow + ":" + entNow.id : keyNow, date: selectedDate,
       fields: Object.assign({ createdAt: now(), awards: stamped.ach, facts: stamped.facts },
-        justClosed ? { farewell: bookFarewell(justClosed) } : {}),
+        justClosed ? { farewell: bookFarewell(justClosed) } : {},
+        рисунок && drawShots.length ? { mediaId: drawShots[0], mediaKind: "photo" } : {}),
     });
   }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
@@ -4516,6 +4526,14 @@ function rangeStats(from, to) {
   const pastel = data.pastel.entries.filter(inRange);
   let lessons = 0;
   for (const e of pastel) lessons += (e.lessons || []).length;
+  /* Рисование считается сессиями: у курса без уроков и этапов каждая отметка
+     и есть подход за листом, и складывать там нечего, кроме них самих. */
+  const первый = (courses()[0] || {}).id;
+  const простой = (id) => {
+    const c = courses().find((x) => x.id === (id || первый));
+    return !!c && !(c.lessons || []).length && !(c.stages || []).length;
+  };
+  const draws = pastel.filter((e) => простой(e.courseId)).length;
 
   const watchList = watchEntries().filter(inRange);
   const watched = watchList.length;
@@ -4527,7 +4545,7 @@ function rangeStats(from, to) {
     ...(pastel.length ? ["pastel"] : []),
     ...(watchList.length ? ["watch"] : [])
   ]);
-  return { days, bars, pages, lessons, watched, tracks,
+  return { days, bars, pages, lessons, draws, watched, tracks,
            entries: piano.length + bookList.length + pastel.length + watchList.length };
 }
 
@@ -5010,6 +5028,7 @@ function summaryHTML() {
           (st.bars || was.bars) ? chipHTML(st.bars, was.bars, plural(st.bars || was.bars, "такт", "такта", "тактов")) : "",
           (st.pages || was.pages) ? chipHTML(st.pages, was.pages, "страниц") : "",
           (st.lessons || was.lessons) ? chipHTML(st.lessons, was.lessons, plural(st.lessons || was.lessons, "урок", "урока", "уроков")) : "",
+          (st.draws || was.draws) ? chipHTML(st.draws, was.draws, plural(st.draws || was.draws, "сессия рисунка", "сессии рисунка", "сессий рисунка")) : "",
         ].filter(Boolean).join("");
         return chips ? `<div class="sum-chips">${chips}</div>
           <p class="sum-vs">${esc(chipsNote())}</p>` : "";
@@ -10795,6 +10814,14 @@ function sessionText(track, e) {
       + (run ? " · " + run : "") + (e.mins ? " · " + e.mins + " мин" : "");
   }
   if (track === "pastel") {
+    if (plainDraw()) {
+      const свои = courseEntries().slice().sort((x, y) => x.date < y.date ? -1 : x.createdAt - y.createdAt);
+      const дни = [...new Set(свои.map((x) => x.date))];
+      const день = дни.indexOf(e.date) + 1;
+      const сессия = свои.filter((x) => x.date === e.date).findIndex((x) => x.id === e.id) + 1;
+      return "Рисовал: " + (course().name || "рисунок")
+        + " · день " + (день || 1) + ", сессия " + (сессия || 1);
+    }
     const run = courseRunOf(e);
     return "Урок: " + (course().name || "курс")
       + (run ? " · " + run : "") + (e.mins ? " · " + e.mins + " мин" : "");
@@ -13385,7 +13412,7 @@ function openLogSheet() {
   sheetMode = "log";
   pickSpans = []; partOpen = null; partUpto = {};
   if (isCourse() && byStages()) { pickStage = stageNow(); pickStageDone = false; }
-  if (isCourse() && plainDraw()) pickDrawDone = false;
+  if (isCourse() && plainDraw()) { pickDrawDone = false; drawShots = []; }
   syncPickers();
   const existing = entryFor(selectedDate);
   const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
@@ -13534,7 +13561,8 @@ function bindDrawSheet() {
     if (!f) return;
     cam.disabled = true; cam.textContent = "Готовлю снимок…";
     try {
-      await saveTake(await shrinkPhoto(f), 0, "photo");
+      const t = await saveTake(await shrinkPhoto(f), 0, "photo");
+      drawShots.push(t.id);
       renderSheetBody();
     } catch { toast("Не получилось прочитать снимок"); cam.disabled = false; }
   });

@@ -1405,6 +1405,17 @@ function ок(имя, факт, надо) {
   t.set("pickDrawDone", false);
   t.get("markDraw")(null);
   ок("рисунок: без галочки завершение не снимается", !!t.get("course")().done, true);
+  // каждая отметка — своя сессия, и текст события её нумерует
+  t.set("data.pastel.entries", [
+    { id: "e1", date: "2026-09-01", courseId: "__d", createdAt: 1 },
+    { id: "e2", date: "2026-09-02", courseId: "__d", createdAt: 2 },
+    { id: "e3", date: "2026-09-02", courseId: "__d", createdAt: 3 },
+  ]);
+  const txt = (id) => t.get("sessionText")("pastel", t.get("data").pastel.entries.find((x) => x.id === id));
+  ок("рисунок: первый день, первая сессия", txt("e1"), "Рисовал: Рисунок · день 1, сессия 1");
+  ок("рисунок: второй день, вторая сессия", txt("e3"), "Рисовал: Рисунок · день 2, сессия 2");
+  const r = t.get("rangeStats")("2026-09-01", "2026-09-30");
+  ок("прогресс: сессии рисунка сосчитаны", r.draws, 3);
   t.set("data", было);
 }
 
