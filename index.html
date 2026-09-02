@@ -1891,6 +1891,14 @@
       padding: 10px 14px; border-radius: 11px; font-size: 0.86rem;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
     }
+    /* Промт показываем как есть: переносы автора важны, но длинная строка
+       должна заворачиваться, а не уезжать вбок. */
+    .ask-pre {
+      margin-top: 14px; padding: 14px; border-radius: 12px;
+      background: var(--glass); border: 1px solid var(--glass-line);
+      white-space: pre-wrap; overflow-wrap: anywhere;
+      font: inherit; font-size: 0.82rem; line-height: 1.5; color: var(--ink);
+    }
     .term-note { margin-top: 10px; font-size: 0.78rem; color: var(--dim); line-height: 1.45; }
 
     /* ── Картинка шага ── */

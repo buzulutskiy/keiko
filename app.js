@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 353";
+const APP_VERSION = "Кэйко 354";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -794,6 +794,54 @@ const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) ===
    и открываются по тому же правилу — только когда песнь дочитана. */
 const bookFaq = (b) => artsPart(b, "faq");
 const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
+/* ── Промт для разбора главы ──
+   Разбор человек ведёт сам в нейронке, и приложение делает одно: собирает
+   готовый запрос — какая книга, чей перевод, какая глава — и кладёт в буфер.
+   Скелет один на все книги: шесть пунктов, от «зачем эта глава» до итога.
+   Подстройка под книгу лежит в каталоге строкой ask: там свои слова для
+   единицы деления, для героя и для понятий, которые надо объяснять по ходу.
+   Подстановки: {книга} {автор} {глава} {n} {всего}. */
+const ASK_DEFAULT =
+`Разбери главу «{глава}» ({n}-я из {всего}) книги «{книга}» ({автор}) — коротко и по существу. Не пересказывай содержание.
+Структура ответа:
+
+1. Зачем нужна эта глава — 2–3 предложения о её роли в книге целиком.
+2. Главные смыслы — 3–5 самых важных идей.
+3. Главное противоречие — где герой или автор сам себе мешает.
+4. Контекст и странные детали — объясни только то, без чего глава непонятна.
+5. Что легко пропустить — 2–4 небольшие, но важные детали.
+6. Главная мысль — один короткий итоговый абзац.
+
+Отделяй то, что прямо сказано в тексте, от интерпретаций. Не перечисляй много версий. Пиши простым русским языком, лаконично, но содержательно. Главное — отвечать на вопросы: «зачем это здесь?», «что это говорит о герое?» и «какой в этом смысл?»`;
+
+const askTpl = (b) => {
+  const c = catOf((b || book()).id);
+  return (c && typeof c.ask === "string" && c.ask.trim()) ? c.ask : ASK_DEFAULT;
+};
+function askText(b, i) {
+  const bk = b || book();
+  const главы = bk.chapters || [];
+  const c = главы[i] || главы[0] || { name: "" };
+  return askTpl(bk)
+    .split("{книга}").join(bk.title || "")
+    .split("{автор}").join(bk.author || "")
+    .split("{глава}").join(c.name || "")
+    .split("{n}").join(String(i + 1))
+    .split("{всего}").join(String(главы.length));
+}
+/* Глава, с которой открывать промт, — та, что читаешь. Ровно на стыке берём
+   предыдущую: страница совпала с началом новой главы значит, что прошлую
+   только что дочитал, и разбирать хочется её. */
+function askHere(b) {
+  const bk = b || book();
+  const главы = bk.chapters || [];
+  const стр = bookProgressOf(bk);
+  let i = 0;
+  главы.forEach((c, n) => { if (стр >= c.from) i = n; });
+  if (i > 0 && стр === главы[i].from) i -= 1;
+  return i;
+}
+
 /* ── Карта мест ──
    Третий этап разбора: где всё это происходит. Карта — обычная современная,
    картинкой, а точки расставлены по координатам; у каждой короткий рассказ.
@@ -3896,6 +3944,8 @@ $("#view").innerHTML = `
           aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="Карта мест" title="Карта мест">🗺</button>
+        <button class="cta-side" id="bookAskBtn" type="button" ${кнопки.ask.on ? "" : "hidden"}
+          aria-label="Промт для разбора" title="Промт для разбора">⧉</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3909,6 +3959,8 @@ $("#view").innerHTML = `
   });
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(book(), -1));
+  const ba = $("#bookAskBtn");
+  if (ba) ba.addEventListener("click", () => askOpen(book(), askHere(book())));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4214,6 +4266,8 @@ function bookBtnState() {
   return {
     talk: { on: он && talkBtnOn(), icon: он ? talkBtnIcon() : "", word: он ? talkBtnWord() : "" },
     map:  { on: он && mapBtnOn() },
+    // промт собирается по главам — без них подставлять нечего
+    ask:  { on: он && (book().chapters || []).length > 0 },
   };
 }
 
@@ -4230,6 +4284,8 @@ function syncBookBtns() {
   }
   const map = document.getElementById("bookMapBtn");
   if (map) map.hidden = !st.map.on;
+  const ask = document.getElementById("bookAskBtn");
+  if (ask) ask.hidden = !st.ask.on;
 }
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
@@ -10154,6 +10210,40 @@ async function toPNG(src) {
   c.width = img.naturalWidth; c.height = img.naturalHeight;
   c.getContext("2d").drawImage(img, 0, 0);
   return await new Promise(r => c.toBlob(r, "image/png"));
+}
+
+/* ── Шторка с промтом ──
+   Показываем целиком то, что уйдёт в буфер: копировать вслепую неприятно,
+   а главу иногда нужно сменить — дочитал одну, разбирать хочется другую. */
+let askAt = 0;
+function askOpen(b, i) {
+  const bk = b || book();
+  const главы = bk.chapters || [];
+  if (!главы.length) { toast("У книги не размечены главы"); return; }
+  askAt = Math.max(0, Math.min(главы.length - 1, i || 0));
+  askRender(bk);
+}
+function askRender(bk) {
+  const главы = bk.chapters || [];
+  const текст = askText(bk, askAt);
+  openSheet(`
+    <div class="bn-head">
+      <button class="bn-nav" data-ask="prev" type="button"${askAt > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
+      <div>
+        <h3>Промт для разбора</h3>
+        <p class="sub">${esc(главы[askAt].name || "")} · ${askAt + 1} из ${главы.length}</p>
+      </div>
+      <button class="bn-nav" data-ask="next" type="button"${askAt + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
+    </div>
+    <pre class="ask-pre">${esc(текст)}</pre>
+    <div class="sheet-actions"><button class="btn" id="askCopy" type="button">Скопировать</button></div>`);
+  const c = $("#askCopy");
+  if (c) c.addEventListener("click", () => copyText(текст, "Промт"));
+  for (const el of $("#sheet").querySelectorAll("[data-ask]"))
+    el.addEventListener("click", () => {
+      askAt += el.dataset.ask === "next" ? 1 : -1;
+      askRender(bk);
+    });
 }
 
 /* ── Картинка шага ──
