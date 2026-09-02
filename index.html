@@ -1413,11 +1413,25 @@
     /* Снимок показываем как есть: обрезка врала о работе. Высоту ограничиваем
        мягко, картинка вписывается целиком, по нажатию — во весь экран. */
     .th-shot {
-      width: 100%; border-radius: 12px; margin-top: 8px; display: block;
+      /* height:auto обязателен: у картинки проставлены ширина и высота, и без
+         него браузер берёт высоту из атрибута как есть — снимок растягивался
+         на всю свою тысячу пикселей и упирался в потолок max-height. */
+      width: 100%; height: auto; border-radius: 12px; margin-top: 8px; display: block;
       max-height: 60vh; object-fit: contain; cursor: pointer;
       background: rgba(255, 255, 255, 0.03);
     }
-    .tk-load { margin-top: 8px; }
+    /* Появляется плавно: мгновенная подмена читается как рывок, даже когда
+       место под картинку уже отведено. Проявляем анимацией на классе, а не
+       прозрачностью по умолчанию: не сработает разметка — снимок всё равно
+       виден, а не пропадёт совсем. */
+    .th-shot.img-on { animation: shotIn .22s ease both; }
+    @keyframes shotIn { from { opacity: 0 } to { opacity: 1 } }
+    @media (prefers-reduced-motion: reduce) { .th-shot.img-on { animation: none; } }
+    /* Пока вложение качается, коробка держит форму снимка: у известного —
+       его собственную, у остальных — обычную книжную. */
+    .tk-load { margin-top: 8px; aspect-ratio: 4 / 3; display: grid; align-content: end;
+      padding: 10px; border-radius: 12px; background: var(--glass);
+      border: 1px solid var(--glass-line); }
     .tk-load-bar {
       height: 4px; border-radius: 3px; overflow: hidden;
       background: rgba(255, 255, 255, 0.08);
@@ -2805,6 +2819,9 @@
        и пустой alt его не убирает. */
     .app img.img-off, .sheet img.img-off { visibility: hidden; }
     /* Снимки в «Моментах» лежат не в рамке обложки — им полоса на себе. */
+    /* Своя форма — только у снимка без известных размеров: там, где они
+       проставлены, коробку считает сам браузер, и переписывать её нельзя. */
+    .th-shot:not([width]):not(.img-on) { aspect-ratio: 3 / 4; }
     .th-shot:not(.img-on) {
       min-height: 120px;
       background-color: var(--glass);

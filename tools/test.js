@@ -1384,6 +1384,21 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Место под снимок отводится заранее ── */
+{
+  const было = t.get("data").takes;
+  t.set("data.takes", [{ id: "ph1", srcId: "x", kind: "photo", w: 1050, h: 1400 },
+                       { id: "ph2", srcId: "x", kind: "photo" }]);
+  t.get("takeUrls").set("ph1", "blob:ph1");
+  const с = t.get("mediaHTML")({ mediaId: "ph1", mediaKind: "photo", date: "2026-09-02" });
+  ок("снимок: размеры попали в разметку", /width="1050" height="1400"/.test(с), true);
+  ок("снимок: помечен своим id", с.includes('data-take="ph1"'), true);
+  const без = t.get("mediaHTML")({ mediaId: "ph2", mediaKind: "photo" });
+  ок("снимок: пока качается — коробка по его форме", без.includes("aspect-ratio"), false);
+  t.get("takeUrls").delete("ph1");
+  t.set("data.takes", было);
+}
+
 /* ── Перерисовка не рвёт ввод ── */
 {
   const было = sandbox.document.activeElement;

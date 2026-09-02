@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 374";
+const APP_VERSION = "Кэйко 375";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3320,6 +3320,16 @@ function imgBox(el) {
 function imgSettle(el, ok) {
   el.classList.remove("img-off", "img-on");
   el.classList.add(ok ? "img-on" : "img-off");
+  /* У снимков, сделанных до того, как размер стали записывать, узнаём его
+     здесь — один раз, тихо, без перерисовки. В следующий раз место под
+     картинку будет отведено сразу. */
+  if (ok && el.dataset && el.dataset.take && el.naturalWidth) {
+    const t = (data.takes || []).find((x) => x.id === el.dataset.take);
+    if (t && (!t.w || !t.h)) {
+      t.w = el.naturalWidth; t.h = el.naturalHeight; t.updatedAt = now();
+      saveData();
+    }
+  }
   const box = imgBox(el);
   if (!box) return;
   box.classList.remove("img-wait", "img-ready", "img-fail");
@@ -3722,11 +3732,27 @@ async function addPhotoTake() {
   } catch { toast("Не получилось прочитать снимок"); }
 }
 
+/* Размер снимка узнаём сразу и держим при записи: по нему лента отводит
+   место под картинку заранее, и её приезд ничего не двигает. */
+function imgSize(blob) {
+  return new Promise((res) => {
+    const url = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = () => { res({ w: im.naturalWidth, h: im.naturalHeight }); URL.revokeObjectURL(url); };
+    im.onerror = () => { res(null); URL.revokeObjectURL(url); };
+    im.src = url;
+  });
+}
+
 async function saveTake(blob, ms, kind) {
   const id = uid();
   const t = { id, srcId: curKey(), track: data.active, kind: kind || "audio",
     title: currentMaterial().title, at: now(), ms: Math.round(ms || 0),
     createdAt: now(), updatedAt: now() };
+  if ((kind || "") === "photo") {
+    const d = await imgSize(blob).catch(() => null);
+    if (d && d.w && d.h) { t.w = d.w; t.h = d.h; }
+  }
   await takeSave(id, blob);
   data.takes = data.takes || [];
   data.takes.push(t);
@@ -6278,13 +6304,20 @@ function mediaHTML(t) {
     const pct = p == null ? null : Math.round(p * 100);
     const what = t.mediaKind === "photo" ? "снимок" : "запись";
     return `
-      <div class="tk-load" data-media="${esc(t.mediaId)}">
+      <div class="tk-load" data-media="${esc(t.mediaId)}"${(() => {
+        const x = (data.takes || []).find((y) => y.id === t.mediaId) || {};
+        return (x.w && x.h) ? ` style="aspect-ratio:${x.w}/${x.h}"` : "";
+      })()}>
         <div class="tk-load-bar"><i style="width:${pct == null ? 8 : Math.max(4, pct)}%"></i></div>
         <span data-what="${what}">${what} загружается${pct == null ? "…" : " · " + pct + "%"}</span>
       </div>`;
   }
+  /* Ширина и высота — не украшение: по ним браузер держит место под снимок
+     ещё до того, как тот раскодирован, и лента не прыгает под пальцем. */
+  const сн = (data.takes || []).find((x) => x.id === t.mediaId) || {};
+  const размер = (сн.w && сн.h) ? ` width="${сн.w}" height="${сн.h}"` : "";
   return t.mediaKind === "photo"
-    ? `<img class="th-shot" src="${esc(url)}" alt="" loading="lazy" decoding="async" data-shot-src="${esc(url)}" data-shot-when="${esc(t.date ? fmtDay(t.date) : "")}">`
+    ? `<img class="th-shot" src="${esc(url)}"${размер} alt="" loading="lazy" decoding="async" data-take="${esc(t.mediaId)}" data-shot-src="${esc(url)}" data-shot-when="${esc(t.date ? fmtDay(t.date) : "")}">`
     : `<audio class="th-audio" controls preload="none" src="${esc(url)}"></audio>`;
 }
 
