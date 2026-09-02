@@ -348,25 +348,7 @@
     .fz-form .btn { min-height: 42px; width: auto; padding: 0 14px; font-size: 0.85rem; }
     .fz-form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .fz-form2 .btn { min-height: 44px; font-size: 0.84rem; }
-    /* снимки в архиве копий */
-    .arc-row {
-      display: block; width: 100%; text-align: left;
-      margin-top: 6px; padding: 10px 12px;
-      border-radius: 12px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-    }
-    .arc-row b { display: block; font-size: 0.86rem; font-weight: 700; color: var(--ink); }
-    .arc-row em { font-style: normal; font-size: 0.74rem; color: var(--dim); }
-
-    .fz-list { display: grid; gap: 6px; }
-    .fz-item {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 0.84rem; color: var(--muted);
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 10px; padding: 8px 10px;
-    }
     .fz-item.now { color: var(--gold); background: rgba(255, 201, 77, 0.12); }
-    .fz-item button { margin-left: auto; color: var(--dim); font-size: 0.95rem; padding: 0 4px; }
     .fz-empty { font-size: 0.8rem; color: var(--dim); }
     .fz-empty b { color: var(--muted); }
 
@@ -532,11 +514,6 @@
     .cal-legend span { display: inline-flex; align-items: center; gap: 5px; }
 
     .day-list { display: grid; gap: 7px; }
-    .day-freeze {
-      font-size: 0.82rem; color: var(--violet);
-      background: rgba(139, 124, 246, 0.1);
-      border-radius: 11px; padding: 9px 11px; margin-bottom: 10px;
-    }
     .da {
       min-height: 42px; border-radius: 12px;
       background: var(--card-2); border: 1px solid var(--line);
@@ -974,19 +951,6 @@
       border-top: 1px solid var(--glass-line);
       display: grid; gap: 6px;
     }
-    .fcard {
-      display: grid; gap: 7px; align-content: start;
-      min-height: 96px;
-      background: var(--glass);
-      backdrop-filter: blur(14px) saturate(1.3);
-      -webkit-backdrop-filter: blur(14px) saturate(1.3);
-      border: 1px solid var(--glass-line);
-      border-radius: 16px; padding: 12px;
-      text-align: left; width: 100%;
-      box-shadow: inset 0 1px 0 var(--glass-hi);
-      transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s;
-    }
-    .fcard:active { transform: scale(0.96); }
     .fcard .fi {
       width: 30px; height: 30px; border-radius: 10px;
       display: grid; place-items: center; font-size: 0.9rem;
@@ -3177,12 +3141,6 @@
     .th-edit-row .btn { min-height: 44px; }
     .th-lab .note-input { margin-top: 0; }
     .th-text { min-height: 84px; resize: none; margin-top: 0; }
-
-    .shop-head {
-      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--dim);
-      margin: 14px 2px 8px;
-    }
     .theme {
       display: grid; grid-template-columns: 52px 1fr auto;
       align-items: center; gap: 13px;
@@ -3194,14 +3152,6 @@
       box-shadow: inset 0 1px 0 var(--glass-hi);
     }
     .theme.on { border-color: rgba(255, 201, 77, 0.45); }
-    .th-btn {
-      min-height: 38px; padding: 0 14px; border-radius: 12px;
-      font-size: 0.84rem; font-weight: 750; white-space: nowrap;
-      background: var(--glass-2); color: var(--ink);
-      border: 1px solid var(--glass-line);
-      transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .th-btn:active { transform: scale(0.95); }
     .th-btn.buy { background: linear-gradient(140deg, var(--gold), var(--gold-2)); color: #241a05; border: 0; }
     .th-btn.buy.off { opacity: 0.42; }
     .pick-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -3211,11 +3161,6 @@
       font-size: 0.83rem; font-weight: 650; color: var(--muted);
       background: var(--glass); border: 1px solid var(--glass-line);
       transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s, border-color 0.2s;
-    }
-    .pk-dots { display: inline-flex; }
-    .pk-dots i {
-      width: 12px; height: 12px; border-radius: 50%;
-      border: 1.5px solid rgba(0, 0, 0, 0.35); margin-right: -5px;
     }
     .pk-name { white-space: nowrap; }
     .pick:active { transform: scale(0.95); }

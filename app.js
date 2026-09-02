@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 379";
+const APP_VERSION = "Кэйко 380";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -196,7 +196,6 @@ function emptyData() {
     kanyeAt: 0,    // когда Канье заходил впервые: первый визит гарантирован
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     goalAt: 0,     // когда её меняли: без этого чужая цель молча затирала свою
-    freezes: [],   // периоды паузы: отпуск, болезнь — серия их не замечает
     archive: [],   // пройденные материалы
     takes: [],     // записи собственной игры: как звучало в тот день
     takesId: "",   // гист с файлами вложений — общий для всех устройств
@@ -278,10 +277,6 @@ function migrate(obj) {
     }
   }
 
-  if (obj.shop) {
-    if (typeof obj.shop.theme === "string") base.shop.theme = obj.shop.theme;
-    if (Number(obj.shop.themeAt) > 0) base.shop.themeAt = Number(obj.shop.themeAt);
-  }
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
   if (Number(obj.goalAt) > 0) base.goalAt = Number(obj.goalAt);
   /* Одиночные записи о наградах и карточках убраны навсегда: награда живёт
@@ -292,7 +287,6 @@ function migrate(obj) {
   if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
   if (Array.isArray(obj.gut)) base.gut = obj.gut;
   if (Number(obj.kanyeAt) > 0) base.kanyeAt = Number(obj.kanyeAt);
-  if (Array.isArray(obj.freezes)) base.freezes = obj.freezes;
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
   if (typeof obj.takesId === "string") base.takesId = obj.takesId;
@@ -429,15 +423,7 @@ const entries = () => isPiano()
       : courseEntries();
 const entryFor = d => entries().find(e => e.date === d);
 
-// день попадает в паузу (отпуск) — такие дни серию не рвут
-function isFrozen(ds) {
-  return (data.freezes || []).some(f => !f.deleted && ds >= f.from && ds <= f.to);
-}
 
-function activeFreeze() {
-  const t = todayStr();
-  return (data.freezes || []).find(f => !f.deleted && t >= f.from && t <= f.to) || null;
-}
 
 // дни, когда было занятие любым материалом — серия общая для всех хобби
 function activeDays() {
@@ -461,11 +447,10 @@ function streakAll() {
 function streakFrom(days) {
   let n = 0, skipped = 0, steps = 0;
   const d = new Date();
-  if (!days.has(dateStr(d)) && !isFrozen(dateStr(d))) d.setDate(d.getDate() - 1);
+  if (!days.has(dateStr(d))) d.setDate(d.getDate() - 1);
   while (steps++ < 4000) {
     const ds = dateStr(d);
     if (days.has(ds)) n++;
-    else if (isFrozen(ds)) skipped++;      // пауза: пропускаем день молча
     else break;
     if (n + skipped > 3650) break;
     d.setDate(d.getDate() - 1);
@@ -1616,52 +1601,7 @@ function archiveCurrent() {
   openShelfSheet(rec.id);      // сразу предлагаем поставить оценку и написать отзыв
 }
 
-function freezeUI() {
-  const list = (data.freezes || []).filter(f => !f.deleted)
-    .sort((a, b) => a.from < b.from ? 1 : -1);
-  const today = todayStr();
 
-  return `
-    <div class="freeze">
-      <div class="fz-head">🌴 <b>Пауза</b> — дни отпуска или болезни, которые не рвут серию</div>
-      <div class="fz-form">
-        <input class="note-input" id="fzFrom" type="date" value="${today}" max="2100-01-01">
-        <input class="note-input" id="fzTo" type="date" value="${today}" max="2100-01-01">
-        <button class="btn" id="fzAdd" type="button">Добавить</button>
-      </div>
-      ${list.length ? `<div class="fz-list">${list.map(f => `
-        <div class="fz-item ${today >= f.from && today <= f.to ? "now" : ""}">
-          <span>${fmtRange(f.from, f.to)}${today >= f.from && today <= f.to ? " · идёт сейчас" : ""}</span>
-          <button data-fz="${f.id}" type="button">✕</button>
-        </div>`).join("")}</div>` : `<div class="fz-empty">Пока пауз нет</div>`}
-    </div>`;
-}
-
-function bindFreezeUI() {
-  const add = $("#fzAdd");
-  if (!add) return;
-  add.addEventListener("click", () => {
-    const from = $("#fzFrom").value, to = $("#fzTo").value;
-    if (!from || !to) { toast("Укажи даты"); return; }
-    const a = from <= to ? from : to, b = from <= to ? to : from;
-    data.freezes.push({ id: uid(), from: a, to: b, createdAt: now(), updatedAt: now() });
-    saveData(); schedulePush();
-    toast("Пауза добавлена — серия не прервётся");
-    openSettingsSheet();
-    render();
-  });
-
-  document.querySelectorAll("[data-fz]").forEach(b =>
-    b.addEventListener("click", () => {
-      const f = data.freezes.find(x => x.id === b.dataset.fz);
-      if (!f) return;
-      if (!confirm("Убрать эту паузу?\n\nДни снова начнут рвать серию.")) return;
-      f.deleted = true; f.updatedAt = now();
-      saveData(); schedulePush();
-      openSettingsSheet();
-      render();
-    }));
-}
 
 function goalUI() {
   const g = goalProgress();
@@ -2258,10 +2198,10 @@ function crashScreen(e) {
 // снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
 const dataStamp = () => [
   data.piano.entries, data.book.entries, data.pastel.entries, watchEntries(),
-  data.thoughts || [], data.archive || [], data.freezes || [], data.takes || [],
+  data.thoughts || [], data.archive || [], data.takes || [],
   data.wishes || [], data.gut || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
-  + "|" + (data.shop.theme || "");
+  + "|";
 // выбранный материал в снимок не входит: он меняется от свайпа и уже показан на экране —
 // перерисовывать из-за него главную значит сбивать листание
 
@@ -3947,10 +3887,7 @@ function renderHome() {
 
   const sub = heroSub(s);
 
-  const freeze = activeFreeze();
-  const nudge = freeze
-    ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
-    : "";
+  const nudge = "";
 
   const wt = wishesToday();
     const кнопки = bookBtnState();   // обе кнопки — из одного снимка
@@ -4332,13 +4269,6 @@ function updateHeroInfo() {
   syncBookBtns();
   artsPeek();          // вдруг разбор есть, а каталог об этом ещё не сказал
 
-  const nudge = $(".nudge");
-  if (nudge) {
-    const freeze = activeFreeze();
-    nudge.innerHTML = freeze
-      ? `🌴 Пауза до <b>${fmtRange(freeze.to, freeze.to)}</b> — серия сохранится`
-      : "";
-  }
 }
 
 
@@ -4509,9 +4439,7 @@ function paceForecast() {
   let every = 2;
   if (list.length >= 3) {
     const span = Math.min(WINDOW, daysBetween(list[0].date, todayStr()) + 1);
-    let dead = 0;
-    for (let i = 0; i < span; i++) if (isFrozen(dateStr(new Date(Date.now() - i * 864e5)))) dead++;
-    const live = Math.max(1, span - dead);
+    const live = Math.max(1, span);
     const from = dateStr(new Date(Date.now() - (span - 1) * 864e5));
     // день считаем один раз: за вечер бывает два захода, ритм от этого не меняется
     const hits = new Set(list.filter((e) => e.date >= from).map((e) => e.date)).size;
@@ -4658,7 +4586,7 @@ function periodSeries() {
     for (let i = 1; i <= total; i++) {
       const ds = dateStr(new Date(d.getFullYear(), d.getMonth(), i));
       out.push({ ds, label: (i === 1 || i % 5 === 0) ? String(i) : "", value: rangeStats(ds, ds).entries,
-        today: ds === today, frozen: isFrozen(ds), future: ds > today });
+        today: ds === today, future: ds > today });
     }
     return out;
   }
@@ -4668,7 +4596,7 @@ function periodSeries() {
     const d = new Date(monday); d.setDate(d.getDate() + i);
     const ds = dateStr(d);
     out.push({ ds, label: DOW[i], value: rangeStats(ds, ds).entries,
-      today: ds === today, frozen: isFrozen(ds), future: ds > today });
+      today: ds === today, future: ds > today });
   }
   return out;
 }
@@ -4989,7 +4917,6 @@ function renderCalendar() {
     tracks.forEach(t => monthTracks.add(t));
     let cls = "day";
     if (on.length) cls += " has";
-    if (isFrozen(ds)) cls += " frozen";
     if (ds === today) cls += " today";
     if (ds === selectedDate) cls += " sel";
     if (ds > today) cls += " future";
@@ -5013,10 +4940,8 @@ function renderDayBox() {
   $("#dayNext").disabled = selectedDate >= todayStr();
 
   const list = allEntriesOn(selectedDate);
-  const frozen = isFrozen(selectedDate);
 
   $("#dayBox").innerHTML = `
-    ${frozen ? `<div class="day-freeze">🌴 Этот день в паузе — серию не рвёт</div>` : ""}
     ${list.length
       ? `<div class="day-list">${list.map(x => `
           <div class="rec">
@@ -12478,114 +12403,6 @@ function bindPractice() {
   });
 }
 
-/* ══════════ Оформление ══════════
-   Тема-цвет меняет палитру, тема-мир — ещё шрифт, надписи и иконки.
-   Всё открыто сразу: экран магазина и монеты убраны, покупать было нечего. */
-const THEMES = [
-{ id: "dusk", name: "Сумерки", sub: "как было", kind: "color", dots: ["#8b7cf6", "#ffc94d", "#0d0b14"], vars: {} },
-  { id: "rose", name: "Розовый рассвет", sub: "тёплая розовая", kind: "color",
-    dots: ["#ff8fb8", "#ffb37a", "#170d14"],
-    vars: { "--bg": "#160c13", "--ink": "#fdeef4", "--muted": "#c095a8", "--dim": "#8a6577",
-            "--gold": "#ff8fb8", "--gold-2": "#ffb37a", "--violet": "#d98fe0",
-            "--glass": "rgba(255, 143, 184, 0.07)", "--glass-2": "rgba(255, 143, 184, 0.13)",
-            "--glass-line": "rgba(255, 143, 184, 0.2)", "--glass-hi": "rgba(255, 255, 255, 0.08)",
-            "--track": "rgba(255, 255, 255, 0.1)",
-            "--panel": "rgba(48, 24, 38, 0.55)", "--bar": "rgba(30, 15, 24, 0.74)",
-            "--sheet": "rgba(40, 20, 32, 0.85)", "--sheet-solid": "rgba(40, 20, 32, 0.95)" } },
-  { id: "ink", name: "Тушь и рис", sub: "монохром", kind: "color",
-    dots: ["#e8e3d8", "#a8a29a", "#101012"],
-    vars: { "--bg": "#0e0e10", "--ink": "#f0ede6", "--muted": "#9a958c", "--dim": "#66625c",
-            "--gold": "#e8e3d8", "--gold-2": "#b9b3a8", "--violet": "#9a958c" } },
-  { id: "baikal", name: "Байкальский лёд", sub: "холодная синева", kind: "color",
-    dots: ["#7fd7e8", "#3f9fc4", "#07131c"],
-    vars: { "--bg": "#07131b", "--ink": "#eaf6fb", "--muted": "#84a2b3", "--dim": "#546f7e",
-            "--gold": "#8fdcee", "--gold-2": "#41a6c9", "--violet": "#6fb6d8",
-            "--panel": "rgba(18, 38, 50, 0.55)", "--bar": "rgba(10, 26, 36, 0.72)",
-            "--sheet": "rgba(14, 32, 44, 0.82)", "--sheet-solid": "rgba(14, 32, 44, 0.94)" } },
-  { id: "amber", name: "Тёплый вечер", sub: "лампа и чай", kind: "color",
-    dots: ["#ffb168", "#ff7a45", "#150f0b"],
-    vars: { "--bg": "#150f0b", "--ink": "#faeee2", "--muted": "#b39a86", "--dim": "#7d6a5a",
-            "--gold": "#ffb168", "--gold-2": "#ff7a45", "--violet": "#e08a5c",
-            "--panel": "rgba(46, 32, 24, 0.55)", "--bar": "rgba(30, 21, 15, 0.72)",
-            "--sheet": "rgba(38, 26, 19, 0.82)", "--sheet-solid": "rgba(38, 26, 19, 0.94)" } },
-  { id: "moss", name: "Мох", sub: "хвоя и тишина", kind: "color",
-    dots: ["#9ad9a2", "#4fae7a", "#0b130e"],
-    vars: { "--bg": "#0a130d", "--ink": "#eaf6ec", "--muted": "#8aa892", "--dim": "#5a7263",
-            "--gold": "#9ad9a2", "--gold-2": "#4fae7a", "--violet": "#78c2a4",
-            "--panel": "rgba(20, 42, 30, 0.55)", "--bar": "rgba(12, 28, 19, 0.72)",
-            "--sheet": "rgba(16, 34, 24, 0.82)", "--sheet-solid": "rgba(16, 34, 24, 0.94)" } },
-  { id: "paper", name: "Бумага", sub: "светлая", kind: "color", light: true,
-    dots: ["#c8862a", "#8a8478", "#f4f1ea"],
-    vars: { "--bg": "#f2efe7", "--ink": "#221f1a", "--muted": "#6b6559", "--dim": "#9a9384",
-            "--line": "rgba(0, 0, 0, 0.1)", "--track": "rgba(0, 0, 0, 0.14)",
-            "--gold": "#c07d22", "--gold-2": "#e0a13d", "--violet": "#7a6bd0",
-            "--glass": "rgba(255, 255, 255, 0.55)", "--glass-2": "rgba(255, 255, 255, 0.8)",
-            "--glass-line": "rgba(0, 0, 0, 0.09)", "--glass-hi": "rgba(255, 255, 255, 0.9)",
-            "--panel": "rgba(255, 255, 255, 0.62)", "--bar": "rgba(248, 245, 238, 0.78)",
-            "--sheet": "rgba(250, 247, 240, 0.9)", "--sheet-solid": "rgba(250, 247, 240, 0.96)",
-            "--shadow": "rgba(90, 78, 58, 0.16)" } },
-{
-    id: "orbit", name: "Орбита", sub: "бортовой интерфейс, 1968", kind: "world",
-    dots: ["#ff7a2f", "#ffc04a", "#05060a"],
-    vars: { "--bg": "#05070c", "--ink": "#f2f4f8", "--muted": "#8b93a4", "--dim": "#5a6273",
-            "--gold": "#ff8a3d", "--gold-2": "#ffc04a", "--violet": "#5fa8ff",
-            "--glass": "rgba(255, 255, 255, 0.045)", "--glass-2": "rgba(255, 255, 255, 0.08)",
-            "--glass-line": "rgba(255, 138, 61, 0.22)", "--glass-hi": "rgba(255, 255, 255, 0.05)",
-            "--panel": "rgba(10, 14, 22, 0.62)", "--bar": "rgba(6, 9, 15, 0.78)",
-            "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
-    icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", mus: "⌾", },
-    words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки",
-             ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок", ctaDraw: "Зафиксировать рисование",
-             ctaDone: "Сеанс записан", ctaAdd: "дополнить", streak: "цикл",
-             segAch: "◆ Допуски", segFacts: "◇ Данные" },
-    css: `
-      body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-      .logo em { letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.9em; }
-      .panel, .theme, .mat-card, .fcard, .ach, .sc, .stat { border-radius: 6px; }
-      .cover { border-radius: 10px; }
-      .btn, .cta, .th-btn, .gbtn, .qbtn { border-radius: 999px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.82rem; }
-      .seg { border-radius: 999px; }
-      .seg button { border-radius: 999px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.74rem; }
-      .tabbar button { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.6rem; }
-      .hero-title h2, .shop-head, .ach-hero-txt b { text-transform: uppercase; letter-spacing: 0.09em; }
-      .ring .fg, .sum-ring .fg { filter: drop-shadow(0 0 8px rgba(255, 138, 61, 0.6)); }
-      .panel::before {
-        content: ""; position: absolute; left: 14px; right: 14px; top: 0; height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(255,138,61,.5), transparent);
-      }
-      .panel { position: relative; }
-    `
-  },
-{
-    id: "terminal", name: "Терминал", sub: "зелёный фосфор, ЭЛТ", kind: "world",
-    dots: ["#3dff88", "#12b45a", "#011106"],
-    vars: { "--bg": "#010c05", "--ink": "#c9ffdc", "--muted": "#5fbf87", "--dim": "#38805a",
-            "--gold": "#3dff88", "--gold-2": "#12b45a", "--violet": "#43e0a0",
-            "--glass": "rgba(61, 255, 136, 0.05)", "--glass-2": "rgba(61, 255, 136, 0.1)",
-            "--glass-line": "rgba(61, 255, 136, 0.28)", "--glass-hi": "rgba(61, 255, 136, 0.12)",
-            "--panel": "rgba(2, 20, 10, 0.68)", "--bar": "rgba(1, 14, 7, 0.82)",
-            "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
-    icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", mus: "❑", },
-    words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь",
-             ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок", ctaDraw: "> записать рисование",
-             ctaDone: "> запись принята", ctaAdd: "дополнить", streak: "цепочка",
-             segAch: "[ метки ]", segFacts: "[ архив ]" },
-    css: `
-      body, button, input { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-      .logo em { letter-spacing: 0.16em; }
-      .panel, .theme, .mat-card, .fcard, .ach, .sc, .stat, .btn, .cta, .th-btn, .seg, .seg button { border-radius: 3px; }
-      .cover { border-radius: 6px; }
-      .btn, .cta, .th-btn { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.8rem; }
-      .tabbar button { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.6rem; }
-      .hero-title h2, .shop-head { text-transform: uppercase; letter-spacing: 0.1em; }
-      .ring .fg, .sum-ring .fg { filter: drop-shadow(0 0 7px rgba(61, 255, 136, 0.75)); }
-      body::after {
-        content: ""; position: fixed; inset: 0; z-index: 3; pointer-events: none;
-        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
-      }
-    `
-  }
-];
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
@@ -12598,39 +12415,12 @@ const WORDS_BASE = {
   streak: "серия",
   segAch: "✦ Достижения", segFacts: "💡 Знания"
 };
-const ICON = (k, def) => {
-  const t = themeById(data.shop ? data.shop.theme : "dusk");
-  return (t.icons && t.icons[k]) || def;
-};
-const T = (k) => {
-  const t = themeById(data.shop ? data.shop.theme : "dusk");
-  return (t.words && t.words[k]) || WORDS_BASE[k];
-};
+/* Тем оформления больше нет: значки и слова у приложения одни. */
+const ICON = (k, def) => def;
+const T = (k) => WORDS_BASE[k];
 
 
-const themeById = (id) => THEMES.find(t => t.id === id) || THEMES[0];
 
-function applyTheme(id) {
-  const t = themeById(id);
-  const root = document.documentElement;
-  root.removeAttribute("style");
-  for (const [k, v] of Object.entries(t.vars || {})) root.style.setProperty(k, v);
-  root.style.colorScheme = t.light ? "light" : "dark";
-
-  // тема-мир может менять шрифты, форму элементов и добавлять свои эффекты
-  let sheet = document.getElementById("themeCss");
-  if (!sheet) {
-    sheet = document.createElement("style");
-    sheet.id = "themeCss";
-    document.head.appendChild(sheet);
-  }
-  sheet.textContent = t.css || "";
-
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", (t.vars && t.vars["--bg"]) || "#0d0b14");
-  syncTabHeight();
-  requestAnimationFrame(syncTabHeight);
-}
 
 
 
@@ -13553,36 +13343,7 @@ function openAboutSheet() {
   $("#aboutClose").addEventListener("click", closeSheet);
 }
 
-// оформление живёт в настройках: цвета и «миры», меняющие интерфейс целиком
-function themeUI() {
-  const cur = data.shop.theme || "dusk";
-  const row = (t) => `
-    <button class="pick ${cur === t.id ? "on" : ""}" data-theme="${t.id}" type="button">
-      <span class="pk-dots">${t.dots.map(c => `<i style="background:${c}"></i>`).join("")}</span>
-      <span class="pk-name">${esc(t.name)}</span>
-    </button>`;
 
-  return `
-    <div class="freeze">
-      <div class="fz-head">🎨 <b>Оформление</b> — цвета и целые миры со своим шрифтом и словами</div>
-      <div class="pick-row">${THEMES.filter(t => t.kind !== "world").map(row).join("")}</div>
-      <div class="fz-head" style="margin-top:2px">Миры</div>
-      <div class="pick-row">${THEMES.filter(t => t.kind === "world").map(row).join("")}</div>
-    </div>`;
-}
-
-function bindThemeUI() {
-  document.querySelectorAll("[data-theme]").forEach(b =>
-    b.addEventListener("click", () => {
-      data.shop.theme = b.dataset.theme;
-      data.shop.themeAt = now();
-      saveData(); schedulePush();
-      applyTheme(data.shop.theme);
-      closeSheet();
-      render();
-      toast(`Тема «${themeById(data.shop.theme).name}»`);
-    }));
-}
 
 function backupBlob() {
   const pack = {
@@ -13636,8 +13397,7 @@ function restoreBackup(file) {
     data.gut = mergeLists(data.gut || [], d.gut || []);
     data.pills = mergeLists(data.pills || [], d.pills || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
-    data.freezes = mergeLists(data.freezes || [], d.freezes || []);
-    data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
+      data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
 
     // материалы, которых у нас нет, тоже возвращаем
     for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -14882,115 +14642,7 @@ function сНомерами(текст) {
   return вых;
 }
 
-function catalogUI() {
-  if (!cfg.token || !cfg.gistId)
-    return `<div class="freeze"><div class="fz-head">📚 <b>Каталог</b> — появится, когда подключишь синхронизацию</div></div>`;
 
-  const inCat = Object.keys(CATALOG);
-  const mats = achMaterials();
-  const when = cfg.catalogAt ? fmtDay(dateStr(new Date(cfg.catalogAt))) : "не загружался";
-
-  return `
-    <div class="freeze">
-      <div class="fz-head">📚 <b>Каталог</b> — награды, карточки знаний и обложки могут жить в гисте, а не в коде приложения</div>
-      <div class="fz-empty">В каталоге: ${inCat.length ? esc(inCat.join(", ")) : "пусто"} · сверка ${esc(when)}</div>
-      ${(() => {
-        /* Разборы лежат отдельными файлами и грузятся по требованию — видно,
-           что уже на телефоне, а что нет. Без этого «почему нет вкладки
-           вопросов» приходится выяснять на ощупь. */
-        const строки = Object.keys(CATALOG).filter((id) => CATALOG[id] && CATALOG[id].arts).map((id) => {
-          const a = artsOf(id);
-          return a
-            ? `${id}: разборов ${(a.article || []).length}, вопросов ${(a.faq || []).length}`
-            : `${id}: не загружен`;
-        });
-        return строки.length
-          ? `<div class="fz-empty">Разборы — ${esc(строки.join(" · "))}${artsWhy ? " · " + esc(artsWhy) : ""}</div>`
-          : "";
-      })()}
-      <div class="fz-form2">
-        <button class="btn" id="catPull" type="button">Обновить из гиста</button>
-        <button class="btn" id="catArts" type="button">Загрузить разборы</button>
-        <button class="btn" id="catDrop" type="button">Забыть каталог</button>
-      </div>
-      <div class="fz-head" style="margin-top:10px">Первое наполнение — файлом с компьютера</div>
-      <button class="btn" id="catUp" type="button">Залить каталог из файла</button>
-      <input type="file" id="catFile" accept="application/json,.json" style="display:none">
-      <div class="fz-empty">Файл кладётся в отдельный гист: тексты одним файлом, обложки — по одной на материал.</div>
-      <div class="fz-head" style="margin-top:14px">Палитра пастельного набора</div>
-      <button class="btn" id="palUp" type="button">${
-        пал().length ? `Мелков в наборе: ${пал().length} · заменить` : "Загрузить палитру"}</button>
-      <input type="file" id="palFile" accept="application/json,.json" style="display:none">
-      <div class="fz-empty">Выгрузка из приложения с цветовым кругом. Курс называет цвета словами — подготовка к занятию будет подписывать твои номера.</div>
-    </div>`;
-}
-
-function bindCatalogUI() {
-  const pull = $("#catPull");
-  if (pull) pull.addEventListener("click", async () => {
-    toast("Смотрю каталог…");
-    try {
-      const n = await catalogPull(true);
-      toast(n ? `Загружено материалов: ${n}` : "Каталог пуст");
-      render();
-    } catch (e) { toast(e.message || "Не получилось"); }
-  });
-
-  const arts = $("#catArts");
-  if (arts) arts.addEventListener("click", async () => {
-    const ids = Object.keys(CATALOG).filter((id) => CATALOG[id] && CATALOG[id].arts);
-    if (!ids.length) { toast("В каталоге нет материалов с разбором"); return; }
-    toast("Тяну разборы…");
-    let ok = 0;
-    for (const id of ids) if (await pullArts(id)) ok++;
-    render();
-    toast(ok ? `Загружено разборов: ${ok}` : (artsWhy || "Ничего нового"));
-  });
-
-  const drop = $("#catDrop");
-  if (drop) drop.addEventListener("click", () => {
-    if (!confirm("Забыть загруженный каталог?\n\nПриложение вернётся к зашитым текстам и обложкам. Гист останется на месте.")) return;
-    Object.keys(CATALOG).forEach(id => { try { localStorage.removeItem(LS_COVER(id)); } catch {} });
-    if (window.caches) caches.delete(COVER_CACHE).catch(() => {});
-    CATALOG = {}; achCache.clear(); coverCache.clear();
-    try { localStorage.removeItem(LS_CAT); } catch {}
-    cfg.catalogAt = 0; saveCfg(); render();
-    toast("Каталог забыт");
-  });
-
-  const up = $("#catUp"), file = $("#catFile");
-  const pUp = $("#palUp"), pFile = $("#palFile");
-  if (pUp && pFile) {
-    pUp.addEventListener("click", () => pFile.click());
-    pFile.addEventListener("change", async () => {
-      if (!pFile.files[0]) return;
-      try {
-        const pack = JSON.parse(await pFile.files[0].text());
-        const list = Array.isArray(pack) ? pack : (pack.palette || []);
-        const годные = list.filter((x) => x && x.hex && цветLab(x.hex))
-          .map((x) => ({ hex: String(x.hex).replace("#", ""), name: String(x.name || ""),
-                         spectrum: String(x.spectrum || "") }));
-        if (!годные.length) throw new Error("В файле нет цветов");
-        data.palette = годные; data.paletteAt = now();
-        saveData(); schedulePush(); render();
-        toast(`Мелков в наборе: ${годные.length}`);
-      } catch (e) { toast(e.message || "Не разобрал файл"); }
-    });
-  }
-
-  if (up && file) {
-    up.addEventListener("click", () => file.click());
-    file.addEventListener("change", async () => {
-      if (!file.files[0]) return;
-      toast("Заливаю…");
-      try {
-        const n = await catalogUpload(file.files[0]);
-        toast(`В каталоге материалов: ${n}`);
-        render();
-      } catch (e) { toast(e.message || "Не получилось"); }
-    });
-  }
-}
 
 /* ══════════ Автокопия ══════════
    Раз в неделю кладём снимок всех данных в отдельный гист-архив: файл на месяц,
@@ -15087,7 +14739,6 @@ async function restoreArchive(file) {
   data.gut = mergeLists(data.gut || [], d.gut || []);
   data.pills = mergeLists(data.pills || [], d.pills || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
-  data.freezes = mergeLists(data.freezes || [], d.freezes || []);
   data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
   for (const b of (d.book.books || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
@@ -15097,70 +14748,7 @@ async function restoreArchive(file) {
   toast(before === dataStamp() ? "Всё это уже было" : "Данные восстановлены");
 }
 
-function archiveBackupUI() {
-  if (!cfg.token || !cfg.gistId)
-    return `<div class="freeze"><div class="fz-head">☁️ <b>Автокопия</b> — появится, когда подключишь синхронизацию</div></div>`;
 
-  const when = cfg.lastArchive ? fmtDay(dateStr(new Date(cfg.lastArchive))) : "ещё не делалась";
-  return `
-    <div class="freeze">
-      <div class="fz-head">☁️ <b>Автокопия</b> — раз в неделю снимок всех данных уезжает в отдельный гист-архив, ${ARCH_KEEP} последних месяцев</div>
-      <div class="fz-empty">Последняя: ${esc(when)}${cfg.archiveOff ? " · выключена" : ""}</div>
-      <div class="fz-form2">
-        <button class="btn" id="arcNow" type="button">Сделать копию сейчас</button>
-        <button class="btn" id="arcList" type="button">Копии в архиве</button>
-      </div>
-      <div id="arcBox"></div>
-      <div class="pick-row" style="margin-top:8px">
-        <button class="pick ${!cfg.archiveOff ? "on" : ""}" data-arc="on" type="button"><span class="pk-name">Включена</span></button>
-        <button class="pick ${cfg.archiveOff ? "on" : ""}" data-arc="off" type="button"><span class="pk-name">Выключена</span></button>
-      </div>
-    </div>`;
-}
-
-function bindArchiveBackupUI() {
-  const now_ = $("#arcNow"), list = $("#arcList"), box = $("#arcBox");
-
-  if (now_) now_.addEventListener("click", async () => {
-    now_.disabled = true; toast("Сохраняю…");
-    try {
-      const r = await gh("/gists/" + cfg.gistId);
-      if (!r.ok) throw new Error("основной гист недоступен");
-      const f = (await r.json()).files[GIST_FILE];
-      let txt = f.content;
-      if (f.truncated && f.raw_url) txt = await (await withTimeout(fetch(f.raw_url), 15000)).text();
-      await archiveNow(JSON.parse(txt), true);
-      render();
-    } catch (e) { toast(e.message || "Не получилось"); now_.disabled = false; }
-  });
-
-  if (list && box) list.addEventListener("click", async () => {
-    box.innerHTML = `<div class="fz-empty">Смотрю…</div>`;
-    try {
-      const files = await archiveList();
-      if (!files.length) { box.innerHTML = `<div class="fz-empty">Пока пусто</div>`; return; }
-      box.innerHTML = files.map(f => `
-        <button class="arc-row" data-arcfile="${esc(f.filename)}" type="button">
-          <b>${esc(f.filename.replace("keiko-", "").replace(".json", ""))}</b>
-          <em>${Math.round((f.size || 0) / 1024)} КБ · восстановить</em>
-        </button>`).join("");
-      box.querySelectorAll("[data-arcfile]").forEach(b =>
-        b.addEventListener("click", () => {
-          const f = files.find(x => x.filename === b.dataset.arcfile);
-          if (!f) return;
-          if (!confirm(`Восстановить из снимка «${f.filename}»?\n\nНичего не сотрётся: записи сольются с нынешними.`)) return;
-          restoreArchive(f).catch(() => toast("Не получилось"));
-        }));
-    } catch (e) { box.innerHTML = `<div class="fz-empty">${esc(e.message || "не вышло")}</div>`; }
-  });
-
-  document.querySelectorAll("[data-arc]").forEach(b =>
-    b.addEventListener("click", () => {
-      cfg.archiveOff = b.dataset.arc === "off";
-      saveCfg(); render();
-      toast(cfg.archiveOff ? "Автокопия выключена" : "Автокопия включена");
-    }));
-}
 
 function backupUI() {
   const counts = [
@@ -15196,16 +14784,13 @@ const SETTINGS_SECTIONS = [
   { id: "profile",   icon: "👤", name: "Профиль",       hint: () => profile().name },
   { id: "sync",      icon: "🔄", name: "Синхронизация", hint: () => (cfg.token && cfg.gistId) ? "подключена" : "не подключена" },
   { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
-  { id: "look",      icon: "🎨", name: "Оформление",    hint: () => themeById(data.shop.theme).name },
+  { id: "look",      icon: "🎧", name: "Атмосфера",     hint: () => cfg.sound ? "звук включён" : "звук выключен" },
   /* Материалы, полка и карта знаний собраны в одном месте: раньше они были
      раскиданы по трём экранам, и «где посмотреть прочитанное» каждый раз
      приходилось вспоминать. */
   { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
       const n = railItems().length, sh = shelfItems().length;
       return (n ? `${n} в работе` : "пусто") + (sh ? ` · ${sh} в архиве` : ""); } },
-  { id: "pause",     icon: "🌴", name: "Пауза",         hint: () => {
-      const n = (data.freezes || []).filter(f => !f.deleted).length;
-      return n ? `${n} ${plural(n, "период", "периода", "периодов")}` : "нет"; } },
   { id: "data",      icon: "💾", name: "Данные",        hint: () => "копия и перенос" },
   { id: "about",     icon: "稽", name: "О приложении",  hint: () => APP_VERSION }
 ];
@@ -15268,16 +14853,14 @@ function renderSettingsSection(id) {
   } else if (id === "goal") {
     body = goalUI();
   } else if (id === "look") {
-    body = themeUI() + soundUI() + dailyUI();
+    body = soundUI() + dailyUI();
   } else if (id === "library") {
     /* Каталог уехал в «Данные»: он про обмен файлами, а не про материалы,
        и сверяется сам при каждой синхронизации. Блок «отправить в архив
        и начать новое» убран — теперь это кнопка на странице материала. */
     body = libraryUI();
-  } else if (id === "pause") {
-    body = freezeUI();
   } else if (id === "data") {
-    body = archiveBackupUI() + backupUI() + catalogUI();
+    body = backupUI();
   } else {
     body = `
       <div class="info-note">Кэйко · версия ${APP_VERSION}</div>
@@ -15311,15 +14894,11 @@ function renderSettingsSection(id) {
   const conn = $("#sConnect");
   if (conn) conn.addEventListener("click", () => connectGitHub($("#sToken").value.trim()));
 
-  bindFreezeUI();
   bindGoalUI();
-  bindThemeUI();
   bindSoundUI();
   bindDailyUI();
   bindBackupUI();
-  bindArchiveBackupUI();
   bindLibraryUI();
-  bindCatalogUI();
   bindArchiveUI();
 }
 
@@ -15379,7 +14958,7 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, wall: data.wall, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -15543,7 +15122,6 @@ async function syncNow(manual) {
         data.weekGoal = remote.weekGoal;
         data.goalAt = remote.goalAt;
       }
-      data.freezes = mergeLists(data.freezes, remote.freezes);
       data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
@@ -15556,11 +15134,6 @@ async function syncNow(manual) {
          заново. Побеждает свежий слепок, сливать половинки бессмысленно. */
       if (remote.palette && (remote.paletteAt || 0) > (data.paletteAt || 0)) {
         data.palette = remote.palette; data.paletteAt = remote.paletteAt;
-      }
-      if (remote.shop && remote.shop.theme
-          && (remote.shop.themeAt || 0) > (data.shop.themeAt || 0)) {
-        data.shop.theme = remote.shop.theme;
-        data.shop.themeAt = remote.shop.themeAt;
       }
       data.archive = mergeLists(data.archive, remote.archive);
       data.wall = mergeLists(data.wall || [], remote.wall || []);
@@ -15711,7 +15284,6 @@ function boot() {
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
   if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
-  applyTheme(data.shop.theme);
   if (["week", "month"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
   if (cfg.achTab === "facts") achTab = "facts";
