@@ -1391,9 +1391,13 @@ function ок(имя, факт, надо) {
   const кн = { id: "__t", chapters: [{ from: 0, name: "I" }] };
   ок("разбор: обе части на месте",
     [t.get("bookArticle")(кн).length, t.get("bookFaq")(кн).length], [1, 1]);
+  ок("разбор: песнь в списке", t.get("articleChapters")(кн).length, 1);
   cat.__t.off = ["article"];
   ок("разбор: выключенная часть не показывается", t.get("bookArticle")(кн).length, 0);
   ок("разбор: соседняя часть не задета", t.get("bookFaq")(кн).length, 1);
+  ок("разбор: песнь остаётся в списке ради вопросов", t.get("articleChapters")(кн).length, 1);
+  cat.__t.faq = [];
+  ок("разбор: без обоих песнь уходит", t.get("articleChapters")(кн).length, 0);
   delete cat.__t;
 }
 

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 351";
+const APP_VERSION = "Кэйко 352";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -862,9 +862,15 @@ function mapXY(box, p) {
   const y = (yn - mercY(p.lat)) / (yn - ys) * 100;
   return { x, y };
 }
+/* Песни, по которым есть что открыть. Считаем по разбору И по вопросам:
+   часть разбора можно выключить (off), и тогда список песен строился по
+   пустому месту — вместе с разбором пропадали и вопросы, и вся шторка. */
 const articleChapters = (b) => {
   const bk = b || book();
-  const есть = new Set(bookArticle(bk).map((x) => Number(x.ch)).filter(Boolean));
+  const есть = new Set();
+  for (const x of bookArticle(bk)) есть.add(Number(x.ch));
+  for (const x of bookFaq(bk)) есть.add(Number(x.ch));
+  есть.delete(0); есть.delete(NaN);
   return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
 };
 
@@ -5625,7 +5631,9 @@ function рисуйРазговор(bk) {
      нет» и «не приехало» выглядят одинаково. */
   const ждём = !вопросы.length && (hasArts(bk.id) || !artsOf(bk.id));
   const есть = вопросы.length || ждём;
-  const вид = (talkView === "faq" && есть) ? "faq" : "art";
+  /* Когда разбора нет вовсе — сразу вопросы и без переключателя: выбирать
+     не из чего, а пустая вкладка «Разбор» выглядела бы поломкой. */
+  const вид = !блоки.length ? "faq" : (talkView === "faq" && есть) ? "faq" : "art";
   /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
   const абзацы = [];
   sheetMode = "talk";
@@ -5638,7 +5646,7 @@ function рисуйРазговор(bk) {
       </div>
       <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
     </div>
-    ${есть ? `
+    ${есть && блоки.length ? `
       <div class="tv-tabs">
         <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
         <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
