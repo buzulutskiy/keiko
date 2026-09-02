@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 369";
+const APP_VERSION = "Кэйко 370";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1260,6 +1260,9 @@ function courseRingPct() {
 }
 const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
   : isCourse() && lessons().length ? courseRingPct() : s.pct;
+/* У рисунка мерить нечего: он или идёт, или закончен. Процент тут — ложная
+   точность, поэтому в кольце прочерк, пока лист не закрыт. */
+const noPct = () => isCourse() && plainDraw() && !course().done;
 
 /* Размер материала словами: столько-то шагов у занятия по шагам, столько-то
    минут у лекции. Стоит в подписи под названием вместо доли пройденного:
@@ -1920,7 +1923,6 @@ function saveEntry() {
   musStamp(freshMus);
   render();
 
-  drawShots = [];
   overlayQueue = [];
   // итог по книге идёт первым: он про саму книгу, награды и карточки — после
   if (justClosed) overlayQueue.push({ type: "bookDone", book: justClosed });
@@ -1962,6 +1964,7 @@ function saveEntry() {
         рисунок && drawShots.length ? { mediaId: drawShots[0], mediaKind: "photo" } : {}),
     });
   }
+  drawShots = [];         // снимки уже уехали в карточку сессии
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
@@ -2142,7 +2145,7 @@ function showDone(before, after, wasExisting, ctx) {
   if (wasExisting) { toast("Запись дополнена"); return; }
 
   $("#cheerStep").hidden = true;
-  $("#cheerIc").textContent = after.streakAll >= 2 ? "🔥" : "🎉";
+  $("#cheerIc").textContent = "🎉";
   $("#cheerTitle").textContent = rnd(DONE_TITLES);
   let text;
   if (ctx.book) {
@@ -2161,9 +2164,9 @@ function showDone(before, after, wasExisting, ctx) {
     const g = (after.touchedR + after.touchedL) - (before.touchedR + before.touchedL);
     text = g > 0 ? `+${takty(g)} к разбору, всего ${Math.round(after.pct)}%. ` : "Повторение — эти такты стали крепче. ";
   }
-  text += after.streakAll >= 2
-    ? `Серия — ${after.streakAll} ${plural(after.streakAll, "день", "дня", "дней")} подряд. Возвращайся завтра, будет ${after.streakAll + 1} 🔥`
-    : "Возвращайся завтра — начнём серию!";
+  /* Про серию — ни слова. Она превращает пропуск в потерю: пропустил день —
+     и вместо занятия думаешь о сгоревшем счётчике. На экране прогресса её
+     убрали давно, а здесь она оставалась и подмешивалась в каждую отметку. */
   $("#cheerText").textContent = text;
   $("#cheer").classList.add("show");
 }
@@ -3992,7 +3995,7 @@ function coverRailHTML() {
   return `<div class="rail${n > 1 ? "" : " one"}" id="rail">${html}</div>`;
 }
 
-function ringHTML(pct) {
+function ringHTML(pct, знак) {
   const r = 52, c = 2 * Math.PI * r;
   const on = c * Math.min(1, pct / 100);
   return `
@@ -4001,7 +4004,7 @@ function ringHTML(pct) {
         <circle class="bg" cx="64" cy="64" r="${r}"></circle>
         ${pct > 0 ? `<circle class="fg" cx="64" cy="64" r="${r}" stroke-dasharray="${on.toFixed(1)} ${c.toFixed(1)}"></circle>` : ""}
       </svg>
-      <div class="ring-txt"><b>${Math.round(pct)}%</b></div>
+      <div class="ring-txt"><b>${знак || Math.round(pct) + "%"}</b></div>
     </div>`;
 }
 
@@ -4038,7 +4041,6 @@ function renderHome() {
   if (!hasMaterials()) { renderEmpty("Здесь появятся материалы", "Пока не добавлено ни одного: ни пьесы, ни книги, ни курса."); return; }
   const s = curStats();
   const g = goalProgress();
-  const st = s.streakAll;
   const doneToday = !!entryFor(todayStr());
   const ach = achState();
   const open = ach.filter(a => a.done).length;
@@ -4060,7 +4062,7 @@ $("#view").innerHTML = `
       </button>` : ""}
     <div class="hero">
       ${coverRailHTML()}
-      ${ringHTML(shownPct(s))}
+      ${ringHTML(shownPct(s), noPct() ? "—" : "")}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
@@ -4446,7 +4448,7 @@ function updateHeroInfo() {
   const ring = $(".ring-wrap");
   if (ring) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = ringHTML(shownPct(s));
+    tmp.innerHTML = ringHTML(shownPct(s), noPct() ? "—" : "");
     ring.innerHTML = tmp.firstElementChild.innerHTML;
   }
 
@@ -4773,6 +4775,10 @@ function paceWhen(f) {
 }
 
 function paceHTML() {
+  /* У рисунка нет ни срока, ни счёта занятий: прогноз «когда закончишь» тут
+     нечем считать, а «материал пройден» он выдавал просто потому, что уроков
+     ноль. Молчим. */
+  if (isCourse() && plainDraw()) return "";
   const f = paceForecast();
   if (!f) return "";
   if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
@@ -5253,7 +5259,9 @@ function achMaterials() {
   data.active = "pastel";
   const saveCourse = data.pastel.activeCourse;
   for (const c of courses()) {
-    if (!(c.lessons || []).length) continue;
+    /* Курс без уроков — это рисунок: занятий у него нет, а материал есть.
+       Раньше он сюда не попадал, и лента подписывала его карточки «Архивом». */
+    if (!(c.lessons || []).length && !(c.stages || []).length && !c.name) continue;
     data.pastel.activeCourse = c.id;
     const list = achState(), f = factsState();
     const ck = keyOfCourse(c);
@@ -5952,8 +5960,8 @@ function openAchSheet(a, teased, words) {
   // подсказка «сколько осталось» для понятных числовых условий
   let progressLine = "";
   if (!a.done) {
-    const m = { streak3: [s.streak, 3, "дн. с этим материалом"], streak7: [s.streak, 7, "дн. с этим материалом"],
-                streak14: [s.streak, 14, "дн. с этим материалом"], streak30: [s.streak, 30, "дн. с этим материалом"], days10: [s.days, 10, "занятий"], days20: [s.days, 20, "занятий"],
+    /* Награды по серии сняты — подсказок к ним тоже быть не должно. */
+    const m = { days10: [s.days, 10, "занятий"], days20: [s.days, 20, "занятий"],
                 samovar: [s.days, 10, "вечеров"] }[a.id];
     if (m) progressLine = `Сейчас: <b>${m[0]}</b> из ${m[1]} ${m[2]}`;
     else if (isBook())
