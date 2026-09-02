@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 355";
+const APP_VERSION = "Кэйко 356";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5581,7 +5581,9 @@ function openClub(b, page) {
       if (!новое) return;
       if (sheetMode === "club") рисуйКлуб(bk, page);
       else if (sheetMode === "talk") рисуйРазговор(bk);   // вкладка вопросов могла приехать только что
-      else if (articleChapters(bk).length) { talkAt = -1; рисуйКлуб(bk, page); }
+      /* Поверх чужой шторки не рисуем: пока файл ехал, человек мог уйти
+         в промт или в карточку — перерисовка выбросила бы его оттуда. */
+      else if (!sheetOpen() && articleChapters(bk).length) { talkAt = -1; рисуйКлуб(bk, page); }
     }).catch(() => {});
   };
   if (!articleChapters(bk).length) {
@@ -10224,6 +10226,7 @@ function askOpen(b, i) {
   askRender(bk);
 }
 function askRender(bk) {
+  sheetMode = "ask";
   const главы = bk.chapters || [];
   const текст = askText(bk, askAt);
   openSheet(`
