@@ -1384,6 +1384,23 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Первый курс не меняется от архива ── */
+{
+  const было = JSON.parse(JSON.stringify(t.get("data").pastel));
+  t.set("data.pastel.courses", [
+    { id: "__old", name: "Пастель", lessons: [{ steps: [] }], archived: true },
+    { id: "__new", name: "Рисунок", lessons: [] }]);
+  t.set("data.pastel.activeCourse", "__new");
+  t.set("data.active", "pastel");
+  ок("ключ: первым остаётся заведённый раньше, даже из архива", t.get("firstCourseId")(), "__old");
+  ок("ключ: единственный живой курс не забирает чужой ключ", t.get("courseKey")(), "__new");
+  ок("ключ: архивный держит наследный ключ",
+    t.get("keyOfCourse")({ id: "__old" }), "pastel");
+  ок("лента: материал курса не прячется под чужой пометкой",
+    t.get("libKey")({ track: "pastel", courseId: "__new" }), "ps:__new");
+  t.set("data.pastel", было);
+}
+
 /* ── Простой рисунок: день плюс снимок ── */
 {
   const было = JSON.parse(JSON.stringify(t.get("data")));

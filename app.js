@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 372";
+const APP_VERSION = "Кэйко 373";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -390,8 +390,17 @@ const plainCourse = () => !!course().plain;
    дня и музей помнят курс по имени, а курс мог уехать в архив. */
 const courseById = (id) => courses().find((c) => c.id === id)
   || courses()[0] || courseTrack().course || { lessons: [] };
+/* Первый курс — тот, что был заведён раньше всех, включая уехавшие в архив.
+   Считать его по живому списку нельзя: отправили пастель в архив, и «первым»
+   стал «Аргус» — вместе с чужим ключом «pastel», чужой пометкой «спрятан»
+   и подписью «Архив» в ленте. */
+const firstCourseId = () => {
+  const t = courseTrack() || {};
+  const все = Array.isArray(t.courses) ? t.courses : [];
+  return (все[0] || t.course || {}).id || "";
+};
 /* Ключ материала для любого курса, не только открытого сейчас. */
-const keyOfCourse = (c) => !c || !c.id || c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+const keyOfCourse = (c) => !c || !c.id || c.id === firstCourseId() ? "pastel" : c.id;
 const EMPTY_BOOK = { id: "", title: "", author: "", pages: 0, chapters: [], tone: "sea" };
 const book = () => data.book.books.find(b => b.id === data.book.activeBook) || data.book.books[0] || EMPTY_BOOK;
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
@@ -1053,7 +1062,7 @@ const watchEntries = () => (data.watch && data.watch.entries) || [];
    первому. Без этого правила старые занятия засчитывались бы любому новому
    материалу, и он открывался бы уже наполовину пройденным. */
 function courseEntries() {
-  const id = course().id, first = (courses()[0] || {}).id;
+  const id = course().id, first = firstCourseId();
   return courseTrack().entries.filter((e) => !e.deleted && (e.courseId || first) === id);
 }
 
@@ -1350,11 +1359,11 @@ const testFromWhen = (when) => (s) => (when || []).every(([m, op, v]) => {
 
 /* Ключ материала у курса: первый остаётся «pastel» — под этим именем лежат
    его награды, артефакты и записи занятий. Остальные зовутся своим id. */
-const courseKey = () => {
-  const list = courses(), id = course().id;
-  if (!id || list.length <= 1 || id === (list[0] || {}).id) return "pastel";
-  return id;
-};
+/* Ключ открытого курса. Раньше здесь стояло ещё и «курс всего один — значит
+   он первый»: пока курс правда был один, это совпадало. Стоило отправить
+   пастель в архив, и единственным остался «Аргус» — он забрал себе чужой
+   ключ, а с ним чужую пометку «спрятан» и подпись «Архив» в ленте. */
+const courseKey = () => keyOfCourse(course());
 const curKey = () => isBook() ? book().id : isWatch() ? video().id : isCourse() ? courseKey() : (piece() ? piece().id : "");
 const catOf = (id) => CATALOG[id] || null;
 
@@ -2622,7 +2631,7 @@ function libKey(i) {
   if (i.track === "watch") return "wt:" + i.videoId;
   /* Первый курс жил под ключом «ps» ещё до того, как курсов стало несколько.
      Оставляем его как есть, иначе спрятанный материал вернётся на главную. */
-  return !i.courseId || i.courseId === (courses()[0] || {}).id ? "ps" : "ps:" + i.courseId;
+  return !i.courseId || i.courseId === firstCourseId() ? "ps" : "ps:" + i.courseId;
 }
 const matHidden = (key) => !!(data.hidden || {})[key];
 function matToggle(key) {
@@ -3800,7 +3809,7 @@ function coverOf(item) {
     const n = (c.lessons || []).filter(l => !l.hidden).length;
     const sub = c.top || (n ? n + " " + plural(n, "урок", "урока", "уроков") : "");
     // у курса обложка тоже может лежать в каталоге — раньше эту ветку пропускали
-    const ck = !c.id || c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+    const ck = keyOfCourse(c);
     const csrc = coverSrc(ck, c.cover || "");
     if (csrc) return `
       <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
@@ -4535,7 +4544,7 @@ function rangeStats(from, to) {
   for (const e of pastel) lessons += (e.lessons || []).length;
   /* Рисование считается сессиями: у курса без уроков и этапов каждая отметка
      и есть подход за листом, и складывать там нечего, кроме них самих. */
-  const первый = (courses()[0] || {}).id;
+  const первый = firstCourseId();
   const простой = (id) => {
     const c = courses().find((x) => x.id === (id || первый));
     return !!c && !(c.lessons || []).length && !(c.stages || []).length;
@@ -10954,7 +10963,7 @@ function lessonEntry(make) {
   /* Запись ищем по дню И по курсу: без курса два курса, отмеченные в один
      день, писались в одну запись — минуты одного уходили в статистику
      другого. Старые записи без courseId считаем принадлежащими первому. */
-  const первый = (courses()[0] || {}).id;
+  const первый = firstCourseId();
   const мой = course().id;
   let e = data.pastel.entries.find((x) => !x.deleted && x.date === ds
     && (x.courseId || первый) === мой);
@@ -14602,7 +14611,7 @@ function resetMaterial(kind, id) {
     убрано = похоронить(data.watch.entries, (e) => (e.videoId || "") === id);
     снятьНаграды(id);
   } else if (kind === "ps") {
-    const первый = (courses()[0] || {}).id;
+    const первый = firstCourseId();
     const c = courses().find((x) => x.id === id) || courses()[0] || {};
     const ключ = !c.id || c.id === первый ? "pastel" : c.id;
     delete (data.practice || {})[ключ === "pastel" ? "pastel" : "pastel:" + ключ];
@@ -15026,7 +15035,7 @@ function pastelDaysHTML(c, отметки, ent) {
 function pastelPageUI(id) {
   const c  = courses().find((x) => x.id === id) || courses()[0] || course();
   const st = withMaterial({ track: "pastel", courseId: c.id }, pastelStats);
-  const первый = (courses()[0] || {}).id;
+  const первый = firstCourseId();
   const ent = data.pastel.entries
     .filter(e => !e.deleted && (e.courseId || первый) === c.id)
     .slice().sort((x, y) => x.date < y.date ? -1 : 1);
@@ -15048,7 +15057,7 @@ function pastelPageUI(id) {
 
     <div class="panel lib-head">
       <div class="lib-cover big">${(() => {
-        const ck = c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+        const ck = keyOfCourse(c);
         const src = coverSrc(ck, "");
         return src ? `<img src="${esc(src)}" alt="">` : `<i>🎨</i>`;
       })()}</div>
@@ -15134,7 +15143,7 @@ function pastelPageUI(id) {
    закончен ли лист. Снимки — главное: по ним видно движение лучше любых
    процентов. */
 function drawPageHTML(c, ent, notes, thoughts) {
-  const ключ = c.id === (courses()[0] || {}).id ? "pastel" : c.id;
+  const ключ = keyOfCourse(c);
   const снимки = takesFor(ключ).filter((t) => t.kind === "photo");
   const дни = new Set(ent.map((e) => e.date)).size;
   return `
