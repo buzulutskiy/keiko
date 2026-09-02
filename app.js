@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 371";
+const APP_VERSION = "Кэйко 372";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5038,7 +5038,9 @@ function summaryHTML() {
              а падение до нуля само по себе новость и должно быть видно. */
           (st.bars || was.bars) ? chipHTML(st.bars, was.bars, plural(st.bars || was.bars, "такт", "такта", "тактов")) : "",
           (st.pages || was.pages) ? chipHTML(st.pages, was.pages, "страниц") : "",
-          (st.lessons || was.lessons) ? chipHTML(st.lessons, was.lessons, plural(st.lessons || was.lessons, "урок", "урока", "уроков")) : "",
+          /* Уроков в плашках больше нет: курсов по урокам не осталось, а
+             стоял вечный ноль. Само число ещё считается — им пользуется
+             страница курса-лекции. */
           (st.draws || was.draws) ? chipHTML(st.draws, was.draws, plural(st.draws || was.draws, "сессия рисунка", "сессии рисунка", "сессий рисунка")) : "",
         ].filter(Boolean).join("");
         return chips ? `<div class="sum-chips">${chips}</div>
