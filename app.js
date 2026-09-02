@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 361";
+const APP_VERSION = "Кэйко 362";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13288,7 +13288,11 @@ function openLogSheet() {
   syncPickers();
   const existing = entryFor(selectedDate);
   const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
-  const sub = fmtDay(selectedDate) + (existing ? " · запись уже есть" : "");
+  /* «Сегодня» подписывать незачем: отмечают почти всегда сегодняшний день, и
+     строка только отодвигала главное. Дата остаётся, когда она другая, и
+     остаётся предупреждение, что запись за этот день уже есть. */
+  const день = selectedDate === todayStr() ? "" : fmtDay(selectedDate);
+  const sub = [день, existing ? "запись уже есть" : ""].filter(Boolean).join(" · ");
 
   /* Две кнопки для нейросети живут не в теле шторки, а под точками в углу:
      в теле они спорили с главным делом — отметить страницу. */
@@ -13297,7 +13301,7 @@ function openLogSheet() {
     <div class="sh-top">
       <div class="sh-top-txt">
         <h3>${title}</h3>
-        <p class="sub">${sub}</p>
+        ${sub ? `<p class="sub">${sub}</p>` : ""}
       </div>
       ${меню ? `
       <div class="mini-menu">

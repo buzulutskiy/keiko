@@ -1896,18 +1896,23 @@
     /* Две кнопки для нейросети под строкой главы: копия запроса и файл книги.
        Живут в шторке отметки — там же, где человек закрывает главу. */
     /* ── Точки в углу шторки: всё для нейросети под ними ── */
-    .sh-top { display: flex; align-items: flex-start; gap: 10px; }
-    .sh-top-txt { flex: 1 1 auto; min-width: 0; }
-    .mini-menu { position: relative; flex: 0 0 auto; }
+    /* Кнопка вынута из потока и привязана к правому краю: в ряду она тянулась
+       на всю высоту блока с заголовком и подписью и вставала ниже строки
+       «Что прочитал?». Сдвиг вверх равняет её середину с серединой заголовка. */
+    .sh-top { position: relative; padding-right: 44px; }
+    .mini-menu { position: absolute; top: -3px; right: 0; }
     .mm-btn {
-      width: 34px; height: 34px; border-radius: 11px; line-height: 1;
-      font-size: 1.1rem; letter-spacing: 1px; color: var(--dim);
+      width: 34px; height: 34px; padding: 0; border-radius: 11px;
+      display: grid; place-items: center;      /* точки ровно по центру */
+      font-size: 1.1rem; line-height: 1; color: var(--dim);
       background: var(--glass); border: 1px solid var(--glass-line);
     }
     .mm-pop[hidden] { display: none; }      /* display ниже перебивает встроенный [hidden] */
     .mm-pop {
       position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
-      display: grid; gap: 4px; padding: 5px; min-width: 168px;
+      /* Ширину задаёт самый длинный пункт: с min-width короткий «Книга .md»
+         оставлял справа пустоту, и отступы читались разными. */
+      display: grid; gap: 2px; padding: 6px;
       border-radius: 13px; border: 1px solid var(--glass-line);
       /* Поверхность непрозрачная: --sheet и --card полупрозрачны, и сквозь
          всплывашку просвечивал бы текст шторки под ней. */
