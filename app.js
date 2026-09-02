@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 384";
+const APP_VERSION = "Кэйко 385";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4971,7 +4971,9 @@ function renderCalendar() {
   $("#calGrid").innerHTML = html;
   /* Легенда — только про то, что в этом месяце правда есть. Полный список
      на пустом месяце выглядел инструкцией, а «пауза» не объясняла ничего. */
-  const L = { piano: ["p", "пианино"], book: ["b", "чтение"], pastel: ["c", "пастель"] };
+  /* «Пастель» — имя трека внутри данных, а не то, чем занимаются. Курсы
+     пастели ушли, остался рисунок — так его и подписываем. */
+  const L = { piano: ["p", "пианино"], book: ["b", "чтение"], pastel: ["c", "рисование"] };
   const leg = $("#calLegend");
   if (leg) leg.innerHTML = [...monthTracks].filter(t => L[t])
     .map(t => `<span><i class="cal-dot ${L[t][0]}"></i> ${L[t][1]}</span>`).join("");
@@ -5194,7 +5196,8 @@ function renderAchList() {
 // карточки знаний по материалу
 /* Список записей материала: сверху самая свежая, ниже — как звучало раньше. */
 function takesBlockHTML(view) {
-  const src = view.pieceId || view.bookId || (view.track === "pastel" ? "pastel" : "");
+  const src = view.pieceId || view.bookId
+    || (view.track === "pastel" ? withMaterial(view, () => courseKey()) : "");
   const list = takesFor(src).slice().reverse();
   const photo = view.track === "pastel";
   if (!list.length) return `
