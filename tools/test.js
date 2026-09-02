@@ -1420,6 +1420,14 @@ function ок(имя, факт, надо) {
   ок("рисунок: в кольце прочерк, пока лист не закрыт", t.get("noPct")(), true);
   ок("рисунок: прочерк рисуется", t.get("ringHTML")(0, "—").includes("<b>—</b>"), true);
   ок("рисунок: срок и «материал пройден» не показываем", t.get("paceHTML")(), "");
+  // снимок к сессии ищется по времени, а не по списку из шторки
+  t.set("drawSince", 100);
+  t.set("data.takes", [
+    { id: "t-old", srcId: "__d", kind: "photo", at: 50 },
+    { id: "t-new", srcId: "__d", kind: "photo", at: 150 },
+  ]);
+  const свежий = t.get("takesFor")("__d").find((x) => x.kind === "photo" && !x.deleted && x.at >= t.get("drawSince"));
+  ок("рисунок: берётся снимок после открытия шторки", свежий && свежий.id, "t-new");
   ок("рисунок: курс виден лентой как материал",
     t.get("achMaterials")().some((m) => m.courseId === "__d"), true);
   t.set("data", было);

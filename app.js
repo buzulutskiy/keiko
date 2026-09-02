@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 370";
+const APP_VERSION = "Кэйко 371";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -69,7 +69,7 @@ let pickDone = false;    // нажата ли «Прочитана» в откр
 let pickLessons = [];
 let pickStage = 0, pickStageDone = false;   // этап, над которым сидел, и закрыт ли он
 let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
-let drawShots = [];                         // снимки, сделанные в этой шторке
+let drawSince = 0;                          // с какого момента открыта шторка рисования
 let pickSpans = [];    // отмеченные в этой сессии куски книги
 let partOpen = null;   // какая часть сейчас раскрыта
 let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
@@ -1957,14 +1957,19 @@ function saveEntry() {
        два подхода за день в одну карточку. Снимок, сделанный в этой шторке,
        уходит с ней же — в ленте сессия видна вместе с листом. */
     const рисунок = trackNow === "pastel" && plainDraw();
+    /* Снимок ищем по времени, а не по списку из шторки: сфотографировать
+       можно и не из неё, а список легко потерять между перерисовками. Берём
+       первый снимок этого материала, сделанный после открытия шторки. */
+    const снимок = рисунок
+      ? takesFor(keyNow).find((t) => t.kind === "photo" && !t.deleted && t.at >= drawSince)
+      : null;
     addEvent("session", keyNow, trackNow, текст, {
       tag: рисунок ? keyNow + ":" + entNow.id : keyNow, date: selectedDate,
       fields: Object.assign({ createdAt: now(), awards: stamped.ach, facts: stamped.facts },
         justClosed ? { farewell: bookFarewell(justClosed) } : {},
-        рисунок && drawShots.length ? { mediaId: drawShots[0], mediaKind: "photo" } : {}),
+        снимок ? { mediaId: снимок.id, mediaKind: "photo" } : {}),
     });
   }
-  drawShots = [];         // снимки уже уехали в карточку сессии
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
@@ -13420,7 +13425,7 @@ function openLogSheet() {
   sheetMode = "log";
   pickSpans = []; partOpen = null; partUpto = {};
   if (isCourse() && byStages()) { pickStage = stageNow(); pickStageDone = false; }
-  if (isCourse() && plainDraw()) { pickDrawDone = false; drawShots = []; }
+  if (isCourse() && plainDraw()) { pickDrawDone = false; drawSince = now(); }
   syncPickers();
   const existing = entryFor(selectedDate);
   const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
@@ -13569,8 +13574,7 @@ function bindDrawSheet() {
     if (!f) return;
     cam.disabled = true; cam.textContent = "Готовлю снимок…";
     try {
-      const t = await saveTake(await shrinkPhoto(f), 0, "photo");
-      drawShots.push(t.id);
+      await saveTake(await shrinkPhoto(f), 0, "photo");
       renderSheetBody();
     } catch { toast("Не получилось прочитать снимок"); cam.disabled = false; }
   });
