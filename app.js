@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 378";
+const APP_VERSION = "Кэйко 379";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -812,7 +812,7 @@ const hasArts = (id) => !!(catOf(id) || {}).arts;
    off: ["article"]. Понадобилось для «Одиссеи» — разбор песен читается на
    стороне, а вопросы, примечания и карта остаются на месте. Выключаем
    показом, а не удалением: файл разбора большой и собирался долго. */
-const artsOff = (id, поле) => ((catOf(id) || {}).off || []).includes(поле);
+const artsOff = (id, поле) => ((catOf(id) || {}).off || []).includes(поле);   // off: ["map"]
 const artsPart = (b, поле) => {
   const id = (b || book()).id;
   if (artsOff(id, поле)) return [];
@@ -821,13 +821,11 @@ const artsPart = (b, поле) => {
   const c = catOf(id);
   return (c && Array.isArray(c[поле])) ? c[поле] : [];
 };
-const bookArticle = (b) => artsPart(b, "article");
-const articleOfChapter = (b, i) => bookArticle(b).filter((x) => Number(x.ch) === i + 1);
+
 /* Вопросы и ответы к песне — второй этап разбора: не рассуждение, а короткие
    ответы на «кто это вообще» и «почему так». Лежат в каталоге рядом со статьёй
    и открываются по тому же правилу — только когда песнь дочитана. */
-const bookFaq = (b) => artsPart(b, "faq");
-const faqOfChapter = (b, i) => bookFaq(b).filter((x) => Number(x.ch) === i + 1);
+
 /* ── Промт для разбора главы ──
    Разбор человек ведёт сам в нейронке, и приложение делает одно: собирает
    готовый запрос — какая книга, чей перевод, какая глава — и кладёт в буфер.
@@ -938,18 +936,6 @@ function mapXY(box, p) {
   const y = (yn - mercY(p.lat)) / (yn - ys) * 100;
   return { x, y };
 }
-/* Песни, по которым есть что открыть. Считаем по разбору И по вопросам:
-   часть разбора можно выключить (off), и тогда список песен строился по
-   пустому месту — вместе с разбором пропадали и вопросы, и вся шторка. */
-const articleChapters = (b) => {
-  const bk = b || book();
-  const есть = new Set();
-  for (const x of bookArticle(bk)) есть.add(Number(x.ch));
-  for (const x of bookFaq(bk)) есть.add(Number(x.ch));
-  есть.delete(0); есть.delete(NaN);
-  return (bk.chapters || []).map((c, i) => ({ ...c, i })).filter((c) => есть.has(c.i + 1));
-};
-
 
 
 // главы, к которым есть комментарии — по ним и ходим в шторке
@@ -3990,8 +3976,6 @@ $("#view").innerHTML = `
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        <button class="cta-side" id="bookTalkBtn" type="button" ${кнопки.talk.on ? "" : "hidden"}
-          aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="Карта мест" title="Карта мест">🗺</button>
       </div>
@@ -4000,11 +3984,6 @@ $("#view").innerHTML = `
 
   syncBookBtns();        // состояние кнопок — из живых данных, а не из момента сборки строки
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
-  const bt = $("#bookTalkBtn");
-  if (bt) bt.addEventListener("click", () => {
-    if (onlyMap(book())) openPlaceMap(book(), -1);
-    else openClub(book(), bookProgress());
-  });
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(book(), -1));
 
@@ -4277,58 +4256,19 @@ function updateAchBadge() {
   if (txt) txt.nodeValue = `${T("tabAch")} ${open}`;
 }
 
-/* Разбор есть не у каждого материала, а лента свайпается без полной
-   перерисовки. Поэтому кнопка живёт в разметке всегда и только прячется:
-   иначе она оставалась от прошлой обложки — «то появляется, то исчезает». */
-/* Кнопка есть, если у материала есть разбор, вопросы или карта — или каталог
-   говорит, что файл с ними существует. Карту забыл включить в это условие
-   сразу, и у книги, где кроме карты ничего нет, кнопки просто не было. */
-const talkBtnOn = () => isBook() &&
-  (bookArticle(book()).length > 0 || bookFaq(book()).length > 0
-   || mapWhole(book()).length > 0 || hasArts(book().id));
-// у материала бывает только карта — тогда кнопка ведёт прямо в неё
-const onlyMap = (b) => !bookArticle(b).length && !bookFaq(b).length && mapWhole(b).length > 0;
+/* Кнопка карты живёт в разметке всегда и только прячется: лента свайпается без
+   полной перерисовки, и созданная на лету кнопка оставалась бы от прошлой
+   обложки — «то появляется, то исчезает». Состояние считается одним снимком,
+   потому что файл с местами доезжает когда придётся. */
+const mapBtnOn = () => isBook() && mapWhole(book()).length > 0 && !!mapBox(book());
 
-/* Значок кнопки говорит, что за ней: у книги с разбором — облачко реплики,
-   у книги, где есть только карта, — карта. */
-const talkBtnIcon = () => onlyMap(book()) ? "🗺" : "💬";
-const talkBtnWord = () => onlyMap(book()) ? "Карта мест" : "Разбор";
-/* Карта — своя кнопка рядом с разбором, а не вкладка внутри него: на карту
-   ходят отдельно от чтения, и незачем ради неё открывать разбор песни, где
-   лежат спойлеры. У книги, где кроме карты ничего нет, кнопка одна — та. */
-const mapBtnOn = () => isBook() && !onlyMap(book()) && mapWhole(book()).length > 0 && !!mapBox(book());
-
-/* ── Состояние двух кнопок под главной ──
-   Разбор и карта считаются РАЗОМ, одним снимком данных, и рисуются из него же.
-   Раньше каждая кнопка считала себя сама, в разное время: разметка строилась
-   при отрисовке, а когда файл разбора доезжал, руками поправлялась только
-   кнопка разбора. Отсюда и «нестабильно»: у книги, где кроме карты ничего нет,
-   разбор успевал превратиться в карту, а отдельная кнопка карты оставалась
-   висеть с прошлого расчёта — и карт становилось две. У «Одиссеи» выходило
-   наоборот: файл приезжал, а карта не появлялась до следующей перерисовки.
-
-   Теперь состояние одно на обе, и разойтись им негде. */
 function bookBtnState() {
-  const он = isBook();
-  return {
-    talk: { on: он && talkBtnOn(), icon: он ? talkBtnIcon() : "", word: он ? talkBtnWord() : "" },
-    map:  { on: он && mapBtnOn() },
-  };
+  return { map: { on: mapBtnOn() } };
 }
 
-/* Применить состояние к живым кнопкам. Зовётся и при отрисовке, и когда файл
-   разбора доехал позже: порядок приезда данных не должен ничего решать. */
 function syncBookBtns() {
-  const st = bookBtnState();
-  const talk = document.getElementById("bookTalkBtn");
-  if (talk) {
-    talk.hidden = !st.talk.on;
-    talk.textContent = st.talk.icon;
-    talk.setAttribute("aria-label", st.talk.word);
-    talk.title = st.talk.word;
-  }
   const map = document.getElementById("bookMapBtn");
-  if (map) map.hidden = !st.map.on;
+  if (map) map.hidden = !bookBtnState().map.on;
 }
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
@@ -5552,246 +5492,12 @@ function renderAchMaterial(view) {
 }
 
 // Шторка с карточкой знания
-/* ══════════ Разборы песней ══════════
-   Не сноски и не тест. Клуб — это список песней с разбором: видно, что уже
-   прочитано, что читаешь сейчас, а что впереди (в такой разбор лучше не
-   лезть — заспойлерит). Внутри разбора любой абзац можно скопировать и
-   переслать, если захочется уточнить у нейросети или у человека. */
-let talkAt = -1;       // какая песнь открыта; -1 — показываем список
-
-const clubLead = (bk, i) => (articleOfChapter(bk, i).find((x) => x.t) || {}).t || "";
-const clubKey = (bk, i) => bk.id + ":" + (i + 1);
-const clubSeen = (bk, i) => !!(data.club || {})[clubKey(bk, i)];
-function clubMark(bk, i) {
-  if (clubSeen(bk, i)) return;
-  data.club = data.club || {};
-  data.club[clubKey(bk, i)] = now();
-  data.clubAt = now();
-  saveData();
-  schedulePush();
-}
-
 /* Докуда идёт глава: до начала следующей, последняя — до конца книги. */
 function chapterEnd(bk, i) {
   const list = bk.chapters || [];
   const сл = list[i + 1];
   return сл ? сл.from - 1 : (bk.pages || 0);
 }
-function clubState(bk, i, page) {
-  const c = (bk.chapters || [])[i];
-  if (!c) return "ahead";
-  if (page >= chapterEnd(bk, i)) return "read";
-  if (page >= c.from) return "now";
-  return "ahead";
-}
-
-function openClub(b, page) {
-  useMark("разбор");
-  const bk = b || book();
-  /* Разборы приезжают из каталога, а он сверяется по своему расписанию: новые
-     песни или вопросы могли уже лежать в гисте, но ещё не доехать до телефона.
-     Открыли раздел — спрашиваем каталог сразу и, если он привёз что-то новое,
-     перерисовываем список под рукой. */
-  const свежий = () => {
-    pullArts(bk.id).then((новое) => {
-      if (!новое) return;
-      if (sheetMode === "club") рисуйКлуб(bk, page);
-      else if (sheetMode === "talk") рисуйРазговор(bk);   // вкладка вопросов могла приехать только что
-      /* Поверх чужой шторки не рисуем: пока файл ехал, человек мог уйти
-         в промт или в карточку — перерисовка выбросила бы его оттуда. */
-      else if (!sheetOpen() && articleChapters(bk).length) { talkAt = -1; рисуйКлуб(bk, page); }
-    }).catch(() => {});
-  };
-  if (!articleChapters(bk).length) {
-    /* Файл разбора ещё не приехал: показываем ожидание, а не пустоту — иначе
-       нажатие выглядит как «кнопка не работает». */
-    sheetMode = "club";
-    openSheet(`
-      <div class="bn-head"><div style="grid-column:1/-1">
-        <h3>Разборы</h3><p class="sub">загружаются…</p>
-      </div></div>
-      <div class="ar-wait">минуту — тяну из каталога</div>
-      <div class="sheet-actions"><button class="btn" id="clWait" type="button">Закрыть</button></div>`, true);
-    const b = $("#clWait"); if (b) b.addEventListener("click", closeSheet);
-    свежий();
-    return;
-  }
-  talkAt = -1;
-  рисуйКлуб(bk, page);
-  свежий();
-}
-
-function рисуйКлуб(bk, page) {
-  const главы = articleChapters(bk);
-  const стр = page == null ? bookProgress() : page;
-  const прочитано = главы.filter((c) => clubSeen(bk, c.i)).length;
-  const открыт = (c) => clubState(bk, c.i, стр) === "read";
-  sheetMode = "club";
-  openSheet(`
-    <div class="bn-head">
-      <div style="grid-column:1/-1">
-        <h3>Разборы</h3>
-        <p class="sub">${главы.length} ${plural(главы.length, "разбор", "разбора", "разборов")}
-          · ${прочитано ? `${прочитано} прочитано` : "ни одного не читал"}</p>
-      </div>
-    </div>
-    <div class="cl-list">
-      ${главы.map((c) => {
-        const st = clubState(bk, c.i, стр);
-        const метка = st === "read" ? "прочитана" : st === "now" ? "читаешь" : "впереди";
-        const lead = clubLead(bk, c.i);
-        const закрыт = !открыт(c);
-        /* Разбор непрочитанной песни — это спойлер, поэтому он закрыт: в нём
-           пересказан весь сюжет, включая то, чем всё кончится. Открывается
-           сам, как только дочитаешь песнь до конца. */
-        return `<button class="cl-item ${st}${закрыт ? " lock" : ""}" data-cl="${c.i}" type="button">
-          <div class="cl-txt">
-            <b>${закрыт ? "🔒 " : ""}${esc(c.name || "")}</b>
-            ${закрыт ? `<p>откроется, когда дочитаешь</p>` : lead ? `<p>${esc(lead)}</p>` : ""}
-            ${!закрыт && faqOfChapter(bk, c.i).length
-              ? `<p class="cl-two">разбор · ${faqOfChapter(bk, c.i).length} ${plural(faqOfChapter(bk, c.i).length, "вопрос", "вопроса", "вопросов")}</p>` : ""}
-          </div>
-          <div class="cl-side">
-            <span class="cl-st ${st}">${метка}</span>
-            ${!закрыт && clubSeen(bk, c.i) ? `<span class="cl-seen">разбор прочитан</span>` : ""}
-          </div>
-        </button>`;
-      }).join("")}
-    </div>
-    <div class="sheet-actions">
-      <button class="btn" id="clClose" type="button">Закрыть</button>
-    </div>`, true);
-
-  document.querySelectorAll("[data-cl]").forEach((el) =>
-    el.addEventListener("click", () => {
-      const i = Number(el.dataset.cl);
-      const глава = главы.find((c) => c.i === i);
-      if (!глава || !открыт(глава)) { toast("Разбор откроется, когда дочитаешь песнь"); return; }
-      talkAt = i;
-      talkView = "art";              // из списка всегда входим в разбор
-      clubMark(bk, talkAt);
-      рисуйРазговор(bk);
-    }));
-  $("#clClose").addEventListener("click", closeSheet);
-}
-
-
-let talkView = "art";      // что открыто внутри песни: разбор или вопросы
-
-function рисуйРазговор(bk) {
-  /* Стрелками ходим только по открытым разборам: соседняя песнь может быть
-     ещё не прочитана, и её разбор так же спойлер, как из списка. */
-  const стр = bookProgress();
-  const главы = articleChapters(bk).filter((c) => clubState(bk, c.i, стр) === "read");
-  if (!главы.length) { toast("Разбор откроется, когда дочитаешь песнь"); return; }
-  const место = главы.findIndex((c) => c.i === talkAt);
-  const глава = главы[место] || главы[0];
-  const блоки = articleOfChapter(bk, глава.i);
-  const вопросы = faqOfChapter(bk, глава.i);
-  const lead = clubLead(bk, глава.i);
-  /* Вкладка вопросов видна и тогда, когда файл ещё едет: невидимая вкладка
-     на месте несостоявшейся загрузки — это ровно тот случай, когда «ничего
-     нет» и «не приехало» выглядят одинаково. */
-  /* Выключенные вопросы — это не «ещё не приехали»: ждать нечего. */
-  const ждём = !вопросы.length && !artsOff(bk.id, "faq") && (hasArts(bk.id) || !artsOf(bk.id));
-  const есть = вопросы.length || ждём;
-  /* Когда разбора нет вовсе — сразу вопросы и без переключателя: выбирать
-     не из чего, а пустая вкладка «Разбор» выглядела бы поломкой. */
-  const вид = !блоки.length ? "faq" : (talkView === "faq" && есть) ? "faq" : "art";
-  /* Абзацы нумеруем, чтобы кнопка копирования знала, что брать. */
-  const абзацы = [];
-  sheetMode = "talk";
-  openSheet(`
-    <div class="bn-head">
-      <button class="bn-nav" data-tk="prev" type="button"${место > 0 ? "" : " disabled"} aria-label="Предыдущая">‹</button>
-      <div>
-        <h3>${esc(глава.name || "О главе")}</h3>
-        <p class="sub">песнь ${место + 1} из ${главы.length}</p>
-      </div>
-      <button class="bn-nav" data-tk="next" type="button"${место + 1 < главы.length ? "" : " disabled"} aria-label="Следующая">›</button>
-    </div>
-    ${есть && блоки.length ? `
-      <div class="tv-tabs">
-        <button class="${вид === "art" ? "on" : ""}" data-tv="art" type="button">Разбор</button>
-        <button class="${вид === "faq" ? "on" : ""}" data-tv="faq" type="button">Вопросы</button>
-      </div>` : ""}
-    ${вид === "faq" && !вопросы.length ? `
-    <div class="ar-wait" style="margin-top:16px">вопросы ещё не приехали${artsWhy ? " · " + esc(artsWhy) : ""}</div>
-    <div class="sheet-actions"><button class="btn" id="fqPull" type="button">Загрузить</button></div>`
-    : вид === "faq" ? `
-    <div class="fq-list">
-      ${вопросы.map((q, i) => {
-        абзацы.push(q.q + " — " + q.a);
-        return `<div class="fq">
-          <b>${esc(q.q)}</b>
-          <p>${esc(q.a)}<button class="ar-cp" data-cp="${i}" type="button"
-            aria-label="Скопировать вопрос с ответом">⧉</button></p>
-        </div>`;
-      }).join("")}
-    </div>` : `
-    <article class="ar">
-      ${lead ? `<p class="ar-lead">${esc(lead)}</p>` : ""}
-      ${блоки.map((б) => {
-        if (б.t) return "";
-        if (б.h) return `<h4>${esc(б.h)}</h4>`;
-        if (б.img) {
-          const src = artSrc(б.img);
-          return `<figure class="ar-fig">
-            ${src ? `<img src="${esc(src)}" alt="${esc(б.cap || "")}" loading="lazy">`
-                  : `<div class="ar-wait">иллюстрация загружается…</div>`}
-            ${б.cap ? `<figcaption>${esc(б.cap)}</figcaption>` : ""}
-          </figure>`;
-        }
-        const текст = б.note || б.p || "";
-        абзацы.push(текст);
-        const n = абзацы.length - 1;
-        return `<p class="ar-b ${б.note ? "ar-note" : ""}">${esc(текст)}<button
-          class="ar-cp" data-cp="${n}" type="button" aria-label="Скопировать абзац">⧉</button></p>`;
-      }).join("")}
-    </article>`}
-    <div class="sheet-actions">
-      <button class="btn" id="tkAll" type="button">${вид === "faq" ? "Скопировать вопросы" : "Скопировать разбор"}</button>
-      <button class="btn" id="tkBack" type="button">К списку</button>
-      <button class="btn" id="tkClose2" type="button">Закрыть</button>
-    </div>`, true);
-
-  document.querySelectorAll("[data-tk]").forEach((el) =>
-    el.addEventListener("click", () => {
-      const сл = главы[место + (el.dataset.tk === "next" ? 1 : -1)];
-      if (!сл) return;
-      talkAt = сл.i;
-      clubMark(bk, talkAt);
-      рисуйРазговор(bk);
-    }));
-  const fq = $("#fqPull");
-  if (fq) fq.addEventListener("click", async () => {
-    toast("Тяну вопросы…");
-    const новое = await pullArts(bk.id);
-    if (новое) рисуйРазговор(bk);
-    else toast(artsWhy || "Ничего не пришло");
-  });
-  document.querySelectorAll("[data-tv]").forEach((el) =>
-    el.addEventListener("click", () => {
-      talkView = el.dataset.tv;
-      if (talkView === "faq") useMark("вопросы");
-      рисуйРазговор(bk);
-    }));
-  document.querySelectorAll("[data-cp]").forEach((el) =>
-    el.addEventListener("click", () => copyText(абзацы[Number(el.dataset.cp)],
-      вид === "faq" ? "Вопрос" : "Абзац")));
-  const tkAll = $("#tkAll");
-  if (tkAll) tkAll.addEventListener("click", () => {
-    const весь = вид === "faq"
-      ? [глава.name || "", ""].concat(вопросы.map((q, i) => (i + 1) + ". " + q.q + "\n" + q.a))
-          .filter(Boolean).join("\n\n")
-      : [глава.name || "", lead, ""].concat(блоки.map((б) =>
-          б.t ? "" : б.h ? "\n" + б.h : (б.note || б.p || ""))).filter(Boolean).join("\n\n");
-    copyText(весь, вид === "faq" ? "Вопросы" : "Разбор");
-  });
-  $("#tkBack").addEventListener("click", () => { talkAt = -1; рисуйКлуб(bk); });
-  $("#tkClose2").addEventListener("click", closeSheet);
-}
-
 function openFactSheet(f) {
   sheetMode = "fact";
   openSheet(`
@@ -15673,7 +15379,7 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, wall: data.wall, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  pills: data.pills, talks: data.talks, talksAt: data.talksAt, club: data.club, clubAt: data.clubAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, freezes: data.freezes, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -15850,14 +15556,6 @@ async function syncNow(manual) {
          заново. Побеждает свежий слепок, сливать половинки бессмысленно. */
       if (remote.palette && (remote.paletteAt || 0) > (data.paletteAt || 0)) {
         data.palette = remote.palette; data.paletteAt = remote.paletteAt;
-      }
-      /* Прочитанные разборы — просто объединяем: отметка «прочитал» не должна
-         пропадать оттого, что на другом устройстве её ещё не было. */
-      if (remote.club) {
-        const свод = { ...(data.club || {}) };
-        for (const k in remote.club) свод[k] = Math.max(свод[k] || 0, remote.club[k] || 0);
-        data.club = свод;
-        data.clubAt = Math.max(data.clubAt || 0, remote.clubAt || 0);
       }
       if (remote.shop && remote.shop.theme
           && (remote.shop.themeAt || 0) > (data.shop.themeAt || 0)) {

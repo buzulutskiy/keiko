@@ -1576,31 +1576,6 @@
     }
     .ar h4:first-child { margin-top: 8px; }
     .ar p { margin: 0 0 14px; font-size: 1.02rem; line-height: 1.68; color: var(--ink); }
-    .ar-note {
-      padding: 12px 14px; border-radius: 12px;
-      background: rgba(139, 124, 246, 0.1); border: 1px solid rgba(139, 124, 246, 0.24);
-      font-size: 0.95rem !important; line-height: 1.55 !important;
-    }
-    .ar-lead {
-      margin: 2px 0 18px; font-size: 1.06rem; line-height: 1.5; font-weight: 650;
-      color: var(--muted);
-    }
-    /* Абзац и кнопка «скопировать» рядом с ним: нужна, чтобы кусок разбора
-       можно было переслать целиком — человеку или нейросети. */
-    .ar-cp {
-      display: inline-block; margin-left: 7px; padding: 0 6px;
-      border-radius: 7px; background: rgba(255, 255, 255, 0.07); border: 0;
-      color: var(--dim); font-size: 0.82em; line-height: 1.5; vertical-align: baseline;
-    }
-    .ar-cp:active { background: rgba(139, 124, 246, 0.28); color: var(--violet); }
-    .ar-fig { margin: 20px 0 18px; }
-    .ar-fig img {
-      display: block; width: 100%; border-radius: 14px;
-      background: #f4f1ea;                       /* гравюра на белом: даём ей лист */
-    }
-    .ar-fig figcaption {
-      margin-top: 8px; font-size: 0.78rem; line-height: 1.45; color: var(--dim);
-    }
     .ar-wait {
       display: grid; place-items: center; height: 120px; border-radius: 14px;
       background: var(--glass); border: 1px solid var(--glass-line);
@@ -1618,44 +1593,11 @@
     .cta-side svg { width: 24px; height: 24px; }
     /* display:grid перебивает встроенное [hidden]{display:none} — возвращаем */
     .cta-side[hidden] { display: none; }
-    /* Клуб: список песней с разборами. */
-    .cl-list {
-      display: grid; gap: 10px; margin-top: 12px; text-align: left;
-    }
-    .cl-item {
-      display: flex; align-items: center; gap: 12px; width: 100%;
-      padding: 13px 14px; border-radius: 14px;
-      background: var(--glass); border: 1px solid var(--glass-line); text-align: left;
-    }
-    .cl-item.ahead { opacity: .62; }
     .cl-item.lock { opacity: .5; }
     .cl-item.lock .cl-txt p { color: var(--dim); }
-    .cl-txt { flex: 1 1 auto; min-width: 0; }
-    .cl-txt b { display: block; font-size: 0.98rem; line-height: 1.35; }
-    .cl-txt p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.4; color: var(--dim); }
-    .cl-side { flex: 0 0 auto; display: grid; gap: 4px; justify-items: end; }
-    .cl-st {
-      font-size: 0.68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-      padding: 3px 8px; border-radius: 999px;
-      background: rgba(255, 255, 255, 0.07); color: var(--dim);
-    }
     .cl-st.read { background: rgba(139, 124, 246, 0.16); color: var(--violet); }
     .cl-st.now { background: rgba(255, 255, 255, 0.14); color: var(--ink); }
-    .cl-seen { font-size: 0.66rem; color: var(--dim); }
-    /* Два этапа внутри песни: разбор и вопросы. */
-    .tv-tabs {
-      display: grid; grid-auto-flow: column; gap: 6px; margin: 12px 0 2px;
-      padding: 4px; border-radius: 13px; background: rgba(255, 255, 255, 0.05);
-    }
-    .tv-tabs button {
-      padding: 9px 10px; border-radius: 10px; font-size: 0.88rem; font-weight: 650;
-      color: var(--dim); background: transparent; border: 0;
-    }
     .tv-tabs button.on { background: var(--glass); color: var(--ink); border: 1px solid var(--glass-line); }
-    .fq-list { display: grid; gap: 14px; margin-top: 14px; text-align: left; }
-    .fq b { display: block; font-size: 1.02rem; line-height: 1.4; margin-bottom: 5px; }
-    .fq p { margin: 0; font-size: 0.98rem; line-height: 1.6; color: var(--muted); }
-    .cl-two { margin: 4px 0 0; font-size: 0.74rem; color: var(--dim); }
     /* Карта мест: картинка с точками по координатам. */
     .mp { margin-top: 14px; }
     .mp-pin.on span { opacity: 1; }
@@ -2049,15 +1991,7 @@
       font-size: 0.72rem; color: var(--dim); background: rgba(11, 15, 22, 0.7);
       padding: 6px 12px; border-radius: 999px; pointer-events: none;
     }
-    .bn-head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 8px; }
-    .bn-head h3 { margin: 0; }
     .bn-head .sub { margin: 2px 0 0; }
-    .bn-nav {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      color: var(--ink); font-size: 1.05rem; line-height: 1;
-    }
-    .bn-nav[disabled] { opacity: .3; }
 
     /* Путь по пьесе: вся дорога от первого такта до целой вещи. */
     .rt-head {
