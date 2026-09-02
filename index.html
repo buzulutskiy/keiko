@@ -227,79 +227,6 @@
     #wallBtn { font-size: 1rem; }
     #wallBtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); border-color: transparent; }
 
-    /* ── Моя галерея ─────
-       Не сетка плиток, а стена: тёмный фон, картина в раме с паспарту, под ней
-       музейная табличка. Одна картина занимает почти всю ширину — скролл выходит
-       проходом вдоль стены, а не пролистыванием ленты. */
-    /* Галерея внутри артефактов: одна работа в ряд, во всю ширину. Две колонки
-       читались мелко — картина должна занимать столько места, сколько занимает
-       картина на стене. */
-    .wl-wall { display: grid; gap: 30px; margin-top: 4px; }
-    .wl-art { display: grid; justify-items: center; }
-    /* ── Рамы ──
-       Рама — часть работы, а не украшение списка: тяжёлая золочёная под
-       академический холст и узкая рейка под темперу начала века — это разные
-       картины. Поэтому вид рамы хранится у каждой работы, а здесь только
-       варианты. Общее у всех — тень: она и делает картину висящей. */
-    .wl-frame { width: 100%; border-radius: 2px;
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5); }
-
-    /* Тёмное дерево — по умолчанию, спокойное и ничему не мешает */
-    .wl-frame.f-wood { padding: 8px;
-      background: linear-gradient(160deg, #2a2118, #1a150f 60%, #241c14);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 2px 5px rgba(0, 0, 0, 0.5),
-                  inset 0 0 0 1px rgba(255, 201, 77, 0.18); }
-
-    /* Широкая золочёная — под большой холст XVII–XIX века. Три слоя: внешний
-       вал, потёртая позолота, внутренний тёмный кант у самого холста. */
-    .wl-frame.f-gold { padding: 17px;
-      background:
-        linear-gradient(150deg, #d8ac57 0%, #8d6a26 22%, #e7c576 46%, #7d5c20 70%, #c9a052 100%);
-      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.6), 0 3px 6px rgba(0, 0, 0, 0.5),
-                  inset 0 0 0 2px rgba(255, 233, 176, 0.4),
-                  inset 0 0 0 12px rgba(120, 88, 30, 0.45),
-                  inset 0 0 0 14px rgba(40, 28, 8, 0.75); }
-
-    /* Узкая золотая рейка — начало XX века: темпера, гуашь, «Мир искусства».
-       Тяжёлая академическая рама такой работе не по размеру. */
-    .wl-frame.f-thin { padding: 7px;
-      background: linear-gradient(150deg, #c9a862, #8a6c30 45%, #d9bd7c);
-      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.45),
-                  inset 0 0 0 1px rgba(255, 236, 186, 0.5),
-                  inset 0 0 0 5px rgba(60, 44, 14, 0.55); }
-
-    /* Широкая плоская доска красного дерева, без золота и резьбы. Ровно такая
-       рама у Серова в Третьяковке — снимок из зала это подтверждает: гладкое
-       тёплое дерево, единственная деталь — узкая тёмная выемка у самого холста.
-       Именно так вешали «Мир искусства»: рама не спорит с работой. */
-    .wl-frame.f-plain { padding: 15px;
-      background:
-        repeating-linear-gradient(96deg, rgba(255,255,255,0.035) 0 2px, rgba(0,0,0,0.03) 2px 5px),
-        linear-gradient(160deg, #7d3b2a, #5e2b1e 45%, #6f3425 72%, #4d2318);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 3px 6px rgba(0, 0, 0, 0.5),
-                  inset 0 0 0 1px rgba(255, 190, 150, 0.12),
-                  inset 0 0 0 11px rgba(40, 18, 12, 0.55),
-                  inset 0 0 0 13px rgba(120, 62, 44, 0.5); }
-
-    /* Светлая рама с паспарту — для графики и акварели, как их и вешают */
-    .wl-frame.f-paper { padding: 9px; background: linear-gradient(160deg, #b6a893, #8d8272 60%, #a4967f); }
-    .wl-frame.f-paper > .wl-mat { display: block; background: #e8e2d5; padding: 16px; }
-    /* Пропорция задана на самой картинке — место под неё держится ещё до
-       загрузки, и список не прыгает, когда изображения доезжают. Подложка
-       тёмная: музейные файлы по 200 КБ грузятся сверху вниз, и на светлой
-       недокачанная работа выглядела серой плитой во всю раму. */
-    .wl-frame img { display: block; width: 100%; height: auto; background: #191521;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
-    .wl-frame.f-paper img { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
-    /* Табличка под картиной — как в зале */
-    .wl-plate { margin-top: 12px; text-align: center; max-width: 42ch; }
-    .wl-plate b { display: block; font-size: 0.92rem; font-weight: 650; line-height: 1.35; }
-    .wl-plate i { display: block; font-style: normal; font-size: 0.82rem; color: var(--dim); margin-top: 3px; }
-    .wl-plate em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim);
-      margin-top: 6px; opacity: 0.85; }
-    .wl-note { display: block; font-size: 0.86rem; line-height: 1.55; margin-top: 10px;
-      color: var(--ink); opacity: 0.9; text-align: left; }
-
     /* ── Сегмент-переключатель хобби ───── */
     .seg {
       display: grid;
@@ -2615,25 +2542,6 @@
 
     /* ══════════ «Какуля» ══════════ */
     .gut-fx { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
-    .gut-hero { display: grid; justify-items: center; gap: 12px; padding: 10px 0 4px; }
-    .gut-btn {
-      width: 132px; height: 132px; border-radius: 50%;
-      font-size: 3.6rem; line-height: 1;
-      background: radial-gradient(circle at 32% 28%, var(--glass-2), var(--glass));
-      border: 1px solid var(--glass-line);
-      box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
-      transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s ease;
-    }
-    .gut-btn:active { transform: scale(0.92); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
-    .gut-hint { margin: 0; font-size: 0.78rem; color: var(--dim); text-align: center; max-width: 240px; }
-
-    .gut-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
-    .gut-card {
-      background: var(--panel); border: 1px solid var(--glass-line);
-      border-radius: 13px; padding: 11px 9px; text-align: center; min-width: 0;
-    }
-    .gut-card b { display: block; font-size: 0.92rem; line-height: 1.2; }
-    .gut-card em { display: block; font-style: normal; font-size: 0.66rem; color: var(--dim); margin-top: 3px; }
 
     .gut-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
     .gut-cal i {
@@ -2647,30 +2555,12 @@
     .gut-cal .gc-day.on { color: var(--bg); font-weight: 700; background: rgba(110, 231, 168, var(--k, 0.6)); }
     .gut-cal .gc-day.fut { opacity: 0.35; }
     .gut-cal .gc-day.now { box-shadow: inset 0 0 0 1.5px var(--gold); }
-
-    .gut-today { display: flex; flex-wrap: wrap; gap: 7px; }
-    .gut-chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      border-radius: 999px; padding: 6px 8px 6px 12px;
-      font-size: 0.78rem; font-variant-numeric: tabular-nums;
-    }
-    .gut-chip button { color: var(--dim); font-size: 0.8rem; line-height: 1; padding: 0 2px; }
-
-    /* Спрятанная игра: зажал большую кнопку — полетел. */
-    body.gg-on { overflow: hidden; }
     #gutGame {
       position: fixed; inset: 0; z-index: 95;
       background: radial-gradient(120% 80% at 50% 0%, #1b1430, var(--bg));
       touch-action: none; overscroll-behavior: contain;
     }
     #gutGame canvas { display: block; width: 100%; height: 100%; }
-    .gg-close {
-      position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px;
-      width: 38px; height: 38px; border-radius: 50%;
-      background: var(--glass-2); border: 1px solid var(--glass-line);
-      color: var(--ink); font-size: 1rem; line-height: 1;
-    }
 
     /* ══════════ Шторка отметки ══════════ */
     .sheet-bg {
@@ -3383,9 +3273,6 @@
     .fz-note { margin-top: 10px; color: var(--dim); font-size: 0.8rem; line-height: 1.4; }
     .bg-row .pick { flex: 1 1 30%; min-width: 96px; }
     .pk-hint { display: block; font-size: 0.62rem; color: var(--dim); margin-top: 2px; line-height: 1.25; }
-
-    /* ── Наградки раздела ── */
-    .gut-ach { display: grid; gap: 8px; }
     .ga {
       display: grid; grid-template-columns: 34px 1fr; gap: 2px 11px; align-items: center;
       padding: 10px 12px; border-radius: 14px;
@@ -3465,16 +3352,6 @@
       padding: 6px 20px calc(var(--safe-b) + 8px);
       transition: transform 0.15s ease;
     }
-
-    .ga-none { padding: 12px; border-radius: 14px; background: var(--glass);
-      border: 1px solid var(--glass-line); font-size: 0.74rem; color: var(--dim); text-align: center; }
-    .ga-shut {
-      display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
-      padding: 11px 12px; border-radius: 14px;
-      background: var(--glass); border: 1px dashed var(--glass-line);
-    }
-    .ga-shut i { font-style: normal; font-size: 0.95rem; line-height: 1; filter: grayscale(1) opacity(0.35); }
-    .ga-shut span { flex: 1 0 100%; font-size: 0.7rem; line-height: 1.4; color: var(--dim); }
     .ga.on i { filter: none; }
     .ga.on b { color: var(--ink); }
     .ga.on em { color: var(--muted); }

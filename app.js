@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 381";
+const APP_VERSION = "Кэйко 382";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -240,7 +240,6 @@ function migrate(obj) {
   // след недолгой «ровной сетки» видео: идея не прижилась, поле вычищаем
   for (const k of Object.keys(base.practice || {}))
     if (base.practice[k] && base.practice[k].vmap !== undefined) delete base.practice[k].vmap;
-  if (Array.isArray(obj.pills)) base.pills = obj.pills;
   if (obj.hidden && typeof obj.hidden === "object") base.hidden = obj.hidden;
   if (obj.usage && typeof obj.usage === "object") base.usage = obj.usage;
   if (obj.achAt && typeof obj.achAt === "object") base.achAt = obj.achAt;
@@ -290,13 +289,10 @@ function migrate(obj) {
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
   if (typeof obj.takesId === "string") base.takesId = obj.takesId;
-  if (Array.isArray(obj.wall)) base.wall = obj.wall;
   /* Палитру сюда забыли добавить сразу, и она пропадала на ровном месте: при
      загрузке профиля поле отбрасывалось, а первая же отправка затирала его в
      гисте. Любое новое поле обязано появиться и здесь — экспорт без миграции
      означает «уедет и не вернётся». */
-  if (Array.isArray(obj.palette)) base.palette = obj.palette;
-  if (typeof obj.paletteAt === "number") base.paletteAt = obj.paletteAt;
   if (obj.daily && typeof obj.daily === "object") base.daily = obj.daily;
 
   // записи без привязки достаются первому материалу — иначе они потеряются
@@ -2290,7 +2286,6 @@ function renderInner() {
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     else if (tab === "wish") renderWishes();
     // раздел убран, но вкладка могла остаться сохранённой — уводим на главную
-    else if (tab === "pills") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
     // профиль сменили — вкладки уже нет, уводим на главную
     else if (tab === "gut") { if (gutOn()) renderGut(); else { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); } }
     else renderAch();
@@ -6229,250 +6224,6 @@ function gutCheer() {
   requestAnimationFrame(step);
 }
 
-/* ── Спрятанная игра ──
-   Зажал большую кнопку — полетел. Ни на что в приложении не влияет и никуда
-   не записывается, кроме собственного рекорда: это шутка, а не ещё один
-   повод себя мерить. */
-const GUT_BEST = () => "keiko-gut-best" + suffix();
-
-function gutGame() {
-  useMark("спрятанная-игра");
-  if (document.getElementById("gutGame")) return;
-  try { if (navigator.vibrate) navigator.vibrate(12); } catch {}
-
-  const box = document.createElement("div");
-  box.id = "gutGame";
-  box.innerHTML = `
-    <canvas></canvas>
-    <button class="gg-close" type="button" aria-label="Закрыть">✕</button>`;
-  document.body.appendChild(box);
-  document.body.classList.add("gg-on");
-
-  const cv = box.querySelector("canvas");
-  const ctx = cv.getContext("2d");
-  let W = 0, H = 0, dpr = Math.min(2, devicePixelRatio || 1);
-  const size = () => {
-    W = box.clientWidth; H = box.clientHeight;
-    cv.width = W * dpr; cv.height = H * dpr;
-    cv.style.width = W + "px"; cv.style.height = H + "px";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  size();
-  addEventListener("resize", size);
-
-  let best = 0;
-  try { best = Number(localStorage.getItem(GUT_BEST())) || 0; } catch {}
-
-  const GAP = () => Math.max(140, H * 0.26);
-  const PIPE_W = 62, SPEED = 2.4, GRAV = 0.42, FLAP = -7.4;
-  let y, vy, pipes, score, state, tick;
-
-  const reset = () => {
-    y = H * 0.4; vy = 0; pipes = []; score = 0; state = "ready"; tick = 0;
-  };
-  reset();
-
-  const addPipe = () => {
-    const gap = GAP();
-    const top = 60 + Math.random() * Math.max(30, H - gap - 170);
-    pipes.push({ x: W + PIPE_W, top, gap, passed: false });
-  };
-
-  const flap = () => {
-    if (state === "over") { reset(); return; }
-    if (state === "ready") { state = "play"; addPipe(); }
-    vy = FLAP;
-  };
-
-  const die = () => {
-    state = "over";
-    if (score > best) {
-      best = score;
-      try { localStorage.setItem(GUT_BEST(), String(best)); } catch {}
-    }
-    try { if (navigator.vibrate) navigator.vibrate([40, 60, 40]); } catch {}
-  };
-
-  const draw = () => {
-    ctx.clearRect(0, 0, W, H);
-
-    // трубы
-    for (const p of pipes) {
-      ctx.fillStyle = "rgba(139, 124, 246, 0.75)";
-      const r = 10;
-      const bar = (x, yy, w, h) => {
-        ctx.beginPath();
-        ctx.roundRect ? ctx.roundRect(x, yy, w, h, r) : ctx.rect(x, yy, w, h);
-        ctx.fill();
-      };
-      bar(p.x, -r, PIPE_W, p.top + r);
-      bar(p.x, p.top + p.gap, PIPE_W, H - p.top - p.gap + r);
-    }
-
-    // герой
-    ctx.save();
-    ctx.translate(W * 0.28, y);
-    ctx.rotate(Math.max(-0.5, Math.min(1.1, vy / 12)));
-    ctx.font = "38px system-ui, apple color emoji, segoe ui emoji";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("💩", 0, 0);
-    ctx.restore();
-
-    // счёт
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
-    ctx.font = "800 44px system-ui, -apple-system, sans-serif";
-    ctx.fillText(String(score), W / 2, 54);
-
-    ctx.font = "600 14px system-ui, -apple-system, sans-serif";
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
-    if (state === "ready") ctx.fillText("Жми, чтобы лететь", W / 2, H * 0.62);
-    if (state === "over") {
-      ctx.fillText("Рекорд: " + best, W / 2, H * 0.58);
-      ctx.fillText("Жми, чтобы начать заново", W / 2, H * 0.62);
-    }
-  };
-
-  const step = () => {
-    if (!box.isConnected) return;
-    if (state === "play") {
-      tick++;
-      vy += GRAV; y += vy;
-      if (tick % 96 === 0) addPipe();
-      for (const p of pipes) p.x -= SPEED;
-      pipes = pipes.filter((p) => p.x + PIPE_W > -10);
-
-      const hx = W * 0.28, rad = 17;
-      for (const p of pipes) {
-        if (!p.passed && p.x + PIPE_W < hx - rad) { p.passed = true; score++; }
-        const overX = hx + rad > p.x && hx - rad < p.x + PIPE_W;
-        if (overX && (y - rad < p.top || y + rad > p.top + p.gap)) die();
-      }
-      if (y > H - rad || y < rad) die();
-    }
-    draw();
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-
-  const tap = (e) => { e.preventDefault(); flap(); };
-  cv.addEventListener("pointerdown", tap);
-  const close = () => {
-    removeEventListener("resize", size);
-    box.remove();
-    document.body.classList.remove("gg-on");
-  };
-  box.querySelector(".gg-close").addEventListener("click", close);
-}
-
-function renderGut() {
-  const list = gutList();
-  const t = new Date();
-  const monFirst = (d) => (d.getDay() + 6) % 7;          // неделя с понедельника
-  const weekFrom = new Date(t); weekFrom.setDate(t.getDate() - monFirst(t)); weekFrom.setHours(0, 0, 0, 0);
-  const monthFrom = new Date(t.getFullYear(), t.getMonth(), 1);
-
-  const week = list.filter((g) => g.at >= weekFrom.getTime()).length;
-  const month = list.filter((g) => g.at >= monthFrom.getTime()).length;
-  const last = list[0];
-
-  const ago = (ms) => {
-    const h = Math.floor((now() - ms) / 3600e3);
-    if (h < 1) return "только что";
-    if (h < 24) return h + " " + plural(h, "час", "часа", "часов") + " назад";
-    const d = Math.floor(h / 24);
-    return d + " " + plural(d, "день", "дня", "дней") + " назад";
-  };
-  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
-  const dayFmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
-
-  // месяц сеткой: чем чаще в этот день, тем плотнее пятно
-  const days = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
-  const byDay = {};
-  for (const g of list) if (g.date) byDay[g.date] = (byDay[g.date] || 0) + 1;
-  const pad = monFirst(monthFrom);
-  const cells = Array.from({ length: pad }, () => `<i class="gc-pad"></i>`).concat(
-    Array.from({ length: days }, (_, i) => {
-      const ds = dateStr(new Date(t.getFullYear(), t.getMonth(), i + 1));
-      const n = byDay[ds] || 0;
-      const future = ds > todayStr();
-      return `<i class="gc-day${n ? " on" : ""}${future ? " fut" : ""}${ds === todayStr() ? " now" : ""}"
-        style="${n ? `--k:${Math.min(1, 0.35 + n * 0.3)}` : ""}" title="${esc(ds)}">${i + 1}</i>`;
-    })).join("");
-
-  const today = list.filter((g) => g.date === todayStr());
-
-  $("#view").innerHTML = `
-    <div class="gut-hero">
-      <button class="gut-btn" id="gutGo" type="button" aria-label="Отметить">💩</button>
-      <p class="gut-hint">Получилось — жми. Больше ничего заполнять не надо.</p>
-    </div>
-
-    <div class="gut-sum">
-      <div class="gut-card">
-        <b>${last ? ago(last.at) : "—"}</b>
-        <em>${last ? dayFmt.format(new Date(last.at)) + ", " + clock.format(new Date(last.at)) : "пока пусто"}</em>
-      </div>
-      <div class="gut-card"><b>${week}</b><em>на этой неделе</em></div>
-      <div class="gut-card"><b>${month}</b><em>в этом месяце</em></div>
-    </div>
-
-    <div class="lib-group">${esc(new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" }).format(t).replace(" г.", ""))}</div>
-    <div class="gut-cal">
-      ${["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((d) => `<i class="gc-h">${d}</i>`).join("")}
-      ${cells}
-    </div>
-
-    ${(() => {
-      const ach = gutAchState();
-      const open = ach.filter((a) => a.done);
-      const shut = ach.length - open.length;
-      /* Закрытые не показываем вовсе: ни названия, ни условия. Список условий
-         превращает раздел в задание, которое надо выполнить, а тут не то место.
-         Пусть будет просто известно, что впереди ещё что-то есть. */
-      return `
-        <div class="lib-group">Наградки · ${open.length} из ${ach.length}</div>
-        <div class="gut-ach">
-          ${open.map((a) => `
-            <span class="ga on">
-              <i>${a.icon}</i>
-              <b>${esc(a.name)}</b>
-              <em>${esc(wordOf(a))}</em>
-            </span>`).join("")}
-          ${open.length ? "" : `<div class="ga-none">Первая появится с первой отметкой.</div>`}
-          ${shut ? `
-            <div class="ga-shut">
-              ${Array.from({ length: Math.min(shut, 12) }, () => `<i>🔒</i>`).join("")}
-              <span>Ещё ${shut} ${plural(shut, "наградка", "наградки", "наградок")} —
-                что за ними, узнаешь, когда откроются</span>
-            </div>` : ""}
-        </div>`;
-    })()}
-
-    ${today.length ? `
-      <div class="lib-group">Сегодня · ${today.length}</div>
-      <div class="gut-today">
-        ${today.map((g) => `
-          <span class="gut-chip">${clock.format(new Date(g.at))}
-            <button data-gutdrop="${g.id}" type="button" aria-label="Убрать">✕</button>
-          </span>`).join("")}
-      </div>` : ""}`;
-
-  /* Обычное касание — отметка, долгое — игра. Спрятанное развлечение:
-     кнопке от этого ничего не делается, а находка приятная. */
-  const go = $("#gutGo");
-  let holdT = 0, held = false;
-  const hold = () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { held = true; gutGame(); }, 620); };
-  const drop = () => clearTimeout(holdT);
-  go.addEventListener("pointerdown", hold);
-  go.addEventListener("pointerup", drop);
-  go.addEventListener("pointercancel", drop);
-  go.addEventListener("pointerleave", drop);
-  go.addEventListener("click", () => { if (held) { held = false; return; } gutAdd(); });
-  document.querySelectorAll("[data-gutdrop]").forEach((b) =>
-    b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
-}
-
 /* ── Раскидать ──
    Отдельный проход по всем открытым желаниям, по одному: сегодня, завтра,
    дата, когда-нибудь или оставить как есть. Запускается сколько угодно раз —
@@ -9540,7 +9291,7 @@ function lessonPrep(i, bl) {
   const steps = lessonSteps(i) || [];
   const надо = !plainCourse() && (bl && bl.doing) > 0;
   const свои = steps.filter((st) => st.k === "read")
-    .map((st) => сНомерами(String(st.t || "").replace(/^Приготовь:\s*/i, "").trim()))
+    .map((st) => String(st.t || "").replace(/^Приготовь:\s*/i, "").trim())
     .filter(Boolean);
   return { надо, список: надо ? BASE_KIT.concat(свои) : [] };
 }
@@ -11058,71 +10809,16 @@ function предметHTML(x, список) {
     </div>`;
 }
 
-/* ══════════ Моя галерея ══════════
-   Картины, которые понравились. Отличие от «Артефактов» простое: артефакт даёт
-   книга, а сюда вешаешь сам. И отличие от пинтереста — тоже: коллекция не
-   начинается с пустого экрана (в неё переезжает то, что уже открылось при
-   чтении) и не ждёт, пока про неё вспомнят, — картина сама приходит на глаза.
 
-   Порядок обратный: последняя повешенная сверху, как и в артефактах. */
-const wallItems = () => (data.wall || []).filter((x) => !x.deleted);
-
-/* Пропорция картины. Держим её в данных, а не ждём загрузки картинки: иначе
-   стена собирается заново, когда изображения доезжают, и всё прыгает. Если
-   пропорции нет — считаем близкой к квадрату, потом уточним по картинке. */
-const wallRatio = (x) => {
-  const r = Number(x && x.ratio);
-  return r > 0.15 && r < 8 ? r : 1.2;
-};
 
 /* Музейные картинки без параметров отдают миниатюру: Эрмитаж на голый адрес
    присылает 2,9 КБ вместо 170 КБ, и в раме оказывается марка вместо картины.
    Размер надо спрашивать явно, причём обе стороны сразу — по одной ширине
    сервер отвечает той же миниатюрой. */
 const МУЗЕЙНЫЕ = /collections\.hermitage\.ru|collection\.pushkinmuseum\.art/;
-function wallImg(x) {
-  const u = String((x && x.img) || "");
-  if (!u || u.includes("?") || !МУЗЕЙНЫЕ.test(u)) return u;
-  return u + "?w=1400&h=1400";
-}
 
-/* ══════════ Моя галерея ══════════
-   Картины, которые понравились. Живёт внутри «Артефактов» отдельным фильтром,
-   рядом с книгами: своей вкладки не заслуживает, а рядом с музейными вещами
-   стоит на своём месте — только эти вешаешь сам.
 
-   Одна работа в ряд, во всю ширину: две колонки читались мелко, а картина
-   должна занимать столько места, сколько занимает картина на стене. Пропорция
-   родная — та, что у самого холста. Под каждой подпись, как в зале. */
-function стенаHTML(список) {
-  if (!список.length) return `<div class="empty-note">В галерее пока пусто.</div>`;
-  return `<div class="wl-wall">${список.map(картинаHTML).join("")}</div>`;
-}
 
-/* Вид рамы: широкая золочёная, узкая рейка, светлая с паспарту или тёмное
-   дерево. Хранится у работы: рама — часть картины, а не оформление списка. */
-const РАМЫ = { gold: "f-gold", thin: "f-thin", plain: "f-plain", paper: "f-paper", wood: "f-wood" };
-const wallFrame = (x) => РАМЫ[(x && x.frame) || ""] || "f-wood";
-
-function картинаHTML(x) {
-  const r = wallRatio(x);
-  const подпись = [x.year, x.museum].filter(Boolean).join(" · ");
-  const холст = `<img src="${esc(wallImg(x))}" alt="${esc(x.title || "")}" loading="lazy"
-          style="aspect-ratio: ${r.toFixed(3)}">`;
-  const рама = wallFrame(x);
-  return `
-    <div class="wl-art">
-      <div class="wl-frame ${рама}">
-        ${рама === "f-paper" ? `<span class="wl-mat">${холст}</span>` : холст}
-      </div>
-      <div class="wl-plate">
-        <b>${esc(x.artist || "Неизвестный художник")}</b>
-        <i>${esc(x.title || "")}</i>
-        ${подпись ? `<em>${esc(подпись)}</em>` : ""}
-        ${x.note ? `<span class="wl-note">${esc(x.note)}</span>` : ""}
-      </div>
-    </div>`;
-}
 
 function renderMuseum() {
   musStamp();                     // могло открыться без отметки — например, после синхронизации
@@ -11131,7 +10827,7 @@ function renderMuseum() {
   const все = musItems().filter(musOpen);
   const книги = [...new Set(все.map((x) => x.book))]
     .map((id) => ({ id, n: все.filter((x) => x.book === id).length }));
-  if (mus.book && mus.book !== "wall" && !книги.some((k) => k.id === mus.book)) mus.book = "";
+  if (mus.book && !книги.some((k) => k.id === mus.book)) mus.book = "";
   const любимых = все.filter(musLiked).length;
   if (mus.liked && !любимых) mus.liked = false;      // сняли последнее сердце — фильтр не залипает
   const список = (все
@@ -11145,30 +10841,12 @@ function renderMuseum() {
   const открытый = mus.at ? список.find((x) => x.id === mus.at) : null;
   if (mus.at && !открытый) mus.at = null;
 
-  /* Галерея — такой же фильтр, как книга: своя вкладка в том же ряду. Внутри
-     не плитки, а сами работы во всю ширину: артефакт открывают, чтобы
-     прочитать, а картину — чтобы смотреть. */
-  const картины = wallItems().slice().sort((a, b) => (b.at || 0) - (a.at || 0));
-  const вГалерее = mus.book === "wall";
-  const вкладки = (книги.length > 1 || любимых || картины.length) ? `<div class="ms-tabs">
+  const вкладки = (книги.length > 1 || любимых) ? `<div class="ms-tabs">
       ${книги.length > 1 ? `<button class="${mus.book ? "" : "on"}" data-msb="" type="button">Все · ${все.length}</button>
       ${книги.map((k) => `<button class="${mus.book === k.id ? "on" : ""}" data-msb="${esc(k.id)}"
         type="button">${esc(musBookName(k.id))} · ${k.n}</button>`).join("")}` : ""}
-      ${картины.length ? `<button class="${вГалерее ? "on" : ""}" data-msb="wall" type="button">Галерея · ${картины.length}</button>` : ""}
       ${любимых ? `<button class="${mus.liked ? "on" : ""}" data-msl="1" type="button">♥ ${любимых}</button>` : ""}
     </div>` : "";
-
-  if (вГалерее) {
-    $("#view").innerHTML = `
-      <div class="ms-head">В галерее ${картины.length} ${plural(картины.length, "работа", "работы", "работ")}</div>
-      ${вкладки}
-      ${стенаHTML(картины)}`;
-    document.querySelectorAll("[data-msb]").forEach((b) =>
-      b.addEventListener("click", () => { mus.book = b.dataset.msb; mus.at = null; renderMuseum(); }));
-    document.querySelectorAll("[data-msl]").forEach((b) =>
-      b.addEventListener("click", () => { mus.book = ""; mus.liked = true; mus.at = null; renderMuseum(); }));
-    return;
-  }
 
   $("#view").innerHTML = открытый ? предметHTML(открытый, список) : `
     <div class="ms-head">Открыто ${список.length} из ${всего}</div>
@@ -13378,7 +13056,6 @@ function restoreBackup(file) {
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
     data.wishes = mergeLists(data.wishes || [], d.wishes || []);
     data.gut = mergeLists(data.gut || [], d.gut || []);
-    data.pills = mergeLists(data.pills || [], d.pills || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
       data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
 
@@ -13837,8 +13514,10 @@ function resetMaterial(kind, id) {
   } else if (kind === "ps") {
     const первый = firstCourseId();
     const c = courses().find((x) => x.id === id) || courses()[0] || {};
-    const ключ = !c.id || c.id === первый ? "pastel" : c.id;
-    delete (data.practice || {})[ключ === "pastel" ? "pastel" : "pastel:" + ключ];
+    /* Ключ и имя хранилища берём общими правилами, а не считаем здесь заново:
+       разойдутся — «Начать заново» сотрёт не тот курс. */
+    const ключ = keyOfCourse(c);
+    delete (data.practice || {})[withMaterial({ track: "pastel", courseId: c.id }, pracCourseKey)];
     убрано = похоронить(data.pastel.entries, (e) => (e.courseId || первый) === c.id);
     снятьНаграды(ключ);
   }
@@ -13922,7 +13601,7 @@ function libraryUI() {
     const st = withMaterial({ track: "pastel", courseId: c.id }, pastelStats);
     const pct = Math.round(st.pct);
     const key = libKey({ track: "pastel", courseId: c.id });
-    const ck = key === "ps" ? "pastel" : c.id;
+    const ck = keyOfCourse(c);
     /* Уроками больше не меряем: у рисунка мера — ходы, у лекции — минуты. */
     const дней = new Set(withMaterial({ track: "pastel", courseId: c.id },
       () => courseEntries().map((e) => e.date))).size;
@@ -14469,56 +14148,8 @@ function bindLibraryUI() {
     }));
 }
 
-/* ══════════ Палитра набора ══════════
-   Курс говорит словами — «приглушённый жёлтый», «серо-голубой», — а на коробке
-   номера. Перевод каждый раз делается глазами по шести десяткам мелков, и
-   делается он ровно в ту минуту, когда сесть и так было трудно. Держим слепок
-   набора у себя и подписываем номера прямо в подготовке.
 
-   Слепок приблизительный: hex — это чей-то глаз, а живой мелок на крафте под
-   нажимом выглядит иначе. Поэтому предлагаем варианты, а не назначаем один. */
-const пал = () => (data.palette || []);
 
-/* Цвет в пространство, где расстояние примерно соответствует тому, насколько
-   цвета различаются на глаз. В rgb этого не выходит: синий и чёрный там
-   «ближе», чем два соседних бежевых. */
-function цветLab(hex) {
-  const h = String(hex || "").replace("#", "");
-  if (h.length !== 6) return null;
-  const к = (i) => parseInt(h.slice(i, i + 2), 16) / 255;
-  const прям = (c) => (c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92);
-  const r = прям(к(0)), g = прям(к(2)), b = прям(к(4));
-  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-  const X = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047);
-  const Y = f(r * 0.2126 + g * 0.7152 + b * 0.0722);
-  const Z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
-  return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
-}
-
-/* Ближайшие мелки набора. Второй берём только если он почти так же близок:
-   когда разница между кандидатами меньше глаза, выбирать должен глаз. */
-function мелкиДля(hex, макс, слово) {
-  const цель = цветLab(hex);
-  if (!цель || !пал().length) return [];
-  const с = [];
-  for (const м of пал()) {
-    const l = цветLab(м.hex);
-    if (!l) continue;
-    с.push({ имя: String(м.name || ""), d: Math.hypot(l[0] - цель[0], l[1] - цель[1], l[2] - цель[2]) });
-  }
-  с.sort((a, b) => a.d - b.d);
-  /* Порог подобран по делу: худшее из настоящих совпадений курса — 18,
-     а розовый до бежевого — 26. Между ними и проходит граница. */
-  if (!с.length || с[0].d > 22) return [];        // ничего похожего — молчим, а не врём
-  const из = [с[0]];
-  for (let i = 1; i < с.length && из.length < (макс || 2); i++)
-    if (с[i].d - с[0].d <= 6) из.push(с[i]);
-  /* Мелок, названный тем же словом, что и цвет в тексте, ничего не добавляет:
-     «чёрный (229, черный)» — это «чёрный (229)» и лишний шум. */
-  const основа = (w) => String(w).toLowerCase().replace(/ё/g, "е").slice(0, 4);
-  const чист = слово ? из.filter((x) => основа(x.имя) !== основа(слово)) : из;
-  return (чист.length ? чист : из).map((x) => x.имя);
-}
 
 /* Словарь курса: как автор называет цвет и какой это примерно оттенок.
    Ищем по основе слова, потому что в тексте оно склоняется: «красным»,
@@ -14556,56 +14187,6 @@ const ЦВЕТА_КУРСА = [
   ["индиго", "2B3A67"],
 ];
 
-/* Дописываем номера прямо в текст курса. Слово остаётся главным — номер идёт
-   в скобках следом: читается «бежевый», а не «246». Если скобка уже есть,
-   номер кладём внутрь неё, чтобы не громоздить две подряд.
-
-   Сначала находим все места на ИСХОДНОМ тексте и только потом вставляем, с
-   конца к началу: если вставлять по ходу, следующие найденные позиции уже
-   сдвинуты и номер садится посреди слова. */
-function сНомерами(текст) {
-  const из = String(текст || "");
-  if (!пал().length || !из) return из;
-  /* Строка, которая начинается с бумаги, — про бумагу: «Возьми бумагу: крафт
-     подходит, можно любую, хоть синюю». Номер пастели там сбивает с толку.
-     Смотрим только начало строки: «Фон голубым, близким к тону бумаги» — про
-     мелок, хотя слово «бумага» в ней тоже есть. */
-  if (/бумаг|лист|крафт|картон/i.test(из.slice(0, 16)) && !/цвет|мелк|пастел|карандаш/i.test(из)) return из;
-  /* Что уже стоит в скобках — пояснение к слову перед ними. Подписывать и
-     слово, и пояснение значит городить скобку в скобке и повторять номер. */
-  const вСкобках = [];
-  const скр = /\([^)]*\)/g;
-  let ск;
-  while ((ск = скр.exec(из))) вСкобках.push([ск.index, ск.index + ск[0].length]);
-  const найдено = [];
-  for (const [шаблон, hex] of ЦВЕТА_КУРСА) {
-    const re = new RegExp(шаблон, "gi");
-    let m;
-    while ((m = re.exec(из))) {
-      const нач = m.index, кон = нач + m[0].length;
-      if (найдено.some((x) => нач < x.кон && кон > x.нач)) continue;
-      if (вСкобках.some(([a, b]) => нач >= a && кон <= b)) continue;
-      const мелки = мелкиДля(hex, 2, m[0]);
-      if (!мелки.length) break;                  // такого цвета в наборе нет
-      найдено.push({ нач, кон, мелки });
-      break;                                     // одно слово подписываем один раз
-    }
-  }
-  найдено.sort((a, b) => b.нач - a.нач);
-  let вых = из;
-  for (const { кон, мелки } of найдено) {
-    const хвост = вых.slice(кон);
-    const скобка = /^\s*\(([^)]*)\)/.exec(хвост);
-    const вставка = мелки.join(", ");
-    if (скобка) {
-      const конецСкобки = кон + скобка[0].length;
-      вых = вых.slice(0, конецСкобки - 1) + ", " + вставка + вых.slice(конецСкобки - 1);
-    } else {
-      вых = вых.slice(0, кон) + " (" + вставка + ")" + вых.slice(кон);
-    }
-  }
-  return вых;
-}
 
 
 
@@ -14702,7 +14283,6 @@ async function restoreArchive(file) {
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
   data.wishes = mergeLists(data.wishes || [], d.wishes || []);
   data.gut = mergeLists(data.gut || [], d.gut || []);
-  data.pills = mergeLists(data.pills || [], d.pills || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -14920,10 +14500,10 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, palette: data.palette, paletteAt: data.paletteAt, wall: data.wall, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  pills: data.pills, talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -15090,18 +14670,13 @@ async function syncNow(manual) {
       data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
-      data.pills = mergeLists(data.pills || [], remote.pills || []);
       // выбранные версии — свод, а не список: берём свежий целиком
       if (remote.talks && (remote.talksAt || 0) > (data.talksAt || 0)) {
         data.talks = remote.talks; data.talksAt = remote.talksAt;
       }
       /* Палитра — слепок целиком, а не список записей: докупил мелков и залил
          заново. Побеждает свежий слепок, сливать половинки бессмысленно. */
-      if (remote.palette && (remote.paletteAt || 0) > (data.paletteAt || 0)) {
-        data.palette = remote.palette; data.paletteAt = remote.paletteAt;
-      }
       data.archive = mergeLists(data.archive, remote.archive);
-      data.wall = mergeLists(data.wall || [], remote.wall || []);
       data.takes = mergeLists(data.takes || [], remote.takes || []);
       /* Разбор уезжал в гист, но обратно не возвращался никогда. На чистом
          устройстве он оставался пустым — и первой же записью затирал в гисте
