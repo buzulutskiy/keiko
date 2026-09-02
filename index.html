@@ -1895,11 +1895,35 @@
     }
     /* Две кнопки для нейросети под строкой главы: копия запроса и файл книги.
        Живут в шторке отметки — там же, где человек закрывает главу. */
-    .ai-row { display: flex; gap: 8px; margin-top: 10px; }
-    .ai-row .qbtn { flex: 1 1 0; min-width: 0; transition: background .16s, color .16s; }
-    /* Подтверждение — сменой цвета, а не миганием: движение в шторке отвлекает. */
-    /* Тёмная надпись на светло-зелёном: белая на #4ade80 почти не читается. */
-    .qbtn.said { background: var(--green); border-color: var(--green); color: #08240f; font-weight: 600; }
+    /* ── Точки в углу шторки: всё для нейросети под ними ── */
+    .sh-top { display: flex; align-items: flex-start; gap: 10px; }
+    .sh-top-txt { flex: 1 1 auto; min-width: 0; }
+    .mini-menu { position: relative; flex: 0 0 auto; }
+    .mm-btn {
+      width: 34px; height: 34px; border-radius: 11px; line-height: 1;
+      font-size: 1.1rem; letter-spacing: 1px; color: var(--dim);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .mm-pop[hidden] { display: none; }      /* display ниже перебивает встроенный [hidden] */
+    .mm-pop {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
+      display: grid; gap: 4px; padding: 5px; min-width: 168px;
+      border-radius: 13px; border: 1px solid var(--glass-line);
+      /* Поверхность непрозрачная: --sheet и --card полупрозрачны, и сквозь
+         всплывашку просвечивал бы текст шторки под ней. */
+      background: var(--bg); box-shadow: 0 12px 30px rgba(0, 0, 0, .38);
+    }
+    .mm-item {
+      padding: 10px 12px; border-radius: 9px; text-align: left; white-space: nowrap;
+      font-size: 0.87rem; color: var(--ink); background: transparent; border: 0;
+      transition: background .16s, color .16s;
+    }
+    .mm-item:active { background: var(--glass); }
+    /* Подтверждение — сменой цвета, а не миганием: движение в шторке отвлекает.
+       Надпись тёмная: белая на светло-зелёном #4ade80 почти не читается. */
+    .mm-item.said, .qbtn.said {
+      background: var(--green); border-color: var(--green); color: #08240f; font-weight: 600;
+    }
 
     /* Промт показываем как есть: переносы автора важны, но длинная строка
        должна заворачиваться, а не уезжать вбок. */

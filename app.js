@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 360";
+const APP_VERSION = "Кэйко 361";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13290,9 +13290,24 @@ function openLogSheet() {
   const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? "Какие уроки прошёл?" : "Что разбирал?");
   const sub = fmtDay(selectedDate) + (existing ? " · запись уже есть" : "");
 
+  /* Две кнопки для нейросети живут не в теле шторки, а под точками в углу:
+     в теле они спорили с главным делом — отметить страницу. */
+  const меню = isBook() && (book().chapters || []).length > 0;
   openSheet(`
-    <h3>${title}</h3>
-    <p class="sub">${sub}</p>
+    <div class="sh-top">
+      <div class="sh-top-txt">
+        <h3>${title}</h3>
+        <p class="sub">${sub}</p>
+      </div>
+      ${меню ? `
+      <div class="mini-menu">
+        <button class="mm-btn" id="aiMenu" type="button" aria-label="Ещё" aria-expanded="false">⋯</button>
+        <div class="mm-pop" id="aiPop" hidden>
+          <button class="mm-item" id="askCopy" type="button">Промт для ИИ</button>
+          ${hasBookFile() ? `<button class="mm-item" id="bookFile" type="button">Книга .md</button>` : ""}
+        </div>
+      </div>` : ""}
+    </div>
     <div id="sheetBody"></div>
     <div class="sheet-actions">
       <button class="btn gold" id="sheetSave" type="button">Подтвердить</button>
@@ -13302,6 +13317,33 @@ function openLogSheet() {
   renderSheetBody();
   $("#sheetSave").addEventListener("click", saveEntry);
   $("#sheetCancel").addEventListener("click", closeSheet);
+  if (меню) bindAiMenu();
+}
+
+/* Меню живёт в шапке, а не в теле: тело перерисовывается на каждое нажатие
+   степпера, и обработчики пришлось бы вешать заново каждый раз. */
+function bindAiMenu() {
+  const кнопка = $("#aiMenu"), поп = $("#aiPop");
+  if (!кнопка || !поп) return;
+  const закрыть = () => { поп.hidden = true; кнопка.setAttribute("aria-expanded", "false"); };
+  кнопка.addEventListener("click", (e) => {
+    e.stopPropagation();
+    поп.hidden = !поп.hidden;
+    кнопка.setAttribute("aria-expanded", поп.hidden ? "false" : "true");
+  });
+  /* Мимо меню — закрыть. Слушаем на самой шторке, а не на документе: иначе
+     обработчик пережил бы её и остался висеть до конца сессии. */
+  $("#sheet").addEventListener("click", (e) => {
+    if (!поп.hidden && !поп.contains(e.target) && e.target !== кнопка) закрыть();
+  });
+  const ac = $("#askCopy");
+  if (ac) ac.addEventListener("click", () => {
+    const главы = book().chapters || [];
+    const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
+    copyRaw(askText(book(), i)).then((ok) => btnSay(ac, ok ? "✓ Скопировано" : "Не вышло"));
+  });
+  const bf = $("#bookFile");
+  if (bf) bf.addEventListener("click", () => giveBookFile(book(), bf));
 }
 
 function renderSheetBody() {
@@ -13513,11 +13555,7 @@ function bookSheetUI() {
         ? `<button class="qbtn fin on" data-fin="0" type="button">✓ Завершена — уйдёт в библиотеку</button>`
         : `<button class="qbtn fin" data-fin="1" type="button">Завершить книгу</button>`}</div>
     <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>
-    ${(book().chapters || []).length ? `
-    <div class="ai-row">
-      <button class="qbtn" id="askCopy" type="button">Промт для ИИ</button>
-      ${hasBookFile() ? `<button class="qbtn" id="bookFile" type="button">Книга .md</button>` : ""}
-    </div>` : ""}`;
+`;
 }
 
 function bindBookSheet() {
@@ -13533,18 +13571,6 @@ function bindBookSheet() {
      тем, какой есть — врать про «100%» из-за закрытия книги незачем. */
   document.querySelectorAll(".qbtn[data-fin]").forEach(b =>
     b.addEventListener("click", () => { pickDone = b.dataset.fin === "1"; renderSheetBody(); }));
-  /* Промт по той же главе, что показана строкой выше: никаких «а какую он
-     взял» — что видно, то и копируется. Деталей не показываем, ответ один —
-     тост: разглядывать запрос человеку незачем, он уходит в чужое окно. */
-  const ac = $("#askCopy");
-  if (ac) ac.addEventListener("click", () => {
-    const главы = book().chapters || [];
-    const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
-    copyRaw(askText(book(), i)).then((ok) =>
-      btnSay(ac, ok ? "✓ Скопировано" : "Не вышло"));
-  });
-  const bf = $("#bookFile");
-  if (bf) bf.addEventListener("click", () => giveBookFile(book(), bf));
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;
