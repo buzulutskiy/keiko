@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 383";
+const APP_VERSION = "Кэйко 384";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -166,6 +166,7 @@ const rnd = l => l[Math.floor(Math.random() * l.length)];
 
 function toast(text) {
   const el = $("#toast");
+  if (!el) return;      // без экрана (тесты) сообщать некуда
   el.textContent = text;
   el.classList.add("show");
   clearTimeout(toast.t);
@@ -8149,6 +8150,34 @@ function plPaint() {
   const va = box.querySelector('[data-set="a"]'), vb = box.querySelector('[data-set="b"]');
   if (va) va.textContent = plClock(sel.a);
   if (vb) vb.textContent = plClock(sel.b);
+  const rs = box.querySelector('[data-pl="reset"]');
+  if (rs) rs.hidden = !plMoved();
+}
+
+/* Случайно сдвинутый край иначе оставался навсегда: «Слушать» играло не тот
+   такт, а вернуть отрезок было нечем — новая разметка ставится только при
+   переходе на другой такт. Кнопка появляется, лишь когда отрезок и правда
+   разъехался с размеченным. */
+function plMarked() {
+  const u = prac && prac.cur;
+  return u ? markSpan(u) : null;
+}
+function plMoved() {
+  const m = plMarked();
+  if (!m || !pracAudioEl) return false;
+  const o = plOpt(pracAudioEl.dataset.for);
+  if (!isFinite(o.a) || !isFinite(o.b)) return false;
+  return Math.abs(o.a - m.a) > 0.05 || Math.abs(o.b - m.b) > 0.05;
+}
+function plResetSpan() {
+  const u = prac && prac.cur;
+  if (!pracAudioEl || !u) return;
+  const o = plOpt(pracAudioEl.dataset.for);
+  delete o.a; delete o.b; o.followed = "";
+  pracSaveLoops();
+  plFollow(u);            // поставит отрезок заново по разметке такта
+  plPaint();
+  toast("Отрезок вернулся к такту");
 }
 
 /* Края двигаются не только пальцем. Тянуть по тридцатипиксельной полоске
@@ -8260,6 +8289,7 @@ function pracPlayer() {
       <button data-pl="play">▶︎ Слушать</button>
       <button data-pl="replay">↺ Сначала</button>
       <button data-pl="all">Весь трек</button>
+      <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
     <div class="pl-tools">
       <span class="pl-set">
@@ -11806,6 +11836,7 @@ function bindPractice() {
       return;
     }
     if (b) {
+      if (b.dataset.pl === "reset") { plResetSpan(); return; }
       if (b.dataset.pl === "replay") {
         /* Переслушать место заново — одно нажатие. Раньше приходилось попадать
            пальцем в начало дорожки: на телефоне это лотерея. */

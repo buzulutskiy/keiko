@@ -2118,7 +2118,10 @@
       content: ""; width: 6px; height: 100%; border-radius: 3px;
       background: var(--violet); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
     }
-    .pl-jump { display: flex; gap: 7px; }
+    .pl-jump { display: flex; flex-wrap: wrap; gap: 7px; }
+    /* Кнопка появляется только когда отрезок сдвинут — display у соседей
+       перебивает встроенный [hidden], поэтому возвращаем его руками. */
+    .pl-jump button[hidden] { display: none; }
     .pl-jump button {
       flex: 1; border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--ink); font: inherit; font-size: 0.82rem; border-radius: 10px; padding: 10px;

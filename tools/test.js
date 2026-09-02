@@ -1491,6 +1491,34 @@ function ок(имя, факт, надо) {
   ок("слово: своё задание из словаря сильнее", tp("валик", { gen: "своё" }, "argos-ref"), "своё");
 }
 
+/* ── Отрезок плеера возвращается к такту ── */
+{
+  const пл = t.get("pracLoops");
+  const было = { loops: JSON.parse(JSON.stringify(пл)), prac: t.get("prac"), el: t.get("pracAudioEl") };
+  for (const k of Object.keys(пл)) delete пл[k];
+  t.set("pracAudioEl", { dataset: { for: "p1" }, duration: 300, currentTime: 0 });
+  пл.p1 = {};
+  t.set("prac", { cur: { from: 1, to: 4 } });
+  t.set("data.piano", { pieces: [{ id: "p1", name: "П", bars: 8 }], activePiece: "p1", entries: [], practice: {} });
+  t.set("data.active", "piano");
+  const пд = t.get("PRACTICE_DATA");
+  const былоPd = пд.p1;
+  пд.p1 = { marks: { 1: 10, 5: 30 } };
+
+  ок("плеер: разметка такта найдена", t.get("markSpan")({ from: 1, to: 4 }), { a: 10, b: 30 });
+  ок("плеер: пока не трогали — возвращать нечего", t.get("plMoved")(), false);
+  пл.p1.a = 12; пл.p1.b = 30;
+  ок("плеер: сдвинутый край виден", t.get("plMoved")(), true);
+  t.get("plResetSpan")();
+  ок("плеер: отрезок вернулся к разметке", [пл.p1.a, пл.p1.b], [10, 30]);
+  ок("плеер: и снова возвращать нечего", t.get("plMoved")(), false);
+
+  for (const k of Object.keys(пл)) delete пл[k];
+  Object.assign(пл, было.loops);
+  t.set("prac", было.prac); t.set("pracAudioEl", было.el);
+  if (былоPd === undefined) delete пд.p1; else пд.p1 = былоPd;
+}
+
 /* ── Год и показатели графика ── */
 {
   const было = { period: t.get("period"), shift: t.get("shift"), metric: t.get("cfg").metric,
