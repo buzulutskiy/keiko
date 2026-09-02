@@ -1770,8 +1770,10 @@
       color: var(--violet); font-size: 0.82rem; font-weight: 650;
     }
     /* Квадратная кнопка рядом с «Отметить чтение» */
+    /* Кнопок сбоку бывает три — карта, разбор, промт. Даём им ужиматься,
+       иначе на узком экране они выдавливают надпись главной кнопки. */
     .cta-side {
-      flex: 0 0 auto; width: 58px; align-self: stretch; border-radius: 16px;
+      flex: 0 1 58px; width: 58px; min-width: 46px; align-self: stretch; border-radius: 16px;
       background: var(--glass); border: 1px solid var(--glass-line);
       display: grid; place-items: center; line-height: 1; color: var(--ink);
     }
