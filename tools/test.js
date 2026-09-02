@@ -1396,7 +1396,11 @@ function ок(имя, факт, надо) {
   ок("разбор: выключенная часть не показывается", t.get("bookArticle")(кн).length, 0);
   ок("разбор: соседняя часть не задета", t.get("bookFaq")(кн).length, 1);
   ок("разбор: песнь остаётся в списке ради вопросов", t.get("articleChapters")(кн).length, 1);
+  cat.__t.off = ["article", "faq"];
+  cat.__t.map = [{ name: "м", lat: 1, lon: 1 }];
+  ок("разбор: остались одни места — кнопка ведёт в карту", t.get("onlyMap")(кн), true);
   cat.__t.faq = [];
+  cat.__t.off = ["article"];
   ок("разбор: без обоих песнь уходит", t.get("articleChapters")(кн).length, 0);
   delete cat.__t;
 }
