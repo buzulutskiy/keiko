@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 367";
+const APP_VERSION = "Кэйко 368";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2577,7 +2577,12 @@ function railItems() {
   const out = data.piano.pieces.filter(p => !p.archived)
     .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
-  for (const c of courses()) if ((c.lessons || []).length) out.push({ track: "pastel", courseId: c.id, course: c });
+  /* Курс попадает на ленту, если в нём есть чем заняться: уроки, этапы или
+     просто лист, который рисуешь. Раньше условие было только про уроки, и
+     курс без них — а такой теперь «Аргус» — пропадал с главной совсем. */
+  for (const c of courses())
+    if ((c.lessons || []).length || (c.stages || []).length || c.name)
+      out.push({ track: "pastel", courseId: c.id, course: c });
   for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
   /* Завершённая книга уходит с ленты: место тем, что читаешь сейчас. Но если
      завершено вообще всё, показывать пустоту хуже, чем показать закрытое. */
@@ -4057,7 +4062,7 @@ $("#view").innerHTML = `
           ? "🔒 Подключить синхронизацию"
           : doneToday
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
+            : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
         <button class="cta-side" id="bookTalkBtn" type="button" ${кнопки.talk.on ? "" : "hidden"}
           aria-label="${esc(кнопки.talk.word)}" title="${esc(кнопки.talk.word)}">${кнопки.talk.icon}</button>
@@ -4449,7 +4454,7 @@ function updateHeroInfo() {
       ? "🔒 Подключить синхронизацию"
       : doneToday
         ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
-        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
+        : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"));
   }
 
   /* Обе кнопки разом. Здесь и была та самая нестабильность: лента свайпается
@@ -12938,7 +12943,7 @@ const THEMES = [
             "--sheet": "rgba(8, 12, 19, 0.88)", "--sheet-solid": "rgba(8, 12, 19, 0.96)" },
     icons: { home: "◎", progress: "≣", ach: "◆", wish: "◇", mus: "⌾", },
     words: { tabHome: "Пост", tabProgress: "Телеметрия", tabAch: "Допуски", tabWish: "Заявки",
-             ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок",
+             ctaPiano: "Зафиксировать сеанс", ctaBook: "Зафиксировать чтение", ctaPastel: "Зафиксировать урок", ctaDraw: "Зафиксировать рисование",
              ctaDone: "Сеанс записан", ctaAdd: "дополнить", streak: "цикл",
              segAch: "◆ Допуски", segFacts: "◇ Данные" },
     css: `
@@ -12970,7 +12975,7 @@ const THEMES = [
             "--sheet": "rgba(2, 18, 9, 0.9)", "--sheet-solid": "rgba(2, 18, 9, 0.97)" },
     icons: { home: "▮", progress: "▤", ach: "✚", wish: "◊", mus: "❑", },
     words: { tabHome: "Пульт", tabProgress: "Статус", tabAch: "Метки", tabWish: "Очередь",
-             ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок",
+             ctaPiano: "> записать сеанс", ctaBook: "> записать чтение", ctaPastel: "> записать урок", ctaDraw: "> записать рисование",
              ctaDone: "> запись принята", ctaAdd: "дополнить", streak: "цепочка",
              segAch: "[ метки ]", segFacts: "[ архив ]" },
     css: `
@@ -12994,7 +12999,7 @@ const THEMES = [
 const WORDS_BASE = {
   tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
   tabMus: "Артефакты",
-  ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок",
+  ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок", ctaDraw: "🎨 Отметить рисование",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Посмотреть занятие",
   ctaLessonGo: "🎨 Начать занятие", ctaLessonSeen: "🎬 Отметить просмотр",
   ctaDone: "✅ Сегодня отмечено", ctaAdd: "дополнить", ctaAgain: "ещё занятие",

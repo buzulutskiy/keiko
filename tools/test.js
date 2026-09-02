@@ -1386,12 +1386,17 @@ function ок(имя, факт, надо) {
 
 /* ── Простой рисунок: день плюс снимок ── */
 {
-  const было = JSON.parse(JSON.stringify(t.get("data").pastel));
+  const было = JSON.parse(JSON.stringify(t.get("data")));
+  t.set("data.piano", { pieces: [], entries: [], practice: {} });
+  t.set("data.book", { books: [], activeBook: "", entries: [] });
+  t.set("data.watch", { videos: [], entries: [] });
   t.set("data.pastel.courses", [{ id: "__first", name: "П", lessons: [] },
     { id: "__d", name: "Рисунок", lessons: [] }]);
   t.set("data.pastel.activeCourse", "__d");
   t.set("data.active", "pastel");
   ок("рисунок: простой курс распознан", t.get("plainDraw")(), true);
+  ок("рисунок: курс без уроков остаётся на ленте",
+    t.get("railItems")().some((i) => i.courseId === "__d"), true);
   ок("рисунок: пока не закончен — ноль", Math.round(t.get("pastelStats")().pct), 0);
   t.set("pickDrawDone", true);
   t.get("markDraw")(null);
@@ -1400,7 +1405,7 @@ function ок(имя, факт, надо) {
   t.set("pickDrawDone", false);
   t.get("markDraw")(null);
   ок("рисунок: без галочки завершение не снимается", !!t.get("course")().done, true);
-  t.set("data.pastel", было);
+  t.set("data", было);
 }
 
 /* ── Курс по этапам ── */
