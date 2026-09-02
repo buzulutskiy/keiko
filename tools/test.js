@@ -1384,6 +1384,20 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Живые названия в ленте ── */
+{
+  const t0 = { track: "book", key: "__нет", event: "session" };
+  ок("лента: имя карточки берётся запасное, когда материала нет",
+    t.get("evName")(t0, "__нет:0", "fact", "Старое имя"), "Старое имя");
+  ок("лента: имя награды тоже", t.get("evName")(t0, "d3", "ach", "Старая награда"), "Старая награда");
+  const кн = (t.get("data").book.books || [])[0];
+  if (кн) {
+    const t1 = { track: "book", key: кн.id, event: "session" };
+    ок("лента: несуществующий номер не роняет", t.get("evName")(t1, кн.id + ":999", "fact", "Запас"), "Запас");
+  }
+  t.get("evNameCache").clear();
+}
+
 /* ── Подтверждение на кнопке ── */
 {
   const b = { textContent: "Промт для ИИ", dataset: {}, classList: { add() {}, remove() {} } };

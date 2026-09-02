@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 358";
+const APP_VERSION = "Кэйко 359";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1428,6 +1428,33 @@ function currentSpans() {
    на 1, 3, 6, 10 и 15-й день с этой пьесой, книгой или курсом. */
 
 const FACTS = {};
+
+/* ── Живые названия в ленте ──
+   В событии сохранён заголовок на тот день, когда карточка открылась. Но
+   карточки и награды переписывают, и в ленте оставались имена, которых уже
+   нет. Ищем по тому же id, что и при нажатии, а сохранённое держим запасом —
+   на случай, когда материала больше нет вовсе. */
+const evNameCache = new Map();
+function evList(t, вид) {
+  const ключ = вид + ":" + t.track + ":" + t.key;
+  if (!evNameCache.has(ключ)) {
+    let list = [];
+    try {
+      list = withMaterial({ track: t.track,
+        pieceId: t.track === "piano" ? t.key : null,
+        bookId: t.track === "book" ? t.key : null,
+        videoId: t.track === "watch" ? t.key : null },
+        () => (вид === "fact" ? factsState() : achState())) || [];
+    } catch {}
+    evNameCache.set(ключ, new Map(list.map((x) => [x.id, x])));
+  }
+  return evNameCache.get(ключ);
+}
+function evName(t, id, вид, запас) {
+  const x = evList(t, вид).get(id);
+  return (x && (вид === "fact" ? x.t : x.name)) || запас || "";
+}
+const evIcon = (t, id) => (evList(t, "ach").get(id) || {}).icon || "";
 
 // карточки текущего материала: сколько открыто по числу дней занятий
 /* Карточка открывается за занятие: одно занятие — одна карточка.
@@ -7718,12 +7745,12 @@ function renderNotes() {
               ${p.ach.map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
-                  <i>${esc(a.icon || "✦")}</i><span>${esc(a.name)}</span>
+                  <i>${esc(evIcon(t, a.id) || a.icon || "✦")}</i><span>${esc(evName(t, a.id, "ach", a.name))}</span>
                 </button>`).join("")}
               ${p.facts.map((f) => `
                 <button class="ev-aw fact" type="button" data-ev-fact="${esc(f.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
-                  <i>💡</i><span>${esc(f.t)}</span>
+                  <i>💡</i><span>${esc(evName(t, f.id, "fact", f.t))}</span>
                 </button>`).join("")}
             </div>` : "")(progressOf(t))}
           ${mediaHTML(t)}
@@ -7737,6 +7764,8 @@ function renderNotes() {
 
   /* Награда в ленте — не текст, а ссылка на саму награду: жмёшь и видишь,
      за что она и что там написано. */
+  evNameCache.clear();     // лента перерисована — заголовки считаем заново
+
   document.querySelectorAll("[data-ev-fact]").forEach(el =>
     el.addEventListener("click", () => {
       // у ролика свой ключ — без него карточка ролика не открывалась
