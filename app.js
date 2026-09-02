@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 385";
+const APP_VERSION = "Кэйко 386";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4751,7 +4751,7 @@ function summaryHTML() {
     const цель = (data.weekGoal || 4) * 52;
     ringVal = st.days; ringMax = цель;
     cap = String(a.getFullYear());
-    sub = `из ${цель} ${plural(цель, "дня", "дней", "дней")} цели`;
+    sub = `${plural(ringVal, "день", "дня", "дней")} из ${цель} по цели`;
     hint = `${st.days} ${plural(st.days, "день", "дня", "дней")} за год · `
       + `${st.entries} ${plural(st.entries, "запись", "записи", "записей")}`;
   } else if (period === "month") {
@@ -4762,7 +4762,7 @@ function summaryHTML() {
     ringVal = st.days; ringMax = monthGoal;
     cap = new Intl.DateTimeFormat("ru", { month: "long" }).format(a)
       + (a.getFullYear() !== now.getFullYear() ? " " + a.getFullYear() : "");
-    sub = `из ${monthGoal} ${plural(monthGoal, "дня", "дней", "дней")} цели`;
+    sub = `${plural(ringVal, "день", "дня", "дней")} из ${monthGoal} по цели`;
     hint = ringVal >= monthGoal
       ? `Цель месяца взята: ${data.weekGoal} в неделю × ${weeks} ${plural(weeks, "неделя", "недели", "недель")}`
       : прошлое
@@ -4773,7 +4773,7 @@ function summaryHTML() {
     ringVal = прошлое ? st.days : g.days;
     ringMax = цель;
     cap = shift === 0 ? "Эта неделя" : shift === -1 ? "Прошлая неделя" : weekCap(a);
-    sub = `из ${цель} ${plural(цель, "дня", "дней", "дней")} цели`;
+    sub = `${plural(ringVal, "день", "дня", "дней")} из ${цель} по цели`;
     hint = ringVal >= цель
       ? (прошлое ? "Цель недели была взята" : "Цель недели закрыта — всё сверху в удовольствие")
       : прошлое
@@ -4813,6 +4813,11 @@ function summaryHTML() {
         /* Нулевые плашки не показываются вовсе: у Дианы нет ни тактов, ни
            уроков — ей достаточно страниц, а нули только занимали строку. */
         const chips = [
+          /* Первым — число занятий. В кольце стоят ДНИ (по ним цель), и это
+             сбивало: за сентябрь два дня, а сел за инструмент, за книгу и за
+             лист пять раз. Теперь оба числа на экране и не спорят. */
+          (st.entries || was.entries) ? chipHTML(st.entries, was.entries,
+            plural(st.entries || was.entries, "занятие", "занятия", "занятий")) : "",
           /* Показатель остаётся на месте, если он был в прошлом периоде: иначе
              в понедельник неделя выглядела пустой, будто раздел сломался, —
              а падение до нуля само по себе новость и должно быть видно. */
@@ -4932,7 +4937,9 @@ function allEntriesOn(ds) {
   }
   for (const e of data.pastel.entries.filter(e => !e.deleted && e.date === ds)) {
     out.push({ track: "pastel", icon: "🎨", title: courseById(e.courseId).name || "Курс", entry: e,
-      what: (e.lessons || []).length ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}` : "занимался" });
+      what: (e.lessons || []).length
+        ? `урок${e.lessons.length > 1 ? "и" : ""} ${e.lessons.map(i => i + 1).join(", ")}`
+        : "рисовал" });
   }
   for (const e of watchEntries().filter(e => !e.deleted && e.date === ds)) {
     const v = videos().find(x => x.id === e.videoId);
