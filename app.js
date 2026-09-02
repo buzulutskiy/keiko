@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 373";
+const APP_VERSION = "Кэйко 374";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2430,8 +2430,30 @@ function releaseRail() {
   if (pendingRender) { const q = pendingRender === "quiet"; pendingRender = null; render(q); }
 }
 
+/* Набирают текст — экран не пересобираем. Перерисовка прилетает в любой
+   момент: доехал снимок, ответил гист, подтянулась обложка. Вместе с ней
+   исчезает поле ввода, и клавиатура закрывается прямо под руками. Держим
+   очередь и доигрываем её, когда из поля ушли. */
+function typingInView() {
+  const el = document.activeElement;
+  if (!el || !el.closest) return false;
+  const t = (el.tagName || "").toLowerCase();
+  if (t !== "textarea" && t !== "input" && !el.isContentEditable) return false;
+  return !!el.closest("#view");
+}
+function flushRender() {
+  if (typingInView() || !pendingRender) return;
+  const q = pendingRender === "quiet";
+  pendingRender = null;
+  render(q);
+}
+
 function render(quiet) {
   if (railBusy && tab === "home" && !settingsOpen) {
+    if (pendingRender !== "loud") pendingRender = quiet ? "quiet" : "loud";
+    return;
+  }
+  if (typingInView()) {
     if (pendingRender !== "loud") pendingRender = quiet ? "quiet" : "loud";
     return;
   }
@@ -16391,6 +16413,9 @@ function boot() {
   bindPractice();
   bindPlaceMap();
   $("#sheetBg").addEventListener("click", closeSheet);
+  /* Ушли из поля — доигрываем то, что придержали. Через таймер: фокус часто
+     перепрыгивает в соседнее поле, и между ними экран трогать нельзя. */
+  document.addEventListener("focusout", () => setTimeout(flushRender, 90), true);
   $("#cheerOk").addEventListener("click", () => {
     $("#cheer").classList.remove("show", "daily");
     nextOverlaySoon();

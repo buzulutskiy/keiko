@@ -1384,6 +1384,18 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Перерисовка не рвёт ввод ── */
+{
+  const было = sandbox.document.activeElement;
+  sandbox.document.activeElement = { tagName: "TEXTAREA", closest: (s) => s === "#view" ? {} : null };
+  ок("ввод: поле в ленте считается набором", t.get("typingInView")(), true);
+  sandbox.document.activeElement = { tagName: "TEXTAREA", closest: () => null };
+  ок("ввод: поле вне ленты не мешает", t.get("typingInView")(), false);
+  sandbox.document.activeElement = { tagName: "BUTTON", closest: () => ({}) };
+  ок("ввод: кнопка — не набор", t.get("typingInView")(), false);
+  sandbox.document.activeElement = было;
+}
+
 /* ── Первый курс не меняется от архива ── */
 {
   const было = JSON.parse(JSON.stringify(t.get("data").pastel));
