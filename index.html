@@ -360,8 +360,8 @@
     .sw.today span { color: var(--gold); }
 
     .periods {
-      /* Крайние колонки под стрелки, середина — переключатель недели и месяца. */
-      display: grid; grid-template-columns: 34px 1fr 1fr 34px; align-items: center;
+      /* Крайние колонки под стрелки, середина — неделя, месяц и год. */
+      display: grid; grid-template-columns: 34px 1fr 1fr 1fr 34px; align-items: center;
       gap: 4px; background: var(--card-2);
       border: 1px solid var(--line); border-radius: 13px;
       padding: 4px; margin-bottom: 16px;
@@ -371,6 +371,16 @@
       font-size: 0.85rem; font-weight: 750; color: var(--muted);
     }
     .pbtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); }
+
+    /* Чем меряем график: маленький ряд под ним, а не ещё один крупный
+       переключатель — выбор редкий, а место наверху дороже. */
+    .mtr { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; justify-content: center; }
+    .mtr-b {
+      padding: 6px 11px; border-radius: 9px; font-size: 0.76rem; color: var(--dim);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .mtr-b.on { color: var(--gold); border-color: rgba(255, 201, 77, 0.35);
+      background: rgba(255, 201, 77, 0.12); }
     /* Стрелки по краям переключателя: ими ходят по неделям и месяцам назад.
        Упёрлись в край — кнопка гаснет, а не пропадает: иначе ряд прыгает. */
     .parr {

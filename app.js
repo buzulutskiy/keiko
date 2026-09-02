@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 382";
+const APP_VERSION = "Кэйко 383";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4467,6 +4467,8 @@ const MONTHS_WORD = ["", "один", "два", "три", "четыре", "пят
    лозунг, а ровно то, что случится: темп берётся по последним восьми заходам,
    значит сегодняшний в это окно войдёт и вытеснит самый старый. Перебираем
    посильные цели и берём первую, которая и правда сдвигает срок. */
+const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн",
+                      "июл", "авг", "сен", "окт", "ноя", "дек"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
@@ -4543,6 +4545,7 @@ function paceHTML() {
    считается от неё, а не от «сегодня». */
 function periodAnchor(сдвиг = shift) {
   const d = new Date();
+  if (period === "year") return new Date(d.getFullYear() + сдвиг, 0, 1);
   if (period === "month") return new Date(d.getFullYear(), d.getMonth() + сдвиг, 1);
   const monday = mondayOf(d);
   monday.setDate(monday.getDate() + сдвиг * 7);
@@ -4552,6 +4555,10 @@ function periodAnchor(сдвиг = shift) {
 // границы выбранного периода — вся неделя или весь месяц
 function periodRange() {
   const a = periodAnchor();
+  if (period === "year") {
+    return { from: dateStr(new Date(a.getFullYear(), 0, 1)),
+             to: dateStr(new Date(a.getFullYear(), 11, 31)) };
+  }
   if (period === "month") {
     return {
       from: dateStr(new Date(a.getFullYear(), a.getMonth(), 1)),
@@ -4562,17 +4569,41 @@ function periodRange() {
   return { from: dateStr(a), to: dateStr(sunday) };
 }
 
-// точки графика: вся текущая неделя или весь месяц, включая дни впереди
+/* Чем меряем график. «Занятия» — сколько раз садился, остальное — сколько
+   сделано: страницы, такты, сессии за листом. Показатель хранится в настройках
+   и переживает перезаход. */
+const METRICS = [
+  { id: "entries", name: "Занятия", word: (n) => plural(n, "занятие", "занятия", "занятий") },
+  { id: "pages",   name: "Страницы", word: (n) => plural(n, "страница", "страницы", "страниц") },
+  { id: "bars",    name: "Такты",   word: (n) => plural(n, "такт", "такта", "тактов") },
+  { id: "draws",   name: "Рисунок", word: (n) => plural(n, "сессия", "сессии", "сессий") },
+];
+const metricNow = () => METRICS.find((m) => m.id === cfg.metric) || METRICS[0];
+
+/* Точки графика: дни недели, дни месяца или месяцы года — включая те, что
+   ещё впереди. Значение берём по выбранному показателю. */
 function periodSeries() {
   const out = [];
   const today = todayStr();
+  const поле = metricNow().id;
+  const мера = (a, b) => rangeStats(a, b)[поле] || 0;
+
+  if (period === "year") {
+    const y = periodAnchor().getFullYear();
+    for (let m = 0; m < 12; m++) {
+      const от = dateStr(new Date(y, m, 1)), до = dateStr(new Date(y, m + 1, 0));
+      out.push({ ds: от, label: m % 2 === 0 ? MONTHS_SHORT[m] : "", value: мера(от, до),
+        today: до >= today && от <= today, future: от > today });
+    }
+    return out;
+  }
 
   if (period === "month") {
     const d = periodAnchor();
     const total = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     for (let i = 1; i <= total; i++) {
       const ds = dateStr(new Date(d.getFullYear(), d.getMonth(), i));
-      out.push({ ds, label: (i === 1 || i % 5 === 0) ? String(i) : "", value: rangeStats(ds, ds).entries,
+      out.push({ ds, label: (i === 1 || i % 5 === 0) ? String(i) : "", value: мера(ds, ds),
         today: ds === today, future: ds > today });
     }
     return out;
@@ -4582,8 +4613,7 @@ function periodSeries() {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday); d.setDate(d.getDate() + i);
     const ds = dateStr(d);
-    out.push({ ds, label: DOW[i], value: rangeStats(ds, ds).entries,
-      today: ds === today, future: ds > today });
+    out.push({ ds, label: DOW[i], value: мера(ds, ds), today: ds === today, future: ds > today });
   }
   return out;
 }
@@ -4640,6 +4670,10 @@ function lineChartHTML(points) {
    результат; зато число рядом то самое, которое ты помнишь. */
 function prevSlice(r) {
   const a = periodAnchor(shift - 1);
+  if (period === "year") {
+    return { from: dateStr(new Date(a.getFullYear(), 0, 1)),
+             to: dateStr(new Date(a.getFullYear(), 11, 31)) };
+  }
   if (period === "month") {
     return { from: dateStr(new Date(a.getFullYear(), a.getMonth(), 1)),
              to: dateStr(new Date(a.getFullYear(), a.getMonth() + 1, 0)) };
@@ -4670,7 +4704,9 @@ function canShift(куда) {
     .filter((e) => !e.deleted).map((e) => e.date).sort();
   if (!все.length) return false;
   const a = periodAnchor(shift - 1);
-  const конец = period === "month"
+  const конец = period === "year"
+    ? dateStr(new Date(a.getFullYear(), 11, 31))
+    : period === "month"
     ? dateStr(new Date(a.getFullYear(), a.getMonth() + 1, 0))
     : dateStr(new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6));
   return конец >= все[0];
@@ -4710,7 +4746,14 @@ function summaryHTML() {
   const a = periodAnchor();
   const прошлое = shift < 0;          // смотрим назад: «впереди столько-то дней» уже неуместно
   let ringVal, ringMax, cap, sub, hint;
-  if (period === "month") {
+  if (period === "year") {
+    const цель = (data.weekGoal || 4) * 52;
+    ringVal = st.days; ringMax = цель;
+    cap = String(a.getFullYear());
+    sub = `из ${цель} ${plural(цель, "дня", "дней", "дней")} цели`;
+    hint = `${st.days} ${plural(st.days, "день", "дня", "дней")} за год · `
+      + `${st.entries} ${plural(st.entries, "запись", "записи", "записей")}`;
+  } else if (period === "month") {
     const total = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
     const left = total - now.getDate();
     const weeks = Math.round(total / 7);           // недель в месяце
@@ -4744,7 +4787,7 @@ function summaryHTML() {
     <div class="periods">
       <button class="parr" data-shift="-1" type="button" aria-label="Назад"
         ${canShift(-1) ? "" : "disabled"}>‹</button>
-      ${[["week", "Неделя"], ["month", "Месяц"]].map(([k, t]) =>
+      ${[["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]].map(([k, t]) =>
         `<button class="pbtn ${period === k ? "on" : ""}" data-p="${k}" type="button">${t}</button>`).join("")}
       <button class="parr" data-shift="1" type="button" aria-label="Вперёд"
         ${canShift(1) ? "" : "disabled"}>›</button>
@@ -4784,6 +4827,14 @@ function summaryHTML() {
       })()}
 
       ${lineChartHTML(periodSeries())}
+      ${(() => {
+        /* Показатель предлагаем только тот, по которому что-то есть: у Дианы
+           нет ни тактов, ни рисунка, и пустые кнопки ей ни к чему. */
+        const живые = METRICS.filter((m) => m.id === "entries" || st[m.id] || was[m.id]);
+        return живые.length > 1 ? `<div class="mtr">${живые.map((m) =>
+          `<button class="mtr-b ${metricNow().id === m.id ? "on" : ""}" data-metric="${m.id}"
+            type="button">${m.name}</button>`).join("")}</div>` : "";
+      })()}
       <div class="period-hint">${esc(hint)}</div>
     </div>`;
 }
@@ -4833,6 +4884,12 @@ function renderProgress() {
 
   renderCalendar();
   renderDayBox();
+
+  document.querySelectorAll("[data-metric]").forEach(b =>
+    b.addEventListener("click", () => {
+      cfg.metric = b.dataset.metric; saveCfg();
+      renderProgress();
+    }));
 
   document.querySelectorAll(".pbtn").forEach(b =>
     b.addEventListener("click", () => {
@@ -14824,7 +14881,7 @@ function boot() {
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
   if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) tab = cfg.tab;
-  if (["week", "month"].includes(cfg.period)) period = cfg.period;
+  if (["week", "month", "year"].includes(cfg.period)) period = cfg.period;
   if (cfg.achView && cfg.achView.track) achView = cfg.achView;
   if (cfg.achTab === "facts") achTab = "facts";
   if (cfg.achTop === "shelf") achTop = "shelf";

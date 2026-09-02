@@ -1491,6 +1491,41 @@ function ок(имя, факт, надо) {
   ок("слово: своё задание из словаря сильнее", tp("валик", { gen: "своё" }, "argos-ref"), "своё");
 }
 
+/* ── Год и показатели графика ── */
+{
+  const было = { period: t.get("period"), shift: t.get("shift"), metric: t.get("cfg").metric,
+    data: JSON.parse(JSON.stringify(t.get("data"))) };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [], practice: {} },
+    book: { books: [{ id: "b", title: "К", pages: 400 }], activeBook: "b",
+      entries: [{ id: "e1", date: "2026-03-10", bookId: "b", page: 50 },
+                { id: "e2", date: "2026-08-10", bookId: "b", page: 120 }] },
+    watch: { videos: [], entries: [] }, pastel: { courses: [], activeCourse: "", entries: [] },
+    practice: {}, thoughts: [], hidden: {}, achAt: {}, factAt: {}, archive: [], daily: {},
+    wishes: [], takes: [], weekGoal: 4 });
+  t.set("period", "year"); t.set("shift", 0);
+  const r = t.get("periodRange")();
+  const год = new Date().getFullYear();
+  ок("год: границы периода — весь год", [r.from, r.to], [год + "-01-01", год + "-12-31"]);
+  const п = t.get("prevSlice")(r);
+  ок("год: сравниваем с прошлым годом", [п.from, п.to], [(год - 1) + "-01-01", (год - 1) + "-12-31"]);
+
+  t.set("cfg.metric", "entries");
+  const ряд = t.get("periodSeries")();
+  ок("год: двенадцать точек", ряд.length, 12);
+  ок("год: подписи через одну", ряд.filter((x) => x.label).length, 6);
+  ок("год: март и август непустые",
+    [ряд[2].value, ряд[7].value], [1, 1]);
+
+  t.set("cfg.metric", "pages");
+  const стр = t.get("periodSeries")();
+  ок("страницы: график считает прочитанное, а не число отметок", стр[7].value, 70);
+  t.set("cfg.metric", "нет-такого");
+  ок("показатель: незнакомый откатывается к занятиям", t.get("metricNow")().id, "entries");
+
+  t.set("period", было.period); t.set("shift", было.shift);
+  t.set("cfg.metric", было.metric); t.set("data", было.data);
+}
+
 /* ── Итог ── */
 if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
 console.log(`тесты: ${всего} из ${всего} прошли`);
