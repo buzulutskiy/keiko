@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 363";
+const APP_VERSION = "Кэйко 364";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10828,7 +10828,13 @@ function lessonPhoto(i, blob) {
 /* Запись занятия по курсу — обычная отметка урока, как при ручной. */
 function lessonEntry(make) {
   const ds = todayStr();
-  let e = data.pastel.entries.find((x) => !x.deleted && x.date === ds);
+  /* Запись ищем по дню И по курсу: без курса два курса, отмеченные в один
+     день, писались в одну запись — минуты одного уходили в статистику
+     другого. Старые записи без courseId считаем принадлежащими первому. */
+  const первый = (courses()[0] || {}).id;
+  const мой = course().id;
+  let e = data.pastel.entries.find((x) => !x.deleted && x.date === ds
+    && (x.courseId || первый) === мой);
   if (!e && make) {
     e = { id: uid(), date: ds, courseId: course().id, lessons: [], mins: 0, sessions: 0,
           note: "урок по плану", createdAt: now(), updatedAt: now() };
@@ -11192,10 +11198,22 @@ function pracFinish() {
     const e = lessonCount();
     lessonStore().session++;
     const won = pracCelebrate();
-    if (e.lessons && e.lessons.length) addEvent("session", "pastel", "pastel",
-      "Занимался: " + course().name + " · " + e.mins + " мин, "
-      + e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"),
-      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
+    /* Раньше запись в ленту шла только если закрыт целый урок. У курса по
+       шагам урок один на сорок ходов, и день рисования не попадал в ленту
+       вовсе: «порисовал, а в статистике пусто». Пишем, если сделано хоть
+       что-нибудь — ход, минуты или урок. И ключ берём живой: у второго курса
+       он свой, а жёстко вписанный «pastel» вешал его дни на первый курс. */
+    const шагов = Object.values(lessonStore().done || {})
+      .filter((d) => d === todayStr()).length;
+    const части = [];
+    if (e.mins) части.push(e.mins + " мин");
+    if (шагов) части.push(шагов + " " + plural(шагов, "шаг", "шага", "шагов"));
+    if (e.lessons && e.lessons.length)
+      части.push(e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"));
+    if (части.length) addEvent("session", curKey(), "pastel",
+      (course().mode === "watch" ? "Смотрел: " : "Рисовал: ") + course().name + " · " + части.join(", "),
+      { fields: { mins: e.mins, steps: шагов, createdAt: now(),
+                  awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
     saveData();
     schedulePush();
     toast("Записано: " + e.mins + " мин");
@@ -14729,6 +14747,41 @@ function piecePageUI(pc) {
     <button class="btn lib-arch" data-libarch="pf:${esc(pc.id)}" type="button">Завершить и убрать в архив</button>`;
 }
 
+/* ── День за днём ──
+   Числа сверху говорят «сколько всего», а по ним не видно, что было сегодня.
+   Здесь каждый день рисования: сколько ходов закрыто, сколько минут и какие
+   именно ходы, — чтобы отметка находилась там, где её ищут. */
+function pastelDaysHTML(c, отметки, ent) {
+  const имя = new Map();
+  c.lessons.forEach((l, i) => (l.steps || []).forEach((x, n) =>
+    имя.set("L" + i + ":s" + n, x.t || x.title || ("Ход " + (n + 1)))));
+  const поДням = new Map();
+  for (const [k, d] of Object.entries(отметки)) {
+    if (!d || !имя.has(k)) continue;
+    if (!поДням.has(d)) поДням.set(d, []);
+    поДням.get(d).push(имя.get(k));
+  }
+  const мин = new Map(ent.map((e) => [e.date, e.mins || 0]));
+  const дни = [...new Set([...поДням.keys(), ...ent.map((e) => e.date)])].sort().reverse();
+  if (!дни.length) return "";
+  return `
+    <div class="freeze">
+      <div class="fz-head">📅 <b>День за днём</b> — ${дни.length} ${plural(дни.length, "день", "дня", "дней")} за листом</div>
+      <div class="pd-list">
+        ${дни.map((d) => {
+          const шаги = поДням.get(d) || [];
+          const m = мин.get(d) || 0;
+          const чем = [шаги.length ? шаги.length + " " + plural(шаги.length, "ход", "хода", "ходов") : "",
+                       m ? m + " мин" : ""].filter(Boolean).join(" · ");
+          return `<div class="pd">
+            <div class="pd-top"><b>${esc(fmtDay(d))}</b><span>${esc(чем || "отметка без ходов")}</span></div>
+            ${шаги.length ? `<p>${esc(шаги.join(" · "))}</p>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
 // страница курса — тоже только чтение
 function pastelPageUI(id) {
   const c  = courses().find((x) => x.id === id) || courses()[0] || course();
@@ -14788,6 +14841,8 @@ function pastelPageUI(id) {
         <div><span>Моментов о курсе</span><b>${thoughts}</b></div>
       </div>
     </div>
+
+    ${лекция ? "" : pastelDaysHTML(c, отметки, ent)}
 
     <div class="freeze">
       <div class="fz-head">🎨 <b>${лекция ? "Занятия" : "Этапы"}</b> — ${
