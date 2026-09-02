@@ -377,8 +377,6 @@
       color: var(--muted); font-weight: 800;
     }
     .gbtn.on { background: linear-gradient(140deg, var(--gold), var(--gold-2)); color: #241a05; }
-
-    .hist { display: flex; align-items: flex-end; gap: 4px; height: 92px; }
     .hb { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 4px; }
     .hb i {
       display: block; width: 100%; min-height: 3px;
@@ -387,17 +385,6 @@
       opacity: 0.85;
     }
     .hb span { font-size: 0.6rem; color: var(--dim); text-align: center; height: 12px; }
-    .hist-note { margin-top: 10px; font-size: 0.8rem; color: var(--muted); text-align: center; }
-    .hist-note b { color: var(--ink); }
-
-    .material-panel .mat-row {
-      display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;
-    }
-    .mat-name { font-size: 0.94rem; font-weight: 700; line-height: 1.25; }
-    .mat-name i { display: block; font-style: normal; font-size: 0.78rem; color: var(--dim); font-weight: 500; margin-top: 3px; }
-    .mat-pct { margin-left: auto; font-weight: 850; color: var(--gold); }
-
-    .week-cmp { margin-top: 10px; font-size: 0.78rem; color: var(--dim); text-align: center; }
     .stat b i { font-style: normal; font-size: 0.7rem; }
     .stat b i.up { color: var(--green); }
     .stat b i.down { color: var(--red); }
@@ -445,12 +432,6 @@
     .sc span { font-size: 0.6rem; color: var(--muted); line-height: 1.15; }
     .sc.hot { border-color: rgba(74, 222, 128, 0.4); background: rgba(74, 222, 128, 0.1); }
     .sc.hot b { color: var(--green); }
-
-    .sum-week {
-      display: grid; grid-template-columns: repeat(7, 1fr);
-      gap: 6px; width: 100%; height: 86px;
-      align-items: stretch;
-    }
     .sw {
       display: flex; flex-direction: column;
       justify-content: flex-end; align-items: stretch;
@@ -489,9 +470,6 @@
       color: var(--ink); font-size: 1.05rem; line-height: 1;
     }
     .parr:disabled { opacity: 0.28; }
-
-    /* кружки недели */
-    .wcircles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: 100%; }
     .wc { display: grid; justify-items: center; gap: 5px; }
     .wc i {
       width: 100%; max-width: 40px; aspect-ratio: 1;
@@ -508,33 +486,12 @@
     .wc.fut i { opacity: 0.4; }
     .wc span { font-size: 0.66rem; color: var(--dim); font-weight: 700; }
     .wc.today span { color: var(--gold); }
-
-    /* сетка месяца */
-    .mgrid {
-      display: grid; grid-template-columns: repeat(7, 1fr);
-      gap: 5px; width: 100%;
-    }
-    .mg-dow { font-size: 0.6rem; color: var(--dim); text-align: center; font-weight: 700; text-transform: uppercase; }
-    .mg-cell {
-      aspect-ratio: 1; border-radius: 50%;
-      display: grid; place-items: center;
-      font-size: 0.72rem; font-weight: 650; color: var(--dim);
-      background: rgba(255, 255, 255, 0.04);
-      border: 1.5px solid transparent;
-    }
     .mg-cell.blank { background: none; }
     .mg-cell.on { background: rgba(255, 201, 77, 0.45); color: #241a05; font-weight: 800; }
     .mg-cell.hi { background: linear-gradient(140deg, var(--gold), var(--gold-2)); }
     .mg-cell.frz { background: rgba(139, 124, 246, 0.22); color: var(--violet); }
     .mg-cell.today { border-color: rgba(255, 255, 255, 0.7); }
     .mg-cell.fut { opacity: 0.35; }
-
-    .trend {
-      width: 100%;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: 14px;
-      padding: 10px 8px 8px;
-    }
 
     .period-hint {
       font-size: 0.72rem; color: var(--dim);
@@ -563,26 +520,10 @@
     .cal-dot.b { background: var(--violet); }
     .cal-dot.c { background: #f0a3b5; }
     .cal-dot.f { background: rgba(139, 124, 246, 0.5); }
-    /* ── Суточные циклы ── */
-    .dc-note { color: var(--muted); font-size: 0.78rem; }
-    .dc-chart {
-      display: flex; align-items: flex-end; gap: 2px;
-      height: 64px; margin: 14px 0 5px;
-    }
-    .dc-chart i {
-      flex: 1; display: block; border-radius: 3px 3px 1px 1px;
-      background: rgba(255, 255, 255, 0.05); min-height: 3px;
-      transition: height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-    }
     .dc-chart i.on { box-shadow: 0 0 10px rgba(0, 0, 0, 0.35); }
     .dc-chart i.on.p { background: linear-gradient(to top, rgba(255, 201, 77, 0.45), var(--gold)); }
     .dc-chart i.on.b { background: linear-gradient(to top, rgba(139, 124, 246, 0.45), var(--violet)); }
     .dc-chart i.on.c { background: linear-gradient(to top, rgba(240, 163, 181, 0.45), #f0a3b5); }
-    .dc-axis {
-      display: flex; justify-content: space-between;
-      color: var(--dim); font-size: 0.66rem; font-variant-numeric: tabular-nums;
-      margin-bottom: 10px;
-    }
 
     .cal-legend {
       display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
@@ -596,27 +537,13 @@
       background: rgba(139, 124, 246, 0.1);
       border-radius: 11px; padding: 9px 11px; margin-bottom: 10px;
     }
-    .day-add { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 11px; }
     .da {
       min-height: 42px; border-radius: 12px;
       background: var(--card-2); border: 1px solid var(--line);
       font-size: 0.8rem; font-weight: 700; color: var(--muted);
     }
     .da:active { border-color: rgba(255, 201, 77, 0.5); color: var(--ink); }
-
-    .by-hobby { display: grid; gap: 7px; margin-bottom: 12px; }
-    .hb-row {
-      display: grid; grid-template-columns: 30px 1fr auto;
-      align-items: center; gap: 11px;
-      background: var(--card); border: 1px solid var(--line);
-      border-radius: 14px; padding: 11px 13px;
-      text-align: left; width: 100%;
-    }
     .hb-row.on { border-color: rgba(255, 201, 77, 0.45); background: rgba(255, 201, 77, 0.07); }
-    .hb-ic { font-size: 1.2rem; text-align: center; }
-    .hb-nm { font-size: 0.92rem; font-weight: 700; }
-    .hb-nm i { display: block; font-style: normal; font-size: 0.75rem; color: var(--dim); font-weight: 500; margin-top: 2px; }
-    .hb-pct { font-weight: 850; color: var(--gold); }
 
     /* предупреждения о синхронизации */
     #banner:empty { display: none; }
@@ -661,14 +588,6 @@
       box-shadow: none;
       font-size: 1rem;
     }
-
-    .recent {
-      display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
-      margin-top: 10px;
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
-    .recent b { color: var(--ink); font-weight: 800; }
 
     /* ══════════ ГЛАВНАЯ ══════════ */
     .hero {
@@ -879,13 +798,6 @@
     .chip.tap { cursor: pointer; }
     .chip.tap:active { background: var(--card-2); }
 
-    .ach-title {
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--muted);
-      line-height: 1.25;
-    }
-
     .cta {
       width: 100%;
       min-height: clamp(50px, 7vh, 58px);
@@ -920,17 +832,6 @@
 
     .logo { cursor: pointer; }
 
-    .shake-hint:empty { display: none; }
-    .shake-hint button {
-      font-size: 0.8rem;
-      color: var(--muted);
-      min-height: 32px;
-      padding: 0 10px;
-      border-radius: 10px;
-      border: 1px dashed var(--line);
-    }
-    .shake-hint button:active { color: var(--ink); border-color: rgba(255,201,77,0.5); }
-
     .nudge:empty { display: none; }
     .nudge {
       text-align: center;
@@ -961,8 +862,6 @@
       font-size: 0.78rem; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted);
     }
-
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
     .stat {
       background: var(--glass);
       backdrop-filter: blur(10px);
@@ -972,11 +871,6 @@
     }
     .stat b { font-size: 1.28rem; font-weight: 800; display: block; }
     .stat span { font-size: 0.71rem; color: var(--muted); line-height: 1.2; }
-
-    .bar-strip {
-      display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 2px;
-      background: rgba(255,255,255,0.04); border-radius: 7px; padding: 3px;
-    }
     .bar { height: 18px; border-radius: 2px; background: var(--track); }
     .bar.tick { margin-right: 2px; }
     .bar.l1.r { background: rgba(255, 201, 77, 0.32); }
@@ -987,19 +881,10 @@
     .bar.l3.l { background: linear-gradient(180deg, #a99cf9, var(--violet)); }
 
     .hand { display: grid; gap: 7px; margin-bottom: 14px; }
-    .hand-head { display: flex; justify-content: space-between; font-size: 0.86rem; color: var(--muted); }
-    .hand-head b { color: var(--ink); font-weight: 800; }
 
     .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.73rem; color: var(--muted); }
     .legend span { display: inline-flex; align-items: center; gap: 5px; }
     .legend .bar { width: 13px; height: 13px; border-radius: 3px; }
-
-    .pages-bar { position: relative; height: 20px; border-radius: 8px; background: rgba(255,255,255,0.06); overflow: hidden; }
-    .pages-fill {
-      position: absolute; inset: 0 auto 0 0; border-radius: 8px;
-      background: linear-gradient(90deg, var(--gold), var(--gold-2));
-      box-shadow: 0 0 16px rgba(255, 190, 70, 0.4);
-    }
 
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .cal-title { font-weight: 750; text-transform: capitalize; }
@@ -1051,9 +936,6 @@
       background: var(--card); border: 1px solid var(--line);
       border-radius: 17px; padding: 16px; margin-bottom: 12px;
     }
-    .ach-count { display: flex; align-items: baseline; gap: 8px; }
-    .ach-count b { font-size: 1.7rem; font-weight: 850; }
-    .ach-count span { color: var(--muted); font-size: 0.9rem; }
     .ach-progress { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
     .ach-progress i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
 
@@ -1092,11 +974,6 @@
       border-top: 1px solid var(--glass-line);
       display: grid; gap: 6px;
     }
-
-    /* карточки знаний — компактная сетка */
-    .facts-note { font-size: 0.82rem; color: var(--muted); margin-bottom: 10px; }
-    .facts-note b { color: var(--ink); }
-    .facts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
     .fcard {
       display: grid; gap: 7px; align-content: start;
       min-height: 96px;
@@ -1131,8 +1008,6 @@
     .ach-hero-txt { display: grid; gap: 3px; min-width: 0; }
     .ach-hero-txt b { font-size: 1rem; line-height: 1.2; }
     .ach-hero-txt em { font-style: normal; font-size: 0.8rem; color: var(--muted); }
-    .ach-sub { font-size: 0.84rem; color: var(--muted); line-height: 1.35; }
-    .ach-sub b { color: var(--ink); }
 
     /* несколько карточек сразу — списком с прокруткой */
     .cheer-list { display: grid; gap: 14px; text-align: left; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
@@ -1271,13 +1146,6 @@
       margin-top: clamp(0px, 0.6vh, 8px); flex-shrink: 0;
     }
     .cta-row .cta { margin-top: 0; width: auto; flex: 1 1 auto; min-width: 0; }
-    .cta-mic {
-      flex: 0 0 auto; width: clamp(50px, 7vh, 58px);
-      border: 0; background: none; cursor: pointer;
-      font-size: 1.2rem; line-height: 1;
-      display: flex; align-items: center; justify-content: center;
-      transition: background 0.22s ease;
-    }
 
     /* Одна цельная кнопка: оболочка держит фон и скругление,
        внутри — действие и микрофон, между ними тонкий разделитель. */
@@ -1349,10 +1217,6 @@
       padding: 7px 0; border-top: 1px solid var(--line); font-size: 0.84rem;
     }
     .lib-rows div span { color: var(--muted); }
-
-    /* ── Части книги: отметка вразнобой ── */
-    .bm-row { margin-top: 10px; }
-    .bm-name { font-size: 0.86rem; margin-bottom: 6px; color: var(--ink); }
     .parts { display: flex; flex-direction: column; gap: 7px; max-height: 46vh; overflow-y: auto; }
     .part { display: flex; flex-direction: column; gap: 0; }
     .pt-main {
@@ -1374,16 +1238,8 @@
     .part.full .pt-meta { color: var(--gold); }
     .part.pick .pt-main { border-color: var(--green); }
     .part.open .pt-main { border-radius: 12px 12px 0 0; border-bottom-color: transparent; }
-    .pt-edit {
-      border: 1px solid var(--line); border-top: 0;
-      border-radius: 0 0 12px 12px; background: var(--card);
-      padding: 10px 12px 12px;
-    }
-    .pt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .pt-cap { color: var(--muted); font-size: 0.8rem; }
     .pt-acts { display: flex; gap: 7px; margin-top: 10px; }
     .pt-acts .btn { min-height: 40px; font-size: 0.82rem; flex: 1; }
-    .pt-ok { flex: 1.6 !important; }
     .pt-hint { margin-top: 10px; color: var(--dim); font-size: 0.76rem; line-height: 1.4; }
 
     /* ── Вложения в моментах ── */
@@ -1599,7 +1455,6 @@
     }
     .wk-hand { margin: 8px 0 0; font-size: 1rem; color: var(--gold); }
     .wk-passed { margin: 2px 0 0; font-size: 0.74rem; color: var(--green); }
-    .wk-stage { margin: 10px 0 0; font-size: 0.9rem; color: var(--muted); }
     .wk-next { margin: 6px 0 0; font-size: 0.78rem; color: var(--dim); }
     .wk-task .pr-go { margin-top: 16px; }
     .wk-row { display: flex; gap: 8px; margin-top: 9px; }
@@ -1624,12 +1479,6 @@
     }
     .pr-big.sm { font-size: 1.5rem; font-weight: 600; line-height: 1.3; max-width: 15em; }
     .pr-hand { margin: 10px 0 0; font-size: 1rem; color: var(--gold); }
-    .pr-tail { margin: 10px 0 0; font-size: 0.85rem; color: var(--muted); }
-
-    .pr-stage {
-      margin: 0 0 26px; font-size: 1.08rem; font-weight: 600; line-height: 1.35;
-      max-width: 14em;
-    }
     .pr-next { margin: 14px 0 0; font-size: 0.78rem; color: var(--dim); max-width: 20em; }
 
     .pr-go {
@@ -1647,25 +1496,9 @@
       color: var(--muted); font: inherit; font-size: 0.86rem;
       border-radius: 14px; padding: 12px; margin-top: 9px;
     }
-
-    /* части пьесы: список на экране начала */
-    .pr-plist { display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 22px; }
-    .pr-p {
-      opacity: 0.45; display: block; width: 100%; text-align: left;
-      background: transparent; border: 0; padding: 0; color: inherit; font: inherit;
-    }
     .pr-p.now, .pr-p.done { opacity: 1; }
-    .pr-p-top { display: flex; align-items: baseline; gap: 8px; font-size: 0.76rem; margin-bottom: 4px; }
-    .pr-p-top b { flex: 0 0 auto; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 42px; }
-    .pr-p-top em {
-      flex: 1; min-width: 0; font-style: normal; color: var(--muted);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pr-p-top span { flex: 0 0 auto; color: var(--dim); font-variant-numeric: tabular-nums; }
     .pr-p.now .pr-p-top b { color: var(--gold); }
     .pr-p.now .pr-p-top em { color: var(--ink); }
-    .pr-p-bar { display: block; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
-    .pr-p-bar i { display: block; height: 100%; background: var(--violet); }
     .pr-p.done .pr-p-bar i { background: #6ee7a8; }
     .pr-p.now .pr-p-bar i { background: var(--gold); }
 
@@ -1697,9 +1530,6 @@
     .rep.l3 { background: rgba(139, 124, 246, 0.14); border-color: rgba(139, 124, 246, 0.36); }
     .rep.l3 b { color: #b3a6ff; }
     .rep:active { transform: scale(0.99); }
-
-    /* Такты блока с кружками заходов. */
-    .rp-list { display: grid; gap: 6px; margin: 14px 0 2px; }
     .rp-row {
       display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
       padding: 8px 11px; border-radius: 12px;
@@ -1776,13 +1606,6 @@
       background: var(--glass); border: 1px solid var(--glass-line);
       font-size: 0.78rem; color: var(--dim);
     }
-
-
-    /* Комментарии к главе: ссылка под кнопкой и список в шторке. */
-    .pace-link {
-      display: block; margin: 10px auto 0; min-height: 32px;
-      color: var(--violet); font-size: 0.82rem; font-weight: 650;
-    }
     /* Квадратная кнопка рядом с «Отметить чтение» */
     /* Кнопок сбоку бывает три — карта, разбор, промт. Даём им ужиматься,
        иначе на узком экране они выдавливают надпись главной кнопки. */
@@ -1835,50 +1658,9 @@
     .cl-two { margin: 4px 0 0; font-size: 0.74rem; color: var(--dim); }
     /* Карта мест: картинка с точками по координатам. */
     .mp { margin-top: 14px; }
-    .mp-box {
-      position: relative; border-radius: 14px; overflow: hidden;
-      border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.03);
-    }
-    .mp-box img { display: block; width: 100%; }
-    .mp-pin {
-      position: absolute; transform: translate(-50%, -50%);
-      display: grid; place-items: center; padding: 0; background: none; border: 0;
-      width: 26px; height: 26px;                 /* палец попадает, а точка мелкая */
-    }
-    .mp-pin i {
-      width: 11px; height: 11px; border-radius: 50%;
-      background: var(--gold); border: 2px solid rgba(0, 0, 0, 0.45);
-      box-shadow: 0 0 0 4px rgba(240, 187, 92, 0.18);
-    }
-    /* Подписи у всех точек сразу превращают карту в кашу — на Пелопоннесе их
-       пять в одном месте. Имя показываем только у выбранной, остальные —
-       строкой под картой. */
-    .mp-pin span {
-      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-      font-size: 0.66rem; font-weight: 700; letter-spacing: .02em; color: #fff;
-      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
-      white-space: nowrap; opacity: 0; pointer-events: none;
-    }
     .mp-pin.on span { opacity: 1; }
-    .mp-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .mp-name {
-      padding: 6px 11px; border-radius: 999px; font-size: 0.8rem; color: var(--muted);
-      background: var(--glass); border: 1px solid var(--glass-line);
-    }
     .mp-name.on { background: rgba(240, 187, 92, 0.16); border-color: rgba(240, 187, 92, 0.4); color: var(--ink); }
     .mp-pin.on i { background: #fff; box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.22); }
-    .mp-card {
-      margin-top: 12px; padding: 13px 15px; border-radius: 14px; text-align: left;
-      background: var(--glass); border: 1px solid var(--glass-line);
-    }
-    .mp-card b { display: block; font-size: 1.04rem; margin-bottom: 5px; }
-    .mp-card p { margin: 0; font-size: 0.95rem; line-height: 1.6; color: var(--muted); }
-    .mp-hint { margin: 12px 0 0; font-size: 0.8rem; color: var(--dim); }
-    .mp-att { margin: 8px 0 0; font-size: 0.66rem; color: var(--dim); }
-    .mp-full {
-      width: 100%; margin-top: 10px; padding: 11px; border-radius: 13px;
-      background: var(--glass); border: 1px solid var(--glass-line); font-weight: 650;
-    }
 
     /* ── Карта во весь экран ── */
     #gmap {
@@ -1926,18 +1708,11 @@
 
     /* ── Этапы рисунка в шторке отметки ── */
     .stages { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; }
-    .sg-head { margin: 10px 0 2px; font-size: 0.74rem; letter-spacing: .06em;
-      text-transform: uppercase; color: var(--dim); }
-    .sg-head:first-child { margin-top: 0; }
     .sg {
       display: grid; grid-template-columns: 28px minmax(0, 1fr) 22px; align-items: center;
       gap: 10px; padding: 11px 12px; border-radius: 12px; text-align: left;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
     }
-    .sg-n { font-size: 0.8rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-    .sg-t { font-size: 0.9rem; line-height: 1.3; }
-    .sg-t i { display: block; font-style: normal; font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
-    .sg-c { text-align: center; color: var(--dim); }
     .sg.was .sg-c { color: var(--green); }
     /* Класс «sel», а не «pick»: глобальный .pick — это инлайновая пилюля,
        она ломала сетку строки. */
@@ -1985,15 +1760,6 @@
        Надпись тёмная: белая на светло-зелёном #4ade80 почти не читается. */
     .mm-item.said, .qbtn.said {
       background: var(--green); border-color: var(--green); color: #08240f; font-weight: 600;
-    }
-
-    /* Промт показываем как есть: переносы автора важны, но длинная строка
-       должна заворачиваться, а не уезжать вбок. */
-    .ask-pre {
-      margin-top: 14px; padding: 14px; border-radius: 12px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      white-space: pre-wrap; overflow-wrap: anywhere;
-      font: inherit; font-size: 0.82rem; line-height: 1.5; color: var(--ink);
     }
     .term-note { margin-top: 10px; font-size: 0.78rem; color: var(--dim); line-height: 1.45; }
 
@@ -2293,37 +2059,12 @@
     }
     .bn-nav[disabled] { opacity: .3; }
 
-    .bn-list { display: grid; gap: 12px; margin-top: 10px; max-height: 52vh; overflow-y: auto; text-align: left; }
-    .bn-item { padding: 11px 13px; border-radius: 13px; background: var(--glass); border: 1px solid var(--glass-line); }
-    .bn-line {
-      display: inline-block; margin-bottom: 5px; font-size: 0.68rem;
-      color: var(--gold); font-variant-numeric: tabular-nums; font-weight: 700;
-    }
-    /* Комментарии читают подолгу, а не проглядывают: размер как у книжной
-       страницы, строки просторнее, цвет ближе к основному тексту. */
-    .bn-item { padding: 14px 15px; }
-    .bn-item b { display: block; margin-bottom: 6px; font-size: 1.02rem; }
-    .bn-item p { margin: 0; font-size: 1rem; line-height: 1.62; color: var(--ink); }
-    .bn-list { gap: 14px; }
-
     /* Путь по пьесе: вся дорога от первого такта до целой вещи. */
     .rt-head {
       margin: 18px 0 8px; font-size: 0.72rem; letter-spacing: .05em;
       text-transform: uppercase; color: var(--dim); font-weight: 700;
     }
-    .rt-list { display: grid; gap: 3px; }
-    .rt-row {
-      display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: baseline;
-      padding: 7px 10px; border-radius: 10px;
-      background: var(--glass); border: 1px solid transparent;
-      font-size: 0.8rem; color: var(--muted);
-    }
-    .rt-row i { font-style: normal; text-align: center; color: var(--dim); }
-    .rt-row b { font-weight: 600; }
-    /* «сейчас 7–8» — какое именно окно идёт внутри шага */
-    .rt-row b u { text-decoration: none; color: var(--gold); font-weight: 500; font-size: 0.72rem; }
     .rt-row.done b u { color: var(--dim); }
-    .rt-row em { font-style: normal; font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
     .rt-row.done i { color: var(--green); }
     .rt-row.done b { color: var(--dim); }
     .rt-row.now {
@@ -2350,13 +2091,6 @@
     .bl-head { display: grid; gap: 3px; text-align: left; width: 100%; }
     .bl-name { font-size: 0.88rem; font-weight: 700; }
     .bl-sub { font-size: 0.7rem; color: var(--dim); }
-    .bl-bars { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
-    .bl-b {
-      font-style: normal; display: grid; place-items: center;
-      width: 26px; height: 26px; border-radius: 8px;
-      font-size: 0.64rem; font-variant-numeric: tabular-nums;
-      background: var(--track); color: var(--dim); cursor: pointer;
-    }
     .bl-b.part { background: rgba(255, 201, 77, 0.28); color: var(--ink); }
     .bl-b.firm { background: var(--gold); color: var(--bg); font-weight: 700; }
     .bl-note { margin: 12px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
@@ -2371,7 +2105,6 @@
     .vd-empty { display: grid; gap: 9px; text-align: center; }
     .vd-empty b { font-size: 0.86rem; }
     .vd-empty span { font-size: 0.74rem; color: var(--dim); line-height: 1.45; }
-    .vd-pickrow { display: flex; gap: 8px; }
     .vd-pickrow .btn { flex: 1; }
 
     .vd-wrap { display: grid; gap: 10px; }
@@ -2597,63 +2330,9 @@
       flex: 2; color: var(--ink); font-variant-numeric: tabular-nums;
       border-color: rgba(139, 124, 246, 0.3);
     }
-
-    /* «Смотрю»: добавление ссылки и список роликов */
-    .wt-add { display: flex; gap: 8px; margin-top: 10px; }
-    .wt-add input {
-      flex: 1; min-width: 0;
-      padding: 11px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--glass-line);
-      background: var(--glass);
-      color: inherit;
-      font: inherit;
-      font-size: 15px;   /* меньше 16px — и Safari сам зумит страницу при фокусе */
-    }
-    .wt-add input:disabled { opacity: .5; }
     .wt-add .btn { flex: 0 0 auto; width: auto; min-width: 0; padding-left: 18px; padding-right: 18px; }
-    .wt-hint { font-size: 12px; opacity: .45; margin-top: 8px; }
-
-    .wt-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-    .wt-item { display: flex; align-items: center; gap: 12px; }
     .wt-item.seen { opacity: .55; }
-    .wt-thumb {
-      position: relative;
-      flex: 0 0 auto;
-      width: 104px; aspect-ratio: 16 / 9;
-      border-radius: 8px;
-      overflow: hidden;
-      background: var(--glass-2);
-      display: grid; place-items: center;
-      text-decoration: none;
-    }
-    .wt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .wt-play {
-      position: absolute; inset: 0;
-      display: grid; place-items: center;
-      font-size: 20px; color: #fff;
-      text-shadow: 0 1px 6px rgba(0, 0, 0, .6);
-      background: rgba(0, 0, 0, .16);
-    }
-    .wt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .wt-body b {
-      font-size: 14px; font-weight: 600; line-height: 1.3;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .wt-body em { font-size: 12px; opacity: .5; font-style: normal; }
-    .wt-state { font-size: 11px; opacity: .45; letter-spacing: .04em; }
     .wt-item.seen .wt-state { opacity: .7; }
-    .wt-del {
-      flex: 0 0 auto;
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      border: 1px solid var(--glass-line);
-      background: var(--glass);
-      color: inherit; opacity: .45;
-      font-size: 13px; line-height: 1;
-      cursor: pointer;
-    }
-    .wt-del:hover { opacity: .9; }
 
     /* Длинное слово без пробелов растягивало карточку шире экрана, и страницу
        можно было утащить вбок. Ломаем слово, а не вёрстку. */
@@ -2686,89 +2365,14 @@
     .post.ev-ach { border-left-color: var(--gold); }
     .post.ev-done { border-left-color: #6ee7a8; }
     .post.ev-session { border-left-color: var(--violet); }
-
-    /* ── Горка: из чего сложилась неделя ── */
-    .pile-head { display: grid; gap: 8px; margin-bottom: 10px; }
-    .pile-head .blk-head { margin: 0; }
-    .pile-nav { display: flex; align-items: center; gap: 8px; }
-    .pile-nav b {
-      flex: 1; text-align: center; font-size: 0.8rem; font-weight: 700;
-      color: var(--muted); text-transform: lowercase;
-    }
-    .pile-nav button {
-      width: 32px; height: 32px; flex: none; border-radius: 10px;
-      border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--ink); font-size: 1rem; line-height: 1;
-    }
-    .pile-nav button:disabled { opacity: 0.3; }
-    .pile { width: 100%; height: auto; display: block; overflow: visible; }
     .pile .pl-b { cursor: pointer; }
     .pile .pl-b circle { transition: opacity 0.18s ease; }
     .pile .pl-b:active circle { opacity: 1; }
-    .pile .pl-n { fill: rgba(0, 0, 0, 0.5); font-weight: 800; }
-    .pile-note { margin: 10px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
-
-    /* ── Когда закончу ── */
-    .blk-head { margin: 0 0 12px; font-size: 0.92rem; font-weight: 800; }
-    /* ── Спидометр материала ── */
-    .gz-list { display: grid; gap: 14px; }
-    .gz-card {
-      display: grid; gap: 5px; justify-items: center; text-align: center;
-      padding: 14px 12px 13px; border-radius: 18px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-    }
-    .gz-head { display: flex; gap: 7px; align-items: center; max-width: 100%; }
-    .gz-ic { font-size: 1.05rem; line-height: 1; flex: none; }
-    .gz-head b { font-size: 0.88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .gz-dial { width: 100%; max-width: 232px; margin-top: 2px; }
-    .gz-svg { display: block; width: 100%; height: auto; overflow: visible; }
-    .gz-track { fill: none; stroke: var(--track); stroke-width: 11; stroke-linecap: round; }
-    .gz-fill { fill: none; stroke-width: 11; stroke-linecap: round; }
-    .gz-tick { stroke: var(--muted); stroke-width: 2.5; stroke-linecap: round; }
-    .gz-rec { stroke: var(--green); stroke-width: 2.5; stroke-linecap: round; }
-    .gz-needle { stroke: var(--ink); stroke-width: 3.5; stroke-linecap: round; }
-    .gz-hub { fill: var(--ink); }
-    .gz-val {
-      font-size: 1.7rem; font-weight: 850; line-height: 1.05; color: var(--gold);
-      font-variant-numeric: tabular-nums; margin-top: -4px;
-    }
-    .gz-val span { display: block; margin-top: 2px; font-size: 0.72rem; font-weight: 600; color: var(--muted); }
-    .gz-ends { font-size: 0.68rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-    .gz-verdict { font-size: 0.74rem; line-height: 1.4; color: var(--muted); margin-top: 3px; }
     .gz-verdict.up { color: var(--green); }
     /* Сбавил — не провал, поэтому тёплый акцент, а не красный: стрелки хватает */
     .gz-verdict.down { color: var(--gold-2); }
-    .gz-when { font-size: 0.82rem; color: var(--gold); font-weight: 700; }
-    .gz-bar { width: 100%; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin-top: 3px; }
-    .gz-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
-    .gz-meta { font-size: 0.7rem; color: var(--dim); font-variant-numeric: tabular-nums; }
-    /* Дневной минимум — не вызов и не награда, поэтому спокойное стекло, а не
-       зелёная плашка: она читалась как задание, которое надо закрыть */
-    .gz-goal {
-      margin-top: 7px; padding: 8px 11px; border-radius: 12px;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      font-size: 0.74rem; line-height: 1.4; color: var(--muted); font-weight: 600;
-    }
-    .fc-note { margin: 12px 0 0; font-size: 0.7rem; color: var(--dim); line-height: 1.45; }
-
-    /* ── Куда ушли дни ── */
-    .sp-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--track); }
-    .sp-bar i { display: block; height: 100%; }
-    .sp-keys { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 11px; }
-    .sp-key { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; color: var(--muted); }
-    .sp-key i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
-    .sp-key b { color: var(--ink); font-variant-numeric: tabular-nums; }
-
-    /* дни недели */
-    .wk-prof { display: flex; align-items: flex-end; gap: 6px; height: 96px; margin: 4px 0 10px; }
-    .wk-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
-    .wk-bar { width: 100%; border-radius: 4px 4px 2px 2px; background: var(--glass-2); }
     .wk-col.top .wk-bar { background: var(--gold); }
-    .wk-col b { font-size: 0.72rem; margin-top: 5px; font-variant-numeric: tabular-nums; }
-    .wk-col em { font-style: normal; font-size: 0.66rem; color: var(--dim); }
     .wk-col.top em, .wk-col.top b { color: var(--gold); }
-    .wk-note { font-size: 0.78rem; color: var(--muted); margin: 0; }
-    .wk-note b { color: var(--ink); font-weight: 600; }
 
     /* где застреваешь */
     .stuck { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
@@ -2838,11 +2442,6 @@
        последним, и голоса не повышает. */
     .lib-arch { width: 100%; margin-top: 18px; color: var(--muted); }
     .lib-map.bars { margin-bottom: 10px; }
-
-    /* ══════════ «Захотелось» ══════════ */
-    /* Вид записи выбирают до текста, поэтому он и стоит под полем ввода:
-       сначала «куда», потом «что». */
-    .wi-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
     .wi-due { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
     /* Системный ввод даты растянут по чипу невидимым — его и нажимает палец.
        Обёртка — span, не label: label передавал нажатие вводу второй раз,
@@ -2925,7 +2524,6 @@
     .wi-kind-sel { margin: 10px 0 0; }
     .wt-kinds .wi-pick.kind { padding: 6px 9px; }
     .wt-kinds .wi-pick.kind i { font-style: normal; font-size: 1rem; }
-    .wi-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .wi-acts { flex: none; display: flex; gap: 2px; }
     .wi-edit-row { display: flex; gap: 8px; margin-top: 8px; }
     .lib-hand {
@@ -3010,9 +2608,6 @@
     }
     .mc-tile.big { width: 60px; height: 60px; border-radius: 19px; }
     .mc-tile.big i { font-size: 1.65rem; }
-    .t-piano { background: linear-gradient(145deg, #6f5ff0, #3b2c8f); }
-    .t-book { background: linear-gradient(145deg, #ffb257, #d1622a); }
-    .t-pastel { background: linear-gradient(145deg, #4fb8a4, #2b6f7e); }
 
     .mc-body { display: grid; gap: 6px; min-width: 0; }
     .mc-title { font-size: 0.94rem; font-weight: 700; line-height: 1.2; }
@@ -3035,8 +2630,6 @@
     .lib-cell:has(.lib-eye.off) .lib-row { opacity: 0.55; }
     .mc-bar { height: 6px; border-radius: 3px; background: var(--glass-2); overflow: hidden; }
     .mc-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), var(--gold-2)); }
-    .mc-num { font-size: 1.05rem; font-weight: 850; color: var(--gold); white-space: nowrap; }
-    .mc-num i { font-style: normal; font-size: 0.78rem; color: var(--dim); font-weight: 700; }
 
     .back {
       display: inline-flex; align-items: center;
@@ -3648,24 +3241,14 @@
     .post.thought.editing { border-color: rgba(255, 201, 77, 0.4); }
     .th-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .th-edit-row .btn { min-height: 44px; }
-    .th-form { display: grid; gap: 10px; }
-    .th-lab { display: grid; gap: 6px; font-size: 0.78rem; color: var(--muted); }
     .th-lab .note-input { margin-top: 0; }
     .th-text { min-height: 84px; resize: none; margin-top: 0; }
-
-    /* ── Магазин ─────────────────────── */
-    .wallet { display: grid; gap: 8px; }
-    .wal-sum { display: flex; align-items: baseline; gap: 9px; }
-    .wal-sum b { font-size: 2rem; font-weight: 850; color: var(--gold); line-height: 1; }
-    .wal-sum span { color: var(--muted); font-size: 0.9rem; }
-    .wal-hint { font-size: 0.78rem; color: var(--dim); line-height: 1.4; }
 
     .shop-head {
       font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em;
       text-transform: uppercase; color: var(--dim);
       margin: 14px 2px 8px;
     }
-    .theme-list { display: grid; gap: 9px; }
     .theme {
       display: grid; grid-template-columns: 52px 1fr auto;
       align-items: center; gap: 13px;
@@ -3677,22 +3260,6 @@
       box-shadow: inset 0 1px 0 var(--glass-hi);
     }
     .theme.on { border-color: rgba(255, 201, 77, 0.45); }
-    .th-dots { display: flex; gap: -6px; width: 52px; height: 52px; position: relative; }
-    .th-dots i {
-      position: absolute; top: 11px; width: 26px; height: 26px; border-radius: 50%;
-      border: 2px solid rgba(0, 0, 0, 0.35);
-    }
-    .th-dots i:nth-child(1) { left: 0; }
-    .th-dots i:nth-child(2) { left: 13px; }
-    .th-dots i:nth-child(3) { left: 26px; }
-    .th-ic {
-      width: 52px; height: 52px; border-radius: 16px;
-      display: grid; place-items: center; font-size: 1.4rem;
-      background: var(--glass-2);
-    }
-    .th-txt { display: grid; gap: 3px; min-width: 0; }
-    .th-txt b { font-size: 0.93rem; font-weight: 700; }
-    .th-txt em { font-style: normal; font-size: 0.76rem; color: var(--dim); line-height: 1.3; }
     .th-btn {
       min-height: 38px; padding: 0 14px; border-radius: 12px;
       font-size: 0.84rem; font-weight: 750; white-space: nowrap;
@@ -3703,7 +3270,6 @@
     .th-btn:active { transform: scale(0.95); }
     .th-btn.buy { background: linear-gradient(140deg, var(--gold), var(--gold-2)); color: #241a05; border: 0; }
     .th-btn.buy.off { opacity: 0.42; }
-    .th-tag { font-size: 0.76rem; color: var(--gold); font-weight: 700; }
     .pick-row { display: flex; flex-wrap: wrap; gap: 8px; }
     .pick {
       display: inline-flex; align-items: center; gap: 8px;
@@ -3720,8 +3286,6 @@
     .pk-name { white-space: nowrap; }
     .pick:active { transform: scale(0.95); }
     .pick.on { color: var(--ink); border-color: rgba(255, 201, 77, 0.5); background: var(--glass-2); }
-
-    .shop-note { margin: 14px 4px 4px; font-size: 0.78rem; color: var(--dim); line-height: 1.45; }
 
     /* тихая перерисовка — без анимации появления, чтобы не дёргалось */
     #view.quiet > *, #view.quiet .hero > * { animation: none !important; }
@@ -3821,29 +3385,12 @@
     /* кубик «чем заняться» */
     .gear.dice { font-size: 1.05rem; }
     .gear.dice:active { transform: scale(0.92); }
-
-    .dice-sheet { display: grid; justify-items: center; gap: 14px; text-align: center; padding: 6px 0 2px; }
-    .dice-face {
-      width: 104px; height: 104px; border-radius: 28px;
-      display: grid; place-items: center; font-size: 3rem;
-      background: var(--card-2); border: 1px solid var(--line);
-    }
-    .dice-face.rolling { animation: shake 0.5s linear infinite; }
     @keyframes shake {
       0%, 100% { transform: rotate(-8deg) scale(1); }
       25% { transform: rotate(6deg) scale(1.06); }
       50% { transform: rotate(-4deg) scale(0.97); }
       75% { transform: rotate(9deg) scale(1.04); }
     }
-    .dice-face.landed {
-      background: linear-gradient(140deg, var(--gold), var(--gold-2));
-      border: 0;
-      box-shadow: 0 10px 34px rgba(255, 180, 60, 0.35);
-      animation: bump 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .dice-what { font-size: 1.25rem; font-weight: 850; line-height: 1.2; }
-    .dice-why { font-size: 0.9rem; color: var(--muted); line-height: 1.45; max-width: 300px; }
-    .dice-why b { color: var(--gold); }
 
     /* уроки курса */
     .lessons { display: grid; gap: 7px; }
@@ -3872,32 +3419,8 @@
     .lessons.flat .lesson:first-child { border-top: 0; }
     .lesson-hint { margin-top: 11px; font-size: 0.85rem; color: var(--muted); text-align: center; }
 
-    /* ══════════ ОБЗОР ══════════ */
-    .level-panel { display: grid; gap: 14px; }
-    .lv-row { display: flex; align-items: center; gap: 14px; }
-    .lv-badge {
-      width: 64px; height: 64px; flex: 0 0 auto; border-radius: 18px;
-      background: linear-gradient(140deg, var(--gold), var(--gold-2)); color: #241a05;
-      display: grid; place-items: center; align-content: center;
-      box-shadow: 0 6px 22px rgba(255,175,60,0.32);
-    }
-    .lv-badge b { font-size: 1.7rem; font-weight: 850; line-height: 1; }
-    .lv-badge span { font-size: 0.52rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
-    .lv-info { flex: 1; min-width: 0; display: grid; gap: 6px; }
-    .lv-xp { font-size: 0.92rem; color: var(--muted); }
-    .lv-xp b { color: var(--ink); font-size: 1.15rem; font-weight: 850; }
-    .lv-xp span { display: block; font-size: 0.76rem; color: var(--dim); }
-    .lv-bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
-    .lv-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--gold), var(--gold-2)); transition: width 0.7s; }
-    .lv-hint { font-size: 0.76rem; color: var(--dim); }
-
     .share { display: flex; gap: 3px; height: 12px; }
     .share i { border-radius: 3px; min-width: 3px; }
-    .share-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.78rem; color: var(--muted); }
-    .share-legend span { display: inline-flex; align-items: center; gap: 5px; }
-    .share-legend i { width: 9px; height: 9px; border-radius: 3px; }
-
-    .radar { width: 100%; max-width: 320px; margin: 0 auto; display: block; overflow: visible; }
 
     .modes {
       display: grid;
@@ -3919,27 +3442,7 @@
     }
     .mode.on { background: rgba(255, 201, 77, 0.14); color: var(--gold); }
 
-    .balance-hint {
-      margin-top: 8px;
-      font-size: 0.76rem;
-      color: var(--dim);
-      line-height: 1.45;
-      text-align: center;
-    }
-    .balance-hint b { color: var(--muted); }
-
     .dir .dp.done { color: var(--green); }
-
-    .balance-note {
-      margin-top: 6px;
-      font-size: 0.88rem;
-      color: var(--muted);
-      line-height: 1.45;
-      text-align: center;
-    }
-    .balance-note b { color: var(--ink); }
-
-    .week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .wd {
       display: grid; justify-items: center; gap: 4px;
       padding: 9px 0; border-radius: 11px;
@@ -3948,8 +3451,6 @@
     }
     .wd i { font-style: normal; font-size: 0.9rem; }
     .wd.on { background: rgba(255,201,77,0.16); color: var(--gold); }
-
-    .dirs { display: grid; gap: 2px; }
     .dir {
       display: grid; grid-template-columns: 26px 1fr auto;
       align-items: center; gap: 10px;
@@ -4099,15 +3600,6 @@
     .ga.on i { filter: none; }
     .ga.on b { color: var(--ink); }
     .ga.on em { color: var(--muted); }
-
-    /* Значок «?» у названия этапа: спрашивает, а не кричит. */
-    .wk-q {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 18px; height: 18px; border-radius: 50%;
-      background: var(--glass); border: 1px solid var(--glass-line);
-      color: var(--gold); font-size: 0.7rem; font-weight: 700;
-      vertical-align: middle; margin-left: 4px;
-    }
     .dig-item b { color: var(--ink); font-weight: 700; }
 
     /* ── Урок по шагам ── */
@@ -4129,8 +3621,6 @@
     .ls-slow { font-size: 0.74rem; line-height: 1.45; color: var(--dim); margin: 0 0 14px; max-width: 34ch; }
     /* ── Сетка занятий курса ── */
     .ls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 14px; }
-    /* Список этапов — та же колонка */
-    .ls-steps { max-width: 34ch; margin-left: auto; margin-right: auto; }
     .ls-card { display: grid; justify-items: start; gap: 3px; text-align: left;
       background: var(--glass); border: 1px solid var(--glass-line); border-radius: 16px;
       padding: 13px 13px 11px; color: var(--ink); font: inherit; cursor: pointer; }
@@ -4143,17 +3633,8 @@
       background: rgba(255, 255, 255, 0.09); overflow: hidden; }
     .ls-bar u { display: block; height: 100%; background: var(--gold); text-decoration: none; }
     .ls-bar.wide { max-width: 220px; margin: 8px auto 0; }
-
-    /* ── Страница занятия ── */
-    /* Шапка по центру, всё остальное — одной колонкой по левому краю.
-       Колонка задаётся один раз обёрткой: когда ширину и автоотступы вешали на
-       каждый блок отдельно, заголовки уезжали вправо относительно текста. */
-    .ls-intro { text-align: center; }
     .ls-col { text-align: left; max-width: 34ch; margin: 0 auto; }
     .ls-col > *:first-child { margin-top: 14px; }
-    .ls-big { font-size: 2.4rem; line-height: 1; margin-bottom: 8px; }
-    .ls-intro h3 { font-size: 1.22rem; line-height: 1.3; margin: 0; }
-    .ls-when { font-size: 0.78rem; color: var(--dim); margin: 6px 0 0; }
     /* «Зачем это» — до списка умений: без ответа на него упражнение выглядит
        заданием ради задания. */
     /* ── Страница задания: все блоки одного вида ──
@@ -4168,33 +3649,9 @@
     .ls-life { gap: 16px; }
     .ls-life-i b { display: block; font-size: 0.92rem; font-weight: 650; line-height: 1.4;
       margin-bottom: 4px; opacity: 1; }
-    /* Вопрос — тот же кегль, отличается только тем, что это вопрос */
-    .ls-ask p { opacity: 1; }
-
-
-    .ls-learn { text-align: left; margin: 18px auto 20px; max-width: 34ch; }
-    .ls-learn-h { font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
-      color: var(--gold); margin: 0 0 9px; }
-    .ls-learn ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-    .ls-learn li { position: relative; padding-left: 19px; font-size: 0.92rem; line-height: 1.45; }
-    .ls-learn li::before { content: "→"; position: absolute; left: 0; color: var(--dim); }
-
-    /* ── Список занятий внутри задания ── */
-    .ls-steps { display: grid; gap: 8px; margin: 22px 0 18px; text-align: left; }
-    .ls-step { display: grid; grid-template-columns: 26px 1fr; gap: 11px; align-items: start;
-      background: var(--glass); border: 1px solid var(--glass-line); border-radius: 14px;
-      padding: 12px 13px; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-    .ls-step[disabled] { opacity: 0.34; cursor: default; }
     .ls-step.now { border-color: rgba(255, 201, 77, 0.45); background: rgba(255, 201, 77, 0.07); }
     .ls-step.done .ls-step-n { color: var(--gold); }
-    .ls-step-n { font-size: 0.82rem; color: var(--dim); line-height: 1.5;
-      display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-      border: 1px solid var(--glass-line); }
     .ls-step.now .ls-step-n { color: var(--gold); border-color: rgba(255, 201, 77, 0.45); }
-    .ls-step-txt b { display: block; font-size: 0.9rem; font-weight: 620; line-height: 1.35; }
-    .ls-step-txt em { display: block; font-style: normal; font-size: 0.74rem; color: var(--dim); margin-top: 3px; }
-    .ls-step-txt i { display: block; font-style: normal; font-size: 0.82rem; line-height: 1.45;
-      color: var(--ink); opacity: 0.82; margin-top: 7px; }
     .ls-kit { list-style: none; margin: 12px auto 4px; padding: 0; display: grid; gap: 9px;
       text-align: left; max-width: 34ch; }
     .ls-kit li { position: relative; padding-left: 20px; font-size: 0.92rem; line-height: 1.4; color: var(--ink); }

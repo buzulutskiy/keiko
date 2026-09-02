@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 377";
+const APP_VERSION = "Кэйко 378";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -67,7 +67,6 @@ let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
 let pickPage = 0;
 let pickDone = false;    // нажата ли «Прочитана» в открытой шторке
 let pickLessons = [];
-let pickStage = 0, pickStageDone = false;   // этап, над которым сидел, и закрыт ли он
 let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
 let drawSince = 0;                          // с какого момента открыта шторка рисования
 let pickSpans = [];    // отмеченные в этой сессии куски книги
@@ -1008,38 +1007,6 @@ const watchThumb = (l) => coverCache.get(watchThumbKey(l.videoId)) || l.thumb ||
 
 let watchBusy = false;
 
-async function watchAdd(url) {
-  const vid = ytId(url);
-  if (!vid) { toast("Это не похоже на ссылку с YouTube"); return false; }
-  const was = videos().find(v => v.videoId === vid);
-  if (was && !was.archived) { toast(was.done ? "Это видео уже посмотрено" : "Это видео уже добавлено"); return false; }
-
-  watchBusy = true; render();
-  try {
-    const r = await withTimeout(fetch("https://www.youtube.com/oembed?format=json&url=" +
-      encodeURIComponent("https://www.youtube.com/watch?v=" + vid)), 15000);
-    if (!r.ok) { toast(r.status === 404 ? "Ролик не найден или закрыт" : "YouTube не ответил"); return false; }
-    const j = await r.json();
-
-    let v = was;
-    if (v) { v.archived = false; v.updatedAt = now(); }   // вернули убранное — записи и мысли на месте
-    else {
-      v = { id: uid(), videoId: vid, title: j.title || "Ролик", author: j.author_name || "",
-            url: "https://www.youtube.com/watch?v=" + vid, thumb: j.thumbnail_url || "",
-            addedAt: now(), updatedAt: now(), done: false, doneAt: 0 };
-      data.watch.videos.push(v);
-    }
-    data.watch.activeVideo = v.id;
-    data.active = "watch";
-    saveData(); schedulePush();
-    pullWatchThumb(vid);                                  // обложку кладём в кэш, чтобы работала офлайн
-    toast("Добавлено: " + (j.title || "ролик"));
-    return true;
-  } catch (e) {
-    toast("Не получилось достать данные ролика");
-    return false;
-  } finally { watchBusy = false; render(); }
-}
 
 // картинку берём в лучшем доступном размере: maxres есть не у всех роликов
 async function pullWatchThumb(vid) {
@@ -1155,20 +1122,6 @@ function pastelStats() {
       days: list.length, streak: streak(), streakAll: streakAll(),
       weekend, comeback, notes, maxAtOnce, nextLesson: null, drawDone: готов,
       shots: takesFor(curKey()).filter((t) => t.kind === "photo").length,
-    };
-  }
-
-  if (byStages()) {
-    const все = stages(), готово = stagesDone();
-    const сеансы = new Set(все.filter((_, i) => stageDoneAt(i)).map((x) => x.g || ""));
-    return {
-      lessons: все.length, done: готово, doneSet: new Set(), spentSec: 0,
-      stepsDone: готово, steps: все.length,
-      stages: сеансы.size, stageSet: сеансы, lessonSet: new Set(),
-      pct: все.length ? готово / все.length * 100 : 0,
-      totalSec: 0, doneSec: 0, minutes: 0, minutesAll: 0, minutesLeft: 0,
-      days: list.length, streak: streak(), streakAll: streakAll(),
-      weekend, comeback, notes, maxAtOnce, nextLesson: null, stageNow: stageNow(),
     };
   }
 
@@ -1502,26 +1455,10 @@ function evName(t, id, вид, запас) {
 }
 const evIcon = (t, id) => (evList(t, "ach").get(id) || {}).icon || "";
 
-/* ── Курс по этапам ──
-   Рисование трекается не по шагам с таймером, а как книга: отмечаешь, над
-   каким этапом сидел сегодня, и говоришь — ещё вернёшься или закончил.
-   Один этап держит сколько угодно подходов, и это нормально: этап «Глаза»
-   за один присест не делается. Пока у курса есть stages, шаги и уроки
-   в счёт не идут. */
-const stages = () => (course().stages || []);
-const byStages = () => stages().length > 0;
 /* Совсем простой материал: ни уроков, ни этапов. Отметка значит «сегодня
    рисовал», к ней можно приложить снимок, а когда рисунок готов — одна
    кнопка «завершён». Больше в этом ничего нет и не должно быть. */
-const plainDraw = () => isCourse() && !lessons().length && !byStages();
-const stageKey = (i) => "S" + i;
-const stageDoneAt = (i) => (lessonStore().done || {})[stageKey(i)] || "";
-const stagesDone = () => stages().reduce((n, _, i) => n + (stageDoneAt(i) ? 1 : 0), 0);
-/* Текущий — первый незакрытый. Когда закрыты все, стоим на последнем. */
-const stageNow = () => {
-  const i = stages().findIndex((_, n) => !stageDoneAt(n));
-  return i < 0 ? Math.max(0, stages().length - 1) : i;
-};
+const plainDraw = () => isCourse() && !lessons().length;
 
 // карточки текущего материала: сколько открыто по числу дней занятий
 /* Карточка открывается за занятие: одно занятие — одна карточка.
@@ -1580,36 +1517,6 @@ function weeklyHistory(weeks = 12) {
   return out;
 }
 
-function weekSummary(offset = 0) {
-  const monday = mondayOf(new Date());
-  monday.setDate(monday.getDate() - offset * 7);
-  const from = dateStr(monday);
-  const end = new Date(monday); end.setDate(end.getDate() + 6);
-  const to = dateStr(end);
-  const inWeek = (e) => !e.deleted && e.date >= from && e.date <= to;
-
-  const pianoEntries = data.piano.entries.filter(inWeek);
-  /* Считаем РАЗНЫЕ такты, а не сумму проходов. Сыграл 1–8, назавтра 1–4 —
-     это по-прежнему восемь тактов, а не двенадцать: дальше ты не ушёл. */
-  const barSet = new Set();
-  for (const e of pianoEntries)
-    for (const sp of e.spans || [])
-      for (let i = Math.max(1, sp.from); i <= sp.to; i++) barSet.add(i);
-  const bars = barSet.size;
-
-  const bookEntries = data.book.entries.filter(inWeek);
-  const pages = pagesRead(from, to);
-
-  const pastelEntries = data.pastel.entries.filter(inWeek);
-  let lessons = 0;
-  for (const e of pastelEntries) lessons += (e.lessons || []).length;
-
-  const watchList = watchEntries().filter(inWeek);
-  const watched = watchList.length;
-
-  const allDays = new Set([...pianoEntries, ...bookEntries, ...pastelEntries, ...watchList].map(e => e.date));
-  return { from, to, days: allDays.size, bars, pages, lessons, watched };
-}
 
 function currentMaterial() {
   if (!hasMaterials()) return { icon: "◌", title: "нет материалов", sub: "", pct: 0 };
@@ -1795,24 +1702,6 @@ function bindGoalUI() {
     }));
 }
 
-function archiveUI() {
-  if (!hasMaterials()) return "";
-  const cur = currentMaterial();
-  const list = (data.archive || []).filter(a => !a.deleted)
-    .sort((a, b) => a.finishedAt < b.finishedAt ? 1 : -1);
-  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" });
-
-  return `
-    <div class="freeze">
-      <div class="fz-head">📦 <b>Материалы</b> — пройденное уходит в архив, дни занятий остаются</div>
-      <div class="fz-empty">Сейчас: <b>${esc(cur.title)}</b> · ${Math.round(cur.pct)}%</div>
-      <button class="btn" id="archBtn" type="button">Отправить в архив и начать новое</button>
-      ${list.length ? `<div class="fz-list">${list.map(a => `
-        <div class="fz-item">
-          <span>${a.icon} ${esc(a.title)} · ${a.pct}% · ${fmt.format(fromStr(a.finishedAt)).replace(" г.", "")}</span>
-        </div>`).join("")}</div>` : ""}
-    </div>`;
-}
 
 function bindArchiveUI() {
   const b = $("#archBtn");
@@ -1854,7 +1743,6 @@ function saveEntry() {
        принимаем: это не выбор, а неоткрытый выбор страницы. */
     } else if (isBook()) existing.page = pickPage > 0 ? pickPage : (existing.page || 0);
     else if (isCourse() && plainDraw()) markDraw(existing);
-    else if (isCourse() && byStages()) markStage(existing);
     else if (isCourse()) existing.lessons = [...new Set([...(existing.lessons || []), ...pickLessons])];
     else existing.spans = (existing.spans || []).concat(currentSpans());
     if (note) existing.note = existing.note ? existing.note + "; " + note : note;
@@ -1867,13 +1755,10 @@ function saveEntry() {
         bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage })
       : isCourse() ? (plainDraw()
           ? { courseId: course().id, lessons: [] }
-          : byStages()
-          ? { courseId: course().id, stage: pickStage, stageDone: pickStageDone, lessons: [] }
           : { lessons: pickLessons.slice() })
       : { pieceId: piece().id, spans: currentSpans() }
     ));
     if (isCourse() && plainDraw()) markDraw(null);
-    if (isCourse() && byStages()) markStage(null);
   }
 
   if (isWatch()) {
@@ -2255,14 +2140,6 @@ function dropEntry(e, track) {
   schedulePush();
 }
 
-function deleteEntry(id) {
-  const e = trackOf().entries.find(x => x.id === id);
-  if (!e) return;
-  if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
-  dropEntry(e, data.active);
-  syncPickers(); render();
-  toast("Запись удалена");
-}
 
 function goToDate(ds) {
   if (ds > todayStr()) { toast("Это ещё в будущем 🙂"); return; }
@@ -2276,13 +2153,6 @@ function shiftDay(delta) {
   goToDate(dateStr(d));
 }
 
-function switchTrack(which) {
-  if (data.active === which) return;
-  data.active = which;
-  pending = []; pickLessons = []; pickSpans = []; selectedDate = todayStr();
-  const t = new Date(); calYear = t.getFullYear(); calMonth = t.getMonth();
-  syncPickers(); saveData(); schedulePush(); render();
-}
 
 function syncPickers() {
   if (!hasMaterials()) return;
@@ -2630,7 +2500,7 @@ function railItems() {
      просто лист, который рисуешь. Раньше условие было только про уроки, и
      курс без них — а такой теперь «Аргус» — пропадал с главной совсем. */
   for (const c of courses())
-    if ((c.lessons || []).length || (c.stages || []).length || c.name)
+    if ((c.lessons || []).length || c.name)
       out.push({ track: "pastel", courseId: c.id, course: c });
   for (const v of videos().filter(v => !v.archived && !v.done)) out.push({ track: "watch", videoId: v.id, video: v });
   /* Завершённая книга уходит с ленты: место тем, что читаешь сейчас. Но если
@@ -3720,17 +3590,6 @@ function pickPhoto() {
   });
 }
 
-async function addPhotoTake() {
-  const f = await pickPhoto();
-  if (!f) return;
-  toast("Готовлю снимок…");
-  try {
-    const blob = await shrinkPhoto(f);
-    await saveTake(blob, 0, "photo");
-    render();
-    toast("Снимок в «Достижениях» у материала");
-  } catch { toast("Не получилось прочитать снимок"); }
-}
 
 /* Размер снимка узнаём сразу и держим при записи: по нему лента отводит
    место под картинку заранее, и её приезд ничего не двигает. */
@@ -4084,13 +3943,6 @@ function heroSub(s) {
     return subLine(course().done ? "Рисунок закончен" : "Рисую",
       n ? `${n} ${plural(n, "день", "дня", "дней")} за листом` : "ещё ни одного дня");
   }
-  if (isCourse() && byStages()) {
-    const i = stageNow(), все = stages();
-    const закрыто = stagesDone();
-    return subLine(esc((все[i] || {}).t || "Этап"),
-      закрыто >= все.length ? "рисунок закончен"
-        : `этап ${i + 1} из ${все.length}`);
-  }
   if (isCourse()) {
     const at = lessonNext();
     return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
@@ -4171,7 +4023,7 @@ $("#view").innerHTML = `
        и когда уже отмечен: второе занятие за день это нормально, отрезки
        допишутся в ту же запись. Ручная шторка остаётся у остальных треков. */
     if (isPiano() && piece().bars) { openPractice(); return; }
-    if (isPastel() && (byStages() || plainDraw())) { openLogSheet(); return; }
+    if (isPastel() && plainDraw()) { openLogSheet(); return; }
     if (isPastel() && lessons().length) { openLesson(); return; }
     openLogSheet();
   });
@@ -4548,30 +4400,7 @@ function updateHeroInfo() {
       : "";
   }
 }
-function barMap(arr, cls) {
-  const bars = piece().bars;
-  let cells = "";
-  for (let b = 1; b <= bars; b++) {
-    const n = arr[b] || 0;
-    const lvl = n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : 3;
-    cells += `<i class="bar l${lvl} ${cls}${b % 10 === 0 && b !== bars ? " tick" : ""}" title="Такт ${b}: ${n} ${plural(n, "проход", "прохода", "проходов")}"></i>`;
-  }
-  return `<div class="bar-strip" style="--n:${bars}">${cells}</div>`;
-}
 
-// активность по дням недели: сколько занятий в каждый день (все хобби)
-function weekDots() {
-  const monday = mondayOf(new Date());
-  const all = [...data.piano.entries, ...data.book.entries, ...data.pastel.entries, ...watchEntries()].filter(e => !e.deleted);
-  const out = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday); d.setDate(d.getDate() + i);
-    const ds = dateStr(d);
-    const cnt = new Set(all.filter(e => e.date === ds).map(e => e.date + (e.pieceId || e.bookId || e.courseId || ""))).size;
-    out.push({ ds, dow: DOW[i], count: cnt, future: ds > todayStr(), today: ds === todayStr(), frozen: isFrozen(ds) });
-  }
-  return out;
-}
 
 // всё сделанное за отрезок дат: дни, такты, страницы, уроки
 function rangeStats(from, to) {
@@ -4595,7 +4424,7 @@ function rangeStats(from, to) {
   const первый = firstCourseId();
   const простой = (id) => {
     const c = courses().find((x) => x.id === (id || первый));
-    return !!c && !(c.lessons || []).length && !(c.stages || []).length;
+    return !!c && !(c.lessons || []).length;
   };
   const draws = pastel.filter((e) => простой(e.courseId)).length;
 
@@ -4766,11 +4595,6 @@ const UNIT_WORD = {
   bar: ["проход", "прохода", "проходов"]
 };
 
-const unitWord = (unit, n) => {
-  const w = UNIT_WORD[unit] || ["шаг", "шага", "шагов"];
-  // дробное число берёт родительный падеж единственного: «12,5 страницы»
-  return Number.isInteger(n) ? plural(n, w[0], w[1], w[2]) : w[1];
-};
 
 // последний день материала заслуживает своего слова, а не общего «закрыт»
 const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден",
@@ -5204,22 +5028,6 @@ function allEntriesOn(ds) {
   return out;
 }
 
-function historyHTML() {
-  const hist = weeklyHistory(12);
-  const max = Math.max(1, ...hist.map(h => h.days));
-  const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
-  const total = hist.reduce((a, h) => a + h.days, 0);
-
-  return `
-    <div class="hist">
-      ${hist.map((h, i) => `
-        <div class="hb" title="${fmt.format(fromStr(h.start))}: ${h.days} ${plural(h.days, "день", "дня", "дней")}">
-          <i style="height:${Math.round(h.days / max * 100)}%"></i>
-          <span>${i % 3 === 0 ? fmt.format(fromStr(h.start)).replace(/\s.*/, "") : ""}</span>
-        </div>`).join("")}
-    </div>
-    <div class="hist-note">За 12 недель — <b>${total}</b> ${plural(total, "занятие", "занятия", "занятий")} по этому материалу</div>`;
-}
 
 function renderCalendar() {
   const first = new Date(calYear, calMonth, 1);
@@ -5325,7 +5133,7 @@ function achMaterials() {
   for (const c of courses()) {
     /* Курс без уроков — это рисунок: занятий у него нет, а материал есть.
        Раньше он сюда не попадал, и лента подписывала его карточки «Архивом». */
-    if (!(c.lessons || []).length && !(c.stages || []).length && !c.name) continue;
+    if (!(c.lessons || []).length && !c.name) continue;
     data.pastel.activeCourse = c.id;
     const list = achState(), f = factsState();
     const ck = keyOfCourse(c);
@@ -5867,17 +5675,6 @@ function рисуйКлуб(bk, page) {
   $("#clClose").addEventListener("click", closeSheet);
 }
 
-function openTalkSheet(b, page) {
-  const bk = b || book();
-  const главы = articleChapters(bk);
-  if (!главы.length) { toast("Разбора пока нет"); return; }
-  if (talkAt < 0 || !главы.some((c) => c.i === talkAt)) {
-    const тут = chapterIndexAt(bk, page);
-    talkAt = главы.some((c) => c.i === тут) ? тут : главы[0].i;
-  }
-  clubMark(bk, talkAt);
-  рисуйРазговор(bk);
-}
 
 let talkView = "art";      // что открыто внутри песни: разбор или вопросы
 
@@ -8296,8 +8093,6 @@ function syncNotesFabs() {
     && !!data && wishes().filter((w) => !w.done).length > 1);
 }
 
-// материал в том виде, в каком его понимает withMaterial
-const viewOf = (m) => ({ track: m.track, pieceId: m.pieceId || null, bookId: m.bookId || null, videoId: m.videoId || null });
 
 
 /* ══════════ Практика: занятие по плану ══════════
@@ -10172,14 +9967,6 @@ function рамкиHTML(заголовок, список) {
       <div class="ls-life-i"><b>${esc(x.n || "")}</b><p>${esc(x.t || "")}</p></div>`).join("")}</div>`;
 }
 
-/* Блок страницы задания: заголовок и текст абзацами. Пустой блок не рисуется —
-   у урока может не быть какой-то части, и дыры от неё быть не должно. */
-function блокHTML(заголовок, текст) {
-  const абзацы = String(текст || "").split("\n").map((x) => x.trim()).filter(Boolean);
-  if (!абзацы.length) return "";
-  return `<p class="ls-h">${esc(заголовок)}</p>
-    <div class="ls-why">${абзацы.map((x) => `<p>${esc(x)}</p>`).join("")}</div>`;
-}
 
 /* ── Просмотр лекции ──
    Курс может быть не занятием по шагам, а видео, которое досматриваешь с того
@@ -10212,13 +9999,6 @@ function seenSet(i, at, dur) {
   saveData(); schedulePush();
 }
 
-/* Часы показываем только когда они есть: «12:30» читается быстрее, чем
-   «0:12:30», а лекции бывают и на два часа. */
-function lcClock(t) {
-  if (!isFinite(t) || t < 0) return "0:00";
-  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = Math.floor(t % 60);
-  return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(sec).padStart(2, "0");
-}
 
 /* Тело шага. Текст приходит как есть, вместе со схемами в тройных кавычках:
    схема держится только пробелами, поэтому идёт в моноширинный блок без
@@ -13490,11 +13270,10 @@ function openLogSheet() {
   }
   sheetMode = "log";
   pickSpans = []; partOpen = null; partUpto = {};
-  if (isCourse() && byStages()) { pickStage = stageNow(); pickStageDone = false; }
   if (isCourse() && plainDraw()) { pickDrawDone = false; drawSince = now(); }
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : byStages() ? "Над чем рисовал?" : "Какие уроки прошёл?") : "Что разбирал?");
+  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : "Какие уроки прошёл?") : "Что разбирал?");
   /* «Сегодня» подписывать незачем: отмечают почти всегда сегодняшний день, и
      строка только отодвигала главное. Дата остаётся, когда она другая, и
      остаётся предупреждение, что запись за этот день уже есть. */
@@ -13560,7 +13339,7 @@ function renderSheetBody() {
   if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
   else if (isWatch()) { /* выбирать нечего: у ролика одно состояние */ }
-  else if (isCourse()) { if (plainDraw()) bindDrawSheet(); else if (byStages()) bindStageSheet(); else bindPastelSheet(); }
+  else if (isCourse()) { if (plainDraw()) bindDrawSheet(); else bindPastelSheet(); }
   else bindPianoSheet();
 }
 
@@ -13587,7 +13366,6 @@ function watchSheetUI() {
 
 function pastelSheetUI() {
   if (plainDraw()) return drawSheetUI();
-  if (byStages()) return stageSheetUI();
   const done = doneLessons();
   return `
     <div class="lessons">
@@ -13650,36 +13428,6 @@ function bindDrawSheet() {
     el.addEventListener("click", () => openShotSheet(el.dataset.shot)));
 }
 
-/* Список этапов: один выбран — над ним сегодня и сидел. Отдельным
-   переключателем говорим, закончен он или ещё вернёмся. Закрытые этапы
-   выбрать тоже можно: вернуться и доправить — обычное дело. */
-function stageSheetUI() {
-  const все = stages();
-  const тек = stageNow();
-  let g = null;
-  return `
-    <div class="stages">
-      ${все.map((x, i) => {
-        const закрыт = !!stageDoneAt(i);
-        const выбран = i === pickStage;
-        const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
-        g = x.g || g;
-        return шапка + `
-          <button class="sg ${выбран ? "sel" : ""}${закрыт ? " was" : ""}" data-sg="${i}" type="button">
-            <span class="sg-n">${i + 1}</span>
-            <span class="sg-t">${esc(x.t || "Этап " + (i + 1))}${
-              i === тек && !закрыт ? `<i>сейчас здесь</i>` : закрыт ? `<i>закрыт ${esc(fmtDay(stageDoneAt(i)))}</i>` : ""}</span>
-            <span class="sg-c">${выбран ? "●" : закрыт ? "✓" : "○"}</span>
-          </button>`;
-      }).join("")}
-    </div>
-    <button class="qbtn fin ${pickStageDone ? "on" : ""}" id="sgFin" type="button" style="margin-top:12px;width:100%">
-      ${pickStageDone ? "✓ Этап закончен — дальше следующий" : "Отметить этап законченным"}
-    </button>
-    <div class="lesson-hint">${pickStageDone
-      ? "Закроем этап и встанем на следующий."
-      : "Просто подход: этап останется текущим, вернёшься к нему сколько понадобится."}</div>`;
-}
 
 /* Завершение рисунка живёт на самом курсе, как «прочитана» у книги: это
    решение, а не накопленный процент. Снять его можно тем же «Начать заново». */
@@ -13691,34 +13439,7 @@ function markDraw(existing) {
   if (existing) existing.drawDone = true;
 }
 
-/* Закрытие этапа держим в том же хранилище, что и шаги: ключ «S<номер>» с
-   датой. Запись дня хранит номер этапа отдельно — по ней потом видно, над
-   чем сидел, даже если этап позже переоткрыли. */
-function markStage(existing) {
-  if (existing) {
-    existing.courseId = existing.courseId || course().id;
-    existing.stage = pickStage;
-    if (pickStageDone) existing.stageDone = true;
-  }
-  const st = lessonStore();
-  st.done = st.done || {};
-  if (pickStageDone) st.done[stageKey(pickStage)] = selectedDate;
-  st.at = now();
-  pracStamp(true);
-}
 
-function bindStageSheet() {
-  document.querySelectorAll("[data-sg]").forEach((b) =>
-    b.addEventListener("click", () => {
-      pickStage = Number(b.dataset.sg);
-      /* Переставили выбор на другой этап — «закончен» сбрасываем: галочка
-         относилась к прошлому и молча закрыла бы не тот. */
-      pickStageDone = false;
-      renderSheetBody();
-    }));
-  const f = $("#sgFin");
-  if (f) f.addEventListener("click", () => { pickStageDone = !pickStageDone; renderSheetBody(); });
-}
 
 function bindPastelSheet() {
   document.querySelectorAll(".lesson:not([disabled])").forEach(b =>
@@ -14271,7 +13992,6 @@ try { MUSEUM = JSON.parse(localStorage.getItem(LS_MUS) || "null"); } catch {}
    выходит из игры, пока материал перекраивают. */
 const musItems = () => (MUSEUM && Array.isArray(MUSEUM.items))
   ? MUSEUM.items.filter((x) => !x.hidden) : [];
-const musOf = (bookId) => musItems().filter((x) => x.book === bookId);
 
 async function pullMuseum() {
   if (musPulling) return false;
@@ -15098,8 +14818,7 @@ function pastelPageUI(id) {
   const thoughts = (data.thoughts || []).filter(t => !t.deleted && t.key === "pastel").length;
   const days = new Set(ent.map(e => e.date)).size;
   const лекция = c.mode === "watch";
-  const этапный = (c.stages || []).length > 0;
-  const простой = !этапный && !c.lessons.length;
+  const простой = !c.lessons.length;
   /* Ход разбора берём у того курса, чью страницу открыли, а не у активного:
      иначе карта шагов и список этапов показывали чужое, споря с числами
      над ними, которые уже считались правильно. */
@@ -15118,10 +14837,9 @@ function pastelPageUI(id) {
       })()}</div>
       <div class="lib-title"><b>${esc(c.name)}</b><em>${esc(c.author || "")}</em></div>
     </div>
-    ${этапный ? stagesPageHTML(c, ent, отметки, st, notes, thoughts) : ""}
     ${простой ? drawPageHTML(c, ent, notes, thoughts) : ""}
 
-    ${этапный || простой ? "" : `
+    ${простой ? "" : `
     <div class="panel">
       ${(() => {
         /* Карта — по ходам, как у пьесы по тактам: видно, сколько позади и где
@@ -15151,7 +14869,7 @@ function pastelPageUI(id) {
       </div>
     </div>
 
-    ${лекция ? "" : pastelDaysHTML(c, отметки, ent)}
+    ${лекция || простой ? "" : pastelDaysHTML(c, отметки, ent)}
 
     <div class="freeze">
       <div class="fz-head">🎨 <b>${лекция ? "Занятия" : "Этапы"}</b> — ${
@@ -15231,79 +14949,6 @@ function drawPageHTML(c, ent, notes, thoughts) {
     </div>` : ""}`;
 }
 
-/* ── Страница курса по этапам ──
-   Здесь нет ни минут, ни шагов: только лестница этапов, сколько подходов
-   в каждый вложено и когда он закрыт. Подход — это отметка дня, у которой
-   стоит номер этапа. */
-function stagesPageHTML(c, ent, отметки, st, notes, thoughts) {
-  const все = c.stages || [];
-  const закрыт = (i) => отметки["S" + i] || "";
-  const готово = все.reduce((n, _, i) => n + (закрыт(i) ? 1 : 0), 0);
-  const подходы = new Map();
-  for (const e of ent) {
-    if (typeof e.stage !== "number") continue;
-    подходы.set(e.stage, (подходы.get(e.stage) || 0) + 1);
-  }
-  const дни = new Set(ent.map((e) => e.date)).size;
-  const тек = все.findIndex((_, i) => !закрыт(i));
-  let g = null;
-  return `
-    <div class="panel">
-      <div class="lib-map">${все.map((_, i) =>
-        `<i style="opacity:${закрыт(i) ? 1 : 0.10}"></i>`).join("")}</div>
-      <div class="lib-num">
-        <div><b>${Math.round(все.length ? готово / все.length * 100 : 0)}%</b><span>пройдено</span></div>
-        <div><b>${готово}</b><span>из ${все.length} ${plural(все.length, "этапа", "этапов", "этапов")}</span></div>
-        <div><b>${дни}</b><span>${plural(дни, "день", "дня", "дней")}</span></div>
-        <div><b>${ent.length}</b><span>${plural(ent.length, "подход", "подхода", "подходов")}</span></div>
-      </div>
-      <div class="lib-rows">
-        <div><span>Сейчас над чем</span><b>${esc(тек < 0 ? "рисунок закончен" : (все[тек] || {}).t || "")}</b></div>
-        <div><span>Первая запись</span><b>${ent[0] ? esc(fmtDay(ent[0].date)) : "—"}</b></div>
-        <div><span>Последняя</span><b>${ent.length ? esc(fmtDay(ent[ent.length - 1].date)) : "—"}</b></div>
-        <div><span>Заметок при отметке</span><b>${notes}</b></div>
-        <div><span>Моментов о курсе</span><b>${thoughts}</b></div>
-      </div>
-    </div>
-
-    <div class="freeze">
-      <div class="fz-head">🪜 <b>Этапы</b> — ${все.length}, по одному за раз и сколько угодно подходов</div>
-      <div class="stages">
-        ${все.map((x, i) => {
-          const d = закрыт(i), n = подходы.get(i) || 0;
-          const шапка = (x.g && x.g !== g) ? `<div class="sg-head">${esc(x.g)}</div>` : "";
-          g = x.g || g;
-          return шапка + `
-            <div class="sg${d ? " was" : ""}${i === тек ? " sel" : ""}">
-              <span class="sg-n">${i + 1}</span>
-              <span class="sg-t">${esc(x.t || "")}${
-                d ? `<i>закрыт ${esc(fmtDay(d))}${n ? ` · ${n} ${plural(n, "подход", "подхода", "подходов")}` : ""}</i>`
-                  : n ? `<i>${n} ${plural(n, "подход", "подхода", "подходов")}</i>`
-                  : i === тек ? `<i>сейчас здесь</i>` : ""}</span>
-              <span class="sg-c">${d ? "✓" : i === тек ? "●" : "○"}</span>
-            </div>`;
-        }).join("")}
-      </div>
-    </div>
-
-    ${(() => {
-      const дни = ent.slice().reverse();
-      if (!дни.length) return "";
-      return `<div class="freeze">
-        <div class="fz-head">📅 <b>День за днём</b> — ${дни.length} ${plural(дни.length, "подход", "подхода", "подходов")}</div>
-        <div class="pd-list">
-          ${дни.map((e) => {
-            const x = все[e.stage] || {};
-            return `<div class="pd"><div class="pd-top">
-              <b>${esc(fmtDay(e.date))}</b>
-              <span>${e.stageDone ? "закрыл этап" : "подход"}</span></div>
-              <p>${typeof e.stage === "number" ? esc((e.stage + 1) + ". " + (x.t || "")) : esc(e.note || "")}</p>
-            </div>`;
-          }).join("")}
-        </div>
-      </div>`;
-    })()}`;
-}
 
 /* Кнопка стоит на странице самого материала, рядом с «в архив»: там видно,
    что именно начинаешь заново. */
