@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 387";
+const APP_VERSION = "Кэйко 388";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10707,6 +10707,10 @@ function openPlaceMap(bk, i, выбрать) {
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
   gmTocBtn();
+  /* Файл с местами мог обновиться в гисте — спрашиваем при каждом открытии
+     карты. Раньше это делал экран разбора; его сняли, и файл перестал
+     обновляться совсем: на телефоне навсегда оставалась первая версия. */
+  mapFresh(bk);
   const img = $("#gmImg");
   const ключ = mapKey(bk.id);
   const src = artSrc(ключ, mapFile(bk.id));
@@ -11045,6 +11049,25 @@ function gmГлавы(имя) {
     const c = (gm.части || []).find((x) => Number(x.n) === n);
     return c ? String(c.name).split(".")[0].trim() : "";
   }).filter(Boolean);
+}
+
+/* Тихое обновление карты: если в гисте появились новые места, подставляем их
+   на месте, не закрывая карту и не сбивая приближение. Не чаще раза в минуту —
+   карту открывают и закрывают часто. */
+const mapAsked = new Map();
+function mapFresh(bk) {
+  const id = bk.id;
+  if (now() - (mapAsked.get(id) || 0) < 60000) return;
+  mapAsked.set(id, now());
+  pullArts(id).then((новое) => {
+    if (!новое || !gm || gm.id !== id) return;
+    gm.места = mapPoints(bk, gm.i);
+    gm.части = mapPartsOf(bk);
+    gm.рамка = mapBox(bk) || gm.рамка;
+    if (gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
+    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmCard();
+    toast("Карта обновилась");
+  }).catch(() => mapAsked.set(id, 0));
 }
 
 function gmTitle() {
