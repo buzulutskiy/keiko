@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 395";
+const APP_VERSION = "Кэйко 396";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6183,6 +6183,107 @@ const GUT_ACH = [
     word: "Две записи за пятнадцать минут. Механизм отлажен и работает.",
     test: (s) => s.fast15 },
 ];
+
+function renderGut() {
+  const list = gutList();
+  const t = new Date();
+  const monFirst = (d) => (d.getDay() + 6) % 7;          // неделя с понедельника
+  const weekFrom = new Date(t); weekFrom.setDate(t.getDate() - monFirst(t)); weekFrom.setHours(0, 0, 0, 0);
+  const monthFrom = new Date(t.getFullYear(), t.getMonth(), 1);
+
+  const week = list.filter((g) => g.at >= weekFrom.getTime()).length;
+  const month = list.filter((g) => g.at >= monthFrom.getTime()).length;
+  const last = list[0];
+
+  const ago = (ms) => {
+    const h = Math.floor((now() - ms) / 3600e3);
+    if (h < 1) return "только что";
+    if (h < 24) return h + " " + plural(h, "час", "часа", "часов") + " назад";
+    const d = Math.floor(h / 24);
+    return d + " " + plural(d, "день", "дня", "дней") + " назад";
+  };
+  const clock = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
+  const dayFmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long" });
+
+  // месяц сеткой: чем чаще в этот день, тем плотнее пятно
+  const days = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  const byDay = {};
+  for (const g of list) if (g.date) byDay[g.date] = (byDay[g.date] || 0) + 1;
+  const pad = monFirst(monthFrom);
+  const cells = Array.from({ length: pad }, () => `<i class="gc-pad"></i>`).concat(
+    Array.from({ length: days }, (_, i) => {
+      const ds = dateStr(new Date(t.getFullYear(), t.getMonth(), i + 1));
+      const n = byDay[ds] || 0;
+      const future = ds > todayStr();
+      return `<i class="gc-day${n ? " on" : ""}${future ? " fut" : ""}${ds === todayStr() ? " now" : ""}"
+        style="${n ? `--k:${Math.min(1, 0.35 + n * 0.3)}` : ""}" title="${esc(ds)}">${i + 1}</i>`;
+    })).join("");
+
+  const today = list.filter((g) => g.date === todayStr());
+
+  $("#view").innerHTML = `
+    <div class="gut-hero">
+      <button class="gut-btn" id="gutGo" type="button" aria-label="Отметить">💩</button>
+      <p class="gut-hint">Получилось — жми. Больше ничего заполнять не надо.</p>
+    </div>
+
+    <div class="gut-sum">
+      <div class="gut-card">
+        <b>${last ? ago(last.at) : "—"}</b>
+        <em>${last ? dayFmt.format(new Date(last.at)) + ", " + clock.format(new Date(last.at)) : "пока пусто"}</em>
+      </div>
+      <div class="gut-card"><b>${week}</b><em>на этой неделе</em></div>
+      <div class="gut-card"><b>${month}</b><em>в этом месяце</em></div>
+    </div>
+
+    <div class="lib-group">${esc(new Intl.DateTimeFormat("ru", { month: "long", year: "numeric" }).format(t).replace(" г.", ""))}</div>
+    <div class="gut-cal">
+      ${["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((d) => `<i class="gc-h">${d}</i>`).join("")}
+      ${cells}
+    </div>
+
+    ${(() => {
+      const ach = gutAchState();
+      const open = ach.filter((a) => a.done);
+      const shut = ach.length - open.length;
+      /* Закрытые не показываем вовсе: ни названия, ни условия. Список условий
+         превращает раздел в задание, которое надо выполнить, а тут не то место.
+         Пусть будет просто известно, что впереди ещё что-то есть. */
+      return `
+        <div class="lib-group">Наградки · ${open.length} из ${ach.length}</div>
+        <div class="gut-ach">
+          ${open.map((a) => `
+            <span class="ga on">
+              <i>${a.icon}</i>
+              <b>${esc(a.name)}</b>
+              <em>${esc(wordOf(a))}</em>
+            </span>`).join("")}
+          ${open.length ? "" : `<div class="ga-none">Первая появится с первой отметкой.</div>`}
+          ${shut ? `
+            <div class="ga-shut">
+              ${Array.from({ length: Math.min(shut, 12) }, () => `<i>🔒</i>`).join("")}
+              <span>Ещё ${shut} ${plural(shut, "наградка", "наградки", "наградок")} —
+                что за ними, узнаешь, когда откроются</span>
+            </div>` : ""}
+        </div>`;
+    })()}
+
+    ${today.length ? `
+      <div class="lib-group">Сегодня · ${today.length}</div>
+      <div class="gut-today">
+        ${today.map((g) => `
+          <span class="gut-chip">${clock.format(new Date(g.at))}
+            <button data-gutdrop="${g.id}" type="button" aria-label="Убрать">✕</button>
+          </span>`).join("")}
+      </div>` : ""}`;
+
+  /* Спрятанная игра на долгом нажатии снята — осталось обычное касание. */
+  const go = $("#gutGo");
+  let held = false;
+  go.addEventListener("click", () => { if (held) { held = false; return; } gutAdd(); });
+  document.querySelectorAll("[data-gutdrop]").forEach((b) =>
+    b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
+}
 
 const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ ...a, done: a.test(st) })); };
 const gutOpenSet = () => new Set(gutAchState().filter((a) => a.done).map((a) => a.id));
