@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 399";
+const APP_VERSION = "Кэйко 400";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13507,8 +13507,10 @@ let MUSEUM = null, musPulling = false;
 try { MUSEUM = JSON.parse(localStorage.getItem(LS_MUS) || "null"); } catch {}
 /* Скрытый предмет не показываем и не открываем: он остаётся в файле, но
    выходит из игры, пока материал перекраивают. */
+/* Снятый предмет не показываем и не открываем. Пометку deleted раньше здесь
+   не смотрели вовсе — убранные из описи вещи оставались на экране навсегда. */
 const musItems = () => (MUSEUM && Array.isArray(MUSEUM.items))
-  ? MUSEUM.items.filter((x) => !x.hidden) : [];
+  ? MUSEUM.items.filter((x) => !x.hidden && !x.deleted) : [];
 
 async function pullMuseum() {
   if (musPulling) return false;
