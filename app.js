@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 394";
+const APP_VERSION = "Кэйко 395";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11142,12 +11142,20 @@ function gmList() {
   }).join("");
 }
 
+/* Номер главы в подписи — всегда. Названия у книг разные: где-то «Песнь IX.
+   Киклоп», где-то просто «Этапы штурма», и без цифры непонятно, где ты сейчас.
+   Собственную нумерацию из названия убираем, чтобы не вышло «9. Песнь IX». */
+function gmИмяГлавы(n, имя) {
+  const чистое = String(имя || "").replace(/^\s*(глава|песнь|часть|письмо)\s+[^.]{1,20}\.?\s*/i, "").trim();
+  return `${n}. ${чистое || имя || ""}`;
+}
+
 function gmTitle() {
   const el = $("#gmTitle");
   if (!el || !gm) return;
-  if (gm.часть === -1) { el.textContent = "Вокруг романа"; return; }
+  if (gm.часть === -1) { el.textContent = "Вокруг книги"; return; }
   const c = (gm.части || []).find((x) => Number(x.n) === gm.часть);
-  el.textContent = c ? c.name : gm.name;
+  el.textContent = c ? gmИмяГлавы(c.n, c.name) : gm.name;
 }
 
 /* Кнопка содержания нужна, только если делить и правда есть на что: одна
@@ -11193,7 +11201,7 @@ function gmToc() {
   // выбранная глава отмечена галочкой: иначе не видно, что карта чем-то сужена
   const выбрана = (n) => Number(gm.часть || 0) === n ? " class=\"on\"" : "";
   const птица = (n) => Number(gm.часть || 0) === n ? "✓ " : "";
-  box.innerHTML = части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(c.name)}
+  box.innerHTML = части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(gmИмяГлавы(c.n, c.name))}
         <em>${esc(gmРазбивка(c.по) || слово(c.k))}</em></button>`).join("")
     + (вне ? `<button data-part="-1"${выбрана(-1)} type="button">${птица(-1)}Вокруг романа
         <em>${слово(вне)} · не сцены книги</em></button>` : "");
