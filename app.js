@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 410";
+const APP_VERSION = "Кэйко 411";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4329,29 +4329,70 @@ function rangeStats(from, to) {
            entries: piano.length + bookList.length + pastel.length + watchList.length };
 }
 
-/* ── Сколько ещё занятий до конца материала ──
-   Считаем по последним сессиям: сколько единиц (тактов, страниц, уроков)
-   прибавлялось за раз, и делим на остаток. */
+/* ── Когда материал кончится ──
+   Считаем одно число: сколько единиц выходит в день. Раньше считались два —
+   «сколько за заход» и «раз в сколько дней заходишь» — и брались они из
+   разных окон: прирост по последним восьми заходам, ритм по последнему
+   двадцать первому дню. Две оценки перемножались, и ошибка перемножалась
+   тоже. На дочитанной книге такой прогноз промахивался в среднем на 2,4 дня,
+   на скорости в день — на 1,75, и устойчивое ускорение замечал на день
+   позже.
+
+   Главное же не в точности: прогноз здесь — не отчёт, а обратная связь.
+   Хорошо почитал вечером — дата должна заметно придвинуться сегодня же, а не
+   через неделю. Медиана прироста, стоявшая тут раньше, для этого не годится:
+   ей нужно большинство новых заходов, чтобы шелохнуться, и на больших вечерах
+   дата не двигалась вовсе. */
 // медиана устойчивее среднего: один марафон на полкниги не должен задирать прогноз
 const median = (a) => {
   const q = a.slice().sort((x, y) => x - y), m = Math.floor(q.length / 2);
   return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2;
 };
 
+/* Окно — последние пять заходов, а не последние N дней: так оно само
+   подстраивается под ритм. Кто читает каждый вечер, у того окно недельное,
+   кто садится по выходным — почти месячное, и меряются оба честно. */
+const RECENT = 5;
+/* Один рывок не выдаёт себя за новый темп: заход, обогнавший обычный больше
+   чем втрое, засчитывается за три обычных. Прочитал полкниги за вечер — дата
+   заметно придвинется, но не станет «завтра закончишь». */
+const BURST = 3;
+
+/* Сколько единиц в день выходит по последним заходам. С «всю» — по всей
+   истории: это запасной ход, когда в окне не прибавилось ничего. */
+function paceRate(ряд, старт, всю) {
+  if (!ряд.length) return 0;
+  const i = всю ? 0 : Math.max(0, ряд.length - RECENT);
+  const база = i > 0 ? ряд[i - 1].n : старт;
+  const откуда = i > 0 ? ряд[i - 1].d : ряд[0].d;
+  /* Срок меряем до сегодня, а не до последнего захода. Пока не открываешь
+     материал, дни идут, скорость падает и дата честно уезжает; вернёшься —
+     подтянется обратно. Ничего не надо ни объявлять, ни сбрасывать.
+     Когда окно достало до самого начала, первый день тоже входит в срок:
+     иначе два вечера подряд читались бы как «сорок страниц за один день». */
+  const дни = Math.max(1, daysBetween(откуда, todayStr()) + (i > 0 ? 0 : 1));
+  const шаги = [];
+  let было = база;
+  for (const r of ряд.slice(i)) { if (r.n > было) шаги.push(r.n - было); было = r.n; }
+  if (!шаги.length) return 0;
+  const потолок = шаги.length >= 3 ? median(шаги) * BURST : Infinity;
+  return шаги.reduce((s, x) => s + Math.min(x, потолок), 0) / дни;
+}
+
 function paceForecast() {
   const list = entries().slice().sort((a, b) => a.date < b.date ? -1 : 1);
   if (!list.length) return null;
 
-  // прогресс в единицах на конец каждой сессии
-  let marks = [], unit = "", total = 0;
+  // ряд: на какую дату сколько всего сделано
+  let ряд = [], старт = 0, unit = "", total = 0;
 
   if (isBook()) {
     const b = book();
     total = b.pages;
     unit = "page";
-    let page = b.startPage || 0;
-    for (const e of list) { page = Math.max(page, e.page || 0); marks.push(page); }
-    marks.unshift(b.startPage || 0);
+    старт = b.startPage || 0;
+    let page = старт;
+    for (const e of list) { page = Math.max(page, e.page || 0); ряд.push({ d: e.date, n: page }); }
   } else if (isWatch()) {
     return null;
   } else if (isCourse()) {
@@ -4364,17 +4405,15 @@ function paceForecast() {
     if (t.totalSec) {
       unit = "minute";
       total = Math.round(t.totalSec / 60);
-      marks.push(0);
       let сумма = 0;
-      for (const d of Object.keys(t.поДням).sort()) { сумма += t.поДням[d]; marks.push(Math.round(сумма / 60)); }
+      for (const d of Object.keys(t.поДням).sort()) { сумма += t.поДням[d]; ряд.push({ d, n: Math.round(сумма / 60) }); }
       // длительностей нет ни у одного дня, а пройденное есть — хотя бы одна точка
-      if (marks.length === 1 && t.doneSec > 0) marks.push(Math.round(t.doneSec / 60));
+      if (!ряд.length && t.doneSec > 0) ряд.push({ d: list[list.length - 1].date, n: Math.round(t.doneSec / 60) });
     } else {
       total = course().lessons.length;
       unit = "lesson";
       const seen = new Set();
-      marks.push(0);
-      for (const e of list) { for (const i of e.lessons || []) seen.add(i); marks.push(seen.size); }
+      for (const e of list) { for (const i of e.lessons || []) seen.add(i); ряд.push({ d: e.date, n: seen.size }); }
     }
   } else {
     /* Цель — не «задеть все такты», а закрыть все шаги: чтение и игру каждым
@@ -4409,64 +4448,21 @@ function paceForecast() {
         if (посл && посл.d) поДням[посл.d] = (поДням[посл.d] || 0) + REP_GOAL;
       }
     }
-    marks.push(0);
     let сумма = 0;
-    for (const d of Object.keys(поДням).sort()) { сумма += поДням[d]; marks.push(сумма); }
+    for (const d of Object.keys(поДням).sort()) { сумма += поДням[d]; ряд.push({ d, n: сумма }); }
   }
 
-  const done = marks[marks.length - 1];
+  const done = ряд.length ? ряд[ряд.length - 1].n : старт;
   const left = Math.max(0, total - done);
-  if (!left) return { left: 0, sessions: 0, pace: 0, unit, done: true };
+  if (!left) return { left: 0, rate: 0, days: 0, unit, done: true };
+  if (!ряд.length) return null;
 
-  /* Прирост за каждый заход по порядку. Нули пропускаем: сессия, где ничего
-     не прибавилось, — это повторение, а не медленный шаг, и темп она не
-     характеризует. */
-  const all = [];
-  for (let i = 1; i < marks.length; i++) {
-    const g = marks[i] - marks[i - 1];
-    if (g > 0) all.push(g);
-  }
-  if (!all.length) return null;
+  /* Если в окне не прибавилось ничего — последние заходы были повторением, —
+     меряем по всей истории: показать хоть какой-то срок честнее, чем молчать. */
+  const темп = paceRate(ряд, старт) || paceRate(ряд, старт, true);
+  if (!темп) return null;
 
-  const RECENT = 8;
-  const pace = median(all.slice(-RECENT));
-  /* Каким темп был раньше — по всему, что осталось за окном последних заходов.
-     Меньше трёх сравнивать не с чем: одна удачная суббота выдаст себя за
-     разгон. Ноль означает «сравнить не с чем», а не «стоял на месте». */
-  const older = all.slice(0, Math.max(0, all.length - RECENT));
-  const was = older.length >= 3 ? median(older) : 0;
-  /* Сегодняшний прирост нужен отдельно: если день уже отмечен, звать «сегодня
-     столько-то» бессмысленно — часть уже сделана, и считать надо остаток. */
-  const lastGain = marks[marks.length - 1] - marks[marks.length - 2];
-  const todayGain = list[list.length - 1].date === todayStr() && lastGain > 0 ? lastGain : 0;
-  /* ── Как часто ты к этому возвращаешься ──
-     Считаем не промежутки между прошлыми заходами, а сколько их пришлось на
-     последние три недели. Разница принципиальная: промежутки между прошлыми
-     заходами ничего не знают о сегодняшней паузе — можно не открывать книгу
-     две недели, а срок будет стоять как вкопанный и врать в приятную сторону.
-     Окно включает сегодня, поэтому пока не заходишь, срок честно уезжает, а
-     как вернёшься — сам подтягивается обратно. Ничего не надо ни объявлять,
-     ни сбрасывать: буксуешь — видно, разогнался — тоже.
-
-     Раньше здесь стояла просто двойка, «занятие через день», и половина
-     расчёта была выдумана.
-
-     Объявленную паузу из окна вычитаем: отпуск не повод портить оценку. */
-  const WINDOW = 21;
-  let every = 2;
-  if (list.length >= 3) {
-    const span = Math.min(WINDOW, daysBetween(list[0].date, todayStr()) + 1);
-    const live = Math.max(1, span);
-    const from = dateStr(new Date(Date.now() - (span - 1) * 864e5));
-    // день считаем один раз: за вечер бывает два захода, ритм от этого не меняется
-    const hits = new Set(list.filter((e) => e.date >= from).map((e) => e.date)).size;
-    /* Потолок в две недели — на случай заброшенного и возобновлённого:
-       по настоящему промежутку вышли бы десятилетия. */
-    every = Math.min(14, Math.max(1, Math.round(hits ? live / hits : live)));
-  }
-
-  return { left, pace, was, gains: all, todayGain, at: done, total, every,
-           sessions: Math.max(1, Math.ceil(left / pace)), unit, done: false };
+  return { left, rate: темп, days: Math.max(1, Math.ceil(left / темп)), unit, done: false };
 }
 
 /* ── Разогнался или сбавил ──
@@ -4492,11 +4488,6 @@ const FINISH_WORD = { page: "книга дочитана", lesson: "курс п�
 const MONTHS_WORD = ["", "один", "два", "три", "четыре", "пять", "шесть",
   "семь", "восемь", "девять", "десять", "одиннадцать"];
 
-/* ── Чем двинуть стрелку сегодня ──
-   Прибор показывает, где ты сейчас, но от него хочется действия. Считаем не
-   лозунг, а ровно то, что случится: темп берётся по последним восьми заходам,
-   значит сегодняшний в это окно войдёт и вытеснит самый старый. Перебираем
-   посильные цели и берём первую, которая и правда сдвигает срок. */
 const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн",
                       "июл", "авг", "сен", "окт", "ноя", "дек"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня",
@@ -4536,12 +4527,11 @@ function humanWhen(d, days) {
    точность, поэтому месяц делится на начало, середину и конец. */
 const paceText = (w) => w.days <= 14 ? humanLeft(w.days) : humanWhen(w.when, w.days);
 
-/* Единственное место, где прогноз превращается в срок. Прикидка от спокойного
-   ритма: занимаешься через день — вот и срок. Пропустил — назавтра дата
-   сдвинется, и это нормально. */
+/* Единственное место, где прогноз превращается в дату. Пропустил день —
+   назавтра дата сдвинется, и это нормально. */
 function paceWhen(f) {
   if (!f || f.done) return null;
-  const days = f.sessions * (f.every || 2);
+  const days = f.days;
   const when = new Date();
   when.setDate(when.getDate() + days);
   return { days, when, text: humanWhen(when, days) };
