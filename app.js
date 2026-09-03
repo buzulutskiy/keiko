@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 389";
+const APP_VERSION = "Кэйко 390";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11065,9 +11065,34 @@ function mapFresh(bk) {
     gm.части = mapPartsOf(bk);
     gm.рамка = mapBox(bk) || gm.рамка;
     if (gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
-    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmCard();
+    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard();
     toast("Карта обновилась");
   }).catch(() => mapAsked.set(id, 0));
+}
+
+/* Слой книг и людей показываем списком: точка на глобусе ничего о книге не
+   говорит, а прочитать про неё хочется. Карта остаётся у мест. */
+function gmList() {
+  const box = $("#gmList"), сцена = $("#gmStage");
+  if (!box || !gm) return;
+  const списком = (gm.слой || "place") !== "place";
+  box.hidden = !списком;
+  if (сцена) сцена.hidden = списком;
+  if (!списком) { box.innerHTML = ""; return; }
+  const список = gmВидимые();
+  if (!список.length) {
+    box.innerHTML = `<div class="gl-none">В этой главе ничего нет — выбери другую или «Все».</div>`;
+    return;
+  }
+  box.innerHTML = список.map((p) => {
+    const м = /^(.+?) \((.+)\)$/.exec(p.name);
+    const открыт = gm.at === p.name;
+    return `<button class="gl-it${открыт ? " on" : ""}" data-gm="${esc(p.name)}" type="button">
+      <b>${esc(м ? м[1] : p.name)}${м ? ` <i style="display:inline">${esc(м[2])}</i>` : ""}</b>
+      <i>${esc((p.t || "").split(" · ")[0])}</i>
+      ${открыт && p.about ? `<p>${esc(p.about)}</p>` : ""}
+    </button>`;
+  }).join("");
 }
 
 function gmTitle() {
@@ -11635,7 +11660,7 @@ function bindPlaceMap() {
     /* Глава и выбранная точка относились к прошлому слою: у книг свои главы,
        и держать чужой фильтр значило показать пустую карту. */
     gm.часть = 0; gm.at = null;
-    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmCard(); gmFit();
+    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard(); gmFit();
   });
 
   const хиты = $("#gmHits");
@@ -11650,6 +11675,7 @@ function bindPlaceMap() {
       хиты.hidden = true; хиты.innerHTML = "";
       gmTitle();
       gmPins();
+      gmList();
       gmCard();
       gmFit();
       return;
@@ -11678,6 +11704,9 @@ function bindPlaceMap() {
     const pin = e.target.closest("[data-gm]");
     if (pin) {
       gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
+      /* В списке карточка раскрывается прямо в строке, и нижняя не нужна:
+         иначе один и тот же текст стоял бы дважды. */
+      if ((gm.слой || "place") !== "place") { gmList(); return; }
       gmPins();
       gmCard();
       if (gm.at) gmFocus(gm.at, Math.max(gm.scale, 2.2));
