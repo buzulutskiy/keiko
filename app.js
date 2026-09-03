@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 401";
+const APP_VERSION = "Кэйко 402";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11297,6 +11297,10 @@ function gmLayersRow() {
     return `<button data-layer="${k}"${k === текущий ? ' class="on"' : n ? "" : ' class="empty"'}
       type="button">${имя} · ${n}</button>`;
   }).join("");
+  /* Выбранный слой подтягиваем в видимую часть: он может оказаться за краем
+     прокрутки, и тогда непонятно, что вообще открыто. */
+  const он = box.querySelector("button.on");
+  if (он && он.scrollIntoView) он.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
 function gmToc() {

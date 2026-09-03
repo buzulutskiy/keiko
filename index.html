@@ -1568,11 +1568,18 @@
     /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
        отъедать карту, и появляется только когда слоёв правда больше одного. */
     #gmLayers[hidden] { display: none; }
+    /* Слоёв стало семь, в строку они не влезают. Прокручиваем вбок и жмём
+       влево: по центру ряд обрезался с обеих сторон, и было не понять, что
+       он вообще едет. */
     #gmLayers {
-      display: flex; gap: 6px; justify-content: center; flex-shrink: 0;
+      display: flex; gap: 6px; flex-shrink: 0; flex-wrap: nowrap;
+      overflow-x: auto; overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
       padding: 0 12px 8px;
     }
+    #gmLayers::-webkit-scrollbar { display: none; }
     #gmLayers button {
+      flex: 0 0 auto; white-space: nowrap;
       padding: 6px 12px; border-radius: 9px; font-size: 0.76rem; color: var(--dim);
       background: var(--glass); border: 1px solid var(--glass-line);
     }
