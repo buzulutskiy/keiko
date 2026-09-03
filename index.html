@@ -1568,6 +1568,14 @@
       color: var(--ink); background: var(--glass-2); border: 1px solid var(--glass-line);
     }
     .gl-none { padding: 26px 14px; text-align: center; color: var(--dim); font-size: 0.84rem; }
+    /* Заголовок секции в списке справок. Липкий: список длинный, и при
+       прокрутке видно, в каком разделе ты сейчас. */
+    .gl-sec {
+      position: sticky; top: 0; z-index: 1; margin: 6px 0 -2px; padding: 6px 2px 5px;
+      font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--dim); background: var(--bg);
+    }
+    .gl-sec:first-child { margin-top: 0; }
 
     /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
        отъедать карту, и появляется только когда слоёв правда больше одного. */
