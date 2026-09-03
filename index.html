@@ -1550,10 +1550,19 @@
       text-align: left; padding: 12px 14px; border-radius: 13px;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
     }
+    .gl-head { display: block; width: 100%; text-align: left; color: var(--ink); background: none; border: 0; padding: 0; }
     .gl-it b { display: block; font-size: 0.92rem; line-height: 1.25; }
+    .gl-it b em { font-style: normal; font-weight: 600; color: var(--muted); }
+    .gl-it b em::before { content: " · "; }
     .gl-it i { display: block; font-style: normal; font-size: 0.74rem; color: var(--muted); margin-top: 3px; }
     .gl-it p { margin: 9px 0 0; font-size: 0.83rem; line-height: 1.5; color: var(--muted); }
     .gl-it.on { border-color: rgba(255, 201, 77, 0.35); background: rgba(255, 201, 77, 0.07); }
+    /* Ссылки в раскрытой записи — те же, что на карточке места. */
+    .gl-it .gm-links { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 11px; }
+    .gl-it .gm-links a {
+      padding: 7px 11px; border-radius: 9px; font-size: 0.76rem;
+      color: var(--ink); background: var(--glass-2); border: 1px solid var(--glass-line);
+    }
     .gl-none { padding: 26px 14px; text-align: center; color: var(--dim); font-size: 0.84rem; }
 
     /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
