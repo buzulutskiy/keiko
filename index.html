@@ -1538,6 +1538,24 @@
     /* Кнопка вынута из потока и привязана к правому краю: в ряду она тянулась
        на всю высоту блока с заголовком и подписью и вставала ниже строки
        «Что прочитал?». Сдвиг вверх равняет её середину с серединой заголовка. */
+    /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
+       отъедать карту, и появляется только когда слоёв правда больше одного. */
+    #gmLayers[hidden] { display: none; }
+    #gmLayers {
+      display: flex; gap: 6px; justify-content: center; flex-shrink: 0;
+      padding: 0 12px 8px;
+    }
+    #gmLayers button {
+      padding: 6px 12px; border-radius: 9px; font-size: 0.76rem; color: var(--dim);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    #gmLayers button.on { color: var(--gold); border-color: rgba(255, 201, 77, 0.4);
+      background: rgba(255, 201, 77, 0.12); }
+    /* Точка книги и точка человека отличаются от географической: у них своя
+       заливка, чтобы слои не путались, когда включены разом. */
+    .gm-pin.book i { background: var(--violet); }
+    .gm-pin.person i { background: var(--green); }
+
     /* ── Простая отметка рисования ── */
     .dw { display: grid; gap: 10px; }
     .dw-cam { width: 100%; }
@@ -3517,6 +3535,7 @@
       <button id="gmClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     <div id="gmHits" hidden></div>
+    <div id="gmLayers" hidden></div>
     <div id="gmStage">
       <div id="gmWrap"><img id="gmImg" alt="" draggable="false"></div>
       <div id="gmPins"></div>

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 386";
+const APP_VERSION = "Кэйко 387";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -10702,7 +10702,7 @@ function openPlaceMap(bk, i, выбрать) {
   /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
      важнее — если пришли из разбора к месту, глава не подставляется. */
   const часть = (i < 0 && !выбрать) ? mapHereChapter(bk) : 0;
-  gm = { места, рамка, at: выбрать || null, часть, scale: 1, tx: 0, ty: 0, id: bk.id, i,
+  gm = { места, рамка, at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
          части: mapPartsOf(bk),
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
@@ -10995,10 +10995,23 @@ function closePlaceMap() {
    роль главы играет ch — по нему же собирается карта одной песни. */
 const частьТочки = (p) => Number(p.part) || Number(p.ch) || 0;
 
+/* Слой точки: география, книга или человек. Отсутствие поля — география:
+   так размечены все старые точки, и переписывать их незачем. */
+const слойТочки = (p) => (p && p.kind) || "place";
+const СЛОИ = [["place", "Места"], ["book", "Книги"], ["person", "Люди"]];
+/* Какие слои есть у этой карты. Один слой — выбора нет, ряд не показываем. */
+function gmLayersOf() {
+  if (!gm) return [];
+  const есть = new Set(gm.места.map(слойТочки));
+  return СЛОИ.filter(([k]) => есть.has(k));
+}
+
 function gmParts() {
   if (!gm) return [];
   const счёт = new Map();
-  for (const p of gm.места) {
+  /* Считаем только по текущему слою: иначе в списке глав стояли бы числа
+     из чужого слоя, и глава с одними книгами выглядела бы полной мест. */
+  for (const p of gm.места.filter((p) => слойТочки(p) === (gm.слой || "place"))) {
     const n = частьТочки(p);
     счёт.set(n, (счёт.get(n) || 0) + 1);
   }
@@ -11007,14 +11020,16 @@ function gmParts() {
 }
 const gmВидимые = () => {
   if (!gm) return [];
-  if (gm.часть === -1) return gm.места.filter((p) => !частьТочки(p));   // вне частей
-  if (gm.часть) return gm.места.filter((p) => частьТочки(p) === gm.часть);
+  const слой = gm.слой || (gmLayersOf()[0] || ["place"])[0];
+  const свои = gm.места.filter((p) => слойТочки(p) === слой);
+  if (gm.часть === -1) return свои.filter((p) => !частьТочки(p));   // вне частей
+  if (gm.часть) return свои.filter((p) => частьТочки(p) === gm.часть);
   /* «Все места»: Итака, Троя и Огигия встречаются в разных песнях со своим
      описанием в каждой. На общей карте это одно место, а не стопка из трёх
      точек в одной координате. Оставляем первое вхождение, остальные прячем;
      в карточке перечислены главы, где оно встречается. */
   const было = new Set();
-  return gm.места.filter((p) => {
+  return свои.filter((p) => {
     if (было.has(p.name)) return false;
     было.add(p.name);
     return true;
@@ -11045,6 +11060,21 @@ function gmTitle() {
 function gmTocBtn() {
   const b = $("#gmToc");
   if (b) b.hidden = gmParts().length < 2;
+  gmLayersRow();
+}
+
+/* Ряд слоёв под шапкой. Появляется, только когда слоёв правда несколько:
+   у книги без разметки книг и людей выбирать не из чего. */
+function gmLayersRow() {
+  const box = $("#gmLayers");
+  if (!box || !gm) return;
+  const слои = gmLayersOf();
+  box.hidden = слои.length < 2;
+  if (box.hidden) { box.innerHTML = ""; return; }
+  const текущий = gm.слой || слои[0][0];
+  const счёт = (k) => gm.места.filter((p) => слойТочки(p) === k).length;
+  box.innerHTML = слои.map(([k, имя]) =>
+    `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""} type="button">${имя} · ${счёт(k)}</button>`).join("");
 }
 
 function gmToc() {
@@ -11057,12 +11087,12 @@ function gmToc() {
   /* Места без главы — не мусор: это то, что вокруг книги, а не в ней. У
      Достоевского так стоят адреса из его записной книжки и разбора краеведов.
      Отдельной строкой, чтобы было видно, что они не выпали, а стоят особняком. */
-  const вне = gm.места.filter((p) => !частьТочки(p)).length;
+  const вне = gm.места.filter((p) => слойТочки(p) === (gm.слой || "place") && !частьТочки(p)).length;
   // выбранная глава отмечена галочкой: иначе не видно, что карта чем-то сужена
   const выбрана = (n) => Number(gm.часть || 0) === n ? " class=\"on\"" : "";
   const птица = (n) => Number(gm.часть || 0) === n ? "✓ " : "";
   box.innerHTML = `<button data-part="0"${выбрана(0)} type="button">${птица(0)}Все места
-      <em>${слово(gm.места.length)}</em></button>`
+      <em>${слово(gm.места.filter((p) => слойТочки(p) === (gm.слой || "place")).length)}</em></button>`
     + части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(c.name)}
         <em>${слово(c.k)}</em></button>`).join("")
     + (вне ? `<button data-part="-1"${выбрана(-1)} type="button">${птица(-1)}Вокруг романа
@@ -11078,7 +11108,8 @@ function gmPins() {
        на глазок. Кружок у выверенной сплошной, у приблизительной — полый:
        видно, чему верить, не открывая карточку. */
     const примерно = /не выверен|стоит примерно/.test(p.t || "") ? " near" : "";
-    return `<button class="gm-pin${примерно}${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
+    const слой = слойТочки(p) === "place" ? "" : " " + слойТочки(p);
+    return `<button class="gm-pin${примерно}${слой}${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
       data-x="${x.toFixed(3)}" data-y="${y.toFixed(3)}" type="button"><i></i><span>${esc(p.name)}</span></button>`;
   }).join("");
   gmScalePins();
@@ -11224,7 +11255,11 @@ function gmCard() {
   if (!card || !gm) return;
   /* Ищем среди показанных, а не среди всех: у Огигии своё описание в каждой
      песни, и в песни V должно стоять её, а не первое попавшееся. */
-  const p = gmВидимые().find((x) => x.name === gm.at) || gm.места.find((x) => x.name === gm.at);
+  /* Запасной поиск — только внутри своего слоя: у стека и у человека, чьим
+     именем он назван, имя одно, и карточка показывала бы не то. */
+  const слой = gm.слой || "place";
+  const p = gmВидимые().find((x) => x.name === gm.at)
+    || gm.места.find((x) => x.name === gm.at && слойТочки(x) === слой);
   if (!p) { card.hidden = true; card.innerHTML = ""; return; }
   /* «Фото» ведёт в поиск по картинкам: интересно не где это на карте, а как
      место выглядит сегодня. У мифических имён свой запрос — «Огигия» не найдёт
@@ -11560,6 +11595,17 @@ function bindPlaceMap() {
     if (поле) поле.value = "";
     useMark("карта-содержание");
     gmToc();
+  });
+
+  const слои = $("#gmLayers");
+  if (слои) слои.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-layer]");
+    if (!b || !gm) return;
+    gm.слой = b.dataset.layer;
+    /* Глава и выбранная точка относились к прошлому слою: у книг свои главы,
+       и держать чужой фильтр значило показать пустую карту. */
+    gm.часть = 0; gm.at = null;
+    gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmCard(); gmFit();
   });
 
   const хиты = $("#gmHits");
