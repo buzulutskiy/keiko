@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 388";
+const APP_VERSION = "Кэйко 389";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11132,8 +11132,15 @@ function gmPins() {
        видно, чему верить, не открывая карточку. */
     const примерно = /не выверен|стоит примерно/.test(p.t || "") ? " near" : "";
     const слой = слойТочки(p) === "place" ? "" : " " + слойТочки(p);
+    /* У стека два имени: данное экспедицией и настоящее, местное. Первое
+       крупно, второе строкой ниже и тише — на карте видно оба, а подпись
+       не растягивается в ленту. */
+    const м = /^(.+?) \((.+)\)$/.exec(p.name);
+    const подпись = м
+      ? `<span>${esc(м[1])}<em>${esc(м[2])}</em></span>`
+      : `<span>${esc(p.name)}</span>`;
     return `<button class="gm-pin${примерно}${слой}${gm.at === p.name ? " on" : ""}" data-gm="${esc(p.name)}"
-      data-x="${x.toFixed(3)}" data-y="${y.toFixed(3)}" type="button"><i></i><span>${esc(p.name)}</span></button>`;
+      data-x="${x.toFixed(3)}" data-y="${y.toFixed(3)}" type="button"><i></i>${подпись}</button>`;
   }).join("");
   gmScalePins();
 }

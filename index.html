@@ -1837,6 +1837,13 @@
       position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
       font-size: 0.68rem; font-weight: 700; color: #fff; white-space: nowrap;
       text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.85);
+      display: grid; justify-items: center; line-height: 1.2;
+    }
+    /* Настоящее имя скалы — второй строкой, тише: оно нужно, чтобы узнать
+       место на других картах, но спорить с данным именем не должно. */
+    .gm-pin span em {
+      font-style: normal; font-weight: 600; font-size: 0.62rem;
+      color: rgba(255, 255, 255, 0.62);
     }
     #gmCard {
       flex-shrink: 0; padding: 16px 18px calc(env(safe-area-inset-bottom) + 18px);
