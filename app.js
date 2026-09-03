@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 391";
+const APP_VERSION = "Кэйко 392";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -891,10 +891,12 @@ function mapHereChapter(b) {
   const главы = bk.chapters || [];
   if (!главы.length) return 0;
   const стр = bookProgressOf(bk);
-  if (!стр || стр <= (bk.startPage || 0)) return 0;       // ещё не начата
+  /* Книга не начата — открываем первую главу, а не всю карту: пустая карта
+     со всеми точками сразу — это список, а не место, куда пришёл читать. */
+  if (!стр || стр <= (bk.startPage || 0)) return главы.length ? 1 : 0;
   let i = -1;
   главы.forEach((c, n) => { if (стр >= c.from) i = n; });
-  return i >= 0 && mapOfChapter(bk, i).length ? i + 1 : 0;
+  return i >= 0 ? i + 1 : (главы.length ? 1 : 0);
 }
 const mapBox = (b) => {
   const a = artsOf((b || book()).id);
@@ -11003,7 +11005,8 @@ const частьТочки = (p) => Number(p.part) || Number(p.ch) || 0;
 /* Слой точки: география, книга или человек. Отсутствие поля — география:
    так размечены все старые точки, и переписывать их незачем. */
 const слойТочки = (p) => (p && p.kind) || "place";
-const СЛОИ = [["place", "Места"], ["book", "Книги"], ["person", "Люди"]];
+const СЛОИ = [["place", "Места"], ["book", "Книги"], ["person", "Люди"],
+              ["animal", "Живность"], ["word", "Слова"]];
 /* Какие слои есть у этой карты. Один слой — выбора нет, ряд не показываем. */
 function gmLayersOf() {
   if (!gm) return [];
@@ -11011,17 +11014,29 @@ function gmLayersOf() {
   return СЛОИ.filter(([k]) => есть.has(k));
 }
 
+/* Сколько всего в главе — по всем слоям сразу, с разбивкой. В содержании
+   человек ищет «где про это почитать», а не «где точки на карте»: глава с
+   одними словами и людьми не должна выглядеть пустой. */
 function gmParts() {
   if (!gm) return [];
   const счёт = new Map();
-  /* Считаем только по текущему слою: иначе в списке глав стояли бы числа
-     из чужого слоя, и глава с одними книгами выглядела бы полной мест. */
-  for (const p of gm.места.filter((p) => слойТочки(p) === (gm.слой || "place"))) {
+  for (const p of gm.места) {
     const n = частьТочки(p);
-    счёт.set(n, (счёт.get(n) || 0) + 1);
+    const c = счёт.get(n) || { k: 0, по: {} };
+    c.k++; c.по[слойТочки(p)] = (c.по[слойТочки(p)] || 0) + 1;
+    счёт.set(n, c);
   }
-  return (gm.части || []).map((c) => ({ ...c, k: счёт.get(Number(c.n)) || 0 }))
+  return (gm.части || []).map((c) => ({ ...c, ...(счёт.get(Number(c.n)) || { k: 0, по: {} }) }))
     .filter((c) => c.k > 0);
+}
+/* Разбивка словами: «3 места · 2 книги · 7 слов». Нули не пишем. */
+function gmРазбивка(по) {
+  const слова = { place: ["место", "места", "мест"], book: ["книга", "книги", "книг"],
+                  person: ["человек", "человека", "человек"],
+                  animal: ["животное", "животных", "животных"], word: ["слово", "слова", "слов"] };
+  return СЛОИ.map(([k]) => k).concat(["animal", "word"])
+    .filter((k, i, a) => a.indexOf(k) === i && (по || {})[k])
+    .map((k) => `${по[k]} ${plural(по[k], ...слова[k])}`).join(" · ");
 }
 const gmВидимые = () => {
   if (!gm) return [];
@@ -11131,19 +11146,17 @@ function gmToc() {
   if (!box || !gm) return;
   const части = gmParts();
   if (!части.length) return;
-  const слово = (n) => `${n} ${plural(n, "место", "места", "мест")}`;
+  const слово = (n) => `${n} ${plural(n, "запись", "записи", "записей")}`;
   box.hidden = false;
   /* Места без главы — не мусор: это то, что вокруг книги, а не в ней. У
      Достоевского так стоят адреса из его записной книжки и разбора краеведов.
      Отдельной строкой, чтобы было видно, что они не выпали, а стоят особняком. */
-  const вне = gm.места.filter((p) => слойТочки(p) === (gm.слой || "place") && !частьТочки(p)).length;
+  const вне = gm.места.filter((p) => !частьТочки(p)).length;
   // выбранная глава отмечена галочкой: иначе не видно, что карта чем-то сужена
   const выбрана = (n) => Number(gm.часть || 0) === n ? " class=\"on\"" : "";
   const птица = (n) => Number(gm.часть || 0) === n ? "✓ " : "";
-  box.innerHTML = `<button data-part="0"${выбрана(0)} type="button">${птица(0)}Все места
-      <em>${слово(gm.места.filter((p) => слойТочки(p) === (gm.слой || "place")).length)}</em></button>`
-    + части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(c.name)}
-        <em>${слово(c.k)}</em></button>`).join("")
+  box.innerHTML = части.map((c) => `<button data-part="${esc(String(c.n))}"${выбрана(Number(c.n))} type="button">${птица(Number(c.n))}${esc(c.name)}
+        <em>${esc(gmРазбивка(c.по) || слово(c.k))}</em></button>`).join("")
     + (вне ? `<button data-part="-1"${выбрана(-1)} type="button">${птица(-1)}Вокруг романа
         <em>${слово(вне)} · не сцены книги</em></button>` : "");
 }
@@ -11658,9 +11671,9 @@ function bindPlaceMap() {
     const b = e.target.closest("[data-layer]");
     if (!b || !gm) return;
     gm.слой = b.dataset.layer;
-    /* Глава и выбранная точка относились к прошлому слою: у книг свои главы,
-       и держать чужой фильтр значило показать пустую карту. */
-    gm.часть = 0; gm.at = null;
+    /* Главу держим: человек читает главу и смотрит, что в ней есть по разным
+       слоям. Снимаем только выбранную точку — она была из прошлого слоя. */
+    gm.at = null;
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard(); gmFit();
   });
 
