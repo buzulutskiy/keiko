@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 416";
+const APP_VERSION = "Кэйко 417";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4465,22 +4465,6 @@ function paceForecast() {
   return { left, rate: темп, days: Math.max(1, Math.ceil(left / темп)), unit, done: false };
 }
 
-/* Реже раза в неделю — так и пишем. Число дней тогда врёт в приятную
-   сторону: «7 дней» выглядит как работа, хотя последний был в августе.
-
-   Простой считаем от последнего захода, а не по среднему за окно: пять
-   вечеров августа, растянутые на месяц, дают ровно «раз в неделю», хотя
-   книгу не открывали тридцать дней. */
-const IDLE_WORD = () => isBook() ? "не читаю"
-  : isPiano() ? "не играю"
-  : isCourse() && plainDraw() ? "не рисую"
-  : "не занимаюсь";
-function paceIdle(list) {
-  const дни = list.map((e) => e.date).sort();
-  if (!дни.length) return "";
-  return daysBetween(дни[дни.length - 1], todayStr()) > 7 ? IDLE_WORD() : "";
-}
-
 // последний день материала заслуживает своего слова, а не общего «закрыт»
 const FINISH_WORD = { page: "книга дочитана", lesson: "курс пройден",
   minute: "курс пройден", bar: "пьеса разобрана" };
@@ -4545,7 +4529,7 @@ function paceHTML() {
   /* У рисунка нет срока: конца, к которому он идёт, никто не назначал, и
      «материал пройден» он выдавал просто потому, что уроков ноль. Зато
      остальное считается как у всех — сколько дней и как часто. */
-  if (isCourse() && plainDraw()) return paceDaysHTML(entries());
+  if (isCourse() && plainDraw()) return paceDaysHTML();
   const f = paceForecast();
   if (!f) return "";
   if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
@@ -4559,12 +4543,7 @@ function paceHTML() {
      дней книга просто лежала — оттого за вечер и выходит девятнадцать
      страниц, а в день одиннадцать. Пропуски в первое число не идут, они и не
      считаются занятием. */
-  const list = entries();
-  return `<span class="pace">${subLine(
-    paceDays(),
-    paceIdle(list),
-    paceText(w)
-  )}</span>`;
+  return `<span class="pace">${subLine(paceDays(), paceText(w))}</span>`;
 }
 
 /* «7 дней с книгой» — сколько дней ты к ней возвращался. Число одно и только
@@ -4581,10 +4560,9 @@ function paceDays() {
   return n ? `${n} ${plural(n, "день", "дня", "дней")}` : "";
 }
 // у материала без срока остаётся только это — дальше считать нечего
-function paceDaysHTML(list) {
+function paceDaysHTML() {
   const дни = paceDays();
-  if (!дни) return "";
-  return `<span class="pace">${subLine(дни, paceIdle(list))}</span>`;
+  return дни ? `<span class="pace">${дни}</span>` : "";
 }
 
 /* Опорная дата выбранного периода: понедельник его недели или первое число
