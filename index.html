@@ -1550,7 +1550,11 @@
       text-align: left; padding: 12px 14px; border-radius: 13px;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
     }
-    .gl-head { display: block; width: 100%; text-align: left; color: var(--ink); background: none; border: 0; padding: 0; }
+    .gl-head { display: flex; gap: 10px; width: 100%; text-align: left; color: var(--ink); background: none; border: 0; padding: 0; }
+    /* Значок в своей колонке фиксированной ширины: иначе широкий эмодзи
+       сдвигает заголовок, и левый край списка гуляет от строки к строке. */
+    .gl-ic { flex: 0 0 1.4em; text-align: center; font-size: 1rem; line-height: 1.2; }
+    .gl-txt { flex: 1 1 auto; min-width: 0; }
     .gl-it b { display: block; font-size: 0.92rem; line-height: 1.25; }
     .gl-it b em { font-style: normal; font-weight: 600; color: var(--muted); }
     .gl-it b em::before { content: " · "; }

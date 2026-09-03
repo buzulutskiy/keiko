@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 404";
+const APP_VERSION = "Кэйко 405";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11116,6 +11116,15 @@ const слойТочки = (p) => (p && p.kind) || "place";
 const СЛОИ = [["place", "Места"], ["book", "Книги"], ["person", "Люди"],
               ["art", "Искусство"], ["thing", "Вещи"], ["animal", "Живность"],
               ["rock", "Камень"], ["word", "Слова"]];
+/* Значок у записи в списке. Слои — не места: у них нет метки на карте, и
+   список из одних названий читается как оглавление, а не как содержимое.
+   Своё значение из данных (поле icon) главнее: контекст знает тот, кто писал
+   справку. Таблица ниже — запасная, чтобы у нового материала список не был
+   голым, пока значки не проставлены. */
+const GM_ICONS = { book: "📖", person: "👤", art: "🖼", thing: "🏺",
+                   animal: "🐾", rock: "🪨", word: "🔤", place: "📍" };
+const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
+
 /* Какие слои есть у этой карты. Один слой — выбора нет, ряд не показываем. */
 function gmLayersOf() {
   if (!gm) return [];
@@ -11248,8 +11257,11 @@ function gmList() {
     const открыт = gm.at === p.name;
     return `<div class="gl-it${открыт ? " on" : ""}">
       <button class="gl-head" data-gm="${esc(p.name)}" type="button">
-        <b>${esc(м ? м[1] : p.name)}${м ? `<em>${esc(м[2])}</em>` : ""}</b>
-        <i>${esc((p.t || "").split(" · ")[0])}</i>
+        <span class="gl-ic">${esc(gmIcon(p))}</span>
+        <span class="gl-txt">
+          <b>${esc(м ? м[1] : p.name)}${м ? `<em>${esc(м[2])}</em>` : ""}</b>
+          <i>${esc((p.t || "").split(" · ")[0])}</i>
+        </span>
       </button>
       ${открыт && p.about ? `<p>${esc(p.about)}</p>` : ""}
       ${открыт ? gmSpravki(p) : ""}
@@ -11286,20 +11298,25 @@ function gmTocBtn() {
 function gmLayersRow() {
   const box = $("#gmLayers");
   if (!box || !gm) return;
-  const слои = gmLayersOf();
-  box.hidden = слои.length < 2;
-  if (box.hidden) { box.innerHTML = ""; return; }
-  const текущий = gm.слой || слои[0][0];
   /* Считаем в выбранной главе, а не по всей книге: человек стоит в своей
      главе, и число рядом со слоем должно говорить, сколько тут, а не всего. */
   const вГлаве = (p) => !gm.часть || (gm.часть === -1 ? !частьТочки(p) : частьТочки(p) === gm.часть);
   const счёт = (k) => new Set(gm.места.filter((p) => слойТочки(p) === k && вГлаве(p))
     .map((p) => p.name)).size;
-  box.innerHTML = слои.map(([k, имя]) => {
-    const n = счёт(k);
-    return `<button data-layer="${k}"${k === текущий ? ' class="on"' : n ? "" : ' class="empty"'}
-      type="button">${имя} · ${n}</button>`;
-  }).join("");
+  /* Пустой слой в этой главе не показываем совсем: «Искусство · 0» — обещание,
+     которое нечем выполнить, и открывать его приходится только чтобы это
+     выяснить. Места остаются всегда: это сама карта, а не слой поверх неё. */
+  const слои = gmLayersOf().map(([k, имя]) => [k, имя, счёт(k)])
+    .filter(([k, , n]) => n || k === "place");
+  /* Слой мог опустеть при переходе в другую главу — тогда возвращаемся на
+     карту: иначе открытым останется список, которого в ряду больше нет. */
+  if (!слои.some(([k]) => k === (gm.слой || "place"))) gm.слой = "place";
+  box.hidden = слои.length < 2;
+  if (box.hidden) { box.innerHTML = ""; return; }
+  const текущий = gm.слой || "place";
+  box.innerHTML = слои.map(([k, имя, n]) =>
+    `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""}
+      type="button">${имя} · ${n}</button>`).join("");
   /* Выбранный слой подтягиваем в видимую часть: он может оказаться за краем
      прокрутки, и тогда непонятно, что вообще открыто. */
   const он = box.querySelector("button.on");
@@ -11627,8 +11644,9 @@ function gmSearch(текст) {
         const гл = частьТочки(p);
         const имя = (gm.части || []).find((x) => Number(x.n) === гл);
         const где = [вид[слойТочки(p)], имя ? gmИмяГлавы(гл, имя.name) : ""].filter(Boolean).join(" · ");
+        const зн = слойТочки(p) === "place" ? "" : gmIcon(p) + " ";
         return `<button data-hit="${esc(p.name)}" data-hitlayer="${esc(слойТочки(p))}"
-          data-hitpart="${гл}" type="button">${esc(p.name)}<em>${esc(где)}</em></button>`;
+          data-hitpart="${гл}" type="button">${esc(зн + p.name)}<em>${esc(где)}</em></button>`;
       }).join("")
     : `<button type="button" disabled>Ничего не нашлось</button>`;
 }
