@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 392";
+const APP_VERSION = "Кэйко 393";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11136,9 +11136,16 @@ function gmLayersRow() {
   box.hidden = слои.length < 2;
   if (box.hidden) { box.innerHTML = ""; return; }
   const текущий = gm.слой || слои[0][0];
-  const счёт = (k) => gm.места.filter((p) => слойТочки(p) === k).length;
-  box.innerHTML = слои.map(([k, имя]) =>
-    `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""} type="button">${имя} · ${счёт(k)}</button>`).join("");
+  /* Считаем в выбранной главе, а не по всей книге: человек стоит в своей
+     главе, и число рядом со слоем должно говорить, сколько тут, а не всего. */
+  const вГлаве = (p) => !gm.часть || (gm.часть === -1 ? !частьТочки(p) : частьТочки(p) === gm.часть);
+  const счёт = (k) => new Set(gm.места.filter((p) => слойТочки(p) === k && вГлаве(p))
+    .map((p) => p.name)).size;
+  box.innerHTML = слои.map(([k, имя]) => {
+    const n = счёт(k);
+    return `<button data-layer="${k}"${k === текущий ? ' class="on"' : n ? "" : ' class="empty"'}
+      type="button">${имя} · ${n}</button>`;
+  }).join("");
 }
 
 function gmToc() {
@@ -11688,6 +11695,7 @@ function bindPlaceMap() {
       if (gm.at && !gmВидимые().some((p) => p.name === gm.at)) gm.at = null;
       хиты.hidden = true; хиты.innerHTML = "";
       gmTitle();
+      gmLayersRow();      // числа у слоёв считаются в выбранной главе
       gmPins();
       gmList();
       gmCard();
