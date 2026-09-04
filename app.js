@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 426";
+const APP_VERSION = "Кэйко 427";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -6010,8 +6010,8 @@ const gutList = () => (data.gut || []).filter((g) => !g.deleted)
    честно закрывается обратно. Условия только на «сделала», ни одного на
    «пропустила»: пропуск здесь не провинность, и напоминать о нём наградой —
    последнее дело. */
-function gutStats() {
-  const list = gutList();
+function gutStats(чем) {
+  const list = чем || gutList();
   const dates = [...new Set(list.map((g) => g.date).filter(Boolean))].sort();
 
   const perDay = {};
@@ -6383,8 +6383,8 @@ function renderGut() {
     })).join("");
 
   const today = list.filter((g) => g.date === todayStr());
-  // проставляем время выдачи тем, что уже открыто: без него порядок не построить
-  if (gutStamp()) saveData();
+  // восстанавливаем порядок выдачи по истории отметок, потом добираем остальное
+  if ([gutBackfill(), gutStamp()].some(Boolean)) saveData();
 
   $("#view").innerHTML = `
     <div class="gut-hero">
@@ -6468,6 +6468,30 @@ const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ 
    последней. Открытым раньше, чем завели эту запись, ставим единицу —
    «когда-то»: соврать точным временем хуже, чем расписаться в незнании.
    Тот же приём, что у наград материалов и у предметов. */
+/* Порядок выдачи задним числом. Отметки хранятся со временем, а условия
+   наградок — чистые функции от них: значит, историю можно прокрутить с начала
+   и увидеть, какая отметка какую наградку открыла. Без этого всё полученное
+   до появления записи сваливалось в одну кучу со временем «когда-то», и
+   список стоял в порядке объявления в коде — сверху «Привет от Тита»,
+   полученный первым. */
+function gutBackfill() {
+  const list = gutList().slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+  if (!list.length) return false;
+  data.gutAt = data.gutAt || {};
+  const было = new Set();
+  let ново = false;
+  for (let i = 0; i < list.length; i++) {
+    const st = gutStats(list.slice(0, i + 1));
+    for (const a of GUT_ACH) {
+      if (было.has(a.id) || !a.test(st)) continue;
+      было.add(a.id);
+      // уже проставленное настоящим временем не трогаем, «когда-то» — уточняем
+      if (!(data.gutAt[a.id] > 1)) { data.gutAt[a.id] = list[i].at || 1; ново = true; }
+    }
+  }
+  return ново;
+}
+
 function gutStamp(свежие) {
   data.gutAt = data.gutAt || {};
   const сейчас = new Set((свежие || []).map((a) => a.id));
