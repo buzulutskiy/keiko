@@ -469,6 +469,36 @@ function ок(имя, факт, надо) {
   t.set("data.book", было.book); t.set("data.active", было.active);
 }
 
+/* ── Рисунок: артефакт за занятие ──
+   У рисунка ни уроков, ни содержания — конца нет, есть только заходы за лист.
+   Поэтому предмет открывается по их числу, а не по главе. */
+{
+  const было = { active: t.get("data").active, pastel: JSON.parse(JSON.stringify(t.get("data").pastel || {})),
+                 mus: t.get("MUSEUM") };
+  t.set("data.pastel", { courses: [{ id: "ris", name: "Рисунок", lessons: [] }],
+    entries: [{ id: "e1", date: "2026-09-01", courseId: "ris" },
+              { id: "e2", date: "2026-09-02", courseId: "ris" }] });
+  t.set("data.active", "pastel");
+  const вещь = (ch) => ({ id: "a" + ch, book: "ris", ch, name: "Вещь " + ch });
+  t.set("MUSEUM", { items: [вещь(1), вещь(2), вещь(3), { id: "a0", book: "ris", name: "Без номера" }] });
+
+  ок("рисунок: за два захода открылись два предмета",
+    t.get("musItems")().filter(t.get("musOpen")).map((x) => x.name).sort(),
+    ["Без номера", "Вещь 1", "Вещь 2"]);
+
+  t.get("data").pastel.entries.push({ id: "e3", date: "2026-09-03", courseId: "ris" });
+  ок("рисунок: третий заход открыл третий",
+    t.get("musItems")().filter(t.get("musOpen")).length, 4);
+
+  /* Две отметки за день — два занятия: каждая отметка своя сессия. */
+  t.get("data").pastel.entries.push({ id: "e4", date: "2026-09-03", courseId: "ris" });
+  ок("рисунок: две отметки за день считаются порознь",
+    t.get("data").pastel.entries.length, 4);
+
+  t.set("MUSEUM", было.mus);
+  t.set("data.pastel", было.pastel); t.set("data.active", было.active);
+}
+
 /* ── Курс: процент по времени, а не по числу уроков ── */
 {
   const было = {

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 423";
+const APP_VERSION = "Кэйко 424";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -643,7 +643,18 @@ function seenIn(c, i) {
 
 function musOpenCourse(x) {
   const c = courseByBook(x.book);
-  if (!c || !(c.lessons || []).length) return false;
+  if (!c) return false;
+  /* У рисунка ни уроков, ни содержания: конца нет, есть только заходы за лист.
+     Открываем по их числу — ch говорит, сколько занятий должно быть позади.
+     Так за каждый лист приходит одна вещь: сперва то, что держишь в руках,
+     потом то, как этим пользуются, и только потом пигменты. */
+  if (!(c.lessons || []).length) {
+    const n = Number(x.ch);
+    if (!n) return true;
+    const первый = firstCourseId();
+    return courseTrack().entries
+      .filter((e) => !e.deleted && (e.courseId || первый) === c.id).length >= n;
+  }
   const n = Number(x.ch);
   if (!n) return true;                       // без урока — открыт сразу, но только владельцу курса
   /* Курс мог стать лекцией: шаги уехали в архив, а предметы по-прежнему
