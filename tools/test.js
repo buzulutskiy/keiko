@@ -1537,6 +1537,22 @@ function ок(имя, факт, надо) {
     { kind: "person", name: "Льюис", about: "…" },
   ] } });
   ок("карта: без географии кнопка есть и без рамки", t.get("mapBtnOn")(), true);
+
+  /* Карточка снизу принадлежит карте: она объясняет метку, на которую ткнули.
+     В списке справок текст раскрывается прямо в строке, и всплывающий экран
+     показывал бы то же самое вторым способом. */
+  {
+    const былоGm2 = t.get("gm");
+    const узел = { hidden: false, innerHTML: "x" };
+    const былПоиск2 = t.get("document.querySelector");
+    t.set("document.querySelector", (s) => (s === "#gmCard" ? узел : null));
+    t.set("gm", { места: [{ kind: "word", name: "Октава", about: "…" }],
+      слой: "all", at: "Октава", часть: 0, части: [] });
+    t.get("gmCard")();
+    ок("карта: у справки нижней карточки нет", узел.hidden, true);
+    t.set("document.querySelector", былПоиск2);
+    t.set("gm", былоGm2);
+  }
   ок("карта: мест в такой книге нет", t.get("mapHasPlaces")(t.get("book")()), false);
 
   const былоGm = t.get("gm");
