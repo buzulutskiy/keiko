@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 425";
+const APP_VERSION = "Кэйко 426";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -194,6 +194,7 @@ function emptyData() {
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     gut: [],       // отметки самочувствия — только в том профиле, где включено
+    gutAt: {},     // когда открылась наградка Какули: нужно для порядка выдачи
     kanyeAt: 0,    // когда Канье заходил впервые: первый визит гарантирован
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     goalAt: 0,     // когда её меняли: без этого чужая цель молча затирала свою
@@ -286,6 +287,7 @@ function migrate(obj) {
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
   if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
   if (Array.isArray(obj.gut)) base.gut = obj.gut;
+  if (obj.gutAt && typeof obj.gutAt === "object") base.gutAt = obj.gutAt;
   if (Number(obj.kanyeAt) > 0) base.kanyeAt = Number(obj.kanyeAt);
   if (Array.isArray(obj.archive)) base.archive = obj.archive;
   if (Array.isArray(obj.takes)) base.takes = obj.takes;
@@ -4271,8 +4273,11 @@ function syncBookBtns() {
 const GM_MAX = 60;                    // докуда пускаем увеличение карты
 const artsAsked = new Map();          // материал → когда спрашивали в последний раз
 function artsPeek() {
-  if (!isBook()) return;
-  const id = book().id;
+  /* Спрашиваем для любого материала, у которого бывает карта, а не только для
+     книги: у пьесы файл разбора не скачивался вовсе, и кнопка справочника не
+     появлялась — данных для неё просто не было. */
+  const м = mapMaterial();
+  const id = м && м.id;
   if (!id || artsOf(id)) return;
   /* На запуске адрес гиста ещё не известен, и первый заход всегда пустой.
      Поэтому неудача не запоминается навсегда: пробуем снова, но не чаще
@@ -4282,7 +4287,8 @@ function artsPeek() {
   artsAsked.set(id, now());
   pullArts(id).then((новое) => {
     if (!новое) { artsAsked.set(id, 0); return; }   // не приехало — можно пробовать снова
-    if (!isBook() || book().id !== id) return;      // пока ехало, ушли на другой материал
+    const где = mapMaterial();
+    if (!где || где.id !== id) return;              // пока ехало, ушли на другой материал
     syncBookBtns();
   }).catch(() => artsAsked.set(id, 0));
 }
@@ -4565,10 +4571,10 @@ function paceWhen(f) {
 }
 
 function paceHTML() {
-  /* У рисунка нет срока: конца, к которому он идёт, никто не назначал, и
-     «материал пройден» он выдавал просто потому, что уроков ноль. Зато
-     остальное считается как у всех — сколько дней и как часто. */
-  if (isCourse() && plainDraw()) return paceDaysHTML();
+  /* У рисунка нет срока: конца, к которому он идёт, никто не назначал. Дни же
+     стоят строкой выше — «Рисую · 1 день за листом», — и повторять их под ней
+     незачем. Молчим. */
+  if (isCourse() && plainDraw()) return "";
   const f = paceForecast();
   if (!f) return "";
   if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
@@ -4598,11 +4604,7 @@ function paceDays() {
   const n = curStats().days || 0;
   return n ? `${n} ${plural(n, "день", "дня", "дней")}` : "";
 }
-// у материала без срока остаётся только это — дальше считать нечего
-function paceDaysHTML() {
-  const дни = paceDays();
-  return дни ? `<span class="pace">${дни}</span>` : "";
-}
+
 
 /* Опорная дата выбранного периода: понедельник его недели или первое число
    его месяца. Всё остальное — границы, точки графика, прошлый период —
@@ -5995,6 +5997,7 @@ function wishDrop(id) {
    дела за месяц: когда было в прошлый раз и не затянулось ли. Отметка — одно
    касание, без подробностей и оценок: спрашивать больше значит превращать
    это в анкету, а анкету бросают. Другим профилям вкладки нет вовсе. */
+let gutAll = false;          // развёрнут ли полный список наградок
 const gutOn = () => {
   const p = profile();
   return /diana|диан/i.test(String(p.id || "") + " " + String(p.name || ""));
@@ -6135,7 +6138,7 @@ const GUT_ACH = [
      выясняется, что он всё это время куда-то шёл. */
   { id: "gsms1", icon: "📱", name: "СМС от Тита", hint: "первая",
     word: "«дошёл до угла. там всё по-прежнему. завтра пойду дальше»",
-    test: (s) => s.after2 >= 12 },
+    test: (s) => s.after2 >= 14 },
   { id: "gsms2", icon: "📲", name: "СМС от Тита", hint: "вторая",
     word: "«обнаружил новый куст. осмотрел со всех сторон. отметил. продвигаюсь»",
     test: (s) => s.after2 >= 15 },
@@ -6304,9 +6307,9 @@ const GUT_ACH = [
   /* Было двадцать дней за месяц, и промах в один день закрывал награду
      навсегда: месяц не переиграть. Восемнадцать — тот же смысл без наказания
      за прошлое. */
-  { id: "g26", icon: "🤖", name: "Уборщик года", hint: "восемнадцать дней за один месяц",
+  { id: "g26", icon: "🤖", name: "Уборщик года", hint: "двадцать дней за один месяц",
     word: "Двадцать дней в одном месяце. Планета прибрана, можно и на свидание.",
-    test: (s) => s.fullest >= 18 },
+    test: (s) => s.fullest >= 20 },
 
   { id: "g27", icon: "🎂", name: "Месяц вместе", hint: "месяц с первой записи",
     word: "Месяц с первой записи. С днём рождения, дневничок.",
@@ -6380,6 +6383,8 @@ function renderGut() {
     })).join("");
 
   const today = list.filter((g) => g.date === todayStr());
+  // проставляем время выдачи тем, что уже открыто: без него порядок не построить
+  if (gutStamp()) saveData();
 
   $("#view").innerHTML = `
     <div class="gut-hero">
@@ -6404,20 +6409,31 @@ function renderGut() {
 
     ${(() => {
       const ach = gutAchState();
-      const open = ach.filter((a) => a.done);
+      /* Порядок — по выдаче, сверху та, что пришла последней: свежее интереснее
+         старого, а старое уже прочитано. У одинаковой отметки времени (всё, что
+         открылось до того, как мы начали её ставить) порядок объявления. */
+      const open = ach.filter((a) => a.done)
+        .map((a, i) => [a, i])
+        .sort((x, y) => (gutWhen(y[0]) - gutWhen(x[0])) || (x[1] - y[1]))
+        .map(([a]) => a);
       const shut = ach.length - open.length;
+      /* Показываем три последние: список из тридцати штук перестаёт читаться,
+         и свежая наградка тонет среди давно известных. Остальные — по кнопке. */
+      const видно = gutAll ? open : open.slice(0, 3);
       /* Закрытые не показываем вовсе: ни названия, ни условия. Список условий
          превращает раздел в задание, которое надо выполнить, а тут не то место.
          Пусть будет просто известно, что впереди ещё что-то есть. */
       return `
         <div class="lib-group">Наградки · ${open.length} из ${ach.length}</div>
         <div class="gut-ach">
-          ${open.map((a) => `
+          ${видно.map((a) => `
             <span class="ga on">
               <i>${a.icon}</i>
               <b>${esc(a.name)}</b>
               <em>${esc(wordOf(a))}</em>
             </span>`).join("")}
+          ${open.length > 3 ? `<button class="ga-more" id="gutMore" type="button">${
+            gutAll ? "Свернуть" : `Показать все · ${open.length}`}</button>` : ""}
           ${open.length ? "" : `<div class="ga-none">Первая появится с первой отметкой.</div>`}
           ${shut ? `
             <div class="ga-shut">
@@ -6441,11 +6457,28 @@ function renderGut() {
   const go = $("#gutGo");
   let held = false;
   go.addEventListener("click", () => { if (held) { held = false; return; } gutAdd(); });
+  const more = $("#gutMore");
+  if (more) more.addEventListener("click", () => { gutAll = !gutAll; renderGut(); });
   document.querySelectorAll("[data-gutdrop]").forEach((b) =>
     b.addEventListener("click", () => gutDrop(b.dataset.gutdrop)));
 }
 
 const gutAchState = () => { const st = gutStats(); return GUT_ACH.map((a) => ({ ...a, done: a.test(st) })); };
+/* Когда наградка открылась. Нужно для порядка: сверху та, что пришла
+   последней. Открытым раньше, чем завели эту запись, ставим единицу —
+   «когда-то»: соврать точным временем хуже, чем расписаться в незнании.
+   Тот же приём, что у наград материалов и у предметов. */
+function gutStamp(свежие) {
+  data.gutAt = data.gutAt || {};
+  const сейчас = new Set((свежие || []).map((a) => a.id));
+  let ново = false;
+  for (const a of gutAchState())
+    if (a.done && data.gutAt[a.id] === undefined) {
+      data.gutAt[a.id] = сейчас.has(a.id) ? now() : 1; ново = true;
+    }
+  return ново;
+}
+const gutWhen = (a) => (data.gutAt || {})[a.id] || 0;
 const gutOpenSet = () => new Set(gutAchState().filter((a) => a.done).map((a) => a.id));
 
 function gutAdd() {
@@ -6464,6 +6497,7 @@ function gutAdd() {
      открыто». Показываем после фейерверка: он и так секунда, перебивать его
      экраном жалко. */
   const fresh = gutAchState().filter((a) => a.done && !was.has(a.id));
+  gutStamp(fresh);
   if (fresh.length) setTimeout(() => showWon({ ach: fresh, facts: [] }), 900);
   /* Пасхалка: в дни без наград иногда заглядывает сам Канье. Первый визит
      гарантирован — пасхалка, которую можно никогда не встретить, не пасхалка.

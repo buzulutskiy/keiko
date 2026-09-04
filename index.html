@@ -1639,6 +1639,12 @@
     .gut-chip button { color: var(--dim); font-size: 0.8rem; line-height: 1; padding: 0 2px; }
     /* ── Наградки раздела ── */
         .gut-ach { display: grid; gap: 8px; }
+    /* Кнопка «показать все» — тихая, в ширину списка: она не награда и не
+       призыв, а способ развернуть то, что уже прочитано. */
+    .ga-more {
+      width: 100%; padding: 10px; border-radius: 12px; font-size: 0.8rem;
+      color: var(--muted); background: var(--glass); border: 1px solid var(--glass-line);
+    }
     .ga-none { padding: 12px; border-radius: 14px; background: var(--glass);
           border: 1px solid var(--glass-line); font-size: 0.74rem; color: var(--dim); text-align: center; }
     .ga-shut {
