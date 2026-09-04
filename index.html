@@ -1578,26 +1578,29 @@
       padding: 4px 16px calc(env(safe-area-inset-bottom) + 96px);
       -webkit-user-select: text; user-select: text;
     }
-    .rd-h { margin: 18px 0 10px; font-size: 0.9rem; font-weight: 700; color: var(--ink); }
-    .rd-p { margin: 0 0 11px; font-size: 0.92rem; line-height: 1.62; color: var(--muted); max-width: 34em; }
-    .rd-p mark { background: rgba(255, 201, 77, 0.28); color: var(--ink); border-radius: 3px; }
-    /* Предложение — единица нажатия: выделять пальцем по буквам муторно, а
-       спросить хочется про фразу целиком. Своё выделение при этом никуда не
-       делось, поэтому user-select не трогаем. */
-    .rd-s { -webkit-tap-highlight-color: transparent; border-radius: 3px; }
-    .rd-s.on { background: rgba(255, 201, 77, 0.26); color: var(--ink);
-               box-shadow: 0 0 0 2px rgba(255, 201, 77, 0.26); }
-    .rd-load { padding: 40px 14px; text-align: center; color: var(--dim); font-size: 0.84rem; }
-    /* Найденное по всей книге: строка — глава плюс кусок вокруг совпадения. */
+    /* Кегль книжный, а не интерфейсный: это единственный экран, где текст
+       читают подряд, а не проглядывают. Цвет — основной: приглушённый серый
+       годится для подписей, но не для страницы, которую разбираешь. */
+    .rd-h { margin: 22px 0 12px; font-size: 1rem; font-weight: 700; color: var(--ink); }
+    .rd-p { margin: 0 0 14px; font-size: 1.06rem; line-height: 1.66; color: var(--ink); max-width: 34em; }
+    .rd-p mark { background: rgba(255, 201, 77, 0.32); color: var(--ink); border-radius: 3px; }
+    /* Граница между главами файла внутри одной главы содержания. Без номера:
+       своя нумерация у файла сквозная и с содержанием спорит. */
+    .rd-br { margin: 26px auto 22px; width: 100%; max-width: 34em; text-align: center;
+             color: var(--dim); font-size: 0.9rem; letter-spacing: 0.4em; }
+    .rd-load { padding: 40px 14px; text-align: center; color: var(--dim); font-size: 0.9rem; }
+    /* Найденное: строка — кусок вокруг совпадения. Читать её приходится
+       быстро и в узком месте, поэтому кегль тот же, что у текста. */
     .rd-hit {
-      display: block; width: 100%; text-align: left; margin-bottom: 8px;
-      padding: 10px 13px; border-radius: 12px; color: var(--muted);
-      background: var(--glass); border: 1px solid var(--glass-line); font: inherit; font-size: 0.84rem;
+      display: block; width: 100%; text-align: left; margin-bottom: 9px;
+      padding: 12px 14px; border-radius: 12px; color: var(--ink);
+      background: var(--glass); border: 1px solid var(--glass-line); font: inherit;
+      font-size: 1rem; line-height: 1.5;
     }
-    .rd-hit b { display: block; font-size: 0.72rem; color: var(--dim); margin-bottom: 3px;
+    .rd-hit b { display: block; font-size: 0.74rem; color: var(--dim); margin-bottom: 4px;
       text-transform: uppercase; letter-spacing: 0.05em; }
-    .rd-hit mark { background: rgba(255, 201, 77, 0.3); color: var(--ink); }
-    .rd-more { padding: 6px 2px 14px; color: var(--dim); font-size: 0.78rem; text-align: center; }
+    .rd-hit mark { background: rgba(255, 201, 77, 0.42); color: var(--ink); font-weight: 600; }
+    .rd-more { padding: 6px 2px 14px; color: var(--dim); font-size: 0.82rem; text-align: center; }
 
     /* Полоса «Объясни» — внизу экрана, а не у выделения: у выделения айфон
        рисует своё меню, и всплывашка попадала бы прямо под него. */

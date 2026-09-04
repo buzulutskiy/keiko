@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 438";
+const APP_VERSION = "Кэйко 439";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11770,14 +11770,6 @@ function gmЗаголовок(имя) {
     .replace(/^\s*(часть|песнь|письмо)\s+[^.]{1,20}\.?\s*$/i, "")
     .trim();
 }
-/* Где ты внутри главы. У «Униженных» часть — это дюжина глав файла, и без
-   счётчика непонятно, много ли ещё. Слова заголовка, если они есть, идут
-   следом: «3 из 12 · Эпилог». */
-function gmМетка(разделы, от, до, i) {
-  const слова = gmЗаголовок((разделы[i] || {}).имя);
-  if (до - от < 2) return слова;
-  return `${i - от + 1} из ${до - от}${слова ? " · " + слова : ""}`;
-}
 
 /* Глава содержания и разделы файла — не одно и то же. У «Униженных» содержание
    знает четыре части, а в файле сорок шесть глав: часть — это диапазон, а не
@@ -11793,65 +11785,6 @@ function gmSectionRange(разделы, n) {
     if (след > от) до = след;
   }
   return [от, Math.max(от + 1, до)];
-}
-
-/* Абзац на предложения. Выделять пальцем по буквам муторно, а спросить хочется
-   про фразу целиком — поэтому предложение стало единицей нажатия.
-   Точка не всегда конец: «т. е.», «И. И.», «стр. 12» — сокращения, после них
-   строчная или цифра, и резать там нечего. */
-function gmSentences(абзац) {
-  const s = String(абзац || "");
-  const куски = [];
-  let с = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (!/[.!?…]/.test(s[i])) continue;
-    let j = i;
-    while (j + 1 < s.length && /[.!?…»"')\]]/.test(s[j + 1])) j++;
-    const хвост = s.slice(j + 1);
-    if (хвост && !/^\s/.test(хвост)) { i = j; continue; }
-    const след = хвост.replace(/^\s+/, "");
-    // после конца предложения идёт заглавная, кавычка или тире реплики
-    if (след && !/^[«"(\[—–-]/.test(след) && !/^[A-ZА-ЯЁ0-9]/.test(след)) { i = j; continue; }
-    // одна буква перед точкой — сокращение, а не конец
-    if (/(?:^|[\s«(])[A-Za-zА-Яа-яЁё]\.$/.test(s.slice(с, j + 1))) { i = j; continue; }
-    const конец = j + 1 + (хвост.length - след.length);
-    куски.push(s.slice(с, конец));
-    с = конец; i = конец - 1;
-  }
-  if (с < s.length) куски.push(s.slice(с));
-  const готово = куски.filter((x) => x.trim());
-  return готово.length ? готово : [s];
-}
-
-/* Что сейчас выделено нажатиями: сквозные номера предложений в открытом
-   разделе. Пальцем айфон выделяет по словам, и собрать две фразы подряд
-   получалось долго. */
-let gmФразы = [];
-function gmПодсветка() {
-  const box = $("#gmRead");
-  if (!box) return;
-  const в = gm && gm.выд;
-  box.querySelectorAll(".rd-s").forEach((el) => {
-    const k = Number(el.dataset.s);
-    el.classList.toggle("on", !!в && k >= в.a && k <= в.b);
-  });
-}
-function gmВыдТекст() {
-  const в = gm && gm.выд;
-  if (!в) return "";
-  return gmФразы.slice(в.a, в.b + 1).join("").trim().replace(/\s+/g, " ");
-}
-/* Нажали на предложение: первое — выделяет, соседнее — растягивает до него,
-   то же самое второй раз — снимает. */
-function gmTapSentence(k) {
-  const в = gm.выд;
-  if (в && в.a === k && в.b === k) gm.выд = null;
-  else if (в) gm.выд = { a: Math.min(в.a, k), b: Math.max(в.b, k) };
-  else gm.выд = { a: k, b: k };
-  const sel = window.getSelection && window.getSelection();
-  if (sel && sel.removeAllRanges) sel.removeAllRanges();
-  gmПодсветка();
-  gmAskShow();
 }
 
 function gmRead() {
@@ -11881,31 +11814,36 @@ function gmRead() {
      бережём всё остальное. Да и искать обычно хотят в том, что сейчас перед
      глазами. */
   const q = (gm.поиск || "").trim();
-  const [от, до] = gm.часть > 0 ? gmSectionRange(разделы, gm.часть) : [0, разделы.length];
-  const текущая = Math.max(от, Math.min(gm.чтение, до - 1, разделы.length - 1));
+  /* Выбрана глава — показываем её целиком. Не выбрана («вся книга») —
+     по одному разделу с кнопкой «дальше»: полтора мегабайта Достоевского
+     телефон в разметке не удержит. */
+  const с = Math.max(0, Math.min(gm.чтение || 0, разделы.length - 1));
+  const [от, до] = gm.часть > 0 ? gmSectionRange(разделы, gm.часть) : [с, с + 1];
   if (q.length >= 2) {
     const найдено = [];
-    for (let i = от; i < до && найдено.length < 60; i++) {
+    let счёт = 0;
+    for (let i = от; i < до; i++) {
       const r0 = разделы[i];
-      r0.абзацы.forEach((p, j) => {
+      const слова = gmЗаголовок(r0.имя);
+      r0.абзацы.forEach((p) => {
+        const j = счёт++;
         const at = p.toLowerCase().indexOf(q.toLowerCase());
         if (at < 0 || найдено.length >= 60) return;
-        найдено.push({ i, j, имя: gmМетка(разделы, от, до, i),
+        найдено.push({ j, имя: слова,
           кусок: (at > 40 ? "…" : "") + p.slice(Math.max(0, at - 40), at + q.length + 90)
             + (at + q.length + 90 < p.length ? "…" : "") });
       });
     }
     box.innerHTML = найдено.length
       ? найдено.map((h) => `
-          <button class="rd-hit" data-rd="${h.i}" data-rdp="${h.j}" type="button">
-            <b>${esc(h.имя)}</b>${gmMark(h.кусок, q)}
+          <button class="rd-hit" data-rdp="${h.j}" type="button">
+            ${h.имя ? `<b>${esc(h.имя)}</b>` : ""}${gmMark(h.кусок, q)}
           </button>`).join("")
         + (найдено.length >= 60 ? `<div class="rd-more">Показаны первые 60 — уточни запрос</div>` : "")
       : `<div class="rd-load">В этой главе ничего не нашлось.<br>Другая глава выбирается содержанием сверху.</div>`;
     box.scrollTop = 0;
-    document.querySelectorAll("#gmRead [data-rd]").forEach((el) =>
+    document.querySelectorAll("#gmRead [data-rdp]").forEach((el) =>
       el.addEventListener("click", () => {
-        gm.чтение = Number(el.dataset.rd);
         gm.метка = Number(el.dataset.rdp);
         gm.поиск = "";
         const поле = $("#gmFind"); if (поле) поле.value = "";
@@ -11914,39 +11852,24 @@ function gmRead() {
     return;
   }
 
-  const r = разделы[текущая];
-  /* Заголовок раздела показываем, только если глава состоит из нескольких:
-     иначе он повторяет шапку карты — а у «Одиссеи» ещё и спорит с ней, потому
-     что файл нумерует свои главы насквозь: «Глава 14. ПЕСНЬ ДВЕНАДЦАТАЯ». */
-  const многораздельная = до - от > 1;
-  gm.выд = null;
-  gmФразы = [];
-  const тело = r.абзацы.map((p, j) => {
-    const фразы = gmSentences(p);
-    const с = gmФразы.length;
-    gmФразы = gmФразы.concat(фразы);
-    return `<p class="rd-p" data-p="${j}">`
-      + фразы.map((f, k) => `<span class="rd-s" data-s="${с + k}">${esc(f)}</span>`).join("")
-      + `</p>`;
+  /* Глава показывается целиком. Делить её на куски с кнопкой «дальше» было
+     нечестно вдвойне: у «Униженных» часть — это дюжина глав файла, и счётчик
+     «11 из 12» говорил о нумерации, которой человек нигде не видел. */
+  let абз = 0;
+  const тело = разделы.slice(от, до).map((r0, k) => {
+    const слова = gmЗаголовок(r0.имя);
+    // между главами файла — либо их собственные слова, либо просто разделитель
+    const шапка = k === 0 && !слова ? ""
+      : слова ? `<div class="rd-h">${esc(слова)}</div>`
+      : `<div class="rd-br">✦</div>`;
+    return шапка + r0.абзацы.map((p) => `<p class="rd-p" data-p="${абз++}">${esc(p)}</p>`).join("");
   }).join("");
-  box.innerHTML = `
-    ${многораздельная ? `<div class="rd-h">${esc(gmМетка(разделы, от, до, текущая))}</div>` : ""}
-    ${тело}
-    ${текущая < до - 1
-      ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${esc(gmМетка(разделы, от, до, текущая + 1))}</button>`
-      : `<div class="rd-more">Глава кончилась. Следующая — в содержании сверху.</div>`}`;
+  const ещё = gm.часть === 0 && до < разделы.length;
+  box.innerHTML = тело
+    + (ещё ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${
+        esc(gmЗаголовок(разделы[до].имя) || "следующий кусок")}</button>` : "");
   const дальше = box.querySelector("[data-rdnext]");
-  if (дальше) дальше.addEventListener("click", () => { gm.чтение = текущая + 1; gm.метка = null; gmRead(); });
-  /* Один обработчик на весь экран и на всю его жизнь: предложений в главе
-     бывает под тысячу, а вешать заново при каждой перерисовке — значит
-     накопить их столько же и обрабатывать одно нажатие десять раз. */
-  if (!box.dataset.tap) {
-    box.dataset.tap = "1";
-    box.addEventListener("click", (e) => {
-      const el = e.target.closest && e.target.closest(".rd-s");
-      if (el) gmTapSentence(Number(el.dataset.s));
-    });
-  }
+  if (дальше) дальше.addEventListener("click", () => { gm.чтение = до; gm.метка = null; gmRead(); });
   /* Пришли из поиска — подводим к тому самому абзацу, а не к началу главы. */
   if (gm.метка != null) {
     const el = box.querySelector(`[data-p="${gm.метка}"]`);
@@ -11968,14 +11891,10 @@ function gmAskShow() {
   if (!bar) return;
   if (!gm || gmВкладка() !== "read") { gmAskHide(); return; }
   const sel = window.getSelection && window.getSelection();
-  const своё = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
+  const фраза = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
   const внутри = sel && sel.rangeCount && $("#gmRead")
     && $("#gmRead").contains(sel.getRangeAt(0).commonAncestorContainer);
-  /* Выделение пальцем главнее: раз человек взялся тянуть по буквам, значит
-     нажатые предложения ему уже не нужны. */
-  if (своё.length >= 2 && внутри && gm.выд) { gm.выд = null; gmПодсветка(); }
-  const фраза = своё.length >= 2 && внутри ? своё : gmВыдТекст();
-  if (!фраза || фраза.length < 2) { gmAskHide(); return; }
+  if (!фраза || фраза.length < 2 || !внутри) { gmAskHide(); return; }
   bar.hidden = false;
   bar.innerHTML = `<span>${esc(фраза.slice(0, 90))}${фраза.length > 90 ? "…" : ""}</span>
     <button id="gmAskGo" type="button">Объясни</button>`;
@@ -12640,6 +12559,10 @@ function bindPlaceMap() {
     if (пф) { пф.value = ""; пф.placeholder = b.dataset.layer === "read" ? "Найти в тексте" : "Найти в книге"; }
     const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard(); gmFit();
+    /* На «Текст» приходят за конкретным местом, а не листать: ставим курсор в
+       поиск сразу. Фокус только здесь и только в этом жесте — иначе айфон
+       клавиатуру не покажет. */
+    if (b.dataset.layer === "read" && пф) пф.focus();
   });
 
   const хиты = $("#gmHits");
