@@ -690,17 +690,17 @@ function ок(имя, факт, надо) {
   const s = t.get("bookStats")();
   ок("случай: поздняя отметка", s.night, true);
   ок("случай: ранняя отметка", s.dawn, true);
-  ок("случай: день рождения автора", s.authorDay, true);
+  ок("случай: отметка среди дня", s.daytime, true);
   ок("случай: в один день и книга, и рояль", s.sameDay, true);
   // со 99-й до 205-й — вторая глава (100–199) пройдена целиком за раз
   ок("случай: глава за один присест", s.chapterInOne, true);
 
-  // без дня рождения в описи повода нет
-  t.set("CATALOG", { kn: { ach: [] } });
-  ок("случай: нет даты — нет награды", t.get("bookStats")().authorDay, false);
-  // и чужой день не считается
-  t.set("CATALOG", { kn: { ach: [], born: "01-01" } });
-  ок("случай: чужая дата не срабатывает", t.get("bookStats")().authorDay, false);
+  // 1 сентября вторник, 3-е четверг, 5-е суббота, 11 ноября среда
+  ок("случай: дней недели набралось", s.weekdays, 4);
+  ок("случай: одной субботы мало", s.wholeWeekend, false);
+  t.get("data").book.entries.push({ id: "e5", date: "2026-09-06", bookId: "kn", page: 208,
+                                    createdAt: час(6, 12) });
+  ок("случай: суббота и воскресенье подряд", t.get("bookStats")().wholeWeekend, true);
 
   t.set("data", было.data); t.set("CATALOG", было.cat);
 }

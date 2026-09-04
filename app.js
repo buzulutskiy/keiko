@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 443";
+const APP_VERSION = "Кэйко 444";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -504,18 +504,28 @@ function handProgress() {
    ничего не требуют — тем и хороши: «Филин следит» за выходной приятнее, чем
    «двадцать дней позади». Всё считается по тому, что уже лежит в записи. */
 function moments(list) {
-  const born = String((catOf(curKey()) || {}).born || "");   // «11-29», день и месяц
-  let night = false, dawn = false, authorDay = false, sameDay = false;
-  const мои = new Set();
+  let night = false, dawn = false, daytime = false, sameDay = false;
+  const мои = new Set(), дни = new Set(), субботы = new Set();
   for (const e of list) {
     if (e.createdAt) {
       const h = new Date(Number(e.createdAt)).getHours();
       if (h >= 23 || h < 4) night = true;
       if (h >= 5 && h < 8) dawn = true;
+      if (h >= 11 && h < 17) daytime = true;
     }
-    if (born && String(e.date || "").slice(5) === born) authorDay = true;
     мои.add(e.date);
+    const d = fromStr(e.date), dw = d.getDay();
+    дни.add(dw);
+    /* Суббота и воскресенье одних выходных. Ключом берём субботу: у
+       воскресенья это вчерашний день, у субботы — сам день. */
+    if (dw === 6 || dw === 0) {
+      const сб = new Date(d); сб.setDate(сб.getDate() - (dw === 0 ? 1 : 0));
+      субботы.add(сб.toISOString().slice(0, 10) + (dw === 0 ? "в" : "с"));
+    }
   }
+  /* Целые выходные: и суббота, и воскресенье одной пары. */
+  let wholeWeekend = false;
+  for (const k of субботы) if (k.endsWith("с") && субботы.has(k.slice(0, -1) + "в")) wholeWeekend = true;
   /* Один день на два разных занятия: книга и рояль в одни сутки. Две книги —
      не в счёт, это то же самое занятие. */
   const мой = isBook() ? "book" : isWatch() ? "watch" : isCourse() ? "pastel" : "piano";
@@ -524,7 +534,9 @@ function moments(list) {
     for (const e of ((data[t] || {}).entries) || [])
       if (мои.has(e.date)) { sameDay = true; break; }
   }
-  return { night, dawn, authorDay, sameDay };
+  /* Все семь дней недели — не подряд, а когда-нибудь. Это не серия: пропуск
+     ничего не отнимает, набирается само собой за месяц-другой. */
+  return { night, dawn, daytime, sameDay, wholeWeekend, weekdays: дни.size };
 }
 
 function pianoStats() {
