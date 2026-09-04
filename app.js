@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 429";
+const APP_VERSION = "Кэйко 430";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3220,8 +3220,12 @@ function zenArm(keep) {
   const pending = !!zenTimer;
   clearTimeout(zenTimer);
   zenTimer = 0;                       // не только гасим таймер, но и признаём это состоянием
+  /* Карта и справочник — оверлей поверх главной: вкладка при этом остаётся
+     «home», и музыка вступала прямо посреди чтения справки. Читают там молча,
+     как книгу, и фоновое погружение туда не зовут. */
   const can = cfg.sound && cfg.zen !== false && tab === "home" && !settingsOpen
-    && !document.hidden && hasMaterials() && !sheetOpen() && now() > zenHold && !prac;
+    && !document.hidden && hasMaterials() && !sheetOpen() && now() > zenHold
+    && !prac && !gm;
   if (!can) { if (zenOn) zenExit(); return; }
   if (keep && pending && zenAt) {
     const left = Math.max(0, zenAt - now());
@@ -11774,7 +11778,7 @@ function gmCard() {
      песни, и в песни V должно стоять её, а не первое попавшееся. */
   /* Запасной поиск — только внутри своего слоя: у стека и у человека, чьим
      именем он назван, имя одно, и карточка показывала бы не то. */
-  const слой = gm.слой || "place";
+  const слой = gmВкладка();
   const p = gmВидимые().find((x) => x.name === gm.at)
     || gm.места.find((x) => x.name === gm.at && слойТочки(x) === слой);
   if (!p) { card.hidden = true; card.innerHTML = ""; return; }
@@ -12161,7 +12165,7 @@ function bindPlaceMap() {
     gmPins();
     gmList();
     gmCard();
-    if ((gm.слой || "place") === "place") gmFocus(gm.at, Math.max(gm.scale, 3.5));
+    if (gmВкладка() === "place") gmFocus(gm.at, Math.max(gm.scale, 3.5));
   });
 
   box.addEventListener("click", (e) => {
@@ -12180,7 +12184,7 @@ function bindPlaceMap() {
       gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
       /* В списке карточка раскрывается прямо в строке, и нижняя не нужна:
          иначе один и тот же текст стоял бы дважды. */
-      if ((gm.слой || "place") !== "place") { gmList(); return; }
+      if (gmВкладка() !== "place") { gmList(); return; }
       gmPins();
       gmCard();
       if (gm.at) gmFocus(gm.at, Math.max(gm.scale, 2.2));

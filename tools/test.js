@@ -469,6 +469,29 @@ function ок(имя, факт, надо) {
   t.set("data.book", было.book); t.set("data.active", было.active);
 }
 
+/* ── Погружение молчит на карте ──
+   Карта и справочник — оверлей поверх главной, вкладка остаётся «home», и
+   музыка вступала прямо посреди чтения справки. */
+{
+  const было = { gm: t.get("gm"), zen: t.get("zenTimer"),
+                 cfg: JSON.parse(JSON.stringify(t.get("cfg"))),
+                 data: JSON.parse(JSON.stringify(t.get("data"))) };
+  t.set("data", { active: "piano", piano: { pieces: [{ id: "p", name: "П", bars: 4 }],
+      activePiece: "p", entries: [] },
+    book: { books: [], entries: [] }, pastel: { courses: [], entries: [] },
+    watch: { videos: [], entries: [] } });
+  t.set("cfg.sound", true); t.set("cfg.zen", true);
+  t.set("zenHold", 0);
+  t.set("gm", null);
+  t.get("zenArm")();
+  ок("погружение: на главной таймер заводится", !!t.get("zenTimer"), true);
+  t.set("gm", { места: [], часть: 0, слой: "" });
+  t.get("zenArm")();
+  ок("погружение: на карте не заводится", !!t.get("zenTimer"), false);
+  t.set("gm", было.gm); t.set("cfg", было.cfg); t.set("data", было.data);
+  clearTimeout(t.get("zenTimer")); t.set("zenTimer", было.zen);
+}
+
 /* ── Какуля: награды идут вперемешку ──
    Раньше талоны открывались пачкой один за другим, и разницы между ними не
    чувствовалось. Соседние награды должны быть разного сорта. */
