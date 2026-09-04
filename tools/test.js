@@ -469,6 +469,28 @@ function ок(имя, факт, надо) {
   t.set("data.book", было.book); t.set("data.active", было.active);
 }
 
+/* ── Награды: вкладки «Карточки» больше нет, если карточек ноль ──
+   Карточки переехали в карту. Вкладка, за которой пусто, показывала бы
+   «0 из 0», а запомненная открытой — встречала бы пустотой. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), cfg: JSON.parse(JSON.stringify(t.get("cfg"))),
+                 achView: t.get("achView"), achTab: t.get("achTab"), поиск: t.get("document.querySelector") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    book: { books: [{ id: "kn", title: "К", pages: 100, startPage: 0, chapters: [] }], activeBook: "kn", entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] } });
+  t.set("CATALOG", { materials: { kn: { facts: [], ach: {} } } });
+  const узел = { hidden: false, innerHTML: "" };
+  t.set("document.querySelector", (s) => (s === "#view" ? узел : null));
+  t.set("achView", { track: "book", bookId: "kn" });
+  t.set("achTab", "facts"); t.set("cfg.achTab", "facts");
+  try { t.get("renderAch")(); } catch (e) { /* остальной DOM тут не нужен */ }
+  ок("награды: пустая вкладка «Карточки» сбрасывается", t.get("achTab"), "ach");
+  ок("награды: кнопки «Карточки» в разметке нет", /data-at="facts"/.test(узел.innerHTML), false);
+  t.set("document.querySelector", было.поиск);
+  t.set("achView", было.achView); t.set("achTab", было.achTab);
+  t.set("data", было.data); t.set("cfg", было.cfg);
+}
+
 /* ── Погружение молчит на карте ──
    Карта и справочник — оверлей поверх главной, вкладка остаётся «home», и
    музыка вступала прямо посреди чтения справки. */

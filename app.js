@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 430";
+const APP_VERSION = "Кэйко 431";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5234,6 +5234,12 @@ function renderAch() {
   if (achView && !viewMaterialExists(achView)) { achView = null; cfg.achView = null; saveCfg(); }
   if (!achView) { renderAchList(); return; }
   if (achTab !== "facts" && achTab !== "takes") achTab = "ach";
+  /* Карточки знаний переехали в карту, и у материала их, как правило, ноль.
+     Вкладка, за которой пусто, — это «0 из 0» вместо содержания, а если она
+     ещё и запомнена как открытая, экран наград встречает пустотой. */
+  if (achTab === "facts" && !withMaterial(achView, () => factsState()).length) {
+    achTab = "ach"; cfg.achTab = achTab; saveCfg();
+  }
   renderAchMaterial(achView);
 }
 
@@ -5491,7 +5497,7 @@ function renderAchMaterial(view) {
 
     <div class="seg" id="achTabs">
       <button data-at="ach" class="${achTab === "ach" ? "on" : ""}" type="button">${T("segAch")}</button>
-      <button data-at="facts" class="${achTab === "facts" ? "on" : ""}" type="button">${T("segFacts")}</button>
+      ${facts.length ? `<button data-at="facts" class="${achTab === "facts" ? "on" : ""}" type="button">${T("segFacts")}</button>` : ""}
       ${view.track === "piano" || view.track === "pastel"
         ? `<button data-at="takes" class="${achTab === "takes" ? "on" : ""}" type="button">${view.track === "pastel" ? "📷 Работы" : "🎙 Записи"}</button>` : ""}
     </div>
