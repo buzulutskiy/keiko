@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 435";
+const APP_VERSION = "Кэйко 436";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11383,6 +11383,9 @@ function renderMuseum() {
 function closePlaceMap() {
   closeShots();
   gmAskHide();
+  /* Абзацы прошлой книги не должны дожидаться следующего открытия: пока
+     новый текст качается, на экране висел бы чужой. */
+  const чт = $("#gmRead"); if (чт) { чт.hidden = true; чт.innerHTML = ""; }
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
@@ -11647,7 +11650,7 @@ function gmParseBook(текст) {
 async function gmLoadBook() {
   const id = gmBookFile();
   if (!id) return null;
-  if (gmText && gmText.id === id) return gmText;
+  if (gmText && gmText.id === id && !gmText.грузим) return gmText;
   if (gmText && gmText.грузим === id) return null;      // уже качается
   gmText = { id, разделы: [], грузим: id };
   const сырое = await catRaw(CAT_BOOK_FILE(id), 60000);
@@ -11753,14 +11756,22 @@ function gmAskShow() {
   bar.hidden = false;
   bar.innerHTML = `<span>${esc(фраза.slice(0, 90))}${фраза.length > 90 ? "…" : ""}</span>
     <button id="gmAskGo" type="button">Объясни</button>`;
+  /* Книгу и раздел снимаем прямо сейчас, вместе с фразой, а не в момент
+     нажатия. Состояние карты и показанный текст расходятся: карту открыли для
+     одной книги, а на экране ещё абзацы прошлой — и в промт уезжала не та
+     книга. Что выделено, из того и берём. */
+  const откуда = gmText && gmText.id === gmBookFile()
+    ? { id: gmText.id, раздел: (gmText.разделы[gm.чтение] || {}).имя || "" }
+    : { id: gmBookFile(), раздел: "" };
   const кн = $("#gmAskGo");
-  if (кн) кн.addEventListener("click", () => gmAsk(фраза));
+  if (кн) кн.addEventListener("click", () => gmAsk(фраза, откуда));
 }
 
-function gmAsk(фраза) {
-  const b = (data.book.books || []).find((x) => x.id === gm.id);
+function gmAsk(фраза, откуда) {
+  const из = откуда || { id: gm.id, раздел: "" };
+  const b = (data.book.books || []).find((x) => x.id === из.id);
   const автор = b ? String(b.author || "").split("·")[0].trim() : "";
-  const раздел = gmText && gmText.разделы[gm.чтение] ? gmText.разделы[gm.чтение].имя : "";
+  const раздел = из.раздел;
   /* Без спойлеров — то же правило, что у всей карты: объясняем прочитанное и
      не рассказываем, что будет дальше. */
   const вопрос = encodeURIComponent(
