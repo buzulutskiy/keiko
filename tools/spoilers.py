@@ -70,6 +70,29 @@ def main():
             print("\n".join(строки))
             хитов += len(строки)
 
+    # ── Ступени времени ──
+    # Открываются по дням, а не по прочитанному: награда на полгода придёт и
+    # к тому, кто на трети книги. Значит её текст должен быть верен с любого
+    # места — и проверять его надо тем же ситом.
+    кат = файл(g, "keiko-catalog.json")
+    строки = []
+    for mid, m in (кат.get("materials") or {}).items():
+        if только and mid != только:
+            continue
+        fl = m.get("flavor")
+        if not isinstance(fl, dict):
+            continue
+        for k, v in fl.items():
+            if not isinstance(v, dict) or not v.get("word"):
+                continue
+            всего += 1
+            for s in предложения(v["word"]):
+                строки.append("  %s · %s · %s\n    %s" % (mid, k, v.get("name", ""), s))
+    if строки:
+        print("\n=== ступени времени ===")
+        print("\n".join(строки))
+        хитов += len(строки)
+
     м = файл(g, "museum.json")
     вещи = м.get("items", м if isinstance(м, list) else [])
     строки = []
