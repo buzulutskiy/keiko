@@ -3085,6 +3085,15 @@
     /* ── Мысли ───────────────────────── */
     .th-panel { display: grid; gap: 9px; }
     .th-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    /* Галочка правки переносов: тихая строка под полем — не кнопка действия,
+       а состояние, которое видно и переключается на месте. */
+    .fmt-tog {
+      display: inline-flex; align-items: center; gap: 7px; align-self: start;
+      font-size: 0.78rem; color: var(--dim); cursor: pointer; user-select: none;
+    }
+    .fmt-tog input { width: 15px; height: 15px; accent-color: var(--gold); margin: 0; }
+    .fmt-tog input:checked + span { color: var(--muted); }
+    .de-kb .fmt-tog { margin-right: auto; }
     .th-send { width: auto; padding: 0 20px; min-height: 44px; }
     /* оболочка своя, список системный — он лежит поверх и прозрачен */
     .th-select {
@@ -3487,7 +3496,7 @@
     /* Маленькая панель вложений — прижата к клавиатуре и ездит с ней */
     .de-kb {
       position: absolute; left: 0; right: 0; bottom: 0;
-      display: flex; gap: 10px;
+      display: flex; gap: 10px; align-items: center;
       padding: 6px 20px calc(var(--safe-b) + 8px);
       transition: transform 0.15s ease;
     }

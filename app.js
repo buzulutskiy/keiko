@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 432";
+const APP_VERSION = "Кэйко 433";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -43,7 +43,7 @@ const DOW_BY = ["понедельникам", "вторникам", "среда�
 
 /* ── Состояние ── */
 let data = null;
-let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true, zen: true };
+let cfg = { token: "", gistId: "", lastSync: 0, tab: "home", period: "week", achView: null, shake: false, shakeAsked: false, sound: false, bgPreset: "breath", bgWave: true, zen: true, fixPaste: true };
 let period = "week";   // week | month — что показываем на «Прогрессе»
 /* На сколько периодов назад отошли от текущего: 0 — эта неделя (или этот
    месяц), −1 — прошлая, и так далее. Вперёд дальше нуля не пускаем: будущего
@@ -5824,11 +5824,34 @@ function cleanPastedText(raw) {
           .trim();
 }
 
+/* Переключатель правки переносов — прямо под полем, где вставляют текст.
+   Жёстко привязать его к материалу нельзя: в поэтическом сборнике попадается
+   проза, а в прозе — стихотворная вставка. Решает человек в момент вставки,
+   и решение запоминается. */
+const fixPasteOn = () => cfg.fixPaste !== false;
+const fmtToggleHTML = (id) => `
+  <label class="fmt-tog">
+    <input type="checkbox" id="${id}" ${fixPasteOn() ? "checked" : ""}>
+    <span>Править переносы</span>
+  </label>`;
+function bindFmtToggle(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", () => {
+    cfg.fixPaste = el.checked;
+    saveCfg();
+    /* Остальные такие же галочки на экране держим в том же положении: настройка
+       одна на всё приложение, и две разные птички означали бы разное. */
+    document.querySelectorAll(".fmt-tog input").forEach((x) => { x.checked = el.checked; });
+    toast(el.checked ? "Переносы будут поправлены" : "Текст вставится как есть");
+  });
+}
+
 function bindPasteCleanup(area) {
   if (!area) return;
 
   const insert = (e, raw) => {
-    if (!raw) return;
+    if (!raw || !fixPasteOn()) return;
     const clean = cleanPastedText(raw);
     if (clean === raw) return;
     e.preventDefault();
@@ -7158,11 +7181,12 @@ function openDayEditor(rec) {
         <button class="th-drop" id="deDrop" type="button" aria-label="Убрать вложение">✕</button>
       </div>` : ""}
     <textarea class="de-area" id="deArea" placeholder="Пиши…"></textarea>
-    ${isNew ? `
-      <div class="de-kb" id="deKb">
+    <div class="de-kb" id="deKb">
+      ${fmtToggleHTML("deFmt")}
+      ${isNew ? `
         ${canRecord() ? `<button class="th-clip" id="deMic" type="button" aria-label="Записать звук">🎙</button>` : ""}
-        <button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>
-      </div>` : ""}`;
+        <button class="th-clip" id="deCam" type="button" aria-label="Приложить снимок">📷</button>` : ""}
+    </div>`;
   document.body.appendChild(box);
   /* Позади листа живёт прокручиваемая страница, и айфон тянул её резинкой
      сквозь лист. Всё, что не текст, прокрутку не получает. */
@@ -7190,6 +7214,7 @@ function openDayEditor(rec) {
 
   area.value = rec ? (rec.text || "") : dyDraft;
   bindPasteCleanup(area);
+  bindFmtToggle("deFmt");
   /* Фокус — сразу и в том же жесте, которым открыли лист: отложенный фокус
      айфон не считает продолжением нажатия и клавиатуру не выдвигает. */
   area.focus();
@@ -7463,6 +7488,7 @@ function renderNotes() {
           <button class="th-clip" id="thCam" type="button" aria-label="Приложить снимок">📷</button>
         </span>
       </div>
+      ${fmtToggleHTML("thFmt")}
       <button class="btn gold th-send" id="thSave" type="button">Записать</button>
       ${pendingMedia ? `
         <div class="th-pending">
@@ -7480,6 +7506,7 @@ function renderNotes() {
         <article class="post thought editing">
           <div class="th-head">${sourceHTML(t)}<span class="th-when">${esc(when(t))}</span></div>
           <textarea class="note-input th-text" id="thEdit" rows="4">${esc(t.text)}</textarea>
+          ${fmtToggleHTML("thFmtEdit")}
           <div class="th-edit-row">
             <button class="btn gold" data-save="${t.id}" type="button">Сохранить</button>
             <button class="btn" data-cancel="1" type="button">Отмена</button>
@@ -7568,6 +7595,8 @@ function renderNotes() {
   const area = $("#thText");
   bindPasteCleanup(area);
   bindPasteCleanup($("#thEdit"));
+  bindFmtToggle("thFmt");
+  bindFmtToggle("thFmtEdit");
 
   if (editingThought) {
     const ed = $("#thEdit");
