@@ -469,6 +469,30 @@ function ок(имя, факт, надо) {
   t.set("data.book", было.book); t.set("data.active", было.active);
 }
 
+/* ── Лента: артефакты вместо карточек ──
+   Карточки сняты, и фишка в ленте вела в никуда. Вместо неё — предмет,
+   открывшийся этой отметкой: у него есть куда вести. День берётся из
+   времени открытия предмета, а не пересчитывается по главам. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), mus: t.get("MUSEUM") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    book: { books: [{ id: "kn", title: "К", pages: 100, startPage: 0, chapters: [{ name: "I", from: 1 }] }],
+            activeBook: "kn", entries: [{ id: "e1", date: "2026-03-05", bookId: "kn", page: 50 }] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    musAt: { "v1": Date.parse("2026-03-05T18:00:00"), "v2": Date.parse("2026-03-01T18:00:00") } });
+  t.set("CATALOG", { materials: { kn: { facts: [], ach: {} } } });
+  t.set("MUSEUM", { items: [
+    { id: "v1", book: "kn", ch: 1, name: "Кратер", kind: "вещь" },
+    { id: "v2", book: "kn", ch: 1, name: "Килик", kind: "вещь" },
+    { id: "v3", book: "другая", ch: 1, name: "Чужой", kind: "вещь" },
+  ] });
+  const p = t.get("dayProgress")("book", "kn", "2026-03-05");
+  ок("лента: предмет, открытый в этот день, попадает в сессию", p.arts.map((x) => x.name), ["Кратер"]);
+  ок("лента: предмет другого дня — нет", p.arts.some((x) => x.id === "v2"), false);
+  ок("лента: чужая книга — нет", p.arts.some((x) => x.id === "v3"), false);
+  t.set("MUSEUM", было.mus); t.set("data", было.data);
+}
+
 /* ── Награды: вкладки «Карточки» больше нет, если карточек ноль ──
    Карточки переехали в карту. Вкладка, за которой пусто, показывала бы
    «0 из 0», а запомненная открытой — встречала бы пустотой. */

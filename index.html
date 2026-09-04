@@ -2318,8 +2318,10 @@
       max-width: 100%; min-width: 0;
     }
     .ev-aw i { font-style: normal; font-size: 0.95rem; flex: none; }
-    .ev-aw.fact {
-      border-color: rgba(139, 124, 246, 0.32); background: rgba(139, 124, 246, 0.1);
+    /* Артефакт в ленте — свой оттенок, чтобы отличался от награды с первого
+       взгляда: награда золотая, предмет — сине-зелёный, как витрина. */
+    .ev-aw.art {
+      border-color: rgba(96, 196, 176, 0.35); background: rgba(96, 196, 176, 0.1);
     }
     .ev-aw span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .post.ev { border-left: 2px solid var(--glass-line); }

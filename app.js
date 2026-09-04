@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 431";
+const APP_VERSION = "Кэйко 432";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1843,7 +1843,8 @@ function saveEntry() {
       : null;
     addEvent("session", keyNow, trackNow, текст, {
       tag: рисунок ? keyNow + ":" + entNow.id : keyNow, date: selectedDate,
-      fields: Object.assign({ createdAt: now(), awards: stamped.ach, facts: stamped.facts },
+      fields: Object.assign({ createdAt: now(), awards: stamped.ach, facts: stamped.facts,
+          arts: freshMus.map((x) => ({ id: x.id, name: x.name, icon: musIcon(x) })) },
         justClosed ? { farewell: bookFarewell(justClosed) } : {},
         снимок ? { mediaId: снимок.id, mediaKind: "photo" } : {}),
     });
@@ -6881,8 +6882,14 @@ function dayProgress(track, key, day) {
   const hadAch = new Set(before.ach.map(a => a.id));
   const hadFacts = new Set(before.facts.map(f => f.id));
   const sameDay = (at) => at > 1 && dateStr(new Date(at)) === day;
+  /* Артефакты этой книги, открывшиеся в этот день. Снимок по главам тут не
+     нужен: у предмета есть время открытия, и оно точнее любого пересчёта —
+     предмет мог открыться и на другом устройстве, и после синхронизации. */
+  const arts = musItems().filter((x) => x.book === key && sameDay((data.musAt || {})[x.id]))
+    .map((x) => ({ id: x.id, name: x.name, icon: musIcon(x) }));
 
   return {
+    arts,
     ach: after.ach.filter(a => !hadAch.has(a.id) || sameDay((data.achAt || {})[key + ":" + a.id]))
       .map(a => ({ id: a.id, icon: a.icon, name: a.name })),
     facts: after.facts.filter(f => !hadFacts.has(f.id) || sameDay((data.factAt || {})[key + ":" + f.id]))
@@ -7369,7 +7376,7 @@ function renderNotes() {
   // один материал за день считаем один раз: событий в ленте много, а дней мало
   const dayCache = new Map();
   const progressOf = (t) => {
-    if (t.event !== "session" || !t.key || !t.track) return { ach: t.awards || [], facts: t.facts || [] };
+    if (t.event !== "session" || !t.key || !t.track) return { ach: t.awards || [], arts: t.arts || [] };
     const ck = t.track + "|" + t.key + "|" + t.date;
     if (!dayCache.has(ck)) dayCache.set(ck, dayProgress(t.track, t.key, t.date));
     const live = dayCache.get(ck);
@@ -7377,7 +7384,10 @@ function renderNotes() {
       const seen = new Set((a || []).map(x => x.id));
       return (a || []).concat((b || []).filter(x => x && !seen.has(x.id)));
     };
-    return { ach: join(t.awards, live.ach), facts: join(t.facts, live.facts) };
+    /* Карточек знаний в ленте больше нет: они сняты, и фишка вела в никуда.
+       Вместо них — артефакты, открывшиеся этой отметкой: у них есть куда
+       вести. */
+    return { ach: join(t.awards, live.ach), arts: join(t.arts, live.arts) };
   };
 
   if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
@@ -7493,17 +7503,16 @@ function renderNotes() {
             <div class="ev-awards">
               <button class="ev-aw" type="button" data-ev-book="${esc(t.key)}"><i>📕</i><span>Показать итог</span></button>
             </div>` : ""}
-          ${((p) => p.ach.length || p.facts.length ? `
+          ${((p) => p.ach.length || p.arts.length ? `
             <div class="ev-awards">
               ${p.ach.map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
                   <i>${esc(evIcon(t, a.id) || a.icon || "✦")}</i><span>${esc(evName(t, a.id, "ach", a.name))}</span>
                 </button>`).join("")}
-              ${p.facts.map((f) => `
-                <button class="ev-aw fact" type="button" data-ev-fact="${esc(f.id)}"
-                  data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
-                  <i>💡</i><span>${esc(evName(t, f.id, "fact", f.t))}</span>
+              ${p.arts.map((x) => `
+                <button class="ev-aw art" type="button" data-ev-art="${esc(x.id)}" data-ev-key="${esc(t.key)}">
+                  <i>${esc(x.icon || "🏺")}</i><span>${esc(x.name)}</span>
                 </button>`).join("")}
             </div>` : "")(progressOf(t))}
           ${mediaHTML(t)}
@@ -7519,15 +7528,15 @@ function renderNotes() {
      за что она и что там написано. */
   evNameCache.clear();     // лента перерисована — заголовки считаем заново
 
-  document.querySelectorAll("[data-ev-fact]").forEach(el =>
+  /* Артефакт в ленте ведёт к самому предмету на вкладке артефактов: там его
+     справка, музей и ссылки. Если предмет с тех пор сняли — говорим об этом. */
+  document.querySelectorAll("[data-ev-art]").forEach(el =>
     el.addEventListener("click", () => {
-      // у ролика свой ключ — без него карточка ролика не открывалась
-      const view = { track: el.dataset.evTrack,
-        pieceId: el.dataset.evTrack === "piano" ? el.dataset.evKey : null,
-        bookId: el.dataset.evTrack === "book" ? el.dataset.evKey : null,
-        videoId: el.dataset.evTrack === "watch" ? el.dataset.evKey : null };
-      const f = withMaterial(view, () => factsState().find((x) => x.id === el.dataset.evFact));
-      if (f) openFactSheet(f); else toast("Карточка не нашлась — материал изменился");
+      const x = musItems().find((y) => y.id === el.dataset.evArt);
+      if (!x) { toast("Предмет не нашёлся — его уже нет в собрании"); return; }
+      mus.book = x.book; mus.at = x.id;
+      tab = "mus"; cfg.tab = "mus"; saveCfg();
+      render(); window.scrollTo(0, 0);
     }));
 
   document.querySelectorAll("[data-ev-ach]").forEach(el =>
