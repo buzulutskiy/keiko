@@ -1412,6 +1412,20 @@ function ок(имя, факт, надо) {
   t.set("ARTS", { od: { map: [{ name: "Итака", ch: 1, lat: 38.4, lon: 20.7 }] } });
   ок("карта: без рамки картинки кнопки нет", t.get("mapBtnOn")(), false);
 
+  /* А книге без географии подложка и не нужна: у «Писем Баламута» одни
+     справки, и карта у них — список, которому картинка мира ни к чему. */
+  t.set("ARTS", { od: { map: [
+    { kind: "text", name: "Полифония", about: "…" },
+    { kind: "person", name: "Льюис", about: "…" },
+  ] } });
+  ок("карта: без географии кнопка есть и без рамки", t.get("mapBtnOn")(), true);
+  ок("карта: мест в такой книге нет", t.get("mapHasPlaces")(t.get("book")()), false);
+
+  const былоGm = t.get("gm");
+  t.set("gm", { места: t.get("mapWhole")(t.get("book")()), слой: "", часть: 0, at: null, части: [] });
+  ок("карта: вкладка сразу справки", t.get("gmВкладка")(), "all");
+  t.set("gm", былоGm);
+
   t.set("data.book", было.book);
   t.set("data.active", было.active);
   t.set("ARTS", было.arts);

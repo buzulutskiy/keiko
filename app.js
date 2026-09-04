@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 421";
+const APP_VERSION = "Кэйко 422";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4214,7 +4214,12 @@ function updateAchBadge() {
    полной перерисовки, и созданная на лету кнопка оставалась бы от прошлой
    обложки — «то появляется, то исчезает». Состояние считается одним снимком,
    потому что файл с местами доезжает когда придётся. */
-const mapBtnOn = () => isBook() && mapWhole(book()).length > 0 && !!mapBox(book());
+/* Подложка нужна только под метки: без неё точку некуда поставить. Если же у
+   книги одни справки и ни одного географического места, карта — это список, и
+   требовать под него картинку мира незачем. */
+const mapHasPlaces = (b) => mapWhole(b).some((p) => !p.kind || p.kind === "place");
+const mapBtnOn = () => isBook() && mapWhole(book()).length > 0
+  && (!!mapBox(book()) || !mapHasPlaces(book()));
 
 function bookBtnState() {
   return { map: { on: mapBtnOn() } };
@@ -10819,8 +10824,9 @@ let gm = null;      // {места, рамка, at, scale, tx, ty}
 function openPlaceMap(bk, i, выбрать) {
   useMark("карта");
   const места = mapPoints(bk, i);
-  const рамка = mapBox(bk);
-  if (!места.length || !рамка) { toast("Карты пока нет"); return; }
+  // рамка нужна метке; списку справок — нет, и подложку он не ждёт
+  const рамка = mapBox(bk) || { west: -180, east: 180, north: 85, south: -85 };
+  if (!места.length || (!mapBox(bk) && mapHasPlaces(bk))) { toast("Карты пока нет"); return; }
   const box = $("#gmap");
   if (!box) return;
   /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
@@ -11150,6 +11156,10 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    секциями: в главе таких записей от трёх до двух десятков — это прокрутка,
    а не восемь нажатий. Места остаются отдельно: у них карта, а не список. */
 const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"]];
+/* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
+   у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
+   и открываться она должна сразу списком, а не пустой картой. */
+const gmВкладка = () => (gm && gm.слой) || (gmLayersOf()[0] || ["place"])[0];
 const вкладкаТочки = (p) => (слойТочки(p) === "place" ? "place" : "all");
 function gmLayersOf() {
   if (!gm) return [];
@@ -11187,7 +11197,7 @@ function gmРазбивка(по) {
 }
 const gmВидимые = () => {
   if (!gm) return [];
-  const вкладка = gm.слой || (gmLayersOf()[0] || ["place"])[0];
+  const вкладка = gmВкладка();
   const свои = gm.места.filter((p) => вкладкаТочки(p) === вкладка);
   /* В списке справок записи идут секциями в порядке СЛОИ, внутри секции — как
      лежат в файле. Сортировка устойчивая: без второго ключа порядок внутри
@@ -11286,7 +11296,7 @@ function gmSpravki(p) {
 function gmList() {
   const box = $("#gmList"), сцена = $("#gmStage");
   if (!box || !gm) return;
-  const списком = (gm.слой || "place") !== "place";
+  const списком = gmВкладка() !== "place";
   box.hidden = !списком;
   if (сцена) сцена.hidden = списком;
   if (!списком) { box.innerHTML = ""; return; }
@@ -11364,10 +11374,10 @@ function gmLayersRow() {
     .filter(([k, , n]) => n || k === "place");
   /* Вкладка могла опустеть при переходе в другую главу — тогда возвращаемся на
      карту: иначе открытым останется список, которого в ряду больше нет. */
-  if (!вкладки.some(([k]) => k === (gm.слой || "place"))) gm.слой = "place";
+  if (!вкладки.some(([k]) => k === gmВкладка())) gm.слой = (вкладки[0] || ["place"])[0];
   box.hidden = вкладки.length < 2;
   if (box.hidden) { box.innerHTML = ""; return; }
-  const текущий = gm.слой || "place";
+  const текущий = gmВкладка();
   box.innerHTML = вкладки.map(([k, имя, n]) =>
     `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""}
       type="button">${имя} · ${n}</button>`).join("");
