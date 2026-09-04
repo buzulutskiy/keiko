@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 422";
+const APP_VERSION = "Кэйко 423";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -907,9 +907,16 @@ const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
    можно там же, пунктом «Все места».
    Книга не начата или в её главе точек нет — открывается вся карта. */
 function mapHereChapter(b) {
-  const bk = b || book();
+  const bk = b || mapMaterial() || book();
   const главы = bk.chapters || [];
   if (!главы.length) return 0;
+  /* У пьесы «докуда дошёл» считается не страницами, а разбором: открываем
+     блок, над которым идёшь сейчас. */
+  if (!b && isPiano()) {
+    const w = pracWhere();
+    const n = w && w.bl ? w.bl.i + 1 : (w && w.finished ? главы.length : 1);
+    return Math.min(Math.max(1, n), главы.length);
+  }
   const стр = bookProgressOf(bk);
   /* Книга не начата — открываем первую главу, а не всю карту: пустая карта
      со всеми точками сразу — это список, а не место, куда пришёл читать. */
@@ -3931,7 +3938,8 @@ $("#view").innerHTML = `
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
-          aria-label="Карта мест" title="Карта мест">🗺</button>
+          aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
+          title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -3939,7 +3947,7 @@ $("#view").innerHTML = `
   syncBookBtns();        // состояние кнопок — из живых данных, а не из момента сборки строки
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
-  if (bm) bm.addEventListener("click", () => openPlaceMap(book(), -1));
+  if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4218,8 +4226,23 @@ function updateAchBadge() {
    книги одни справки и ни одного географического места, карта — это список, и
    требовать под него картинку мира незачем. */
 const mapHasPlaces = (b) => mapWhole(b).some((p) => !p.kind || p.kind === "place");
-const mapBtnOn = () => isBook() && mapWhole(book()).length > 0
-  && (!!mapBox(book()) || !mapHasPlaces(book()));
+/* Карта умеет книгу: у той есть id, главы и название. Пьесе это подаётся в том
+   же виде — главами становятся блоки по четыре такта, которые и так посчитаны
+   для разбора. Так справочник едет вместе с разбором: дошёл до тактов 5–8 —
+   открылось то, что в них встретилось. */
+function mapMaterial() {
+  if (isBook()) return book();
+  if (isPiano() && piece().bars) {
+    const p = piece();
+    return { id: p.id, title: p.name,
+             chapters: pracBlocks().map((bl) => ({ name: `Такты ${bl.from}–${bl.to}`, from: bl.from })) };
+  }
+  return null;
+}
+const mapBtnOn = () => {
+  const m = mapMaterial();
+  return !!m && mapWhole(m).length > 0 && (!!mapBox(m) || !mapHasPlaces(m));
+};
 
 function bookBtnState() {
   return { map: { on: mapBtnOn() } };
@@ -11337,6 +11360,9 @@ function gmList() {
    Киклоп», где-то просто «Этапы штурма», и без цифры непонятно, где ты сейчас.
    Собственную нумерацию из названия убираем, чтобы не вышло «9. Песнь IX». */
 function gmИмяГлавы(n, имя) {
+  /* У пьесы глава и так названа тактами — «1. Такты 1–4» повторяет само себя,
+     а номер блока ничего не добавляет к их номерам. */
+  if (/^Такты\s/.test(String(имя || ""))) return String(имя);
   const чистое = String(имя || "").replace(/^\s*(глава|песнь|часть|письмо)\s+[^.]{1,20}\.?\s*/i, "").trim();
   return `${n}. ${чистое || имя || ""}`;
 }
