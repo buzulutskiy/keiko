@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 437";
+const APP_VERSION = "Кэйко 438";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11104,6 +11104,10 @@ function openPlaceMap(bk, i, выбрать) {
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
   gmTocBtn();
+  /* Полоса «Объясни» живёт внутри карты и переживала её закрытие: с прошлой
+     книгой, прошлой фразой и прошлым обработчиком. Открыли карту другой книги,
+     нажали — и в ChatGPT уезжал фрагмент из «Одиссеи». Гасим на входе. */
+  gmAskHide();
   /* Файл с местами мог обновиться в гисте — спрашиваем при каждом открытии
      карты. Раньше это делал экран разбора; его сняли, и файл перестал
      обновляться совсем: на телефоне навсегда оставалась первая версия. */
@@ -11386,6 +11390,7 @@ function closePlaceMap() {
   /* Абзацы прошлой книги не должны дожидаться следующего открытия: пока
      новый текст качается, на экране висел бы чужой. */
   const чт = $("#gmRead"); if (чт) { чт.hidden = true; чт.innerHTML = ""; }
+  gmAskHide();
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
@@ -11731,9 +11736,10 @@ function gmSectionFor(разделы, n) {
   const всего = части.length || 1;
   let i = Math.max(0, Math.min(разделы.length - 1,
     Math.floor((Number(n) - 1) / всего * разделы.length)));
-  /* Титул и прочая мелочь в начале — не то, ради чего открывают текст.
-     Если попали в кусок в пару абзацев, шагаем к первому настоящему. */
-  while (i < разделы.length - 1 && разделы[i].абзацы.length < 3) i++;
+  /* Титул и прочая мелочь в начале — не то, ради чего открывают текст. Если
+     попали в кусок в пару абзацев, шагаем к первому настоящему. Только в самом
+     начале книги: дальше короткий раздел — это короткий раздел, а не титул. */
+  while (i < разделы.length - 1 && i < 3 && разделы[i].абзацы.length < 3) i++;
   return i;
 }
 
@@ -11752,6 +11758,100 @@ const gmEsc = (s2) => s2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function gmMark(текст, что) {
   if (!что) return esc(текст);
   return esc(текст).replace(new RegExp(gmEsc(esc(что)), "gi"), (m) => `<mark>${m}</mark>`);
+}
+
+/* Собственная нумерация файла в заголовке раздела спорит с содержанием, по
+   которому человек и выбирал главу: «Глава 14. ПЕСНЬ ДВЕНАДЦАТАЯ» при
+   выбранной двенадцатой песни, «Глава 35» первой строкой четвёртой части.
+   Оставляем только то, что заголовок говорит словами. */
+function gmЗаголовок(имя) {
+  return String(имя || "").trim()
+    .replace(/^\s*глава\s+\d+\.?\s*/i, "")
+    .replace(/^\s*(часть|песнь|письмо)\s+[^.]{1,20}\.?\s*$/i, "")
+    .trim();
+}
+/* Где ты внутри главы. У «Униженных» часть — это дюжина глав файла, и без
+   счётчика непонятно, много ли ещё. Слова заголовка, если они есть, идут
+   следом: «3 из 12 · Эпилог». */
+function gmМетка(разделы, от, до, i) {
+  const слова = gmЗаголовок((разделы[i] || {}).имя);
+  if (до - от < 2) return слова;
+  return `${i - от + 1} из ${до - от}${слова ? " · " + слова : ""}`;
+}
+
+/* Глава содержания и разделы файла — не одно и то же. У «Униженных» содержание
+   знает четыре части, а в файле сорок шесть глав: часть — это диапазон, а не
+   один раздел. Раньше показывался только первый, и до тридцать шестой главы
+   было не добраться вовсе. */
+function gmSectionRange(разделы, n) {
+  const части = gmParts();
+  const i = части.findIndex((c) => Number(c.n) === Number(n));
+  const от = gmSectionFor(разделы, n);
+  let до = разделы.length;
+  if (i >= 0 && i + 1 < части.length) {
+    const след = gmSectionFor(разделы, части[i + 1].n);
+    if (след > от) до = след;
+  }
+  return [от, Math.max(от + 1, до)];
+}
+
+/* Абзац на предложения. Выделять пальцем по буквам муторно, а спросить хочется
+   про фразу целиком — поэтому предложение стало единицей нажатия.
+   Точка не всегда конец: «т. е.», «И. И.», «стр. 12» — сокращения, после них
+   строчная или цифра, и резать там нечего. */
+function gmSentences(абзац) {
+  const s = String(абзац || "");
+  const куски = [];
+  let с = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (!/[.!?…]/.test(s[i])) continue;
+    let j = i;
+    while (j + 1 < s.length && /[.!?…»"')\]]/.test(s[j + 1])) j++;
+    const хвост = s.slice(j + 1);
+    if (хвост && !/^\s/.test(хвост)) { i = j; continue; }
+    const след = хвост.replace(/^\s+/, "");
+    // после конца предложения идёт заглавная, кавычка или тире реплики
+    if (след && !/^[«"(\[—–-]/.test(след) && !/^[A-ZА-ЯЁ0-9]/.test(след)) { i = j; continue; }
+    // одна буква перед точкой — сокращение, а не конец
+    if (/(?:^|[\s«(])[A-Za-zА-Яа-яЁё]\.$/.test(s.slice(с, j + 1))) { i = j; continue; }
+    const конец = j + 1 + (хвост.length - след.length);
+    куски.push(s.slice(с, конец));
+    с = конец; i = конец - 1;
+  }
+  if (с < s.length) куски.push(s.slice(с));
+  const готово = куски.filter((x) => x.trim());
+  return готово.length ? готово : [s];
+}
+
+/* Что сейчас выделено нажатиями: сквозные номера предложений в открытом
+   разделе. Пальцем айфон выделяет по словам, и собрать две фразы подряд
+   получалось долго. */
+let gmФразы = [];
+function gmПодсветка() {
+  const box = $("#gmRead");
+  if (!box) return;
+  const в = gm && gm.выд;
+  box.querySelectorAll(".rd-s").forEach((el) => {
+    const k = Number(el.dataset.s);
+    el.classList.toggle("on", !!в && k >= в.a && k <= в.b);
+  });
+}
+function gmВыдТекст() {
+  const в = gm && gm.выд;
+  if (!в) return "";
+  return gmФразы.slice(в.a, в.b + 1).join("").trim().replace(/\s+/g, " ");
+}
+/* Нажали на предложение: первое — выделяет, соседнее — растягивает до него,
+   то же самое второй раз — снимает. */
+function gmTapSentence(k) {
+  const в = gm.выд;
+  if (в && в.a === k && в.b === k) gm.выд = null;
+  else if (в) gm.выд = { a: Math.min(в.a, k), b: Math.max(в.b, k) };
+  else gm.выд = { a: k, b: k };
+  const sel = window.getSelection && window.getSelection();
+  if (sel && sel.removeAllRanges) sel.removeAllRanges();
+  gmПодсветка();
+  gmAskShow();
 }
 
 function gmRead() {
@@ -11781,17 +11881,20 @@ function gmRead() {
      бережём всё остальное. Да и искать обычно хотят в том, что сейчас перед
      глазами. */
   const q = (gm.поиск || "").trim();
-  const текущая = Math.min(gm.чтение, разделы.length - 1);
+  const [от, до] = gm.часть > 0 ? gmSectionRange(разделы, gm.часть) : [0, разделы.length];
+  const текущая = Math.max(от, Math.min(gm.чтение, до - 1, разделы.length - 1));
   if (q.length >= 2) {
-    const r0 = разделы[текущая];
     const найдено = [];
-    r0.абзацы.forEach((p, j) => {
-      const at = p.toLowerCase().indexOf(q.toLowerCase());
-      if (at < 0 || найдено.length >= 60) return;
-      найдено.push({ i: текущая, j, имя: r0.имя,
-        кусок: (at > 40 ? "…" : "") + p.slice(Math.max(0, at - 40), at + q.length + 90)
-          + (at + q.length + 90 < p.length ? "…" : "") });
-    });
+    for (let i = от; i < до && найдено.length < 60; i++) {
+      const r0 = разделы[i];
+      r0.абзацы.forEach((p, j) => {
+        const at = p.toLowerCase().indexOf(q.toLowerCase());
+        if (at < 0 || найдено.length >= 60) return;
+        найдено.push({ i, j, имя: gmМетка(разделы, от, до, i),
+          кусок: (at > 40 ? "…" : "") + p.slice(Math.max(0, at - 40), at + q.length + 90)
+            + (at + q.length + 90 < p.length ? "…" : "") });
+      });
+    }
     box.innerHTML = найдено.length
       ? найдено.map((h) => `
           <button class="rd-hit" data-rd="${h.i}" data-rdp="${h.j}" type="button">
@@ -11812,14 +11915,38 @@ function gmRead() {
   }
 
   const r = разделы[текущая];
+  /* Заголовок раздела показываем, только если глава состоит из нескольких:
+     иначе он повторяет шапку карты — а у «Одиссеи» ещё и спорит с ней, потому
+     что файл нумерует свои главы насквозь: «Глава 14. ПЕСНЬ ДВЕНАДЦАТАЯ». */
+  const многораздельная = до - от > 1;
+  gm.выд = null;
+  gmФразы = [];
+  const тело = r.абзацы.map((p, j) => {
+    const фразы = gmSentences(p);
+    const с = gmФразы.length;
+    gmФразы = gmФразы.concat(фразы);
+    return `<p class="rd-p" data-p="${j}">`
+      + фразы.map((f, k) => `<span class="rd-s" data-s="${с + k}">${esc(f)}</span>`).join("")
+      + `</p>`;
+  }).join("");
   box.innerHTML = `
-    <div class="rd-h">${esc(r.имя || "")}</div>
-    ${r.абзацы.map((p, j) => `<p class="rd-p" data-p="${j}">${esc(p)}</p>`).join("")}
-    ${gm.чтение < разделы.length - 1
-      ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${esc(разделы[gm.чтение + 1].имя || "")}</button>`
-      : ""}`;
+    ${многораздельная ? `<div class="rd-h">${esc(gmМетка(разделы, от, до, текущая))}</div>` : ""}
+    ${тело}
+    ${текущая < до - 1
+      ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${esc(gmМетка(разделы, от, до, текущая + 1))}</button>`
+      : `<div class="rd-more">Глава кончилась. Следующая — в содержании сверху.</div>`}`;
   const дальше = box.querySelector("[data-rdnext]");
-  if (дальше) дальше.addEventListener("click", () => { gm.чтение++; gm.метка = null; gmRead(); });
+  if (дальше) дальше.addEventListener("click", () => { gm.чтение = текущая + 1; gm.метка = null; gmRead(); });
+  /* Один обработчик на весь экран и на всю его жизнь: предложений в главе
+     бывает под тысячу, а вешать заново при каждой перерисовке — значит
+     накопить их столько же и обрабатывать одно нажатие десять раз. */
+  if (!box.dataset.tap) {
+    box.dataset.tap = "1";
+    box.addEventListener("click", (e) => {
+      const el = e.target.closest && e.target.closest(".rd-s");
+      if (el) gmTapSentence(Number(el.dataset.s));
+    });
+  }
   /* Пришли из поиска — подводим к тому самому абзацу, а не к началу главы. */
   if (gm.метка != null) {
     const el = box.querySelector(`[data-p="${gm.метка}"]`);
@@ -11838,12 +11965,17 @@ function gmAskHide() {
 }
 function gmAskShow() {
   const bar = $("#gmAsk");
-  if (!bar || !gm || gmВкладка() !== "read") return;
+  if (!bar) return;
+  if (!gm || gmВкладка() !== "read") { gmAskHide(); return; }
   const sel = window.getSelection && window.getSelection();
-  const фраза = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
+  const своё = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
   const внутри = sel && sel.rangeCount && $("#gmRead")
     && $("#gmRead").contains(sel.getRangeAt(0).commonAncestorContainer);
-  if (!фраза || фраза.length < 2 || !внутри) { gmAskHide(); return; }
+  /* Выделение пальцем главнее: раз человек взялся тянуть по буквам, значит
+     нажатые предложения ему уже не нужны. */
+  if (своё.length >= 2 && внутри && gm.выд) { gm.выд = null; gmПодсветка(); }
+  const фраза = своё.length >= 2 && внутри ? своё : gmВыдТекст();
+  if (!фраза || фраза.length < 2) { gmAskHide(); return; }
   bar.hidden = false;
   bar.innerHTML = `<span>${esc(фраза.slice(0, 90))}${фраза.length > 90 ? "…" : ""}</span>
     <button id="gmAskGo" type="button">Объясни</button>`;
@@ -11851,8 +11983,10 @@ function gmAskShow() {
      нажатия. Состояние карты и показанный текст расходятся: карту открыли для
      одной книги, а на экране ещё абзацы прошлой — и в промт уезжала не та
      книга. Что выделено, из того и берём. */
+  const гл = (gm.части || []).find((x) => Number(x.n) === gm.часть);
   const откуда = gmText && gmText.id === gmBookFile()
-    ? { id: gmText.id, раздел: (gmText.разделы[gm.чтение] || {}).имя || "" }
+    ? { id: gmText.id,
+        раздел: гл ? gmИмяГлавы(гл.n, гл.name) : gmЗаголовок((gmText.разделы[gm.чтение] || {}).имя) }
     : { id: gmBookFile(), раздел: "" };
   const кн = $("#gmAskGo");
   if (кн) кн.addEventListener("click", () => gmAsk(фраза, откуда));
@@ -11865,13 +11999,18 @@ function gmAsk(фраза, откуда) {
   const раздел = из.раздел;
   /* Без спойлеров — то же правило, что у всей карты: объясняем прочитанное и
      не рассказываем, что будет дальше. */
-  const вопрос = encodeURIComponent(
-    `Вот фрагмент из книги «${b ? b.title : ""}»${автор ? `, ${автор}` : ""}`
-    + `${раздел ? `, ${раздел}` : ""}:\n\n«${фраза}»\n\n`
+  /* Длину режем: адрес с вопросом уезжает в ChatGPT целиком, и на длинном
+     выделении его обрезали по дороге — открывался прошлый разговор вместо
+     нового. Полутора тысяч знаков хватает на несколько абзацев. */
+  const кусок = фраза.length > 1500 ? фраза.slice(0, 1500) + "…" : фраза;
+  const текст = `Вот фрагмент из книги «${b ? b.title : ""}»${автор ? `, ${автор}` : ""}`
+    + `${раздел ? `, ${раздел}` : ""}:\n\n«${кусок}»\n\n`
     + `Объясни коротко: что здесь происходит, что значат непонятные слова и обороты, `
     + `на что тут стоит обратить внимание. Пиши конкретно, без общих фраз. `
-    + `Не рассказывай, что будет дальше в книге.`);
+    + `Не рассказывай, что будет дальше в книге.`;
+  const вопрос = encodeURIComponent(текст);
   useMark("текст-вопрос");
+  copyRaw(текст);   // если вопрос не подставится сам — он уже в буфере
   const url = `https://chatgpt.com/?q=${вопрос}`;
   if (navigator.standalone === true) location.href = url;
   else window.open(url, "_blank", "noopener");

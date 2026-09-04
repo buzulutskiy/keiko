@@ -1581,6 +1581,12 @@
     .rd-h { margin: 18px 0 10px; font-size: 0.9rem; font-weight: 700; color: var(--ink); }
     .rd-p { margin: 0 0 11px; font-size: 0.92rem; line-height: 1.62; color: var(--muted); max-width: 34em; }
     .rd-p mark { background: rgba(255, 201, 77, 0.28); color: var(--ink); border-radius: 3px; }
+    /* Предложение — единица нажатия: выделять пальцем по буквам муторно, а
+       спросить хочется про фразу целиком. Своё выделение при этом никуда не
+       делось, поэтому user-select не трогаем. */
+    .rd-s { -webkit-tap-highlight-color: transparent; border-radius: 3px; }
+    .rd-s.on { background: rgba(255, 201, 77, 0.26); color: var(--ink);
+               box-shadow: 0 0 0 2px rgba(255, 201, 77, 0.26); }
     .rd-load { padding: 40px 14px; text-align: center; color: var(--dim); font-size: 0.84rem; }
     /* Найденное по всей книге: строка — глава плюс кусок вокруг совпадения. */
     .rd-hit {
