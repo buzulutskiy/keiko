@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 434";
+const APP_VERSION = "Кэйко 435";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11099,6 +11099,7 @@ function openPlaceMap(bk, i, выбрать) {
      важнее — если пришли из разбора к месту, глава не подставляется. */
   const часть = (i < 0 && !выбрать) ? mapHereChapter(bk) : 0;
   gm = { места, рамка, at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
+         чтение: null, метка: null, поиск: "",
          части: mapPartsOf(bk),
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
   gmTitle();
@@ -11381,6 +11382,7 @@ function renderMuseum() {
 
 function closePlaceMap() {
   closeShots();
+  gmAskHide();
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
@@ -11421,7 +11423,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    каждую вкладку по очереди. Теперь всё, кроме мест, лежит одним списком с
    секциями: в главе таких записей от трёх до двух десятков — это прокрутка,
    а не восемь нажатий. Места остаются отдельно: у них карта, а не список. */
-const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"]];
+const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"], ["read", "Текст"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -11430,8 +11432,18 @@ const вкладкаТочки = (p) => (слойТочки(p) === "place" ? "pl
 function gmLayersOf() {
   if (!gm) return [];
   const есть = new Set(gm.места.map(вкладкаТочки));
+  /* Третья вкладка — сам текст книги. Он уже лежит в каталоге: тем же файлом,
+     что уходит в нейросеть по кнопке «Книга .md». Показываем её только там,
+     где файл есть. */
+  if (gmBookFile()) есть.add("read");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
+/* Файл книги для этой карты — только у книг, и только если он залит. */
+const gmBookFile = () => {
+  if (!gm || !gm.id) return "";
+  const b = (data.book.books || []).find((x) => x.id === gm.id);
+  return b && hasBookFile(b) ? gm.id : "";
+};
 
 /* Сколько всего в главе — по всем слоям сразу, с разбивкой. В содержании
    человек ищет «где про это почитать», а не «где точки на карте»: глава с
@@ -11560,11 +11572,15 @@ function gmSpravki(p) {
 /* Слой книг и людей показываем списком: точка на глобусе ничего о книге не
    говорит, а прочитать про неё хочется. Карта остаётся у мест. */
 function gmList() {
-  const box = $("#gmList"), сцена = $("#gmStage");
+  const box = $("#gmList"), сцена = $("#gmStage"), чтение = $("#gmRead");
   if (!box || !gm) return;
-  const списком = gmВкладка() !== "place";
+  const вкладка = gmВкладка();
+  const списком = вкладка === "all";
   box.hidden = !списком;
-  if (сцена) сцена.hidden = списком;
+  if (сцена) сцена.hidden = вкладка !== "place";
+  if (чтение) чтение.hidden = вкладка !== "read";
+  if (вкладка === "read") { box.innerHTML = ""; gmRead(); return; }
+  gmAskHide();
   if (!списком) { box.innerHTML = ""; return; }
   const список = gmВидимые();
   if (!список.length) {
@@ -11597,6 +11613,166 @@ function gmList() {
       ${открыт ? gmSpravki(p) : ""}
     </div>`;
   }).join("");
+}
+
+/* ── Текст книги ──
+   Третья вкладка карты. Задача одна: наткнулся на непонятную фразу — выделил
+   её пальцем и одной кнопкой отправил в нейросеть вместе с тем, из какой она
+   книги и главы. До этого приходилось фотографировать страницу, распознавать
+   и объяснять руками, из чего это вообще.
+
+   Файл берём тот же, что уходит по кнопке «Книга .md»: он уже лежит в
+   каталоге, и второй копии заводить незачем. Мегабайт качаем один раз за
+   сессию и держим в памяти — в localStorage такому не место, там обложки. */
+let gmText = null;          // { id, разделы: [{имя, абзацы}], грузим }
+let gmAskTimer = 0;         // выделение дёргается пальцем — ждём, пока устоится
+
+function gmParseBook(текст) {
+  const разделы = [];
+  let тек = null;
+  for (const строка of String(текст || "").split("\n")) {
+    const s2 = строка.trim();
+    if (!s2) continue;
+    const h = /^#{1,3}\s+(.+)$/.exec(s2);
+    if (h) { тек = { имя: h[1].trim(), абзацы: [] }; разделы.push(тек); continue; }
+    if (!тек) { тек = { имя: "", абзацы: [] }; разделы.push(тек); }
+    тек.абзацы.push(s2);
+  }
+  /* Служебные куски конвертера в чтении только мешают: содержание дублирует
+     наше собственное, выходные данные читать незачем. */
+  const мусор = /^(оглавление|перед текстом|выходные данные|сноски)$/i;
+  return разделы.filter((r) => r.абзацы.length && !мусор.test(r.имя));
+}
+
+async function gmLoadBook() {
+  const id = gmBookFile();
+  if (!id) return null;
+  if (gmText && gmText.id === id) return gmText;
+  if (gmText && gmText.грузим === id) return null;      // уже качается
+  gmText = { id, разделы: [], грузим: id };
+  const сырое = await catRaw(CAT_BOOK_FILE(id), 60000);
+  if (!сырое) { gmText = null; return null; }
+  gmText = { id, разделы: gmParseBook(сырое), грузим: "" };
+  return gmText;
+}
+
+/* Куда открывать текст: примерно туда, докуда дочитал. Точного соответствия
+   страниц и знаков нет и быть не может — разделов обычно вдвое больше глав, —
+   поэтому берём долю прочитанного и ту же долю разделов. Дальше поиском. */
+function gmReadStart(разделы) {
+  const b = (data.book.books || []).find((x) => x.id === gm.id);
+  if (!b || !b.pages) return 0;
+  const стр = bookProgressOf(b);
+  if (!стр) return 0;
+  return Math.min(разделы.length - 1, Math.floor(стр / b.pages * разделы.length));
+}
+
+const gmEsc = (s2) => s2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function gmMark(текст, что) {
+  if (!что) return esc(текст);
+  return esc(текст).replace(new RegExp(gmEsc(esc(что)), "gi"), (m) => `<mark>${m}</mark>`);
+}
+
+function gmRead() {
+  const box = $("#gmRead");
+  if (!box || !gm) return;
+  if (!gmText || gmText.id !== gmBookFile() || gmText.грузим) {
+    box.innerHTML = `<div class="rd-load">Текст книги загружается…</div>`;
+    gmLoadBook().then((t) => { if (t && gmВкладка() === "read") gmRead(); })
+      .catch(() => { box.innerHTML = `<div class="rd-load">Текст не приехал — попробуй ещё раз</div>`; });
+    return;
+  }
+  const разделы = gmText.разделы;
+  if (!разделы.length) { box.innerHTML = `<div class="rd-load">В файле книги пусто</div>`; return; }
+  if (gm.чтение == null) gm.чтение = gmReadStart(разделы);
+
+  /* Поиск идёт по всей книге сразу, а не по открытому разделу: непонятная
+     строчка вспоминается словом, а не главой. */
+  const q = (gm.поиск || "").trim();
+  if (q.length >= 2) {
+    const найдено = [];
+    разделы.forEach((r, i) => r.абзацы.forEach((p, j) => {
+      const at = p.toLowerCase().indexOf(q.toLowerCase());
+      if (at < 0 || найдено.length >= 60) return;
+      найдено.push({ i, j, имя: r.имя,
+        кусок: (at > 40 ? "…" : "") + p.slice(Math.max(0, at - 40), at + q.length + 90)
+          + (at + q.length + 90 < p.length ? "…" : "") });
+    }));
+    box.innerHTML = найдено.length
+      ? найдено.map((h) => `
+          <button class="rd-hit" data-rd="${h.i}" data-rdp="${h.j}" type="button">
+            <b>${esc(h.имя)}</b>${gmMark(h.кусок, q)}
+          </button>`).join("")
+        + (найдено.length >= 60 ? `<div class="rd-more">Показаны первые 60 — уточни запрос</div>` : "")
+      : `<div class="rd-load">Ничего не нашлось</div>`;
+    box.scrollTop = 0;
+    document.querySelectorAll("#gmRead [data-rd]").forEach((el) =>
+      el.addEventListener("click", () => {
+        gm.чтение = Number(el.dataset.rd);
+        gm.метка = Number(el.dataset.rdp);
+        gm.поиск = "";
+        const поле = $("#gmFind"); if (поле) поле.value = "";
+        gmRead();
+      }));
+    return;
+  }
+
+  const r = разделы[Math.min(gm.чтение, разделы.length - 1)];
+  box.innerHTML = `
+    <div class="rd-h">${esc(r.имя || "")}</div>
+    ${r.абзацы.map((p, j) => `<p class="rd-p" data-p="${j}">${esc(p)}</p>`).join("")}
+    ${gm.чтение < разделы.length - 1
+      ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${esc(разделы[gm.чтение + 1].имя || "")}</button>`
+      : ""}`;
+  const дальше = box.querySelector("[data-rdnext]");
+  if (дальше) дальше.addEventListener("click", () => { gm.чтение++; gm.метка = null; gmRead(); });
+  /* Пришли из поиска — подводим к тому самому абзацу, а не к началу главы. */
+  if (gm.метка != null) {
+    const el = box.querySelector(`[data-p="${gm.метка}"]`);
+    if (el) { el.scrollIntoView({ block: "center" }); el.style.background = "rgba(255,201,77,.12)"; }
+    gm.метка = null;
+  } else box.scrollTop = 0;
+  gmAskHide();
+}
+
+/* ── Полоса «Объясни» ──
+   Показывается, как только внутри текста что-то выделено. Внизу экрана, а не
+   у выделения: там айфон рисует своё меню и перекрыл бы кнопку. */
+function gmAskHide() {
+  const bar = $("#gmAsk");
+  if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+}
+function gmAskShow() {
+  const bar = $("#gmAsk");
+  if (!bar || !gm || gmВкладка() !== "read") return;
+  const sel = window.getSelection && window.getSelection();
+  const фраза = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
+  const внутри = sel && sel.rangeCount && $("#gmRead")
+    && $("#gmRead").contains(sel.getRangeAt(0).commonAncestorContainer);
+  if (!фраза || фраза.length < 2 || !внутри) { gmAskHide(); return; }
+  bar.hidden = false;
+  bar.innerHTML = `<span>${esc(фраза.slice(0, 90))}${фраза.length > 90 ? "…" : ""}</span>
+    <button id="gmAskGo" type="button">Объясни</button>`;
+  const кн = $("#gmAskGo");
+  if (кн) кн.addEventListener("click", () => gmAsk(фраза));
+}
+
+function gmAsk(фраза) {
+  const b = (data.book.books || []).find((x) => x.id === gm.id);
+  const автор = b ? String(b.author || "").split("·")[0].trim() : "";
+  const раздел = gmText && gmText.разделы[gm.чтение] ? gmText.разделы[gm.чтение].имя : "";
+  /* Без спойлеров — то же правило, что у всей карты: объясняем прочитанное и
+     не рассказываем, что будет дальше. */
+  const вопрос = encodeURIComponent(
+    `Вот фрагмент из книги «${b ? b.title : ""}»${автор ? `, ${автор}` : ""}`
+    + `${раздел ? `, ${раздел}` : ""}:\n\n«${фраза}»\n\n`
+    + `Объясни коротко: что здесь происходит, что значат непонятные слова и обороты, `
+    + `на что тут стоит обратить внимание. Пиши конкретно, без общих фраз. `
+    + `Не рассказывай, что будет дальше в книге.`);
+  useMark("текст-вопрос");
+  const url = `https://chatgpt.com/?q=${вопрос}`;
+  if (navigator.standalone === true) location.href = url;
+  else window.open(url, "_blank", "noopener");
 }
 
 /* Номер главы в подписи — всегда. Названия у книг разные: где-то «Песнь IX.
@@ -11640,7 +11816,7 @@ function gmLayersRow() {
      обещание, которое нечем выполнить, и открывать её приходится только чтобы
      это выяснить. Места остаются всегда: это сама карта, а не список поверх. */
   const вкладки = gmLayersOf().map(([k, имя]) => [k, имя, счёт(k)])
-    .filter(([k, , n]) => n || k === "place");
+    .filter(([k, , n]) => n || k === "place" || k === "read");
   /* Вкладка могла опустеть при переходе в другую главу — тогда возвращаемся на
      карту: иначе открытым останется список, которого в ряду больше нет. */
   if (!вкладки.some(([k]) => k === gmВкладка())) gm.слой = (вкладки[0] || ["place"])[0];
@@ -11649,7 +11825,7 @@ function gmLayersRow() {
   const текущий = gmВкладка();
   box.innerHTML = вкладки.map(([k, имя, n]) =>
     `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""}
-      type="button">${имя} · ${n}</button>`).join("");
+      type="button">${имя}${k === "read" ? "" : " · " + n}</button>`).join("");
   /* Выбранный слой подтягиваем в видимую часть: он может оказаться за краем
      прокрутки, и тогда непонятно, что вообще открыто. */
   const он = box.querySelector("button.on");
@@ -12180,9 +12356,24 @@ function bindPlaceMap() {
 
   const поле = $("#gmFind");
   if (поле) {
-    поле.addEventListener("input", () => gmSearch(поле.value));
-    поле.addEventListener("focus", () => gmSearch(поле.value));
+    /* На вкладке текста то же поле ищет по книге, а не по записям карты:
+       двух полей на одном экране не надо, а искать хочется там, где смотришь. */
+    const искать = () => {
+      if (gm && gmВкладка() === "read") { gm.поиск = поле.value; gmRead(); return; }
+      gmSearch(поле.value);
+    };
+    поле.addEventListener("input", искать);
+    поле.addEventListener("focus", искать);
   }
+
+  /* Выделение внутри текста — единственное, чего ждёт полоса «Объясни».
+     selectionchange приходит и на снятие выделения, поэтому она же его и
+     прячет. */
+  document.addEventListener("selectionchange", () => {
+    if (!gm || gmВкладка() !== "read") return;
+    clearTimeout(gmAskTimer);
+    gmAskTimer = setTimeout(gmAskShow, 120);
+  });
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
     const хиты = $("#gmHits");
@@ -12201,6 +12392,12 @@ function bindPlaceMap() {
     /* Главу держим: человек читает главу и смотрит, что в ней есть по разным
        слоям. Снимаем только выбранную точку — она была из прошлого слоя. */
     gm.at = null;
+    /* Поиск у вкладок разный — по записям и по тексту книги, — и переносить
+       набранное с одной на другую бессмысленно. */
+    gm.поиск = "";
+    const пф = $("#gmFind");
+    if (пф) { пф.value = ""; пф.placeholder = b.dataset.layer === "read" ? "Найти в тексте" : "Найти в книге"; }
+    const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard(); gmFit();
   });
 
