@@ -491,6 +491,34 @@ function ок(имя, факт, надо) {
   t.set("cfg", было);
 }
 
+/* ── Лента: длинное имя на фишке обрезается ──
+   Одного эллипсиса из CSS мало: фишка стоит во флексе рядом с иконкой и
+   отступами, и длинное имя вылезало за край. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), mus: t.get("MUSEUM"),
+                 поиск: t.get("document.querySelector"), tab: t.get("tab") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    book: { books: [{ id: "kn", title: "К", pages: 100, startPage: 0, chapters: [{ name: "I", from: 1 }] }],
+            activeBook: "kn", entries: [{ id: "e1", date: "2026-03-05", bookId: "kn", page: 50 }] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    musAt: { "v1": Date.parse("2026-03-05T18:00:00") },
+    thoughts: [{ id: "ev:session:kn:2026-03-05", event: "session", key: "kn", track: "book",
+                 date: "2026-03-05", createdAt: Date.parse("2026-03-05T18:00:00"), text: "Читал" }] });
+  t.set("CATALOG", { kn: { facts: [], ach: [] } });
+  t.set("MUSEUM", { items: [{ id: "v1", book: "kn", ch: 1,
+    name: "Ослепление Полифема — группа из Сперлонги", kind: "скульптура" }] });
+  const узел = { hidden: false, innerHTML: "" };
+  t.set("document.querySelector", (s) => (s === "#view" ? узел : null));
+  t.set("tab", "notes");
+  try { t.get("renderNotes")(); } catch (e) { /* остальной DOM тут не нужен */ }
+  const имя = (/data-ev-art="[^"]*"[^>]*>\s*<i>[^<]*<\/i><span>([^<]*)</.exec(узел.innerHTML) || [])[1] || "";
+  ок("лента: длинное имя обрезано", имя.length <= 29, true);
+  ок("лента: обрезка помечена многоточием", имя.endsWith("…"), true);
+  ок("лента: обрыв не посреди слова", /\s\S{0,3}…$/.test(имя), false);
+  t.set("document.querySelector", было.поиск); t.set("tab", было.tab);
+  t.set("MUSEUM", было.mus); t.set("data", было.data);
+}
+
 /* ── Лента: артефакты вместо карточек ──
    Карточки сняты, и фишка в ленте вела в никуда. Вместо неё — предмет,
    открывшийся этой отметкой: у него есть куда вести. День берётся из

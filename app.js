@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 433";
+const APP_VERSION = "Кэйко 434";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -532,7 +532,13 @@ function pianoStats() {
     // общий процент — доля пройденного пути: те же заходы, только все разом
     pct: путь, pctLearn: путь,
     pctFirm: bars ? (firmR + firmL) / (bars * 2) * 100 : 0,
-    bothInOne, maxRun, weekend, comeback
+    bothInOne, maxRun, weekend, comeback,
+    /* Закрытых блоков и дней с первого захода. Проценты говорят «шестнадцать
+       процентов пути», а блок — «первая фраза разобрана»: у пьесы это разные
+       вещи, и вторая понятнее. Имя блоку даёт разбор, поэтому награда на
+       блоках у каждой пьесы значит своё. */
+    blocks: pracBlocks().filter(blockDone).length,
+    since: list.length ? daysBetween(list[0].date, todayStr()) : 0
   };
 }
 
@@ -1151,6 +1157,13 @@ function pastelStats() {
       days: list.length, streak: streak(), streakAll: streakAll(),
       weekend, comeback, notes, maxAtOnce, nextLesson: null, drawDone: готов,
       shots: takesFor(curKey()).filter((t) => t.kind === "photo").length,
+      /* Сколько дней прошло с первого листа. У рисунка нет ни уроков, ни
+         процента, и подбодрить его можно только временем: не «сколько
+         сделано», а «сколько ты с этим». */
+      since: list.length ? daysBetween(list[0].date, todayStr()) : 0,
+      /* Отдельных дней, а не заходов: за вечер бывает два подхода, и день от
+         этого не удваивается. */
+      dates: new Set(list.map((e) => e.date)).size,
     };
   }
 
@@ -7376,6 +7389,19 @@ function renderNotes() {
      её из идентификатора: он собран как ev:ach:<метка>:<дата>. */
   const evTag = (t) => t.tag || (String(t.id).split(":")[2] || "");
 
+  /* Имя на фишке режем по длине. Одного многоточия из CSS мало: фишка стоит
+     во флексе рядом с иконкой и отступами, и «Ослепление Полифема — группа из
+     Сперлонги» вылезало за край. Режем по слову, чтобы обрыв не приходился на
+     середину. */
+  const ЧИП = 28;
+  const чип = (имя) => {
+    const s2 = String(имя || "");
+    if (s2.length <= ЧИП) return s2;
+    const край = s2.slice(0, ЧИП);
+    const пробел = край.lastIndexOf(" ");
+    return (пробел > ЧИП * 0.6 ? край.slice(0, пробел) : край).replace(/[\s—–-]+$/, "") + "…";
+  };
+
   /* Текст карточки сессии по книге пересобираем на месте. Он записывался
      один раз, при отметке, — и старые карточки навсегда остались бы без
      промежутка. Данные для него всё равно лежат в самой записи дня. */
@@ -7535,11 +7561,11 @@ function renderNotes() {
               ${p.ach.map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
-                  <i>${esc(evIcon(t, a.id) || a.icon || "✦")}</i><span>${esc(evName(t, a.id, "ach", a.name))}</span>
+                  <i>${esc(evIcon(t, a.id) || a.icon || "✦")}</i><span>${esc(чип(evName(t, a.id, "ach", a.name)))}</span>
                 </button>`).join("")}
               ${p.arts.map((x) => `
                 <button class="ev-aw art" type="button" data-ev-art="${esc(x.id)}" data-ev-key="${esc(t.key)}">
-                  <i>${esc(x.icon || "🏺")}</i><span>${esc(x.name)}</span>
+                  <i>${esc(x.icon || "🏺")}</i><span>${esc(чип(x.name))}</span>
                 </button>`).join("")}
             </div>` : "")(progressOf(t))}
           ${mediaHTML(t)}
