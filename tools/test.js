@@ -669,6 +669,42 @@ function ок(имя, факт, надо) {
   t.set("gm", было.gm);
 }
 
+/* ── Обстоятельства: не счётчик, а случай ──
+   Дианы больше всего радовали не проценты, а «Филин следит» за выходной и
+   «Волчок унёс книжку» за возвращение. Ловим ещё несколько таких же поводов
+   из того, что уже лежит в записи. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
+  const ночью = Date.UTC(2026, 8, 3, 0, 0) + new Date(2026, 8, 3, 1, 0).getTimezoneOffset() * 0;
+  const час = (д, ч) => new Date(2026, 8, д, ч, 30).getTime();
+  t.set("data", { active: "book", piano: { pieces: [], entries: [{ id: "p1", date: "2026-09-05", pieceId: "x" }] },
+    book: { books: [{ id: "kn", title: "К", author: "Автор", pages: 300, startPage: 0,
+                      chapters: [{ name: "Раз", from: 1 }, { name: "Два", from: 100 }, { name: "Три", from: 200 }] }],
+            activeBook: "kn", entries: [
+              { id: "e1", date: "2026-09-01", bookId: "kn", page: 40,  createdAt: час(1, 23) },
+              { id: "e2", date: "2026-09-03", bookId: "kn", page: 99,  createdAt: час(3, 6) },
+              { id: "e3", date: "2026-09-05", bookId: "kn", page: 205, createdAt: час(5, 14) },
+              { id: "e4", date: "2026-11-11", bookId: "kn", page: 210, createdAt: час(5, 14) }] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] } });
+  t.set("CATALOG", { kn: { ach: [], born: "11-11" } });
+  const s = t.get("bookStats")();
+  ок("случай: поздняя отметка", s.night, true);
+  ок("случай: ранняя отметка", s.dawn, true);
+  ок("случай: день рождения автора", s.authorDay, true);
+  ок("случай: в один день и книга, и рояль", s.sameDay, true);
+  // со 99-й до 205-й — вторая глава (100–199) пройдена целиком за раз
+  ок("случай: глава за один присест", s.chapterInOne, true);
+
+  // без дня рождения в описи повода нет
+  t.set("CATALOG", { kn: { ach: [] } });
+  ок("случай: нет даты — нет награды", t.get("bookStats")().authorDay, false);
+  // и чужой день не считается
+  t.set("CATALOG", { kn: { ach: [], born: "01-01" } });
+  ок("случай: чужая дата не срабатывает", t.get("bookStats")().authorDay, false);
+
+  t.set("data", было.data); t.set("CATALOG", было.cat);
+}
+
 /* ── Лента: длинное имя на фишке обрезается ──
    Одного эллипсиса из CSS мало: фишка стоит во флексе рядом с иконкой и
    отступами, и длинное имя вылезало за край. */

@@ -88,6 +88,13 @@ def main():
             всего += 1
             for s in предложения(v["word"]):
                 строки.append("  %s · %s · %s\n    %s" % (mid, k, v.get("name", ""), s))
+        # и слова у самих наград: у наград по обстоятельствам они с фактами
+        for a in m.get("ach", []):
+            if not a.get("word"):
+                continue
+            всего += 1
+            for s in предложения(a["word"]):
+                строки.append("  %s · %s · %s\n    %s" % (mid, a["id"], a.get("name", ""), s))
     if строки:
         print("\n=== ступени времени ===")
         print("\n".join(строки))

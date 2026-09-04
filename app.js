@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 442";
+const APP_VERSION = "Кэйко 443";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -498,6 +498,35 @@ function handProgress() {
   return { pctR: needR ? gotR / needR * 100 : 0, pctL: needL ? gotL / needL * 100 : 0 };
 }
 
+/* ── Обстоятельства ──
+   Не счётчики, а то, при каких обстоятельствах ты занимался: во сколько
+   отметил, совпал ли день с чем-нибудь. Награды за это выдаются один раз и
+   ничего не требуют — тем и хороши: «Филин следит» за выходной приятнее, чем
+   «двадцать дней позади». Всё считается по тому, что уже лежит в записи. */
+function moments(list) {
+  const born = String((catOf(curKey()) || {}).born || "");   // «11-29», день и месяц
+  let night = false, dawn = false, authorDay = false, sameDay = false;
+  const мои = new Set();
+  for (const e of list) {
+    if (e.createdAt) {
+      const h = new Date(Number(e.createdAt)).getHours();
+      if (h >= 23 || h < 4) night = true;
+      if (h >= 5 && h < 8) dawn = true;
+    }
+    if (born && String(e.date || "").slice(5) === born) authorDay = true;
+    мои.add(e.date);
+  }
+  /* Один день на два разных занятия: книга и рояль в одни сутки. Две книги —
+     не в счёт, это то же самое занятие. */
+  const мой = isBook() ? "book" : isWatch() ? "watch" : isCourse() ? "pastel" : "piano";
+  for (const t of ["piano", "book", "pastel", "watch"]) {
+    if (t === мой || sameDay) continue;
+    for (const e of ((data[t] || {}).entries) || [])
+      if (мои.has(e.date)) { sameDay = true; break; }
+  }
+  return { night, dawn, authorDay, sameDay };
+}
+
 function pianoStats() {
   const bars = piece().bars;
   const p = passes();
@@ -538,7 +567,8 @@ function pianoStats() {
        вещи, и вторая понятнее. Имя блоку даёт разбор, поэтому награда на
        блоках у каждой пьесы значит своё. */
     blocks: pracBlocks().filter(blockDone).length,
-    since: list.length ? daysBetween(list[0].date, todayStr()) : 0
+    since: list.length ? daysBetween(list[0].date, todayStr()) : 0,
+    ...moments(list)
   };
 }
 
@@ -1002,10 +1032,17 @@ function bookStats() {
   const list = bookEntriesOf(b.id).slice().sort((a, x) => a.date < x.date ? -1 : 1);
   const page = bookProgress();
   let maxJump = 0, weekend = false, comeback = false, notes = 0, reread = false;
-  let running = b.startPage || 0, prev = null;
+  let running = b.startPage || 0, prev = null, chapterInOne = false;
+  /* Границы глав: закрыть главу за один присест — это событие, а не процент.
+     Ловим прыжок, накрывший главу целиком, от её начала до конца. */
+  const гр = (b.chapters || []).map((c) => Number(c.from) || 0).sort((x, y) => x - y);
   for (const e of list) {
     const jump = (e.page || 0) - running;
     if (jump > maxJump) maxJump = jump;
+    for (let i = 0; i < гр.length; i++) {
+      const конец = i + 1 < гр.length ? гр[i + 1] : (b.pages || 0);
+      if (гр[i] && running <= гр[i] && (e.page || 0) >= конец) { chapterInOne = true; break; }
+    }
     if ((e.page || 0) < running) reread = true;
     running = Math.max(running, e.page || 0);
     if (e.note) notes++;
@@ -1025,7 +1062,8 @@ function bookStats() {
     pages: b.pages, page, covered,
     pct: b.pages ? (parts ? covered / b.pages : page / b.pages) * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
-    maxJump, weekend, comeback, notes, reread, chapter: chapterAt(page)
+    maxJump, weekend, comeback, notes, reread, chapterInOne,
+    chapter: chapterAt(page), ...moments(list)
   };
 }
 
@@ -1164,6 +1202,7 @@ function pastelStats() {
       /* Отдельных дней, а не заходов: за вечер бывает два подхода, и день от
          этого не удваивается. */
       dates: new Set(list.map((e) => e.date)).size,
+      ...moments(list),
     };
   }
 
@@ -1208,7 +1247,8 @@ function pastelStats() {
     minutesLeft: Math.max(0, Math.round((totalSec - doneSec) / 60)),
     days: list.length, streak: streak(), streakAll: streakAll(),
     weekend, comeback, notes, maxAtOnce,
-    nextLesson: next < 0 ? null : next
+    nextLesson: next < 0 ? null : next,
+    ...moments(list)
   };
 }
 
