@@ -1,4 +1,4 @@
-const CACHE = "keiko-v418";
+const CACHE = "keiko-v419";
 const SHELL = ["./", "./index.html", "./app.js", "./howler.min.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
