@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 455";
+const APP_VERSION = "Кэйко 456";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11996,6 +11996,28 @@ const asksOpen = (id) => {
 const askЗаДень = (bookId, date) => asksAll().filter((a) =>
   a.bookId === bookId && !a.deleted && dateStr(new Date(Number(a.createdAt) || 0)) === date).length;
 
+/* Стихотворная книга: вместо слова человек вводит номер стиха. Нумерация
+   строк у Гомера каноническая и одна во всех переводах — сверено с нашим
+   файлом: 23 песни из 24 сходятся строка в строку, четвёртая расходится на
+   одну. Для такой книги номер надёжнее слова: читают один перевод, а в файле
+   лежит другой, и слова не совпадут вовсе. Флаг `verse` в описи материала. */
+const askVerse = (b0) => !!(catOf(((b0 || book()) || {}).id) || {}).verse;
+
+/* Стих номер n внутри той главы, где его отметили. Соседние строки берём с
+   собой: одна строка гекзаметра обрывается на середине фразы. */
+function askVerseAt(разделы, b, гл, n) {
+  const части = (b.chapters || []).map((c, i) => ({ n: i + 1, name: c.name || "" }));
+  const номер = Number(гл) || askГлава(b) || 1;
+  const [от, до] = gmSectionRange(разделы, номер, части);
+  const строки = [];
+  for (let i = от; i < до; i++) строки.push(...разделы[i].абзацы);
+  const k = Number(n) - 1;
+  if (!строки.length || !(k >= 0) || k >= строки.length) return null;
+  return { i: от, стих: Number(n),
+           фраза: строки.slice(Math.max(0, k - 1), k + 2).join(" ").slice(0, 300),
+           раздел: (части[номер - 1] || {}).name || "" };
+}
+
 function askAdd(слово) {
   const w = String(слово || "").trim();
   if (!w || !book()) return null;
@@ -12150,7 +12172,8 @@ function askPrompt(готовые, b) {
   const стр = bookProgress();
   главы.forEach((c) => { if (стр >= (Number(c.from) || 0)) гл = c.name || ""; });
   const список = готовые.map((x, i) =>
-    `${i + 1}. «${x.word}»${x.фраза ? `\n   В книге: «${x.фраза}»` : " — места в тексте не нашлось"}`).join("\n");
+    `${i + 1}. ${x.где ? x.где : `«${x.word}»`}${
+      x.фраза ? `\n   В книге: «${x.фраза}»` : " — места в тексте не нашлось"}`).join("\n");
   /* Спрашивают не «что значит слово», а «объясни это место целиком»: что за
      вещь, как выглядит, что за событие, что за книга. Поэтому промт задаёт
      порядок ответа — иначе выходит пересказ цитаты своими словами и ничего
@@ -12175,8 +12198,10 @@ function askChips() {
   const box = $("#askList");
   if (!box) return;
   const список = asksOpen();
+  const стих = askVerse();
   box.innerHTML = список.length
-    ? список.map((a) => `<button class="ask-chip" data-ask="${a.id}" type="button">${esc(a.word)}<span>×</span></button>`).join("")
+    ? список.map((a) => `<button class="ask-chip" data-ask="${a.id}" type="button">${
+        esc(стих ? "стих " + a.word : a.word)}<span>×</span></button>`).join("")
     : `<div class="ask-none">Пока пусто</div>`;
   const кн = $("#askGo");
   if (кн) { кн.hidden = !список.length; кн.textContent = `Разобрать ${список.length}`; }
@@ -12198,12 +12223,16 @@ function openAskSheet() {
   const b = book();
   if (!b) return;
   sheetMode = "ask";
+  const стих = askVerse(b);
   openSheet(`
     <div class="ask-sheet">
       <h3>Что непонятно</h3>
-      <p class="ask-hint">Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение.</p>
-      <input id="askIn" type="text" inputmode="text" autocomplete="off" autocorrect="off"
-             spellcheck="false" placeholder="слово из книги">
+      <p class="ask-hint">${стих
+        ? "Номер стиха — и дальше читай. Нумерация строк одна во всех переводах, так что подойдёт любое издание."
+        : "Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение."}</p>
+      <input id="askIn" type="text" inputmode="${стих ? "numeric" : "text"}" autocomplete="off"
+             autocorrect="off" spellcheck="false"
+             placeholder="${стих ? "номер стиха" : "слово из книги"}">
       <div class="ask-sug" id="askSug"></div>
       <div class="ask-list" id="askList"></div>
     </div>
@@ -12214,12 +12243,13 @@ function openAskSheet() {
   askChips();
   const поле = $("#askIn");
   if (поле) {
-    поле.addEventListener("input", askSugRender);
+    if (!стих) поле.addEventListener("input", askSugRender);
     поле.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       const w = поле.value.trim();
-      if (!w) return;
+      // у стиха принимаем только число: буквы тут ничего не найдут
+      if (!w || (стих && !/^\d{1,4}$/.test(w))) return;
       askAdd(w); поле.value = ""; askSugRender(); askChips();
     });
     поле.focus();
@@ -12228,7 +12258,7 @@ function openAskSheet() {
   $("#askGo").addEventListener("click", askRun);
   /* Словарь подсказок строим из текста книги — он же нужен и для поиска мест.
      Пока качается, поле работает как обычное: подсказки появятся сами. */
-  if (hasBookFile(b)) gmLoadBook(b.id).then((t) => {
+  if (hasBookFile(b) && !стих) gmLoadBook(b.id).then((t) => {
     if (!t || sheetMode !== "ask") return;
     askBuildIndex(b.id, t.разделы, askОкно(t.разделы, b));
     askSugRender();
@@ -12246,9 +12276,12 @@ async function askRun() {
     $("#askClose").addEventListener("click", closeSheet); return; }
   const окно = askОкно(t.разделы, b);
   const метки = askМетки(t.разделы, b);
+  const стих = askVerse(b);
   askRunState = {
-    i: 0, k: 0, готовые: [],
-    список: список.map((a) => ({ ...a, места: askCandidates(t.разделы, a.word, окно, метки) })),
+    i: 0, k: 0, готовые: [], стих,
+    список: список.map((a) => ({ ...a, места: стих
+      ? [askVerseAt(t.разделы, b, a.ch, a.word)].filter(Boolean)
+      : askCandidates(t.разделы, a.word, окно, метки) })),
   };
   askCard();
 }
@@ -12263,11 +12296,13 @@ function askCard() {
   openSheet(`
     <div class="ask-sheet">
       <div class="ask-step">${st.i + 1} из ${st.список.length}</div>
-      <h3>${esc(cur.word)}</h3>
+      <h3>${esc(st.стих ? "Стих " + cur.word : cur.word)}</h3>
       ${м
         ? `<p class="ask-quote">${esc(м.фраза)}</p>
            ${м.раздел ? `<div class="ask-where">${esc(м.раздел)}</div>` : ""}`
-        : `<p class="ask-hint">В тексте книги это слово не нашлось. Можно спросить и так — без цитаты.</p>`}
+        : `<p class="ask-hint">${st.стих
+            ? "В этой песни столько строк нет — проверь номер."
+            : "В тексте книги это слово не нашлось. Можно спросить и так — без цитаты."}</p>`}
     </div>
     <div class="sheet-actions">
       ${м ? `<button class="btn gold" id="askYes" type="button">Да, это оно</button>` : ""}
@@ -12276,7 +12311,8 @@ function askCard() {
     </div>`);
   const да = $("#askYes");
   if (да) да.addEventListener("click", () => {
-    st.готовые.push({ id: cur.id, word: cur.word, фраза: м.фраза });
+    st.готовые.push({ id: cur.id, word: cur.word, фраза: м.фраза,
+                      где: st.стих ? `${м.раздел}, стих ${cur.word}` : "" });
     st.i++; st.k = 0; askCard();
   });
   const др = $("#askNext");
