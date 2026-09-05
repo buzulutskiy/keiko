@@ -1574,6 +1574,11 @@
        Читается, а не просматривается: ширина строки ограничена, межстрочный
        интервал книжный. Выделять можно что угодно — на этом всё и держится. */
     #gmRead[hidden] { display: none; }
+    #gmWords[hidden] { display: none; }
+    #gmWords {
+      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      padding: 10px 16px calc(env(safe-area-inset-bottom) + 96px);
+    }
     #gmRead {
       flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
       padding: 4px 16px calc(env(safe-area-inset-bottom) + 96px);
@@ -1617,6 +1622,8 @@
       color: var(--ink);
     }
     .ask-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0 0; }
+    .ask-go { margin: 20px 0 0; }
+    .ask-go .btn { width: 100%; }
     .ask-chip {
       padding: 8px 10px 8px 13px; border-radius: 999px; font: inherit; font-size: 0.92rem;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
@@ -3755,6 +3762,7 @@
     </div>
     <div id="gmList" hidden></div>
     <div id="gmRead" hidden></div>
+    <div id="gmWords" hidden></div>
     <div id="gmAsk" hidden></div>
     <div id="gmCard" hidden></div>
     <div id="gmShots" hidden aria-hidden="true"></div>

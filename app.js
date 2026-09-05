@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 458";
+const APP_VERSION = "Кэйко 459";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4037,8 +4037,6 @@ $("#view").innerHTML = `
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
           title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
-        <button class="cta-side" id="askBtn" type="button" ${isBook() && hasBookFile(book()) ? "" : "hidden"}
-          aria-label="Непонятное слово" title="Непонятное слово">❓</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -4047,8 +4045,6 @@ $("#view").innerHTML = `
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
-  const ab = $("#askBtn");
-  if (ab) ab.addEventListener("click", openAskSheet);
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -11504,7 +11500,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    каждую вкладку по очереди. Теперь всё, кроме мест, лежит одним списком с
    секциями: в главе таких записей от трёх до двух десятков — это прокрутка,
    а не восемь нажатий. Места остаются отдельно: у них карта, а не список. */
-const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"], ["read", "Текст"]];
+const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"], ["read", "Текст"], ["ask", "Слова"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -11516,7 +11512,7 @@ function gmLayersOf() {
   /* Третья вкладка — сам текст книги. Он уже лежит в каталоге: тем же файлом,
      что уходит в нейросеть по кнопке «Книга .md». Показываем её только там,
      где файл есть. */
-  if (gmBookFile()) есть.add("read");
+  if (gmBookFile()) { есть.add("read"); есть.add("ask"); }
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Файл книги для этой карты — только у книг, и только если он залит. */
@@ -11660,14 +11656,16 @@ function gmSpravki(p) {
 /* Слой книг и людей показываем списком: точка на глобусе ничего о книге не
    говорит, а прочитать про неё хочется. Карта остаётся у мест. */
 function gmList() {
-  const box = $("#gmList"), сцена = $("#gmStage"), чтение = $("#gmRead");
+  const box = $("#gmList"), сцена = $("#gmStage"), чтение = $("#gmRead"), слова = $("#gmWords");
   if (!box || !gm) return;
   const вкладка = gmВкладка();
   const списком = вкладка === "all";
   box.hidden = !списком;
   if (сцена) сцена.hidden = вкладка !== "place";
   if (чтение) чтение.hidden = вкладка !== "read";
+  if (слова) слова.hidden = вкладка !== "ask";
   if (вкладка === "read") { box.innerHTML = ""; gmRead(); return; }
+  if (вкладка === "ask") { box.innerHTML = ""; gmAskHide(); askPane(); return; }
   gmAskHide();
   if (!списком) { box.innerHTML = ""; return; }
   const список = gmВидимые();
@@ -12245,33 +12243,32 @@ function askSugRender() {
       поле.value = ""; askSugRender(); askChips(); поле.focus();
     }));
 }
-function openAskSheet() {
-  const b = book();
-  if (!b) return;
-  sheetMode = "ask";
-  const стих = askVerse(b);
-  openSheet(`
-    <div class="ask-sheet">
-      <h3>Что непонятно</h3>
-      <p class="ask-hint">${стих
-        ? "Номер стиха — и дальше читай. Нумерация строк одна во всех переводах, так что подойдёт любое издание."
-        : "Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение."}</p>
-      <div class="ask-row">
-        <input id="askIn" type="text" inputmode="${стих ? "numeric" : "text"}" autocomplete="off"
-               autocorrect="off" spellcheck="false"
-               placeholder="${стих ? "номер стиха" : "слово из книги"}">
-        <button class="ask-add" id="askPlus" type="button" aria-label="Добавить">＋</button>
-      </div>
-      <div class="ask-sug" id="askSug"></div>
-      <div class="ask-list" id="askList"></div>
-    </div>
-    <div class="sheet-actions">
-      <button class="btn gold" id="askGo" type="button" hidden>Разобрать</button>
-      <button class="btn" id="askClose" type="button">Закрыть</button>
-    </div>`);
-  askChips();
-  const поле = $("#askIn");
-  if (поле) {
+/* Панель «Слова» внутри карты. Живёт там же, где «Места», «Справки» и «Текст»:
+   всё, что про книгу, собрано в одном экране, а на главном не висит лишняя
+   кнопка. Собирается один раз за книгу — иначе перерисовка при каждом
+   обновлении карты сбрасывала бы курсор и набранное. */
+function askPane() {
+  const box = $("#gmWords"), b = book();
+  if (!box || !b) return;
+  if (box.dataset.book !== b.id) {
+    box.dataset.book = b.id;
+    const стих = askVerse(b);
+    box.innerHTML = `
+      <div class="ask-sheet">
+        <p class="ask-hint">${стих
+          ? "Номер стиха — и дальше читай. Нумерация строк одна во всех переводах, так что подойдёт любое издание."
+          : "Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение."}</p>
+        <div class="ask-row">
+          <input id="askIn" type="text" inputmode="${стих ? "numeric" : "text"}" autocomplete="off"
+                 autocorrect="off" spellcheck="false"
+                 placeholder="${стих ? "номер стиха" : "слово из книги"}">
+          <button class="ask-add" id="askPlus" type="button" aria-label="Добавить">＋</button>
+        </div>
+        <div class="ask-sug" id="askSug"></div>
+        <div class="ask-list" id="askList"></div>
+        <div class="ask-go"><button class="btn gold" id="askGo" type="button" hidden></button></div>
+      </div>`;
+    const поле = $("#askIn");
     /* Кнопка обязательна: на цифровой клавиатуре айфона нет клавиши Enter, и
        номер стиха ввести можно, а отправить нечем. */
     const добавить = () => {
@@ -12284,19 +12281,15 @@ function openAskSheet() {
       if (e.key !== "Enter") return;
       e.preventDefault(); добавить();
     });
-    const плюс = $("#askPlus");
-    if (плюс) плюс.addEventListener("click", добавить);
-    поле.focus();
+    $("#askPlus").addEventListener("click", добавить);
+    $("#askGo").addEventListener("click", askRun);
+    /* Словарь подсказок — из текста книги, он же нужен для поиска мест. Пока
+       качается, поле работает как обычное. */
+    if (hasBookFile(b) && !стих) gmLoadBook(b.id).then((t) => {
+      if (t && gmВкладка() === "ask") { askBuildIndex(b.id, t.разделы, askОкно(t.разделы, b)); askSugRender(); }
+    }).catch(() => {});
   }
-  $("#askClose").addEventListener("click", closeSheet);
-  $("#askGo").addEventListener("click", askRun);
-  /* Словарь подсказок строим из текста книги — он же нужен и для поиска мест.
-     Пока качается, поле работает как обычное: подсказки появятся сами. */
-  if (hasBookFile(b) && !стих) gmLoadBook(b.id).then((t) => {
-    if (!t || sheetMode !== "ask") return;
-    askBuildIndex(b.id, t.разделы, askОкно(t.разделы, b));
-    askSugRender();
-  }).catch(() => {});
+  askChips();
 }
 
 async function askRun() {
