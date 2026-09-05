@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 449";
+const APP_VERSION = "Кэйко 450";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
