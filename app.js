@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 451";
+const APP_VERSION = "Кэйко 452";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -12002,12 +12002,14 @@ function askМетки(разделы, b) {
   return метки;
 }
 
-function askCandidates(разделы, слово, предел, метки) {
+function askCandidates(разделы, слово, окно, метки) {
   const w = String(слово || "").toLowerCase().replace(/ё/g, "е").trim();
   if (w.length < 3) return [];
   const основы = [w];
   for (const n of [1, 2, 3]) if (w.length - n >= 4) основы.push(w.slice(0, w.length - n));
-  const до = предел == null ? разделы.length : Math.min(предел, разделы.length);
+  const о = typeof окно === "number" ? { от: 0, до: окно } : (окно || {});
+  const до = о.до == null ? разделы.length : Math.min(о.до, разделы.length);
+  const от = Number(о.от) || 0;
   for (const основа of основы) {
     const найдено = [];
     for (let i = 0; i < до && найдено.length < 8; i++) {
@@ -12027,21 +12029,31 @@ function askCandidates(разделы, слово, предел, метки) {
         }
       });
     }
-    if (найдено.length) return найдено;
+    /* Ближайшее к текущей главе — первым. Раньше выдача шла от начала книги,
+       и на тринадцатой песни первым кандидатом показывалась первая: слово
+       почти всегда встретилось там, где ты сейчас, а не там, где оно впервые
+       появилось в книге. */
+    if (найдено.length) return найдено.sort((a, b) => {
+      const своя = (x) => (x.i >= от && x.i < до ? 0 : 1);
+      return своя(a) - своя(b) || b.i - a.i;
+    });
   }
   return [];
 }
 
-/* Докуда искать: раздел файла, на котором человек сейчас стоит. */
-function askПредел(разделы, b) {
+/* Где человек сейчас и докуда вообще искать. Два числа, и оба важны: «до» —
+   граница прочитанного, дальше нельзя (там сцены, до которых он не дошёл),
+   «от» — начало текущей главы. Слово почти всегда встретилось в ней, и
+   показывать его надо оттуда, а не с начала книги. */
+function askОкно(разделы, b) {
   const главы = b.chapters || [];
-  if (!главы.length) return разделы.length;
+  if (!главы.length) return { от: 0, до: разделы.length };
   const стр = bookProgress();
   let n = 1;
   главы.forEach((c, i) => { if (стр >= (Number(c.from) || 0)) n = i + 1; });
   const части = главы.map((c, i) => ({ n: i + 1, name: c.name || "" }));
-  const [, до] = gmSectionRange(разделы, n, части);
-  return до;
+  const [от, до] = gmSectionRange(разделы, n, части);
+  return { от, до };
 }
 
 /* Словарь книги для подсказок. Набирать «фальшфейер» целиком с телефона в
@@ -12050,23 +12062,30 @@ function askПредел(разделы, b) {
    Словарь строим только по прочитанному: иначе подсказка выдаст имя из главы,
    до которой человек не дошёл. */
 let askIndex = null;
-function askBuildIndex(id, разделы, предел) {
-  if (askIndex && askIndex.id === id && askIndex.предел === предел) return askIndex;
-  const счёт = new Map();
-  for (let i = 0; i < предел && i < разделы.length; i++)
+function askBuildIndex(id, разделы, окно) {
+  const о = typeof окно === "number" ? { от: 0, до: окно } : (окно || {});
+  const до = Math.min(о.до == null ? разделы.length : о.до, разделы.length);
+  const от = Number(о.от) || 0;
+  if (askIndex && askIndex.id === id && askIndex.до === до && askIndex.от === от) return askIndex;
+  const счёт = new Map(), тут = new Set();
+  for (let i = 0; i < до; i++)
     for (const п of разделы[i].абзацы)
-      for (const m of String(п).toLowerCase().replace(/ё/g, "е").match(/[а-яa-z][а-яa-z-]{3,}/g) || [])
+      for (const m of String(п).toLowerCase().replace(/ё/g, "е").match(/[а-яa-z][а-яa-z-]{3,}/g) || []) {
         счёт.set(m, (счёт.get(m) || 0) + 1);
-  askIndex = { id, предел, слова: [...счёт.entries()].map(([w, n]) => ({ w, n })) };
+        if (i >= от) тут.add(m);
+      }
+  askIndex = { id, от, до,
+    слова: [...счёт.entries()].map(([w, n]) => ({ w, n, тут: тут.has(w) })) };
   return askIndex;
 }
-/* Редкое — выше частого: непонятным обычно оказывается то, что встретилось
-   раз-другой, а не «который» и «сказал». */
+/* Сначала слова из текущей главы, потом редкие: отмечают почти всегда то, что
+   попалось только что, а непонятным оказывается встретившееся раз-другой, а не
+   «который» и «сказал». */
 function askSuggest(начало, сколько) {
   const p = String(начало || "").toLowerCase().replace(/ё/g, "е").trim();
   if (!askIndex || p.length < 2) return [];
   return askIndex.слова.filter((x) => x.w.startsWith(p))
-    .sort((a, b) => a.n - b.n || a.w.length - b.w.length)
+    .sort((a, b) => (b.тут ? 1 : 0) - (a.тут ? 1 : 0) || a.n - b.n || a.w.length - b.w.length)
     .slice(0, сколько || 6).map((x) => x.w);
 }
 
@@ -12149,7 +12168,7 @@ function openAskSheet() {
      Пока качается, поле работает как обычное: подсказки появятся сами. */
   if (hasBookFile(b)) gmLoadBook(b.id).then((t) => {
     if (!t || sheetMode !== "ask") return;
-    askBuildIndex(b.id, t.разделы, askПредел(t.разделы, b));
+    askBuildIndex(b.id, t.разделы, askОкно(t.разделы, b));
     askSugRender();
   }).catch(() => {});
 }
@@ -12163,11 +12182,11 @@ async function askRun() {
   if (!t) { openSheet(`<div class="ask-sheet"><div class="rd-load">Текст книги не приехал — попробуй ещё раз</div></div>
     <div class="sheet-actions"><button class="btn" id="askClose" type="button">Закрыть</button></div>`);
     $("#askClose").addEventListener("click", closeSheet); return; }
-  const предел = askПредел(t.разделы, b);
+  const окно = askОкно(t.разделы, b);
   const метки = askМетки(t.разделы, b);
   askRunState = {
     i: 0, k: 0, готовые: [],
-    список: список.map((a) => ({ ...a, места: askCandidates(t.разделы, a.word, предел, метки) })),
+    список: список.map((a) => ({ ...a, места: askCandidates(t.разделы, a.word, окно, метки) })),
   };
   askCard();
 }
