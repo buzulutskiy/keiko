@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 450";
+const APP_VERSION = "Кэйко 451";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -185,7 +185,7 @@ function emptyData() {
     musAt: {},     // когда открылся предмет музея: по этому и сортируем список
     musLike: {},   // отмеченные сердцем артефакты: id → когда, со знаком минус — снято
     piano: { pieces: [], activePiece: "", entries: [] },
-    book: { books: [], activeBook: "", entries: [] },
+    book: { books: [], activeBook: "", entries: [], asks: [] },
     pastel: { course: null, courses: [], activeCourse: "", entries: [] },
     watch:  { videos: [], activeVideo: "", entries: [] },
     practice: {},   // ход разбора по пьесам: { pieceId: { done, session } }
@@ -4024,6 +4024,8 @@ $("#view").innerHTML = `
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
           title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
+        <button class="cta-side" id="askBtn" type="button" ${isBook() && hasBookFile(book()) ? "" : "hidden"}
+          aria-label="Непонятное слово" title="Непонятное слово">❓</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -4032,6 +4034,8 @@ $("#view").innerHTML = `
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
+  const ab = $("#askBtn");
+  if (ab) ab.addEventListener("click", openAskSheet);
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -11711,8 +11715,8 @@ function gmParseBook(текст) {
   return разделы.filter((r) => r.абзацы.length && !мусор.test(r.имя));
 }
 
-async function gmLoadBook() {
-  const id = gmBookFile();
+async function gmLoadBook(id0) {
+  const id = id0 || gmBookFile();
   if (!id) return null;
   if (gmText && gmText.id === id && !gmText.грузим) return gmText;
   if (gmText && gmText.грузим === id) return null;      // уже качается
@@ -11761,8 +11765,8 @@ function gmNum(имя) {
   return d ? Number(d[1]) : 0;
 }
 
-function gmSectionFor(разделы, n) {
-  const части = gmParts();
+function gmSectionFor(разделы, n, части0) {
+  const части = части0 || gmParts();
   const чисто = (x) => String(x || "").toLowerCase().replace(/ё/g, "е")
     .replace(/^\s*(глава|песнь|часть|письмо)\s+[^.]{1,20}\.\s*/i, "")
     .replace(/[^0-9a-zа-я ]+/gi, " ").replace(/\s+/g, " ").trim();
@@ -11834,13 +11838,13 @@ function gmЗаголовок(имя) {
    знает четыре части, а в файле сорок шесть глав: часть — это диапазон, а не
    один раздел. Раньше показывался только первый, и до тридцать шестой главы
    было не добраться вовсе. */
-function gmSectionRange(разделы, n) {
-  const части = gmParts();
+function gmSectionRange(разделы, n, части0) {
+  const части = части0 || gmParts();
   const i = части.findIndex((c) => Number(c.n) === Number(n));
-  const от = gmSectionFor(разделы, n);
+  const от = gmSectionFor(разделы, n, части);
   let до = разделы.length;
   if (i >= 0 && i + 1 < части.length) {
-    const след = gmSectionFor(разделы, части[i + 1].n);
+    const след = gmSectionFor(разделы, части[i + 1].n, части);
     if (след > от) до = след;
   }
   return [от, Math.max(от + 1, до)];
@@ -11936,6 +11940,285 @@ function gmRead() {
     gm.метка = null;
   } else box.scrollTop = 0;
   gmAskHide();
+}
+
+/* ── Непонятные слова ──
+   Читают бумажную книгу, и лезть в телефон за каждой строкой — значит из книги
+   выпасть. Поэтому отметка стоит копейки: одно слово, без страницы и без
+   поиска нужного предложения. Страницу не спрашиваем сознательно — издания
+   расходятся, а плотность текста на странице у стиха и прозы отличается втрое,
+   так что от неё всё равно нет толку. Само место находится потом, по слову, и
+   человек его подтверждает. */
+const asksAll = () => (data.book.asks = data.book.asks || []);
+const asksOpen = (id) => asksAll().filter((a) =>
+  !a.deleted && !a.done && a.bookId === (id || (book() || {}).id));
+function askAdd(слово) {
+  const w = String(слово || "").trim();
+  if (!w || !book()) return null;
+  const a = { id: uid(), bookId: book().id, word: w, createdAt: now(), updatedAt: now() };
+  asksAll().push(a);
+  saveData(); schedulePush();
+  return a;
+}
+/* Удаление — пометкой: иначе телефон вернёт слово первой же синхронизацией. */
+function askDrop(id, разобрано) {
+  const a = asksAll().find((x) => x.id === id);
+  if (!a) return;
+  if (разобрано) a.done = true; else a.deleted = true;
+  a.updatedAt = now();
+  saveData(); schedulePush();
+}
+
+/* Предложение, в котором стоит найденное слово. Границы — по точке с пробелом,
+   а не по любой точке: сокращения вроде «т. е.» резать нечего. */
+function askSentence(абзац, at) {
+  const s = String(абзац || "");
+  let от = 0;
+  for (let i = at; i > 0; i--)
+    if (/[.!?…]/.test(s[i - 1]) && /\s/.test(s[i]) && /[А-ЯЁA-Z«—]/.test(s[i + 1] || "")) { от = i + 1; break; }
+  let до = s.length;
+  for (let i = at; i < s.length; i++)
+    if (/[.!?…]/.test(s[i]) && (!s[i + 1] || /\s/.test(s[i + 1]))) { до = i + 1; break; }
+  return s.slice(от, до).trim();
+}
+
+/* Кандидаты на «то самое место». Сначала точное вхождение, потом по основе:
+   набирают «фальшфейер», а в книге стоит «фальшфейера». Ищем только до
+   прочитанной главы включительно — дальше по книге то же слово встретится в
+   сцене, до которой человек ещё не дошёл. */
+/* Как называется раздел файла на языке содержания. Собственные заголовки
+   файла бывают голым номером — «Глава 35.», — и подтверждать по ним нечего;
+   человек выбирал главу по своему оглавлению, его и показываем. */
+function askМетки(разделы, b) {
+  const метки = new Array(разделы.length).fill("");
+  const главы = b.chapters || [];
+  const части = главы.map((c, i) => ({ n: i + 1, name: c.name || "" }));
+  for (let n = 1; n <= части.length; n++) {
+    const [от, до] = gmSectionRange(разделы, n, части);
+    for (let i = от; i < до && i < метки.length; i++) метки[i] = части[n - 1].name;
+  }
+  for (let i = 0; i < метки.length; i++)
+    if (!метки[i]) метки[i] = gmЗаголовок(разделы[i].имя);
+  return метки;
+}
+
+function askCandidates(разделы, слово, предел, метки) {
+  const w = String(слово || "").toLowerCase().replace(/ё/g, "е").trim();
+  if (w.length < 3) return [];
+  const основы = [w];
+  for (const n of [1, 2, 3]) if (w.length - n >= 4) основы.push(w.slice(0, w.length - n));
+  const до = предел == null ? разделы.length : Math.min(предел, разделы.length);
+  for (const основа of основы) {
+    const найдено = [];
+    for (let i = 0; i < до && найдено.length < 8; i++) {
+      const абз = разделы[i].абзацы;
+      абз.forEach((п, j) => {
+        const низ = п.toLowerCase().replace(/ё/g, "е");
+        let at = низ.indexOf(основа);
+        while (at >= 0 && найдено.length < 8) {
+          let фраза = askSentence(п, at);
+          /* У стиха каждая строка — свой абзац, и одна строка обрывается на
+             запятой: по ней не понять, то ли это место. Добираем соседние. */
+          if (фраза.length < 80)
+            фраза = [абз[j - 1], фраза, абз[j + 1]].filter(Boolean).join(" ").trim().slice(0, 260);
+          if (фраза.length > 10 && !найдено.some((x) => x.фраза === фраза))
+            найдено.push({ i, фраза, раздел: (метки && метки[i]) || gmЗаголовок(разделы[i].имя) });
+          at = низ.indexOf(основа, at + основа.length);
+        }
+      });
+    }
+    if (найдено.length) return найдено;
+  }
+  return [];
+}
+
+/* Докуда искать: раздел файла, на котором человек сейчас стоит. */
+function askПредел(разделы, b) {
+  const главы = b.chapters || [];
+  if (!главы.length) return разделы.length;
+  const стр = bookProgress();
+  let n = 1;
+  главы.forEach((c, i) => { if (стр >= (Number(c.from) || 0)) n = i + 1; });
+  const части = главы.map((c, i) => ({ n: i + 1, name: c.name || "" }));
+  const [, до] = gmSectionRange(разделы, n, части);
+  return до;
+}
+
+/* Словарь книги для подсказок. Набирать «фальшфейер» целиком с телефона в
+   руках, когда в другой руке книга, — долго; три буквы и тычок в подсказку
+   быстрее. Заодно слово гарантированно есть в тексте, и место потом найдётся.
+   Словарь строим только по прочитанному: иначе подсказка выдаст имя из главы,
+   до которой человек не дошёл. */
+let askIndex = null;
+function askBuildIndex(id, разделы, предел) {
+  if (askIndex && askIndex.id === id && askIndex.предел === предел) return askIndex;
+  const счёт = new Map();
+  for (let i = 0; i < предел && i < разделы.length; i++)
+    for (const п of разделы[i].абзацы)
+      for (const m of String(п).toLowerCase().replace(/ё/g, "е").match(/[а-яa-z][а-яa-z-]{3,}/g) || [])
+        счёт.set(m, (счёт.get(m) || 0) + 1);
+  askIndex = { id, предел, слова: [...счёт.entries()].map(([w, n]) => ({ w, n })) };
+  return askIndex;
+}
+/* Редкое — выше частого: непонятным обычно оказывается то, что встретилось
+   раз-другой, а не «который» и «сказал». */
+function askSuggest(начало, сколько) {
+  const p = String(начало || "").toLowerCase().replace(/ё/g, "е").trim();
+  if (!askIndex || p.length < 2) return [];
+  return askIndex.слова.filter((x) => x.w.startsWith(p))
+    .sort((a, b) => a.n - b.n || a.w.length - b.w.length)
+    .slice(0, сколько || 6).map((x) => x.w);
+}
+
+/* Один промт на весь разбор. Семь отдельных походов в нейросеть — это семь
+   выходов из книги; здесь выход один, и контекст переносится между вопросами. */
+function askPrompt(готовые, b) {
+  const автор = String(b.author || "").split("·")[0].trim();
+  const главы = b.chapters || [];
+  let гл = "";
+  const стр = bookProgress();
+  главы.forEach((c) => { if (стр >= (Number(c.from) || 0)) гл = c.name || ""; });
+  const список = готовые.map((x, i) =>
+    `${i + 1}. «${x.word}»${x.фраза ? `\n   В книге: «${x.фраза}»` : " — места в тексте не нашлось"}`).join("\n");
+  return `Читаю книгу «${b.title}»${автор ? `, ${автор}` : ""}.`
+    + ` Вот ${готовые.length} ${plural(готовые.length, "место", "места", "мест")}, ${
+        готовые.length === 1 ? "которое я не понял" : "которых я не понял"}.\n\n${список}\n\n`
+    + `Объясни каждое коротко и по порядку: что это значит и что тут происходит. `
+    + `Пиши конкретно, без общих фраз.`
+    + (гл ? ` Я сейчас на месте «${гл}» — не рассказывай, что будет дальше.` : ` Не рассказывай, чем книга кончается.`);
+}
+
+/* ── Экран: собрать слова, потом подтвердить места ── */
+let askRunState = null;
+function askChips() {
+  const box = $("#askList");
+  if (!box) return;
+  const список = asksOpen();
+  box.innerHTML = список.length
+    ? список.map((a) => `<button class="ask-chip" data-ask="${a.id}" type="button">${esc(a.word)}<span>×</span></button>`).join("")
+    : `<div class="ask-none">Пока пусто</div>`;
+  const кн = $("#askGo");
+  if (кн) { кн.hidden = !список.length; кн.textContent = `Разобрать ${список.length}`; }
+  box.querySelectorAll("[data-ask]").forEach((el) =>
+    el.addEventListener("click", () => { askDrop(el.dataset.ask); askChips(); }));
+}
+function askSugRender() {
+  const box = $("#askSug"), поле = $("#askIn");
+  if (!box || !поле) return;
+  const список = askSuggest(поле.value, 6);
+  box.innerHTML = список.map((w) => `<button class="ask-sug-b" data-sug="${esc(w)}" type="button">${esc(w)}</button>`).join("");
+  box.querySelectorAll("[data-sug]").forEach((el) =>
+    el.addEventListener("click", () => {
+      askAdd(el.dataset.sug);
+      поле.value = ""; askSugRender(); askChips(); поле.focus();
+    }));
+}
+function openAskSheet() {
+  const b = book();
+  if (!b) return;
+  sheetMode = "ask";
+  openSheet(`
+    <div class="ask-sheet">
+      <h3>Что непонятно</h3>
+      <p class="ask-hint">Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение.</p>
+      <input id="askIn" type="text" inputmode="text" autocomplete="off" autocorrect="off"
+             spellcheck="false" placeholder="слово из книги">
+      <div class="ask-sug" id="askSug"></div>
+      <div class="ask-list" id="askList"></div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn gold" id="askGo" type="button" hidden>Разобрать</button>
+      <button class="btn" id="askClose" type="button">Закрыть</button>
+    </div>`);
+  askChips();
+  const поле = $("#askIn");
+  if (поле) {
+    поле.addEventListener("input", askSugRender);
+    поле.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const w = поле.value.trim();
+      if (!w) return;
+      askAdd(w); поле.value = ""; askSugRender(); askChips();
+    });
+    поле.focus();
+  }
+  $("#askClose").addEventListener("click", closeSheet);
+  $("#askGo").addEventListener("click", askRun);
+  /* Словарь подсказок строим из текста книги — он же нужен и для поиска мест.
+     Пока качается, поле работает как обычное: подсказки появятся сами. */
+  if (hasBookFile(b)) gmLoadBook(b.id).then((t) => {
+    if (!t || sheetMode !== "ask") return;
+    askBuildIndex(b.id, t.разделы, askПредел(t.разделы, b));
+    askSugRender();
+  }).catch(() => {});
+}
+
+async function askRun() {
+  const b = book();
+  const список = asksOpen();
+  if (!b || !список.length) return;
+  openSheet(`<div class="ask-sheet"><div class="rd-load">Ищу места в книге…</div></div>`);
+  const t = await gmLoadBook(b.id).catch(() => null);
+  if (!t) { openSheet(`<div class="ask-sheet"><div class="rd-load">Текст книги не приехал — попробуй ещё раз</div></div>
+    <div class="sheet-actions"><button class="btn" id="askClose" type="button">Закрыть</button></div>`);
+    $("#askClose").addEventListener("click", closeSheet); return; }
+  const предел = askПредел(t.разделы, b);
+  const метки = askМетки(t.разделы, b);
+  askRunState = {
+    i: 0, k: 0, готовые: [],
+    список: список.map((a) => ({ ...a, места: askCandidates(t.разделы, a.word, предел, метки) })),
+  };
+  askCard();
+}
+
+function askCard() {
+  const st = askRunState;
+  if (!st) return;
+  if (st.i >= st.список.length) return askFinish();
+  const cur = st.список[st.i];
+  const м = cur.места[st.k];
+  const ещё = cur.места.length > st.k + 1;
+  openSheet(`
+    <div class="ask-sheet">
+      <div class="ask-step">${st.i + 1} из ${st.список.length}</div>
+      <h3>${esc(cur.word)}</h3>
+      ${м
+        ? `<p class="ask-quote">${esc(м.фраза)}</p>
+           ${м.раздел ? `<div class="ask-where">${esc(м.раздел)}</div>` : ""}`
+        : `<p class="ask-hint">В тексте книги это слово не нашлось. Можно спросить и так — без цитаты.</p>`}
+    </div>
+    <div class="sheet-actions">
+      ${м ? `<button class="btn gold" id="askYes" type="button">Да, это оно</button>` : ""}
+      ${ещё ? `<button class="btn" id="askNext" type="button">Другое место</button>` : ""}
+      <button class="btn" id="askSkip" type="button">${м ? "Пропустить" : "Спросить без цитаты"}</button>
+    </div>`);
+  const да = $("#askYes");
+  if (да) да.addEventListener("click", () => {
+    st.готовые.push({ id: cur.id, word: cur.word, фраза: м.фраза });
+    st.i++; st.k = 0; askCard();
+  });
+  const др = $("#askNext");
+  if (др) др.addEventListener("click", () => { st.k++; askCard(); });
+  $("#askSkip").addEventListener("click", () => {
+    if (!м) st.готовые.push({ id: cur.id, word: cur.word, фраза: "" });
+    st.i++; st.k = 0; askCard();
+  });
+}
+
+function askFinish() {
+  const st = askRunState, b = book();
+  askRunState = null;
+  if (!st || !st.готовые.length) { closeSheet(); return; }
+  const текст = askPrompt(st.готовые, b);
+  copyRaw(текст);                       // промт длинный — адрес могут обрезать
+  for (const g of st.готовые) askDrop(g.id, true);
+  useMark("разбор-слов");
+  const url = `https://chatgpt.com/?q=${encodeURIComponent(текст)}`;
+  closeSheet();
+  toast(`Разбор на ${st.готовые.length} ${plural(st.готовые.length, "место", "места", "мест")} — и в буфере`);
+  if (navigator.standalone === true) location.href = url;
+  else window.open(url, "_blank", "noopener");
 }
 
 /* ── Полоса «Объясни» ──
@@ -15848,6 +16131,7 @@ async function syncNow(manual) {
 
       data.piano.entries = mergeLists(data.piano.entries, remote.piano.entries);
       data.book.entries = mergeLists(data.book.entries, remote.book.entries);
+      data.book.asks = mergeLists(data.book.asks || [], (remote.book.asks) || []);
       data.pastel.entries = mergeLists(data.pastel.entries, remote.pastel.entries);
 
       data.watch.videos = mergeLists(data.watch.videos, remote.watch.videos);

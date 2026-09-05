@@ -1589,6 +1589,40 @@
     .rd-br { margin: 26px auto 22px; width: 100%; max-width: 34em; text-align: center;
              color: var(--dim); font-size: 0.9rem; letter-spacing: 0.4em; }
     .rd-load { padding: 40px 14px; text-align: center; color: var(--dim); font-size: 0.9rem; }
+
+    /* ── Непонятные слова ──
+       Набирают их с книгой в другой руке, поэтому поле крупное, подсказки
+       крупные, и по ним надо попадать пальцем без прицеливания. */
+    .ask-sheet { padding: 4px 2px 8px; }
+    .ask-sheet h3 { margin: 0 0 6px; font-size: 1.15rem; color: var(--ink); }
+    .ask-hint { margin: 0 0 14px; color: var(--dim); font-size: 0.86rem; line-height: 1.45; max-width: 30em; }
+    #askIn {
+      width: 100%; box-sizing: border-box; padding: 13px 14px; border-radius: 12px;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
+      font: inherit; font-size: 1.05rem;
+    }
+    .ask-sug { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 0; }
+    .ask-sug-b {
+      padding: 9px 13px; border-radius: 999px; font: inherit; font-size: 0.95rem;
+      background: rgba(255, 201, 77, 0.14); border: 1px solid rgba(255, 201, 77, 0.34);
+      color: var(--ink);
+    }
+    .ask-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0 0; }
+    .ask-chip {
+      padding: 8px 10px 8px 13px; border-radius: 999px; font: inherit; font-size: 0.92rem;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
+      display: inline-flex; gap: 8px; align-items: center;
+    }
+    .ask-chip span { color: var(--dim); font-size: 1.05rem; line-height: 1; }
+    .ask-none { color: var(--dim); font-size: 0.84rem; padding: 4px 2px; }
+    .ask-step { color: var(--dim); font-size: 0.76rem; letter-spacing: 0.05em;
+                text-transform: uppercase; margin-bottom: 8px; }
+    .ask-quote {
+      margin: 0 0 10px; padding: 13px 15px; border-radius: 12px;
+      background: var(--glass); border: 1px solid var(--glass-line);
+      color: var(--ink); font-size: 1.02rem; line-height: 1.6; max-width: 34em;
+    }
+    .ask-where { color: var(--dim); font-size: 0.8rem; }
     /* Найденное: строка — кусок вокруг совпадения. Читать её приходится
        быстро и в узком месте, поэтому кегль тот же, что у текста. */
     .rd-hit {
