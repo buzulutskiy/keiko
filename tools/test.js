@@ -705,6 +705,26 @@ function ок(имя, факт, надо) {
   t.set("data", было.data); t.set("CATALOG", было.cat);
 }
 
+/* ── Промты карты: запрет на спойлеры в каждом ──
+   Спрашивают, что такое шинель, а нейросеть добавляет «в конце книги эта
+   шинель…». Запрет стоял у трёх видов из восьми — теперь у всех, и книга в нём
+   названа прямо: без имени он ни к чему не привязан. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), gm: t.get("gm") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    book: { books: [{ id: "kn", title: "Униженные", author: "Достоевский", pages: 300, chapters: [] }],
+            activeBook: "kn", entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] } });
+  t.set("gm", { места: [], id: "kn", слой: "all", часть: 1, at: null, части: [] });
+  for (const вид of ["place", "thing", "word", "person", "art", "animal", "book", "rock", "text"]) {
+    const h = t.get("gmSpravki")({ kind: вид, name: "шинель", t: "верхняя одежда", q: "шинель" });
+    const q = decodeURIComponent((h.match(/q=([^"]+)"/) || [])[1] || "");
+    ок("промт " + вид + ": запрет на спойлеры", /не пересказывай/.test(q), true);
+    ок("промт " + вид + ": книга названа", /«Униженные»/.test(q), true);
+  }
+  t.set("gm", было.gm); t.set("data", было.data);
+}
+
 /* ── Лента: длинное имя на фишке обрезается ──
    Одного эллипсиса из CSS мало: фишка стоит во флексе рядом с иконкой и
    отступами, и длинное имя вылезало за край. */
