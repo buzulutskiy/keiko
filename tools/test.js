@@ -517,6 +517,17 @@ function ок(имя, факт, надо) {
 
   ок("текст: вкладка появляется, когда файл залит",
     t.get("gmLayersOf")().map((x) => x[0]).includes("read"), true);
+  /* Ряд вкладок фильтрует пустые по числу точек, и «Слова» с «Текстом» под это
+     правило попадали: точек у них нет вовсе, и вкладка не показывалась. */
+  {
+    const ряд = { hidden: true, innerHTML: "", querySelector: () => null };
+    const был = t.get("document.querySelector");
+    t.set("document.querySelector", (s2) => (s2 === "#gmLayers" ? ряд : null));
+    t.get("gmLayersRow")();
+    ок("слова: вкладка в ряду есть", /data-layer="ask"/.test(ряд.innerHTML), true);
+    ок("слова: без счётчика", /Слова<\/button>/.test(ряд.innerHTML), true);
+    t.set("document.querySelector", был);
+  }
   // 70 страниц из 100 при двух разделах — второй
   ок("текст: открывается примерно там, докуда дочитал",
     t.get("gmReadStart")(разделы), 1);
