@@ -911,6 +911,7 @@
     .ach-hero-txt em { font-style: normal; font-size: 0.8rem; color: var(--muted); }
 
     /* несколько карточек сразу — списком с прокруткой */
+    #cheerAsk[hidden] { display: none; }
     .cheer-list { display: grid; gap: 14px; text-align: left; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
     .cheer-item { display: grid; gap: 5px; }
     .cheer-item b { font-size: 0.94rem; font-weight: 750; line-height: 1.25; }
@@ -3759,6 +3760,7 @@
       <h2 id="cheerTitle"></h2>
       <p id="cheerText"></p>
       <button class="btn gold" id="cheerOk" style="min-width:180px">Отлично!</button>
+      <button class="btn" id="cheerAsk" type="button" style="min-width:180px;margin-top:8px" hidden></button>
     </div>
   </div>
 

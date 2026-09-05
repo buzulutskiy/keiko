@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 453";
+const APP_VERSION = "Кэйко 454";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2117,6 +2117,19 @@ function showDone(before, after, wasExisting, ctx) {
      и вместо занятия думаешь о сгоревшем счётчике. На экране прогресса её
      убрали давно, а здесь она оставалась и подмешивалась в каждую отметку. */
   $("#cheerText").textContent = text;
+  /* Разбор предлагается здесь же, сразу после отметки дня, — и потому это
+     часть чтения, а не отдельное занятие: прочитал, отметил страницу, разобрал
+     непонятное, всё одним движением. Кнопки нет, если слов нет: напоминать о
+     долге мы не будем. */
+  const ка = $("#cheerAsk");
+  if (ка) {
+    const n = ctx.book ? asksOpen().length : 0;
+    ка.hidden = !n;
+    if (n) {
+      ка.textContent = `Разобрать ${n} ${plural(n, "слово", "слова", "слов")}`;
+      ка.onclick = () => { $("#cheer").classList.remove("show"); askRun(); };
+    }
+  }
   $("#cheer").classList.add("show");
 }
 
@@ -10577,7 +10590,11 @@ function sessionText(track, e) {
   if (track === "book") {
     const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
     const run = bookRunOf(e);
-    return "Читал: " + ((b && b.title) || "книга") + (run ? " · " + run : "");
+    /* Отмеченные слова — часть чтения, а не отдельное занятие: пишем их в ту
+       же карточку дня, рядом со страницами. */
+    const слов = askЗаДень(e.bookId || "", e.date);
+    return "Читал: " + ((b && b.title) || "книга") + (run ? " · " + run : "")
+      + (слов ? " · " + слов + " " + plural(слов, "слово", "слова", "слов") : "");
   }
   if (track === "piano") {
     const p = (data.piano.pieces || []).find((x) => x.id === (e.pieceId || "bwv853"));
@@ -11950,12 +11967,47 @@ function gmRead() {
    так что от неё всё равно нет толку. Само место находится потом, по слову, и
    человек его подтверждает. */
 const asksAll = () => (data.book.asks = data.book.asks || []);
-const asksOpen = (id) => asksAll().filter((a) =>
-  !a.deleted && !a.done && a.bookId === (id || (book() || {}).id));
+/* Номер главы по прочитанным страницам. Файл книги для этого не нужен —
+   хватает содержания из профиля, и потому отметка ставится мгновенно. */
+function askГлава(b0) {
+  const b = b0 || book();
+  const главы = (b && b.chapters) || [];
+  if (!главы.length) return 0;
+  const стр = bookProgress();
+  let n = 1;
+  главы.forEach((c, i) => { if (стр >= (Number(c.from) || 0)) n = i + 1; });
+  return n;
+}
+/* Слова живут одну главу. Перешёл в следующую, не разобрав, — прошлые уходят:
+   тащить их за собой значит копить долг, а долг превращает всё это в домашку.
+   Плюс место такого слова пришлось бы искать вне текущей главы, и первым
+   кандидатом снова показывалось бы не то. */
+const asksOpen = (id) => {
+  const кн = id || (book() || {}).id;
+  const гл = askГлава();
+  return asksAll().filter((a) =>
+    !a.deleted && !a.done && a.bookId === кн && (Number(a.ch) || 0) === гл);
+};
+function asksSweep() {
+  const кн = (book() || {}).id, гл = askГлава();
+  let было = false;
+  for (const a of asksAll())
+    if (!a.deleted && !a.done && a.bookId === кн && (Number(a.ch) || 0) !== гл) {
+      a.deleted = true; a.updatedAt = now(); было = true;
+    }
+  if (было) { saveData(); schedulePush(); }
+}
+/* Сколько слов отмечено в этот день по этой книге. Число историческое: оно
+   не меняется от того, разобрал ты их потом или нет, — и потому его можно
+   писать в карточку дня. */
+const askЗаДень = (bookId, date) => asksAll().filter((a) =>
+  a.bookId === bookId && !a.deleted && dateStr(new Date(Number(a.createdAt) || 0)) === date).length;
+
 function askAdd(слово) {
   const w = String(слово || "").trim();
   if (!w || !book()) return null;
-  const a = { id: uid(), bookId: book().id, word: w, createdAt: now(), updatedAt: now() };
+  const a = { id: uid(), bookId: book().id, ch: askГлава(), word: w,
+              createdAt: now(), updatedAt: now() };
   asksAll().push(a);
   saveData(); schedulePush();
   return a;
@@ -12159,6 +12211,7 @@ function openAskSheet() {
       <button class="btn gold" id="askGo" type="button" hidden>Разобрать</button>
       <button class="btn" id="askClose" type="button">Закрыть</button>
     </div>`);
+  asksSweep();          // слова прошлой главы не тащим за собой
   askChips();
   const поле = $("#askIn");
   if (поле) {
