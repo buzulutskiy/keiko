@@ -1597,10 +1597,18 @@
     .ask-sheet { padding: 4px 2px 8px; }
     .ask-sheet h3 { margin: 0 0 6px; font-size: 1.15rem; color: var(--ink); }
     .ask-hint { margin: 0 0 14px; color: var(--dim); font-size: 0.86rem; line-height: 1.45; max-width: 30em; }
+    .ask-row { display: flex; gap: 8px; align-items: stretch; }
     #askIn {
-      width: 100%; box-sizing: border-box; padding: 13px 14px; border-radius: 12px;
+      flex: 1; min-width: 0; box-sizing: border-box; padding: 13px 14px; border-radius: 12px;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
       font: inherit; font-size: 1.05rem;
+    }
+    /* На цифровой клавиатуре айфона нет Enter — без этой кнопки номер стиха
+       ввести можно, а отправить нечем. */
+    .ask-add {
+      flex: 0 0 auto; width: 52px; border-radius: 12px; font: inherit; font-size: 1.3rem;
+      background: rgba(255, 201, 77, 0.16); border: 1px solid rgba(255, 201, 77, 0.4);
+      color: var(--ink);
     }
     .ask-sug { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 0; }
     .ask-sug-b {

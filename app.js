@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 457";
+const APP_VERSION = "Кэйко 458";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -12002,6 +12002,11 @@ const askЗаДень = (bookId, date) => asksAll().filter((a) =>
    одну. Для такой книги номер надёжнее слова: читают один перевод, а в файле
    лежит другой, и слова не совпадут вовсе. Флаг `verse` в описи материала. */
 const askVerse = (b0) => !!(catOf(((b0 || book()) || {}).id) || {}).verse;
+/* Решаем по тому, что человек ввёл, а не по книге: число — стих, буквы —
+   слово. У «Одиссеи» номер надёжнее, но часть слов совпадает и в другом
+   переводе — гекатомба, кратер, имена, — а если не совпало, останется
+   спросить без цитаты. Запрещать одно ради другого незачем. */
+const askЧисло = (w) => /^\d{1,4}$/.test(String(w || "").trim());
 
 /* Стих номер n внутри той главы, где его отметили. Соседние строки берём с
    собой: одна строка гекзаметра обрывается на середине фразы. */
@@ -12251,9 +12256,12 @@ function openAskSheet() {
       <p class="ask-hint">${стих
         ? "Номер стиха — и дальше читай. Нумерация строк одна во всех переводах, так что подойдёт любое издание."
         : "Слово — и дальше читай. Место в книге найдём потом и покажем на подтверждение."}</p>
-      <input id="askIn" type="text" inputmode="${стих ? "numeric" : "text"}" autocomplete="off"
-             autocorrect="off" spellcheck="false"
-             placeholder="${стих ? "номер стиха" : "слово из книги"}">
+      <div class="ask-row">
+        <input id="askIn" type="text" inputmode="${стих ? "numeric" : "text"}" autocomplete="off"
+               autocorrect="off" spellcheck="false"
+               placeholder="${стих ? "номер стиха" : "слово из книги"}">
+        <button class="ask-add" id="askPlus" type="button" aria-label="Добавить">＋</button>
+      </div>
       <div class="ask-sug" id="askSug"></div>
       <div class="ask-list" id="askList"></div>
     </div>
@@ -12264,15 +12272,20 @@ function openAskSheet() {
   askChips();
   const поле = $("#askIn");
   if (поле) {
+    /* Кнопка обязательна: на цифровой клавиатуре айфона нет клавиши Enter, и
+       номер стиха ввести можно, а отправить нечем. */
+    const добавить = () => {
+      const w = поле.value.trim();
+      if (!w || (стих && !askЧисло(w))) return;
+      askAdd(w); поле.value = ""; askSugRender(); askChips(); поле.focus();
+    };
     if (!стих) поле.addEventListener("input", askSugRender);
     поле.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
-      e.preventDefault();
-      const w = поле.value.trim();
-      // у стиха принимаем только число: буквы тут ничего не найдут
-      if (!w || (стих && !/^\d{1,4}$/.test(w))) return;
-      askAdd(w); поле.value = ""; askSugRender(); askChips();
+      e.preventDefault(); добавить();
     });
+    const плюс = $("#askPlus");
+    if (плюс) плюс.addEventListener("click", добавить);
     поле.focus();
   }
   $("#askClose").addEventListener("click", closeSheet);
@@ -12299,10 +12312,12 @@ async function askRun() {
   const метки = askМетки(t.разделы, b);
   const стих = askVerse(b);
   askRunState = {
-    i: 0, k: 0, ш: 0, готовые: [], стих, b, разделы: t.разделы,
-    список: список.map((a) => ({ ...a, места: стих
-      ? [askVerseAt(t.разделы, b, a.ch, a.word, 0)].filter(Boolean)
-      : askCandidates(t.разделы, a.word, окно, метки) })),
+    i: 0, k: 0, ш: 0, готовые: [], b, разделы: t.разделы,
+    список: список.map((a) => ({ ...a,
+      строка: стих,
+      места: стих
+        ? [askVerseAt(t.разделы, b, a.ch, a.word, 0)].filter(Boolean)
+        : askCandidates(t.разделы, a.word, окно, метки) })),
   };
   askCard();
 }
@@ -12313,21 +12328,22 @@ function askCard() {
   if (st.i >= st.список.length) return askFinish();
   const cur = st.список[st.i];
   /* У стиха ширина задаётся при поиске строки, у прозы — при показе цитаты. */
-  const м = st.стих
+  const строка = cur.строка;
+  const м = строка
     ? askVerseAt(st.разделы, st.b, cur.ch, cur.word, st.ш)
     : cur.места[st.k];
-  const цитата = st.стих ? (м && м.фраза) : askQuote(st.разделы, м, st.ш);
-  const ещё = !st.стих && cur.места.length > st.k + 1;
+  const цитата = строка ? (м && м.фраза) : askQuote(st.разделы, м, st.ш);
+  const ещё = !строка && cur.места.length > st.k + 1;
   const шире = st.ш + 1 < ASK_ШИРЕ.length;
-  const подпись = (st.стих ? ASK_ШИРЕ_СТИХ : ASK_ШИРЕ)[st.ш];
+  const подпись = (строка ? ASK_ШИРЕ_СТИХ : ASK_ШИРЕ)[st.ш];
   openSheet(`
     <div class="ask-sheet">
       <div class="ask-step">${st.i + 1} из ${st.список.length}</div>
-      <h3>${esc(st.стих ? "Стих " + cur.word : cur.word)}</h3>
+      <h3>${esc(строка ? "Стих " + cur.word : cur.word)}</h3>
       ${м
         ? `<p class="ask-quote">${esc(цитата)}</p>
            <div class="ask-where">${esc([м.раздел, подпись].filter(Boolean).join(" · "))}</div>`
-        : `<p class="ask-hint">${st.стих
+        : `<p class="ask-hint">${строка
             ? "В этой песни столько строк нет — проверь номер."
             : "В тексте книги это слово не нашлось. Можно спросить и так — без цитаты."}</p>`}
     </div>
@@ -12340,7 +12356,7 @@ function askCard() {
   const да = $("#askYes");
   if (да) да.addEventListener("click", () => {
     st.готовые.push({ id: cur.id, word: cur.word, фраза: цитата,
-                      где: st.стих ? `${м.раздел}, стих ${cur.word}` : "" });
+                      где: строка ? `${м.раздел}, стих ${cur.word}` : "" });
     st.i++; st.k = 0; st.ш = 0; askCard();
   });
   const шире_кн = $("#askWide");
