@@ -1590,6 +1590,13 @@
     .rd-h { margin: 22px 0 12px; font-size: 1rem; font-weight: 700; color: var(--ink); }
     .rd-p { margin: 0 0 14px; font-size: 1.06rem; line-height: 1.66; color: var(--ink); max-width: 34em; }
     .rd-p mark { background: rgba(255, 201, 77, 0.32); color: var(--ink); border-radius: 3px; }
+    /* Стих: номер строки слева, как в изданиях. Кратные пяти заметнее — по ним
+       и находят нужную строку, не пересчитывая по одной. */
+    .rd-v { display: grid; grid-template-columns: 2.6em 1fr; gap: 8px; align-items: baseline;
+            margin-bottom: 6px; }
+    .rd-v i { font-style: normal; text-align: right; font-size: 0.76rem; line-height: 1.9;
+              color: var(--dim); opacity: 0.45; font-variant-numeric: tabular-nums; }
+    .rd-v i.on { opacity: 1; font-weight: 700; color: var(--muted); font-size: 0.8rem; }
     /* Граница между главами файла внутри одной главы содержания. Без номера:
        своя нумерация у файла сквозная и с содержанием спорит. */
     .rd-br { margin: 26px auto 22px; width: 100%; max-width: 34em; text-align: center;

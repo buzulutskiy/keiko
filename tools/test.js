@@ -882,6 +882,26 @@ function ок(имя, факт, надо) {
     [{ word: "5", фраза: "Песнь 2, строка 5, гекзаметр идёт", где: "Песнь II, стих 5" }], b);
   ок("стих: в промте песнь и номер", /1\. Песнь II, стих 5/.test(q), true);
 
+  /* На вкладке «Текст» строки пронумерованы той же нумерацией: по ней человек
+     и отмечает непонятное, а кратные пяти видно глазом. */
+  {
+    const узел = { hidden: true, innerHTML: "", scrollTop: 0, dataset: {},
+                   addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
+    const был = t.get("document.querySelector");
+    t.set("gmText", { id: "od", разделы, грузим: "" });
+    t.set("gm", { места: [{ ch: 1, kind: "place", name: "т" }, { ch: 2, kind: "place", name: "т" }],
+      id: "od", слой: "read", часть: 2, at: null, чтение: null, чтениеГл: null,
+      метка: null, поиск: "", части: [{ n: 1, name: "Песнь I" }, { n: 2, name: "Песнь II" }] });
+    t.set("document.querySelector", (s2) => (s2 === "#gmRead" ? узел : null));
+    t.get("gmRead")();
+    ок("текст: строки пронумерованы", /<i>1<\/i>Песнь 2, строка 1/.test(узел.innerHTML), true);
+    ок("текст: счёт идёт внутри своей песни",
+      /<i class="on">20<\/i>Песнь 2, строка 20/.test(узел.innerHTML), true);
+    ок("текст: кратные пяти выделены",
+      (узел.innerHTML.match(/<i class="on">/g) || []).length, 4);
+    t.set("document.querySelector", был);
+  }
+
   t.set("gm", было.gm); t.set("data", было.data); t.set("CATALOG", было.cat);
 }
 
