@@ -1622,6 +1622,8 @@
       margin: 0 0 10px; padding: 13px 15px; border-radius: 12px;
       background: var(--glass); border: 1px solid var(--glass-line);
       color: var(--ink); font-size: 1.02rem; line-height: 1.6; max-width: 34em;
+      /* цитату можно расширить до абзаца с соседями — тогда она прокручивается */
+      max-height: 46vh; overflow-y: auto; white-space: pre-line;
     }
     .ask-where { color: var(--dim); font-size: 0.8rem; }
     /* Найденное: строка — кусок вокруг совпадения. Читать её приходится

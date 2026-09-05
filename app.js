@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 456";
+const APP_VERSION = "Кэйко 457";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -12005,7 +12005,14 @@ const askVerse = (b0) => !!(catOf(((b0 || book()) || {}).id) || {}).verse;
 
 /* Стих номер n внутри той главы, где его отметили. Соседние строки берём с
    собой: одна строка гекзаметра обрывается на середине фразы. */
-function askVerseAt(разделы, b, гл, n) {
+/* Насколько шире брать цитату. Иногда непонятно не слово, а весь абзац — и
+   тогда одно предложение в промте бесполезно. Три ступени: дальше человеку
+   проще спросить про всю главу. */
+const ASK_СТРОК = [1, 4, 10];                       // у стиха — строк в каждую сторону
+const ASK_ШИРЕ = ["по фразе", "весь абзац", "абзац с соседними"];
+const ASK_ШИРЕ_СТИХ = ["три строки", "девять строк", "двадцать одна строка"];
+
+function askVerseAt(разделы, b, гл, n, ширина) {
   const части = (b.chapters || []).map((c, i) => ({ n: i + 1, name: c.name || "" }));
   const номер = Number(гл) || askГлава(b) || 1;
   const [от, до] = gmSectionRange(разделы, номер, части);
@@ -12013,9 +12020,23 @@ function askVerseAt(разделы, b, гл, n) {
   for (let i = от; i < до; i++) строки.push(...разделы[i].абзацы);
   const k = Number(n) - 1;
   if (!строки.length || !(k >= 0) || k >= строки.length) return null;
+  const w = ASK_СТРОК[Math.max(0, Math.min(ASK_СТРОК.length - 1, Number(ширина) || 0))];
   return { i: от, стих: Number(n),
-           фраза: строки.slice(Math.max(0, k - 1), k + 2).join(" ").slice(0, 300),
+           фраза: строки.slice(Math.max(0, k - w), k + w + 1).join(" ").slice(0, 1200),
            раздел: (части[номер - 1] || {}).name || "" };
+}
+
+/* Цитата нужной ширины. У прозы ступени идут по разметке — фраза, абзац,
+   абзац с соседями; у стиха ширина уже учтена при поиске строки. */
+function askQuote(разделы, м, ширина) {
+  if (!м) return "";
+  if (м.стих) return м.фраза;
+  const w = Number(ширина) || 0;
+  if (!w) return м.фраза;
+  const абз = (разделы[м.i] || {}).абзацы || [];
+  const j = Number(м.j) || 0;
+  const куски = w === 1 ? [абз[j]] : [абз[j - 1], абз[j], абз[j + 1]];
+  return куски.filter(Boolean).join("\n").slice(0, 1200) || м.фраза;
 }
 
 function askAdd(слово) {
@@ -12091,7 +12112,7 @@ function askCandidates(разделы, слово, окно, метки) {
           if (фраза.length < 80)
             фраза = [абз[j - 1], фраза, абз[j + 1]].filter(Boolean).join(" ").trim().slice(0, 260);
           if (фраза.length > 10 && !найдено.some((x) => x.фраза === фраза))
-            найдено.push({ i, фраза, раздел: (метки && метки[i]) || gmЗаголовок(разделы[i].имя) });
+            найдено.push({ i, j, фраза, раздел: (метки && метки[i]) || gmЗаголовок(разделы[i].имя) });
           at = низ.indexOf(основа, at + основа.length);
         }
       });
@@ -12278,9 +12299,9 @@ async function askRun() {
   const метки = askМетки(t.разделы, b);
   const стих = askVerse(b);
   askRunState = {
-    i: 0, k: 0, готовые: [], стих,
+    i: 0, k: 0, ш: 0, готовые: [], стих, b, разделы: t.разделы,
     список: список.map((a) => ({ ...a, места: стих
-      ? [askVerseAt(t.разделы, b, a.ch, a.word)].filter(Boolean)
+      ? [askVerseAt(t.разделы, b, a.ch, a.word, 0)].filter(Boolean)
       : askCandidates(t.разделы, a.word, окно, метки) })),
   };
   askCard();
@@ -12291,35 +12312,44 @@ function askCard() {
   if (!st) return;
   if (st.i >= st.список.length) return askFinish();
   const cur = st.список[st.i];
-  const м = cur.места[st.k];
-  const ещё = cur.места.length > st.k + 1;
+  /* У стиха ширина задаётся при поиске строки, у прозы — при показе цитаты. */
+  const м = st.стих
+    ? askVerseAt(st.разделы, st.b, cur.ch, cur.word, st.ш)
+    : cur.места[st.k];
+  const цитата = st.стих ? (м && м.фраза) : askQuote(st.разделы, м, st.ш);
+  const ещё = !st.стих && cur.места.length > st.k + 1;
+  const шире = st.ш + 1 < ASK_ШИРЕ.length;
+  const подпись = (st.стих ? ASK_ШИРЕ_СТИХ : ASK_ШИРЕ)[st.ш];
   openSheet(`
     <div class="ask-sheet">
       <div class="ask-step">${st.i + 1} из ${st.список.length}</div>
       <h3>${esc(st.стих ? "Стих " + cur.word : cur.word)}</h3>
       ${м
-        ? `<p class="ask-quote">${esc(м.фраза)}</p>
-           ${м.раздел ? `<div class="ask-where">${esc(м.раздел)}</div>` : ""}`
+        ? `<p class="ask-quote">${esc(цитата)}</p>
+           <div class="ask-where">${esc([м.раздел, подпись].filter(Boolean).join(" · "))}</div>`
         : `<p class="ask-hint">${st.стих
             ? "В этой песни столько строк нет — проверь номер."
             : "В тексте книги это слово не нашлось. Можно спросить и так — без цитаты."}</p>`}
     </div>
     <div class="sheet-actions">
       ${м ? `<button class="btn gold" id="askYes" type="button">Да, это оно</button>` : ""}
+      ${м && шире ? `<button class="btn" id="askWide" type="button">Шире</button>` : ""}
       ${ещё ? `<button class="btn" id="askNext" type="button">Другое место</button>` : ""}
       <button class="btn" id="askSkip" type="button">${м ? "Пропустить" : "Спросить без цитаты"}</button>
     </div>`);
   const да = $("#askYes");
   if (да) да.addEventListener("click", () => {
-    st.готовые.push({ id: cur.id, word: cur.word, фраза: м.фраза,
+    st.готовые.push({ id: cur.id, word: cur.word, фраза: цитата,
                       где: st.стих ? `${м.раздел}, стих ${cur.word}` : "" });
-    st.i++; st.k = 0; askCard();
+    st.i++; st.k = 0; st.ш = 0; askCard();
   });
+  const шире_кн = $("#askWide");
+  if (шире_кн) шире_кн.addEventListener("click", () => { st.ш++; askCard(); });
   const др = $("#askNext");
-  if (др) др.addEventListener("click", () => { st.k++; askCard(); });
+  if (др) др.addEventListener("click", () => { st.k++; st.ш = 0; askCard(); });
   $("#askSkip").addEventListener("click", () => {
     if (!м) st.готовые.push({ id: cur.id, word: cur.word, фраза: "" });
-    st.i++; st.k = 0; askCard();
+    st.i++; st.k = 0; st.ш = 0; askCard();
   });
 }
 
