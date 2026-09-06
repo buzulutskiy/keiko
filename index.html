@@ -1886,6 +1886,55 @@
     .ls-tab td:first-child { color: var(--muted); white-space: nowrap; }
 
     #gmap[hidden] { display: none; }
+
+    /* ── Собрание ──
+       display:flex перебивает встроенное [hidden]{display:none} — без пары
+       строк экран висит поверх приложения с запуска. Это уже случалось. */
+    #col[hidden] { display: none; }
+    #col {
+      position: fixed; inset: 0; z-index: 80; background: var(--bg);
+      display: flex; flex-direction: column;
+    }
+    #colTop {
+      display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+      padding: calc(env(safe-area-inset-top) + 12px) 14px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    #colTitle { flex: 1; font-size: 1.02rem; font-weight: 700; color: var(--ink); }
+    #colTop button {
+      width: 34px; height: 34px; border-radius: 50%; font-size: 1rem; flex: 0 0 auto;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
+    }
+    #colBack[hidden] { display: none; }
+    #colBody {
+      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      padding: 14px 16px calc(env(safe-area-inset-bottom) + 40px);
+    }
+    .cl-lead { color: var(--dim); font-size: 0.84rem; line-height: 1.5; margin: 0 0 18px; max-width: 32em; }
+    .cl-t {
+      display: block; width: 100%; text-align: left; font: inherit; padding: 14px 0;
+      background: none; border: 0; border-bottom: 1px solid var(--line);
+    }
+    .cl-t:first-of-type { border-top: 1px solid var(--line); }
+    .cl-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .cl-h b { font-size: 1rem; font-weight: 650; color: var(--ink); }
+    .cl-h em {
+      font-style: normal; font-size: 0.78rem; color: var(--dim);
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .cl-bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin: 8px 0 6px; }
+    .cl-bar i { display: block; height: 100%; border-radius: 3px; background: var(--gold); }
+    .cl-hint { color: var(--dim); font-size: 0.78rem; line-height: 1.4; }
+    .cl-grid { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+    .cl-i {
+      padding: 9px 12px; border-radius: 12px; font: inherit; font-size: 0.92rem;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
+      display: inline-flex; gap: 7px; align-items: center; max-width: 100%;
+    }
+    .cl-i span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 15em; }
+    .cl-i.art { background: rgba(255, 201, 77, 0.1); border-color: rgba(255, 201, 77, 0.3); }
+    .cl-soon { color: var(--dim); font-size: 0.82rem; padding: 14px 2px 0; line-height: 1.5; }
+    .cl-none { color: var(--dim); font-size: 0.84rem; padding: 22px 2px; text-align: center; }
     /* Артефакты: раздел живёт вкладкой, поэтому ни своей шапки, ни крестика. */
     .ms-head {
       margin: 4px 0 14px; font-size: 0.74rem; letter-spacing: .06em;
@@ -3754,6 +3803,15 @@
   </div>
 
   <!-- Карта мест во весь экран: приближается пальцами, точка открывает карточку снизу -->
+  <div id="col" hidden aria-hidden="true">
+    <div id="colTop">
+      <div id="colTitle">Собрание</div>
+      <button id="colBack" type="button" aria-label="Назад" hidden>‹</button>
+      <button id="colClose" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="colBody"></div>
+  </div>
+
   <div id="gmap" hidden aria-hidden="true">
     <div id="gmTop">
       <div id="gmTitle"></div>

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 468";
+const APP_VERSION = "Кэйко 469";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1926,6 +1926,19 @@ function saveEntry() {
     });
   }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
+  /* Глава дочитана — показываем, чем это пополнило собрание. Не «молодец»,
+     а перечень: столько-то слов, столько-то мест, вот артефакт. Это и есть
+     итог вечера, ради которого стоило дочитать до конца главы. */
+  if (ctx.book && after.page > before.page) {
+    const b0 = book();
+    (b0.chapters || []).forEach((c, i) => {
+      const конец = chapterEnd(b0, i);
+      if (конец > before.page && конец <= after.page) {
+        const пришло = colOfChapter(b0, i + 1);
+        if (пришло.length) overlayQueue.push({ type: "chapter", name: c.name || "", list: пришло });
+      }
+    });
+  }
   /* Одна заметка теории за занятие — и только у пьесы. Больше одной за раз не
      даём: две подряд читаются как лекция, а смысл в том, чтобы каждый раз
      уносить ровно одну мысль. */
@@ -1975,6 +1988,7 @@ function showNextOverlay() {
   else if (item.type === "musMany") showMusMany(item.list, item.n);
   else if (item.type === "bookDone") showBookDone(item.book);
   else if (item.type === "theory") showTheory(item.x);
+  else if (item.type === "chapter") showChapterGain(item);
   else showFacts(item.list);
 }
 
@@ -1999,6 +2013,35 @@ function showTheory(x) {
   $("#cheerTitle").textContent = x.name;
   $("#cheerText").textContent = [x.t, x.about].filter(Boolean).join(" — ");
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Понятно";
+  const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
+  $("#cheer").classList.add("show");
+}
+
+/* Чем глава пополнила собрание. Перечисляем по видам, а не по одной вещи:
+   семь карточек подряд читаются как лекция, а список — как итог. */
+const COL_СЛОВА = {
+  place: ["место", "места", "мест"], word: ["слово", "слова", "слов"],
+  thing: ["вещь", "вещи", "вещей"], book: ["книга", "книги", "книг"],
+  person: ["человек", "человека", "человек"], animal: ["живность", "живности", "живности"],
+  art: ["картина", "картины", "картин"], rock: ["порода", "породы", "пород"],
+  text: ["справка", "справки", "справок"], art0: ["артефакт", "артефакта", "артефактов"],
+};
+function showChapterGain(item) {
+  const счёт = new Map();
+  for (const x of item.list) счёт.set(x.kind, (счёт.get(x.kind) || 0) + 1);
+  const части = [...счёт.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => {
+      const сл = COL_СЛОВА[k] || ["запись", "записи", "записей"];
+      return n + " " + plural(n, сл[0], сл[1], сл[2]);
+    });
+  const step = $("#cheerStep");
+  step.hidden = false;
+  step.textContent = "Глава закрыта";
+  $("#cheerIc").textContent = "🧺";
+  $("#cheerTitle").textContent = item.name || "Глава дочитана";
+  $("#cheerText").textContent = "В собрание пришло: " + части.join(", ") + ".";
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Посмотреть";
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
@@ -4068,6 +4111,8 @@ $("#view").innerHTML = `
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
+        <button class="cta-side" id="colBtn" type="button" ${colBtnOn() ? "" : "hidden"}
+          aria-label="Собрание" title="Собрание">🧺</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
           title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
@@ -4079,6 +4124,8 @@ $("#view").innerHTML = `
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
+  const cb = $("#colBtn");
+  if (cb) cb.addEventListener("click", openCollection);
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4370,6 +4417,9 @@ function mapMaterial() {
   }
   return null;
 }
+/* Кнопка собрания — только у книги и только если собирать есть что. */
+const colBtnOn = () => isBook() && !!book() && colItems(book()).length > 0;
+
 const mapBtnOn = () => {
   /* У пьесы карты нет. Заходить в справочник до занятия или после — некуда
      приложить: мотивации читать теорию просто так не возникает. Те же тридцать
@@ -11689,9 +11739,11 @@ function mapFresh(bk) {
    свой: у книги спрашивают, о чём она и стоит ли читать, у слова — что это на
    деле, у зверя — как он выглядит. Один и тот же общий «расскажи про» отвечал
    бы обо всём одинаково никак. */
-function gmSpravki(p) {
+function gmSpravki(p, bookId) {
   const вид = слойТочки(p);
-  const кн = (data.book.books || []).find((b) => b.id === gm.id);
+  /* Книгу можно передать: собрание зовёт эту же сборку промтов, а карты при
+     нём нет — gm пуст, и без параметра здесь падало бы. */
+  const кн = (data.book.books || []).find((b) => b.id === (bookId || (gm && gm.id)));
   const книга = кн ? ` Встретилось в книге «${кн.title}»${
     кн.author ? `, ${String(кн.author).split("·")[0].trim()}` : ""}.` : "";
   /* В поиск уходит q — это запрос, а не название. «Капот» без уточнения даёт
@@ -13145,6 +13197,11 @@ function bindPlaceMap() {
     clearTimeout(gmAskTimer);
     gmAskTimer = setTimeout(gmAskShow, 120);
   });
+  const колЗ = $("#colClose");
+  if (колЗ) колЗ.addEventListener("click", closeCollection);
+  const колН = $("#colBack");
+  if (колН) колН.addEventListener("click", () => { colView = null; colRender(); });
+
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
     const хиты = $("#gmHits");
@@ -14829,6 +14886,173 @@ async function catRaw(name, ms) {
   } catch { return null; }
 }
 const artsURL = (id) => rawURL(CAT_ARTS_FILE(id));
+
+/* ── Собрание ──
+   К концу книги у человека остаётся не «пройденный курс», а свой словарь: места,
+   которые узнаёшь на карте, слова, которых не знал, вещи, до которых можно
+   доехать. Собрание — это тот же материал карты и музея, но собранный по темам
+   и пополняющийся по ходу чтения.
+
+   Порог — закрытая глава, а не страница. Читают бумажную книгу и не знают, на
+   какой странице встретилось слово; известно только, в какой оно главе. Тот же
+   порог, что у артефактов, — и потому они ложатся в собрание наравне со
+   справками, а не отдельной полкой. Карта при этом открыта с первого дня:
+   посмотреть, где происходит, — не спойлер. */
+const COL_THEMES = [
+  { id: "geo", name: "Места и природа", kinds: ["place", "animal", "rock"],
+    hint: "Где это происходит и что там растёт" },
+  { id: "byt", name: "Быт и слова", kinds: ["thing", "word"],
+    hint: "Чем пользуются и как это называется" },
+  { id: "lyudi", name: "Люди и книги", kinds: ["person", "book"],
+    hint: "Кто это и что читать дальше" },
+  { id: "art", name: "Искусство и о книге", kinds: ["art", "text"],
+    hint: "Картины, музыка и то, как книга сделана" },
+];
+/* Четыре слоя на все книги — слишком грубо: у «Одиссеи» боги, чудовища,
+   мореходство и застольный обычай лежали бы в одной куче «люди и вещи».
+   Поэтому книга задаёт свои темы в описи: `themes: [{id, name, hint, kinds,
+   names}]`. `kinds` набирает слои целиком, `names` вытаскивает поимённо и
+   главнее слоя — так «Полифем» уходит к чудовищам, а «Нестор» остаётся
+   среди людей, хотя оба person. */
+const colThemes = (b) => {
+  const свои = (catOf((b || book()).id) || {}).themes;
+  return Array.isArray(свои) && свои.length ? свои : COL_THEMES;
+};
+function colTheme(kind, name, темы) {
+  const t = темы || COL_THEMES;
+  const поИмени = t.find((x) => Array.isArray(x.names) && x.names.includes(name));
+  if (поИмени) return поИмени.id;
+  const поСлою = t.find((x) => (x.kinds || []).includes(kind));
+  return (поСлою || t[t.length - 1] || COL_THEMES[3]).id;
+}
+/* Артефакты музея размечены по-своему: вещь, место, приём. Раскладываем их по
+   тем же темам, чтобы собрание было одно, а не два. */
+/* Артефакты музея размечены по-своему — вещь, место, приём. Переводим их в
+   слои карты, чтобы дальше они делились по темам тем же правилом. */
+const COL_MUS_KIND = { место: "place", вещь: "thing", приём: "word",
+                       материал: "thing", книга: "book", теория: "word" };
+
+/* Всё, что может попасть в собрание: записи карты и артефакты книги. */
+function colItems(b0) {
+  const b = b0 || book();
+  if (!b) return [];
+  const темы = colThemes(b);
+  /* Записи без главы («вокруг книги») тоже в собрании и открыты сразу: они не
+     привязаны к чтению и ничего не выдают. Без них у «Писем Баламута», где
+     глав у записей нет вовсе, собрание оказывалось пустым. */
+  const из = bookMap(b).map((p) => ({
+    id: слойТочки(p) + "|" + p.name, name: p.name, kind: слойТочки(p),
+    ch: частьТочки(p), t: p.t || "", about: p.about || "", q: p.q || "",
+    icon: p.icon || "", theme: colTheme(слойТочки(p), p.name, темы), art: false, rec: p,
+  }));
+  for (const x of musItems()) {
+    if (x.book !== b.id || !Number(x.ch)) continue;
+    из.push({ id: "art|" + x.id, name: x.name, kind: "art0", ch: Number(x.ch),
+              t: x.why || "", about: x.about || "", q: x.q || "", icon: x.icon || "🏺",
+              theme: colTheme(COL_MUS_KIND[x.kind] || "place", x.name, темы), art: true, rec: x });
+  }
+  return из;
+}
+/* Открыто — когда глава дочитана до последней страницы. */
+const colOpen = (b, it) =>
+  !Number(it.ch) || bookProgressOf(b) >= chapterEnd(b, Number(it.ch) - 1);
+function colStats(b0) {
+  const b = b0 || book();
+  const всё = colItems(b);
+  return colThemes(b).map((t) => {
+    const свои = всё.filter((x) => x.theme === t.id);
+    return { ...t, всего: свои.length, есть: свои.filter((x) => colOpen(b, x)).length,
+             арт: свои.filter((x) => x.art && colOpen(b, x)).length };
+  }).filter((t) => t.всего);
+}
+/* Что пришло за только что закрытую главу — для итога в конце чтения. */
+const colOfChapter = (b, n) => colItems(b).filter((x) => Number(x.ch) === Number(n));
+
+/* ── Экран собрания ── */
+let colView = null;          // null — список тем, иначе id открытой темы
+
+function openCollection() {
+  const box = $("#col");
+  if (!box || !isBook()) return;
+  colView = null;
+  box.hidden = false; box.setAttribute("aria-hidden", "false");
+  colRender();
+  keepAwake(true);
+}
+function closeCollection() {
+  const box = $("#col");
+  if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
+  colView = null;
+  keepAwake(false);
+  render();                  // счётчик на кнопке мог измениться
+}
+
+function colRender() {
+  const тело = $("#colBody"), назад = $("#colBack"), имя = $("#colTitle");
+  const b = book();
+  if (!тело || !b) return;
+  const темы = colStats(b);
+  if (назад) назад.hidden = !colView;
+
+  if (!colView) {
+    const есть = темы.reduce((n, t) => n + t.есть, 0);
+    const всего = темы.reduce((n, t) => n + t.всего, 0);
+    if (имя) имя.textContent = "Собрание";
+    тело.innerHTML = !всего
+      ? `<div class="cl-none">У этой книги собрания пока нет.</div>`
+      : `<p class="cl-lead">Собрано ${есть} из ${всего} за «${esc(b.title)}».
+           Пополняется, когда дочитываешь главу до конца.</p>` +
+        темы.map((t) => `
+          <button class="cl-t" data-theme="${t.id}" type="button">
+            <span class="cl-h"><b>${esc(t.name)}</b><em>${t.есть} из ${t.всего}${
+              t.арт ? " · 🏺 " + t.арт : ""}</em></span>
+            <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
+            <span class="cl-hint">${esc(t.hint)}</span>
+          </button>`).join("");
+  } else {
+    const t = темы.find((x) => x.id === colView) || темы[0];
+    const свои = colItems(b).filter((x) => x.theme === t.id);
+    const мои = свои.filter((x) => colOpen(b, x));
+    if (имя) имя.textContent = t.name;
+    тело.innerHTML = `<p class="cl-lead">${esc(t.hint)}. Собрано ${мои.length} из ${свои.length}.</p>`
+      + (мои.length
+        ? `<div class="cl-grid">${мои.map((x) => `
+            <button class="cl-i ${x.art ? "art" : ""}" data-item="${esc(x.id)}" type="button">
+              ${esc(x.icon || COL_ICON[x.kind] || "•")}<span>${esc(x.name)}</span>
+            </button>`).join("")}</div>`
+        : `<div class="cl-none">Пока пусто — дочитай главу до конца.</div>`)
+      + (свои.length - мои.length
+        ? `<div class="cl-soon">Ещё ${свои.length - мои.length} придёт с чтением.</div>` : "");
+  }
+  тело.scrollTop = 0;
+  тело.querySelectorAll("[data-theme]").forEach((el) =>
+    el.addEventListener("click", () => { colView = el.dataset.theme; colRender(); }));
+  тело.querySelectorAll("[data-item]").forEach((el) =>
+    el.addEventListener("click", () => colSheet(el.dataset.item)));
+}
+const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
+                   animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
+
+/* Справка к вещи из собрания. Те же кнопки, что на карте: ChatGPT и картинки. */
+function colSheet(id) {
+  const b = book();
+  const x = colItems(b).find((y) => y.id === id);
+  if (!x) return;
+  sheetMode = "col";
+  openSheet(`
+    <div class="ach-sheet">
+      <div class="big open">${esc(x.icon || COL_ICON[x.kind] || "•")}</div>
+      <h3>${esc(x.name)}</h3>
+      ${x.t ? `<p style="max-width:340px">${esc(x.t)}</p>` : ""}
+      ${x.about ? `<p style="max-width:340px;color:var(--muted)">${esc(x.about)}</p>` : ""}
+      ${gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)}
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="colSheetClose" type="button">Закрыть</button>
+    </div>`);
+  const кн = $("#colSheetClose");
+  if (кн) кн.addEventListener("click", closeSheet);
+}
 
 /* ── Музей артефактов ──
    Вещи из музеев, привязанные к книгам: что по прочитанному можно пойти и

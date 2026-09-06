@@ -977,6 +977,87 @@ function ок(имя, факт, надо) {
   t.set("ARTS", было.arts); t.set("data", было.data); t.set("CATALOG", было.cat);
 }
 
+/* ── Собрание ──
+   К концу книги остаётся не «пройденный курс», а свой словарь. Порог —
+   закрытая глава, а не страница: читают бумажную книгу и не знают, на какой
+   странице встретилось слово, известна только глава. */
+{
+  const было = { data: JSON.parse(JSON.stringify(t.get("data"))), arts: t.get("ARTS"),
+                 mus: t.get("MUSEUM"), cat: t.get("CATALOG") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    book: { books: [{ id: "kn", title: "Книга", pages: 300, startPage: 0,
+                      chapters: [{ name: "Раз", from: 1 }, { name: "Два", from: 101 },
+                                 { name: "Три", from: 201 }] }],
+            activeBook: "kn", entries: [{ id: "e1", date: "2026-09-01", bookId: "kn", page: 100 }],
+            asks: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] } });
+  t.set("CATALOG", { kn: { ach: [] } });
+  t.set("ARTS", { kn: { map: [
+    { part: 1, kind: "place", name: "Итака", t: "остров", about: "…" },
+    { part: 1, kind: "word", name: "Скипетр", t: "знак", about: "…" },
+    { part: 1, kind: "person", name: "Нестор", t: "старик", about: "…" },
+    { part: 2, kind: "place", name: "Пилос", t: "гавань", about: "…" },
+    { part: 2, kind: "thing", name: "Финка", t: "нож", about: "…" },
+    { part: 3, kind: "art", name: "Гойя", t: "картина", about: "…" },
+    { kind: "text", name: "Как переводили", t: "о книге", about: "…" },
+  ] } });
+  t.set("MUSEUM", { items: [
+    { id: "a1", book: "kn", ch: 1, name: "Музей", kind: "место", about: "…" },
+    { id: "a2", book: "kn", ch: 3, name: "Ваза", kind: "вещь", about: "…" },
+  ] });
+
+  const b = t.get("book")();
+  ок("собрание: всё вместе — карта и артефакты", t.get("colItems")(b).length, 9);
+
+  /* Первая глава кончается на 100-й, и она дочитана. Вторая — нет. */
+  const по = {};
+  for (const x of t.get("colStats")(b)) по[x.id] = [x.есть, x.всего];
+  ок("собрание: места и природа", по.geo, [2, 3]);      // Итака + музей, Пилос ещё нет
+  ок("собрание: быт и слова", по.byt, [1, 3]);   // скипетр, финка и ваза-артефакт
+  ок("собрание: люди и книги", по.lyudi, [1, 1]);
+  ок("собрание: искусство и о книге", по.art, [1, 2]);  // запись без главы открыта сразу
+
+  /* Записи без главы не привязаны к чтению и открыты всегда: без этого у
+     «Писем Баламута», где глав у записей нет, собрание было пустым. */
+  ок("собрание: запись без главы открыта сразу",
+    t.get("colOpen")(b, { ch: 0 }), true);
+  ок("собрание: глава ещё не дочитана — закрыто",
+    t.get("colOpen")(b, { ch: 2 }), false);
+
+  // дочитали до конца второй
+  t.get("data").book.entries.push({ id: "e2", date: "2026-09-02", bookId: "kn", page: 200 });
+  const после = {};
+  for (const x of t.get("colStats")(b)) после[x.id] = x.есть;
+  ок("собрание: вторая глава пополнила", [после.geo, после.byt], [3, 2]);
+
+
+  ок("собрание: что пришло за главу",
+    t.get("colOfChapter")(b, 2).map((x) => x.name).sort(), ["Пилос", "Финка"]);
+  ок("собрание: кнопка есть, пока есть что собирать", t.get("colBtnOn")(), true);
+
+  /* Четыре слоя на все книги — слишком грубо: у «Одиссеи» боги, чудовища и
+     застольный обычай легли бы в одну кучу. Книга задаёт свои темы, и имя
+     главнее слоя: Полифем уходит к чудовищам, Нестор остаётся среди людей,
+     хотя оба person. */
+  t.set("CATALOG", { kn: { ach: [], themes: [
+    { id: "bogi", name: "Боги и чудовища", hint: "не люди", kinds: [], names: ["Полифем"] },
+    { id: "lyudi", name: "Люди", hint: "люди", kinds: ["person"] },
+    { id: "rest", name: "Остальное", hint: "всё прочее",
+      kinds: ["place", "word", "thing", "art", "text", "animal", "rock"] },
+  ] } });
+  t.get("data").book.entries.push({ id: "e3", date: "2026-09-03", bookId: "kn", page: 300 });
+  t.get("ARTS").kn.map.push({ part: 1, kind: "person", name: "Полифем", t: "киклоп", about: "…" });
+  const своя = {};
+  for (const x of t.get("colStats")(b)) своя[x.id] = x.всего;
+  ок("темы: имя главнее слоя", своя.bogi, 1);
+  ок("темы: остальные person остались людьми", своя.lyudi, 1);
+  ок("темы: имена тем свои у книги",
+    t.get("colStats")(b).map((x) => x.name)[0], "Боги и чудовища");
+
+  t.set("MUSEUM", было.mus); t.set("ARTS", было.arts);
+  t.set("data", было.data); t.set("CATALOG", было.cat);
+}
+
 /* ── Лента: длинное имя на фишке обрезается ──
    Одного эллипсиса из CSS мало: фишка стоит во флексе рядом с иконкой и
    отступами, и длинное имя вылезало за край. */
