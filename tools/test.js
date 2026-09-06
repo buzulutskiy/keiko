@@ -1054,6 +1054,30 @@ function ок(имя, факт, надо) {
   ок("темы: имена тем свои у книги",
     t.get("colStats")(b).map((x) => x.name)[0], "Боги и чудовища");
 
+  /* Экран темы: полоса, открытые карточками, закрытые — ячейками без имени.
+     Имени в разметке нет вовсе, иначе его достанут выделением или поиском. */
+  {
+    const узлы = {};
+    for (const k of ["#colBody", "#colBack", "#colTitle"])
+      узлы[k] = { innerHTML: "", textContent: "", hidden: false, scrollTop: 0,
+                  querySelectorAll: () => [], addEventListener() {} };
+    const был = t.get("document.querySelector");
+    t.set("document.querySelector", (s2) => узлы[s2] || null);
+    t.set("colView", "rest");
+    t.get("colRender")();
+    const h = узлы["#colBody"].innerHTML;
+    const свои = t.get("colItems")(b).filter((x) => x.theme === "rest");
+    const мои = свои.filter((x) => t.get("colOpen")(b, x));
+    ок("собрание: открытые — карточками", (h.match(/data-item=/g) || []).length, мои.length);
+    ок("собрание: закрытые — ячейками без имени",
+      (h.match(/cl-c off/g) || []).length, свои.length - мои.length);
+    ок("собрание: в закрытой ячейке имени нет",
+      /cl-c off[\s\S]{0,220}?<b>/.test(h), false);
+    ок("собрание: подпись темы не показывается", /всё прочее/.test(h), false);
+    t.set("colView", null);
+    t.set("document.querySelector", был);
+  }
+
   t.set("MUSEUM", было.mus); t.set("ARTS", было.arts);
   t.set("data", было.data); t.set("CATALOG", было.cat);
 }

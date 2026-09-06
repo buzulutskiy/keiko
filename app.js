@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 469";
+const APP_VERSION = "Кэйко 470";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14930,7 +14930,14 @@ function colTheme(kind, name, темы) {
 /* Артефакты музея размечены по-своему — вещь, место, приём. Переводим их в
    слои карты, чтобы дальше они делились по темам тем же правилом. */
 const COL_MUS_KIND = { место: "place", вещь: "thing", приём: "word",
-                       материал: "thing", книга: "book", теория: "word" };
+                       материал: "thing", книга: "book", теория: "word",
+                       картина: "art", искусство: "art", скульптура: "art",
+                       икона: "art", гравюра: "art", фото: "art" };
+/* Вид проставлен не у всех: у «Одиссеи» сорок два предмета — вазы, статуи,
+   геммы — заведены без него. Такие получают собственный слой art0, и книга
+   решает сама, куда их деть: у поэмы это отдельная тема «что можно увидеть»,
+   а не хвост к местам. */
+const COL_MUS_DEF = "art0";
 
 /* Всё, что может попасть в собрание: записи карты и артефакты книги. */
 function colItems(b0) {
@@ -14949,7 +14956,7 @@ function colItems(b0) {
     if (x.book !== b.id || !Number(x.ch)) continue;
     из.push({ id: "art|" + x.id, name: x.name, kind: "art0", ch: Number(x.ch),
               t: x.why || "", about: x.about || "", q: x.q || "", icon: x.icon || "🏺",
-              theme: colTheme(COL_MUS_KIND[x.kind] || "place", x.name, темы), art: true, rec: x });
+              theme: colTheme(COL_MUS_KIND[x.kind] || COL_MUS_DEF, x.name, темы), art: true, rec: x });
   }
   return из;
 }
@@ -14998,6 +15005,8 @@ function colRender() {
     const есть = темы.reduce((n, t) => n + t.есть, 0);
     const всего = темы.reduce((n, t) => n + t.всего, 0);
     if (имя) имя.textContent = "Собрание";
+    /* Подпись темы не показываем: она перечисляла содержимое — «Федотов, Перов,
+       Крамской», — то есть выдавала то, что ещё не открыто. */
     тело.innerHTML = !всего
       ? `<div class="cl-none">У этой книги собрания пока нет.</div>`
       : `<p class="cl-lead">Собрано ${есть} из ${всего} за «${esc(b.title)}».
@@ -15007,22 +15016,39 @@ function colRender() {
             <span class="cl-h"><b>${esc(t.name)}</b><em>${t.есть} из ${t.всего}${
               t.арт ? " · 🏺 " + t.арт : ""}</em></span>
             <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
-            <span class="cl-hint">${esc(t.hint)}</span>
           </button>`).join("");
   } else {
     const t = темы.find((x) => x.id === colView) || темы[0];
     const свои = colItems(b).filter((x) => x.theme === t.id);
     const мои = свои.filter((x) => colOpen(b, x));
+    const ждут = свои.length - мои.length;
     if (имя) имя.textContent = t.name;
-    тело.innerHTML = `<p class="cl-lead">${esc(t.hint)}. Собрано ${мои.length} из ${свои.length}.</p>`
-      + (мои.length
-        ? `<div class="cl-grid">${мои.map((x) => `
-            <button class="cl-i ${x.art ? "art" : ""}" data-item="${esc(x.id)}" type="button">
-              ${esc(x.icon || COL_ICON[x.kind] || "•")}<span>${esc(x.name)}</span>
-            </button>`).join("")}</div>`
-        : `<div class="cl-none">Пока пусто — дочитай главу до конца.</div>`)
-      + (свои.length - мои.length
-        ? `<div class="cl-soon">Ещё ${свои.length - мои.length} придёт с чтением.</div>` : "");
+    /* Закрытые показываем ячейками без имени: видно, сколько ещё впереди, и
+       ничего не выдано. Имени в разметке нет вовсе — заглушка не текст, а
+       полоска, поэтому его не достать ни выделением, ни поиском. */
+    тело.innerHTML = `
+      <div class="cl-top">
+        <span class="cl-h"><b>Собрано ${мои.length} из ${свои.length}</b>${
+          мои.filter((x) => x.art).length ? `<em>🏺 ${мои.filter((x) => x.art).length}</em>` : "<em></em>"}</span>
+        <span class="cl-bar"><i style="width:${свои.length ? Math.round(мои.length / свои.length * 100) : 0}%"></i></span>
+      </div>
+      <div class="cl-cards">
+        ${мои.map((x) => `
+          <button class="cl-c ${x.art ? "art" : ""}" data-item="${esc(x.id)}" type="button">
+            <span class="cl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
+            <span class="cl-n">
+              <b>${esc(x.name)}</b>
+              ${x.t ? `<i>${esc(x.t.split(" · ")[0])}</i>` : ""}
+            </span>
+          </button>`).join("")}
+        ${Array.from({ length: Math.min(ждут, 24) }, (_, i) => `
+          <div class="cl-c off" aria-hidden="true">
+            <span class="cl-ic">${esc(COL_ICON[(свои[мои.length + i] || {}).kind] || "•")}</span>
+            <span class="cl-n"><span class="cl-blur" style="width:${52 + (i * 37) % 40}%"></span></span>
+          </div>`).join("")}
+      </div>
+      ${ждут > 24 ? `<div class="cl-soon">и ещё ${ждут - 24} впереди</div>` : ""}
+      ${!свои.length ? `<div class="cl-none">Тут пока пусто.</div>` : ""}`;
   }
   тело.scrollTop = 0;
   тело.querySelectorAll("[data-theme]").forEach((el) =>
