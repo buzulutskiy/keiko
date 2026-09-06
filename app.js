@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 474";
+const APP_VERSION = "Кэйко 475";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1961,6 +1961,9 @@ function saveEntry() {
 }
 
 let overlayQueue = [];
+/* Куда вести по кнопке торжества, если экрану есть что открыть. Сбрасывается
+   сразу после нажатия: следующая награда не должна унаследовать чужой переход. */
+let cheerGo = null;
 /* Сколько предметов показываем поодиночке, прежде чем свести остальные в один
    список. Три — потолок, за которым листание перестаёт быть подарком. */
 const MUS_ONE_BY_ONE = 3;
@@ -2040,8 +2043,12 @@ function showChapterGain(item) {
   step.textContent = "Глава закрыта";
   $("#cheerIc").textContent = "🧺";
   $("#cheerTitle").textContent = item.name || "Глава дочитана";
-  $("#cheerText").textContent = "В собрание пришло: " + части.join(", ") + ".";
-  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Посмотреть";
+  $("#cheerText").textContent = "В собрание пришло: " + части.join(", ")
+    + (overlayQueue.length ? "." : ". Новое помечено рамкой.");
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
+  /* Последним экраном ведём прямо в собрание: иначе «пришло семь слов»
+     остаётся обещанием, а искать их надо самому. */
+  if (!overlayQueue.length) cheerGo = openCollection;
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
@@ -4111,8 +4118,8 @@ $("#view").innerHTML = `
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        <button class="cta-side" id="colBtn" type="button" ${colBtnOn() ? "" : "hidden"}
-          aria-label="Собрание" title="Собрание">🧺</button>
+        <button class="cta-side ${colNew().length ? "hasnew" : ""}" id="colBtn" type="button"
+          ${colBtnOn() ? "" : "hidden"} aria-label="Собрание" title="Собрание">🧺</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
           title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
@@ -13200,7 +13207,7 @@ function bindPlaceMap() {
   const колЗ = $("#colClose");
   if (колЗ) колЗ.addEventListener("click", closeCollection);
   const колН = $("#colBack");
-  if (колН) колН.addEventListener("click", () => { colView = null; colRender(); });
+  if (колН) колН.addEventListener("click", () => { colLeave(); colView = null; colRender(); });
 
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
@@ -14973,9 +14980,26 @@ function colStats(b0) {
   return colThemes(b).map((t) => {
     const свои = всё.filter((x) => x.theme === t.id);
     return { ...t, всего: свои.length, есть: свои.filter((x) => colOpen(b, x)).length,
-             арт: свои.filter((x) => x.art && colOpen(b, x)).length };
+             арт: свои.filter((x) => x.art && colOpen(b, x)).length,
+             новых: свои.filter((x) => colIsNew(b, x)).length };
   }).filter((t) => t.всего);
 }
+/* Просмотренное. Новое помечается, пока на него не посмотрели: список длинный,
+   и свежее иначе теряется среди старого. Ключ с книгой: имена в разных книгах
+   повторяются — «Шинель» есть и у Гоголя, и у Достоевского. */
+const colSeen = () => (data.colSeen = data.colSeen || {});
+const colKey = (b, it) => b.id + "|" + it.id;
+const colIsNew = (b, it) => colOpen(b, it) && !colSeen()[colKey(b, it)];
+const colNew = (b0) => { const b = b0 || book(); return b ? colItems(b).filter((x) => colIsNew(b, x)) : []; };
+function colMarkSeen(b, список) {
+  let было = false;
+  for (const x of список || []) {
+    const k = colKey(b, x);
+    if (!colSeen()[k]) { colSeen()[k] = now(); было = true; }
+  }
+  if (было) { saveData(); schedulePush(); }
+}
+
 /* Что пришло за только что закрытую главу — для итога в конце чтения. */
 const colOfChapter = (b, n) => colItems(b).filter((x) => Number(x.ch) === Number(n));
 
@@ -14991,6 +15015,7 @@ function openCollection() {
   keepAwake(true);
 }
 function closeCollection() {
+  colLeave();
   const box = $("#col");
   if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
   colView = null;
@@ -15018,8 +15043,9 @@ function colRender() {
            Пополняется, когда дочитываешь главу до конца.</p>` +
         темы.map((t) => `
           <button class="cl-t" data-theme="${t.id}" type="button">
-            <span class="cl-h"><b>${esc(t.name)}</b><em>${t.есть} из ${t.всего}${
-              t.арт ? " · 🏺 " + t.арт : ""}</em></span>
+            <span class="cl-h"><b>${t.icon ? esc(t.icon) + " " : ""}${esc(t.name)}${
+              t.новых ? `<span class="cl-dot">${t.новых}</span>` : ""}</b><em>${
+              t.есть} из ${t.всего}${t.арт ? " · 🏺 " + t.арт : ""}</em></span>
             <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
           </button>`).join("");
   } else {
@@ -15035,7 +15061,7 @@ function colRender() {
     const ждутСписок = свои.filter((x) => !colOpen(b, x))
       .sort((x, y) => (Number(x.ch) || 0) - (Number(y.ch) || 0));
     const ждут = ждутСписок.length;
-    if (имя) имя.textContent = t.name;
+    if (имя) имя.textContent = (t.icon ? t.icon + " " : "") + t.name;
     /* Закрытые показываем ячейками без имени: видно, сколько ещё впереди, и
        ничего не выдано. Имени в разметке нет вовсе — заглушка не текст, а
        полоска, поэтому его не достать ни выделением, ни поиском. */
@@ -15051,7 +15077,7 @@ function colRender() {
           <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
         </div>` : ""}
         ${мои.map((x) => `
-          <button class="cl-c ${x.art ? "art" : ""}" data-item="${esc(x.id)}" type="button">
+          <button class="cl-c ${x.art ? "art" : ""}${colIsNew(b, x) ? " new" : ""}" data-item="${esc(x.id)}" type="button">
             <span class="cl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
             <span class="cl-n">
               <b>${esc(x.name)}</b>
@@ -15063,6 +15089,9 @@ function colRender() {
   }
   тело.scrollTop = 0;
   colCard(null);
+  /* Помечаем просмотренным не при входе, а при выходе: иначе рамка гасла бы
+     в тот же миг, когда её показали, и смотреть было бы не на что. */
+  if (colView && !colWas) colWas = colItems(b).filter((x) => x.theme === colView && colIsNew(b, x));
   тело.querySelectorAll("[data-theme]").forEach((el) =>
     el.addEventListener("click", () => { colView = el.dataset.theme; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
@@ -15093,7 +15122,13 @@ function colCard(id) {
   const кн = $("#colCardX");
   if (кн) кн.addEventListener("click", () => colCard(null));
 }
-let colAt = null;
+let colAt = null, colWas = null;
+/* Уходя из темы, гасим её пометки. */
+function colLeave() {
+  const b = book();
+  if (b && colWas && colWas.length) colMarkSeen(b, colWas);
+  colWas = null;
+}
 
 /* ── Музей артефактов ──
    Вещи из музеев, привязанные к книгам: что по прочитанному можно пойти и
@@ -16696,6 +16731,7 @@ async function syncNow(manual) {
          «когда-то». Награда после этого пропадала из карточки дня — её отбор
          в ленте идёт как раз по этому времени. */
       data.musAt  = mergeStamps(data.musAt,  remote.musAt);
+      data.colSeen = mergeStamps(data.colSeen, remote.colSeen);
       data.achAt  = mergeStamps(data.achAt,  remote.achAt);
       data.factAt = mergeStamps(data.factAt, remote.factAt);
       // спрятанное — свойство взгляда, а не данных: берём то, что свежее целиком
@@ -16899,11 +16935,14 @@ function boot() {
   document.addEventListener("focusout", () => setTimeout(flushRender, 90), true);
   $("#cheerOk").addEventListener("click", () => {
     $("#cheer").classList.remove("show", "daily");
+    const идти = cheerGo; cheerGo = null;
+    if (идти) { идти(); return; }
     nextOverlaySoon();
   });
   $("#cheer").addEventListener("click", e => {
     if (e.target !== e.currentTarget) return;
     $("#cheer").classList.remove("show", "daily");
+    cheerGo = null;                     // закрыли мимо кнопки — никуда не ведём
     nextOverlaySoon();
   });
 
