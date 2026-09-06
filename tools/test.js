@@ -2721,6 +2721,57 @@ function ок(имя, факт, надо) {
   t.set("cfg.metric", было.metric); t.set("data", было.data);
 }
 
+/* ── Обложка: путь, которого нет, не показываем ── */
+{
+  const годен = t.get("coverOk");
+  ок("обложка: путь из репозитория больше не годится", годен("covers/tesson.jpg"), false);
+  ок("обложка: пустое — не годится", годен(""), false);
+  ок("обложка: картинка в данных годится", годен("data:image/jpeg;base64,/9j/"), true);
+  ок("обложка: скачанное годится", годен("blob:http://x/1"), true);
+  ок("обложка: чужой адрес годится", годен("https://example.com/a.jpg"), true);
+
+  const кэш = t.get("coverCache");
+  кэш.set("проба", "");     // уже спрашивали, обложки нет — второй раз не пойдём
+  ок("обложка: мёртвый путь не доходит до разметки",
+    t.get("coverSrc")("проба", "covers/проба.jpg"), "");
+  кэш.set("проба", "blob:готовая");
+  ок("обложка: скачанная перебивает всё", t.get("coverSrc")("проба", ""), "blob:готовая");
+  кэш.delete("проба");
+}
+
+/* ── Опись каталога тянется прямой ссылкой, а не описью всего гиста ── */
+const сеть = (() => {
+  const cfg = t.get("cfg");
+  const былCat = t.get("CATALOG");
+  const было = { token: cfg.token, catalogId: cfg.catalogId, catalogOwner: cfg.catalogOwner,
+                 catHash: cfg.catHash, catalogAt: cfg.catalogAt };
+  Object.assign(cfg, { token: "x", catalogId: "гист", catalogOwner: "кто-то",
+                       catHash: {}, catalogAt: 0 });
+  const адреса = [];
+  const прежний = t.get("fetch");
+  t.set("fetch", async (url) => {
+    адреса.push(String(url));
+    return { ok: true, status: 200, headers: { get: () => "" },
+             text: async () => JSON.stringify({ v: 1, materials: { проба: { title: "Проба" } } }) };
+  });
+  return t.get("catalogPull")(true).then(() => {
+    ок("каталог: запрос идёт прямой ссылкой на файл",
+      адреса.some((u) => /gist\.githubusercontent\.com\/.+\/raw\/keiko-catalog\.json$/.test(u)), true);
+    ок("каталог: опись всего гиста не запрашивается",
+      адреса.some((u) => /api\.github\.com\/gists\//.test(u)), false);
+    ок("каталог: материал из файла применился", !!t.get("CATALOG")["проба"], true);
+    return t.get("catalogPull")(true);
+  }).then(() => {
+    ок("каталог: то же содержимое второй раз не разбирают заново",
+      t.get("cfg").catHash[t.get("CAT_FILE")] !== undefined, true);
+    t.set("fetch", прежний);
+    Object.assign(t.get("cfg"), было);
+    t.set("CATALOG", былCat);
+  });
+})();
+
 /* ── Итог ── */
-if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
-console.log(`тесты: ${всего} из ${всего} прошли`);
+Promise.resolve(сеть).then(() => {
+  if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
+  console.log(`тесты: ${всего} из ${всего} прошли`);
+}, (e) => { console.error(e); process.exit(1); });

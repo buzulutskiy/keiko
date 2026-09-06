@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 486";
+const APP_VERSION = "Кэйко 487";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3091,8 +3091,10 @@ const bgPreset = () => BG_PRESETS[0];
 async function pullEnvelopes() {
   if (!cfg.token || !cfg.catalogId || ENVEL) return;
   try {
-    const files = await catalogFiles(false);
-    const txt = await catText(files, ENV_FILE, 30000);
+    /* Прямой ссылкой: огибающие весят сто килобайт, а опись гиста, из которой
+       их доставали, — мегабайт, и тянулась она на запуске ради одного файла. */
+    let txt = await catRaw(ENV_FILE, 30000);
+    if (!txt) txt = await catText(await catalogFiles(false), ENV_FILE, 30000);
     if (!txt) return;
     ENVEL = JSON.parse(txt);
     try { localStorage.setItem(LS_ENV, txt); } catch {}
@@ -3811,8 +3813,16 @@ async function coverLoadAll() {
   } catch {}
 }
 
+/* Показать можно только то, что действительно откуда-то возьмётся: картинку
+   в данных, объектную ссылку на скачанное, чужой адрес. «covers/tesson.jpg» —
+   путь из той версии, где обложки лежали файлами в репозитории; файлов там нет
+   с тех пор, а записи о них остались в профилях. Каждый такой путь — 404 на
+   каждом запуске и пустая рамка, пока не приедет настоящая обложка. */
+const coverOk = (u) => !!u && (u.startsWith("data:") || u.startsWith("blob:") || /^https?:/.test(u));
+
 function coverSrc(id, fallback) {
-  if (!id) return fallback || "";
+  fallback = coverOk(fallback) ? fallback : "";
+  if (!id) return fallback;
   const have = coverCache.get(id);
   if (have) return have;
   const c = catOf(id);
@@ -3821,7 +3831,7 @@ function coverSrc(id, fallback) {
      Раньше здесь стоял ранний выход, и новый материал оставался без картинки,
      пока опись не обновят руками. */
   if (!coverCache.has(id) && (!c || c.cover)) { coverCache.set(id, ""); coverAsk(id); }
-  return fallback || "";
+  return fallback;
 }
 
 // обложка любого материала — не зависит от активного трека
@@ -7669,10 +7679,10 @@ function renderNotes() {
   const sourceOf = (t) => {
     if (!t.key) return NO_MAT_ITEM;            // мысль сама по себе
     const m = allMats.find(x => keyOf(x) === t.key);
-    if (m) return { icon: m.icon, title: m.title, cover: m.cover, ratio: m.ratio };
+    if (m) return { icon: m.icon, title: m.title, cover: coverSrc(m.id || t.key, m.cover), ratio: m.ratio };
     const a = arch.find(x => x.id === t.key);
     return a
-      ? { icon: a.icon || "📖", title: a.title, cover: a.cover || "", ratio: a.ratio || "" }
+      ? { icon: a.icon || "📖", title: a.title, cover: coverSrc(a.id, a.cover || ""), ratio: a.ratio || "" }
       : { icon: "📎", title: "Архив", cover: "", ratio: "" };
   };
   const sourceHTML = (t) => {
@@ -8011,7 +8021,7 @@ function showDailyThought(t) {
   // мысль сама по себе — подписываем так же, как в ленте, а не «Архивом»
   const icon = t.diary ? "🗓" : src ? (src.icon || "📖") : (t.key ? "📎" : NO_MAT_ITEM.icon);
   const title = t.diary ? "Дневник" : src ? src.title : (t.key ? "Архив" : NO_MAT_ITEM.title);
-  const cover = src && src.cover ? src.cover : "";
+  const cover = src ? coverSrc(src.id || t.key, src.cover || "") : "";
   const fmt = new Intl.DateTimeFormat("ru", { day: "numeric", month: "long", year: "numeric" });
 
   $("#cheerStep").hidden = true;
@@ -14908,6 +14918,36 @@ async function catRaw(name, ms) {
 }
 const artsURL = (id) => rawURL(CAT_ARTS_FILE(id));
 
+/* Тот же файл, но для тех, кого просят часто: описи и разбора.
+   Опись гиста отдаёт мегабайт — в неё целиком попадают карты артефактов и
+   разборы, — а нужен один файл на сто семьдесят килобайт.
+
+   Заголовка If-None-Match тут нет намеренно: он не входит в разрешённые
+   браузеру, и на предварительный запрос гисты отвечают 403 — с ним не прошло
+   бы вовсе ничего. Зато сами файлы отдаются с max-age=300, ровно как CAT_EVERY:
+   пусть кэш браузера и решает, идти ли в сеть. Поэтому здесь нет и no-store,
+   который этот кэш отключает.
+
+   Своя метка нужна для другого: понять, что содержимое то же, и не разбирать
+   его заново, не сбрасывать кэш обложек и не переписывать хранилище. */
+async function catCond(name, ms, естьУже) {
+  const url = rawURL(name);
+  if (!url) return null;
+  try {
+    const r = await withTimeout(fetch(url), ms || 25000);
+    if (!r.ok) return null;
+    const текст = await r.text();
+    const метка = String(strHash(текст));
+    if (естьУже && метка === ((cfg.catHash || {})[name] || "")) return { тот_же: true };
+    return { текст, метка };
+  } catch { return null; }
+}
+function catMark(name, метка) {
+  if (!метка) return;
+  cfg.catHash = Object.assign({}, cfg.catHash, { [name]: метка });
+  saveCfg();
+}
+
 /* ── Собрание ──
    К концу книги у человека остаётся не «пройденный курс», а свой словарь: места,
    которые узнаёшь на карте, слова, которых не знал, вещи, до которых можно
@@ -15418,6 +15458,25 @@ function catalogMissing() {
 async function catalogPull(force) {
   if (!cfg.token) return;
   if (!force && now() - (cfg.catalogAt || 0) < CAT_EVERY) return;
+  /* Сперва прямой ссылкой: один файл вместо описи всего гиста. Разница
+     пятикратная — мегабайт против ста семидесяти килобайт, а на повторе и
+     вовсе ноль. Опись остаётся запасным путём: она нужна, пока приложение не
+     знает владельца гиста, и на случай, если прямая ссылка не отдала. */
+  const пришло = await catCond(CAT_FILE, 30000, Object.keys(CATALOG || {}).length > 0);
+  if (пришло && пришло.тот_же) {          // опись не менялась — работаем тем, что уже есть
+    cfg.catalogAt = now(); saveCfg();
+    await applyPractice(null);
+    return 0;
+  }
+  if (пришло && пришло.текст) {
+    let n = 0;
+    try { n = applyCatalog(JSON.parse(пришло.текст)); } catch {}
+    if (n) {
+      catMark(CAT_FILE, пришло.метка);
+      await applyPractice(null);
+      return n;
+    }
+  }
   const files = await catalogFiles(true);
   if (!files) throw new Error("каталог недоступен");
   const f = files[CAT_FILE];
@@ -15433,6 +15492,14 @@ async function catalogPull(force) {
 async function applyPractice(files) {
   try {
     const readFile = async (name) => {
+      /* Без описи, если можно: разбор — сорок килобайт, а опись ради него
+         тянула мегабайт. */
+      if (!files) {
+        const п = await catCond(name, 25000, Object.keys(PRACTICE_DATA || {}).length > 0);
+        if (п && п.тот_же) return null;                 // не менялся — в памяти уже лежит
+        if (п && п.текст) { catMark(name, п.метка); return JSON.parse(п.текст); }
+        return null;
+      }
       const t = await catText(files, name);
       return t ? JSON.parse(t) : null;
     };
