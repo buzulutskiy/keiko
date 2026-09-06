@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 465";
+const APP_VERSION = "Кэйко 466";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -740,6 +740,8 @@ function musOpenCourse(x) {
 function musOpen(x) {
   if (!x) return false;
   if (isCourseBook(x.book)) return musOpenCourse(x);
+  const пьеса = ((data.piano && data.piano.pieces) || []).find((y) => y.id === x.book && !y.archived);
+  if (пьеса) return musOpenPiece(x, пьеса);
   /* Сначала книга, потом глава. Раньше проверка шла в обратном порядке, и
      предмет без главы — пролог «Одиссеи», образ Пенелопы — открывался всем,
      включая тех, у кого этой книги нет вовсе. Артефакт принадлежит книге:
@@ -748,6 +750,16 @@ function musOpen(x) {
   if (!b) return false;
   if (!Number(x.ch)) return true;      // без главы — открыт сразу, но только своей книге
   return bookProgressOf(b) >= chapterEnd(b, Number(x.ch) - 1);
+}
+/* У пьесы нет ни глав, ни страниц — есть закрытые блоки по четыре такта.
+   ch говорит, сколько их должно быть позади. По занятиям считать нельзя: их к
+   этому дню уже два десятка, и все вещи открылись бы разом. А блок — это
+   настоящая веха: четыре такта, разобранные обеими руками и сшитые. */
+function musOpenPiece(x, p) {
+  const n = Number(x.ch);
+  if (!n) return true;
+  return withMaterial({ track: "piano", pieceId: p.id },
+    () => pracBlocks().filter(blockDone).length) >= n;
 }
 const musOpenSet = () => new Set(musItems().filter(musOpen).map((x) => x.id));
 

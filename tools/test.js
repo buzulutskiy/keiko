@@ -943,6 +943,19 @@ function ок(имя, факт, надо) {
   ] } });
 
   ок("теория: у пьесы справочник не показывается", t.get("mapBtnOn")(), false);
+
+  /* Артефакты у пьесы открываются по закрытым блокам, а не по занятиям:
+     занятий к этому дню два десятка, и всё открылось бы разом. */
+  t.set("MUSEUM", { items: [
+    { id: "m1", book: "bwv", ch: 1, name: "Клавикорд" },
+    { id: "m2", book: "bwv", ch: 2, name: "Клавесин" },
+    { id: "m0", book: "bwv", name: "Без блока" },
+  ] });
+  ок("артефакт: без блока открыт сразу", t.get("musOpen")({ book: "bwv", name: "x" }), true);
+  ок("артефакт: первый блок ещё не закрыт",
+    t.get("musOpen")({ book: "bwv", ch: 1, name: "x" }), false);
+  ок("артефакт: чужой пьесы не наш",
+    t.get("musOpen")({ book: "нет-такой", ch: 1, name: "x" }), false);
   ок("теория: сперва не открыто ничего", t.get("theorySeen")().length, 0);
 
   const шаг = () => { const x = t.get("theoryNext")(); t.get("theoryTake")(x); return x && x.name; };
