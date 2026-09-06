@@ -1703,10 +1703,11 @@
        влево: по центру ряд обрезался с обеих сторон, и было не понять, что
        он вообще едет. */
     #gmLayers {
-      display: flex; gap: 6px; flex-shrink: 0; flex-wrap: nowrap;
+      flex: 1 1 auto; min-width: 0;
+      display: flex; gap: 6px; flex-wrap: nowrap;
       overflow-x: auto; overscroll-behavior-x: contain;
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
-      padding: 0 12px 8px;
+      padding: 0;
     }
     #gmLayers::-webkit-scrollbar { display: none; }
     #gmLayers button {
@@ -2078,18 +2079,38 @@
       display: flex; align-items: center; gap: 10px; flex-shrink: 0;
       padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
     }
-    #gmTitle { flex: 0 1 auto; font-size: 0.9rem; font-weight: 700; color: var(--muted);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+    #gmTitle { flex: 1 1 auto; font-size: 0.9rem; font-weight: 700; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #gmTitle[hidden] { display: none; }
+    /* Второй ряд: чем сужен экран и как в нём искать. У пьесы и рисунка его
+       нет вовсе — там ни глав, ни точек на карте. */
+    #gmNav[hidden] { display: none; }
+    #gmNav {
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+      padding: 0 14px 10px;
+    }
+    /* Глава — не значок, а надпись: по ней сразу видно, где стоишь, и она же
+       открывает содержание. Значок ☰ этого не говорил. */
+    #gmToc {
+      flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px;
+      padding: 8px 12px; border-radius: 11px; font-size: 0.84rem; color: var(--ink);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    #gmToc[hidden] { display: none; }
+    #gmToc b { flex: 1 1 auto; min-width: 0; font-weight: 600; text-align: left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #gmToc i { font-style: normal; color: var(--dim); font-size: 0.75rem; }
     /* Поиск по местам: со ста шестью точками искать глазами бесполезно. */
     #gmFind {
-      flex: 1 1 120px; min-width: 0; max-width: 260px; padding: 9px 12px;
+      flex: 0 1 150px; min-width: 0; padding: 9px 12px;
       border-radius: 11px; font-size: 0.88rem; color: var(--ink);
       background: var(--glass); border: 1px solid var(--glass-line);
     }
+    #gmFind[hidden] { display: none; }
     #gmFind::placeholder { color: var(--dim); }
     #gmHits {
       position: absolute; z-index: 3; left: 14px; right: 14px;
-      top: calc(env(safe-area-inset-top) + 56px);
+      top: calc(env(safe-area-inset-top) + 104px);
       max-height: 45vh; overflow-y: auto; border-radius: 14px;
       background: rgba(14, 19, 28, 0.97); border: 1px solid var(--glass-line);
     }
@@ -2103,11 +2124,10 @@
     #gmHits button.on { color: var(--gold); background: rgba(255, 201, 77, 0.07); }
     #gmHits button.on em { color: rgba(255, 201, 77, 0.6); }
     #gmHits button:last-child { border-bottom: 0; }
-    #gmClose, #gmToc {
+    #gmClose {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
       background: var(--glass); border: 1px solid var(--glass-line); font-size: 1.1rem;
     }
-    #gmToc[hidden] { display: none; }
     #gmStage {
       flex: 1 1 auto; position: relative; overflow: hidden; touch-action: none;
     }
@@ -3861,12 +3881,16 @@
   <div id="gmap" hidden aria-hidden="true">
     <div id="gmTop">
       <div id="gmTitle"></div>
-      <input id="gmFind" type="search" placeholder="Найти в книге" autocomplete="off" enterkeyhint="search">
-      <button id="gmToc" type="button" aria-label="Содержание" hidden>☰</button>
+      <div id="gmLayers" hidden></div>
       <button id="gmClose" type="button" aria-label="Закрыть">✕</button>
     </div>
+    <!-- Глава и поиск — вторым рядом и только там, где они что-то меняют:
+         места и текст сужаются главой, собрание — нет. -->
+    <div id="gmNav" hidden>
+      <button id="gmToc" type="button" aria-label="Выбрать главу"><b></b><i>▾</i></button>
+      <input id="gmFind" type="search" placeholder="Найти в книге" autocomplete="off" enterkeyhint="search">
+    </div>
     <div id="gmHits" hidden></div>
-    <div id="gmLayers" hidden></div>
     <div id="gmStage">
       <div id="gmWrap"><img id="gmImg" alt="" draggable="false"></div>
       <div id="gmPins"></div>

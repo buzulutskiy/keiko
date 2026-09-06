@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 487";
+const APP_VERSION = "Кэйко 488";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -3942,12 +3942,16 @@ const coverTones = new Map();
 // подчищаем тона, посчитанные прошлой версией алгоритма
 try { Object.keys(localStorage).forEach(k => { if (k.startsWith("keiko-tone-")) localStorage.removeItem(k); }); } catch {}
 
-function readCoverTones(url) {
-  if (coverTones.has(url)) return coverTones.get(url);
-  coverTones.set(url, null);                       // чтобы не считать дважды
+/* Ключ — сам материал, а не адрес картинки: скачанная обложка живёт по
+   ссылке вида blob:…, и она новая при каждом запуске. По адресу тон не
+   находился никогда и считался заново каждый раз. */
+function readCoverTones(url, ключ) {
+  const имя = "keiko-tone2-" + (ключ || url);
+  if (coverTones.has(имя)) return coverTones.get(имя);
+  coverTones.set(имя, null);                       // чтобы не считать дважды
 
-  try { const saved = JSON.parse(localStorage.getItem("keiko-tone2-" + url) || "null");
-    if (saved) { coverTones.set(url, saved); return saved; } } catch {}
+  try { const saved = JSON.parse(localStorage.getItem(имя) || "null");
+    if (saved) { coverTones.set(имя, saved); return saved; } } catch {}
 
   const img = new Image();
   img.decoding = "async";
@@ -4010,9 +4014,10 @@ function readCoverTones(url) {
       const other = ranked.find(c => c.s > main.s * 0.12 && dh(hue(c), hue(main)) > 35);
       const pair = [glow(main, 0.58), other ? glow(other, 0.62) : glow(main, 0.72)];
 
-      coverTones.set(url, pair);
-      try { localStorage.setItem("keiko-tone2-" + url, JSON.stringify(pair)); } catch {}
+      coverTones.set(имя, pair);
+      try { localStorage.setItem(имя, JSON.stringify(pair)); } catch {}
       paintBackdrop(lastPainted);                  // перекрашиваем, когда цвет посчитан
+      gmPaint();                                   // и карту, если она открыта
     } catch {}
   };
   img.src = url;
@@ -4025,19 +4030,33 @@ let bgTone = null;      // цвет верхнего фона — волны б�
    экран читается как другое приложение, а свет сверху держит его своим. */
 let bgCss = "";
 
+/* Два цвета материала: из его обложки, а если она ещё не скачана — запасные.
+   Берём именно скачанную картинку, а не поле записи: в поле лежал путь тех
+   времён, когда обложки были файлами в репозитории, картинка по нему не
+   открывалась никогда, и тон по обложке не считался ни разу. */
+function tonePair(mat, вид) {
+  const url = mat ? coverSrc(mat.id, mat.cover || "") : "";
+  return (url && readCoverTones(url, mat.id)) || TONES[вид] || TONES.violet;
+}
+/* Свет сверху по этим двум цветам. Экраны поверх главной красятся им же:
+   сплошная темнота на весь экран читается как другое приложение. */
+const toneGrad = ([c1, c2]) =>
+  `radial-gradient(980px 560px at 78% -12%, rgba(${c1}, 0.32), transparent 62%),` +
+  `radial-gradient(760px 460px at -6% 4%, rgba(${c2}, 0.18), transparent 58%),` +
+  `radial-gradient(760px 420px at 52% 110%, rgba(${c1}, 0.16), transparent 60%)`;
+
 function paintBackdrop(item) {
   const layers = document.querySelectorAll(".bgfx i");
   if (layers.length < 2 || !item) return;
   lastPainted = item;
 
-  const src = item.track === "book" ? (item.book || book()) : item.track === "piano" ? (item.piece || piece()) : null;
-  const fromCover = src && src.cover ? readCoverTones(src.cover) : null;
-  const [c1, c2] = fromCover || TONES[toneOf(item)] || TONES.violet;
+  const src = item.track === "book" ? (item.book || book())
+            : item.track === "piano" ? (item.piece || piece())
+            : item.track === "pastel" ? (item.course || course()) : null;
+  const пара = tonePair(src, toneOf(item));
+  const c1 = пара[0];
   bgTone = String(c1).split(",").map(n => +n || 0);      // им же красим волны
-  const css =
-    `radial-gradient(980px 560px at 78% -12%, rgba(${c1}, 0.32), transparent 62%),` +
-    `radial-gradient(760px 460px at -6% 4%, rgba(${c2}, 0.18), transparent 58%),` +
-    `radial-gradient(760px 420px at 52% 110%, rgba(${c1}, 0.16), transparent 60%)`;
+  const css = toneGrad(пара);
 
   bgCss = css;
   const собр = document.getElementById("col");
@@ -4454,7 +4473,10 @@ function mapMaterial() {
     return { id: p.id, title: p.name,
              chapters: pracBlocks().map((bl) => ({ name: `Такты ${bl.from}–${bl.to}`, from: bl.from })) };
   }
-  return null;
+  /* Рисунок и пьеса без разбора: карты у них нет, но кнопка ведёт в собрание,
+     и открывать его надо для своего материала. Пока здесь стоял null, кнопка
+     у Аргуса откатывалась к book() и показывала карту Байкала из чужой книги. */
+  return colMat();
 }
 /* Собрание есть у любого материала, где собрано хоть что-то: у книги — карта
    и артефакты, у пьесы — теория, у рисунка — приёмы и картины. */
@@ -11311,7 +11333,12 @@ function openPlaceMap(bk, i, выбрать) {
   const места = mapPoints(bk, i);
   // рамка нужна метке; списку справок — нет, и подложку он не ждёт
   const рамка = mapBox(bk) || { west: -180, east: 180, north: 85, south: -85 };
-  if (!места.length || (!mapBox(bk) && mapHasPlaces(bk))) { toast("Карты пока нет"); return; }
+  /* Точек может не быть вовсе — у рисунка их нет, — но собрание там есть, и
+     ведёт в него та же кнопка. Отказываем, только если пусто и там, и там. */
+  const естьСобрание = colBtnOn();
+  if ((!места.length && !естьСобрание) || (!mapBox(bk) && mapHasPlaces(bk))) {
+    toast("Карты пока нет"); return;
+  }
   const box = $("#gmap");
   if (!box) return;
   /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
@@ -11320,9 +11347,18 @@ function openPlaceMap(bk, i, выбрать) {
   gm = { места, рамка, at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
          чтение: null, чтениеГл: null, метка: null, поиск: "",
          части: mapPartsOf(bk),
+         /* Сам материал — ради обложки: её цветом красится весь экран, как
+            главная. Вид нужен на случай, если обложка ещё не приехала. */
+         мат: bk, вид: isCourseBook(bk.id) ? "pastel" : (data.piano.pieces || []).some((p) => p.id === bk.id) ? "piano" : "book",
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
-  gmTitle();
+  gmPaint();
   gmTocBtn();
+  gmTitle();
+  /* Предметы музея могли не доехать — тогда собрание пустое. Спрашиваем при
+     открытии: из кэша браузера это ничего не стоит. */
+  pullMuseum().then((новое) => {
+    if (новое && gm) { gmLayersRow(); gmTitle(); gmList(); }
+  }).catch(() => {});
   /* Полоса «Объясни» живёт внутри карты и переживала её закрытие: с прошлой
      книгой, прошлой фразой и прошлым обработчиком. Открыли карту другой книги,
      нажали — и в ChatGPT уезжал фрагмент из «Одиссеи». Гасим на входе. */
@@ -11334,7 +11370,12 @@ function openPlaceMap(bk, i, выбрать) {
   const img = $("#gmImg");
   const ключ = mapKey(bk.id);
   const src = artSrc(ключ, mapFile(bk.id));
-  if (src) img.src = src;
+  if (!места.some((p) => слойТочки(p) === "place")) {
+    /* Ставить некуда — значит и подложка не нужна. Без этого рисунок двадцать
+       секунд ждал карту, которой у него нет, и заканчивал ошибкой. */
+    img.removeAttribute("src");
+    gmWait(false);
+  } else if (src) img.src = src;
   else {
     /* Картинки ещё нет на устройстве: показываем ожидание и ставим её, как
        только приедет, — сама карта об этом не узнает, перерисовка приложения
@@ -12629,21 +12670,65 @@ function gmИмяГлавы(n, имя) {
   return `${n}. ${чистое || имя || ""}`;
 }
 
+/* Заголовок шапки. Когда вкладок несколько, он не нужен: они сами говорят,
+   что за экран, а на телефоне и место под них нужно. Когда вкладка одна — у
+   пьесы и рисунка это всегда собрание — она и становится заголовком. */
 function gmTitle() {
   const el = $("#gmTitle");
   if (!el || !gm) return;
-  if (gm.часть === -1) { el.textContent = "Вокруг книги"; return; }
+  const вкладки = gmLayersOf();
+  el.hidden = вкладки.length > 1;
+  if (el.hidden) { el.textContent = ""; return; }
+  const своя = вкладки.find(([k]) => k === gmВкладка());
+  el.textContent = своя ? своя[1] : (gm.name || "");
+}
+
+/* Название выбранной главы — на кнопке, которая её и меняет. */
+function gmГлаваИмя() {
+  if (!gm) return "Вся книга";
+  if (gm.часть === -1) return "Вокруг книги";
   const c = (gm.части || []).find((x) => Number(x.n) === gm.часть);
-  el.textContent = c ? gmИмяГлавы(c.n, c.name) : gm.name;
+  return c ? gmИмяГлавы(c.n, c.name) : "Вся книга";
+}
+
+/* Второй ряд шапки: где стоишь и как искать. Показываем только там, где обе
+   эти вещи что-то меняют. Глава сужает места и текст; собрания она не
+   касается — оно пополняется по мере чтения и показывает всё сразу. Раньше
+   ряд висел над собранием всегда, и над списком тем стояло «Глава 15» — то
+   есть подпись к соседнему экрану. У пьесы и рисунка глав нет вовсе. */
+function gmNavRow() {
+  const ряд = $("#gmNav"), кн = $("#gmToc"), поле = $("#gmFind");
+  if (!ряд || !gm) return;
+  const главы = gmParts().length > 1;
+  const искать = gm.места.length > 3;
+  const своя = gmВкладка() === "place" || gmВкладка() === "read";
+  ряд.hidden = !своя || (!главы && !искать);
+  if (кн) {
+    кн.hidden = !главы;
+    const имя = кн.querySelector("b");
+    if (имя && главы) имя.textContent = gmГлаваИмя();
+  }
+  if (поле) {
+    поле.hidden = !искать;
+    /* Ряд спрятался вместе с набранным — иначе выдача осталась бы висеть
+       поверх соседней вкладки. */
+    if (ряд.hidden && поле.value) { поле.value = ""; gmSearch(""); }
+  }
+}
+
+/* Свет сверху по обложке материала — тот же, что на главной. Карта во весь
+   экран в сплошной темноте выглядит чужим приложением. */
+function gmPaint() {
+  const box = $("#gmap");
+  if (!box || !gm) return;
+  const m = gm.мат || null;
+  const вид = m ? (m.tone || (gm.вид === "pastel" ? "pastel" : gm.вид === "piano" ? "violet" : "sea")) : "violet";
+  box.style.backgroundImage = toneGrad(tonePair(m, вид));
 }
 
 /* Кнопка содержания нужна, только если делить и правда есть на что: одна
    глава на всю карту — это не выбор, а лишняя кнопка. */
-function gmTocBtn() {
-  const b = $("#gmToc");
-  if (b) b.hidden = gmParts().length < 2;
-  gmLayersRow();
-}
+function gmTocBtn() { gmLayersRow(); }
 
 /* Ряд слоёв под шапкой. Появляется, только когда слоёв правда несколько:
    у книги без разметки книг и людей выбирать не из чего. */
@@ -12669,7 +12754,7 @@ function gmLayersRow() {
      карту: иначе открытым останется список, которого в ряду больше нет. */
   if (!вкладки.some(([k]) => k === gmВкладка())) gm.слой = (вкладки[0] || ["place"])[0];
   box.hidden = вкладки.length < 2;
-  if (box.hidden) { box.innerHTML = ""; return; }
+  if (box.hidden) { box.innerHTML = ""; gmNavRow(); return; }
   const текущий = gmВкладка();
   box.innerHTML = вкладки.map(([k, имя, n]) =>
     `<button data-layer="${k}"${k === текущий ? ' class="on"' : ""}
@@ -12678,6 +12763,7 @@ function gmLayersRow() {
      прокрутки, и тогда непонятно, что вообще открыто. */
   const он = box.querySelector("button.on");
   if (он && он.scrollIntoView) он.scrollIntoView({ block: "nearest", inline: "center" });
+  gmNavRow();
 }
 
 function gmToc() {
@@ -13276,8 +13362,8 @@ function bindPlaceMap() {
          тогда снимаем выбор, иначе карточка внизу висит без своей точки. */
       if (gm.at && !gmВидимые().some((p) => p.name === gm.at)) gm.at = null;
       хиты.hidden = true; хиты.innerHTML = "";
+      gmLayersRow();      // числа у слоёв считаются в выбранной главе, а ряд ниже — главу
       gmTitle();
-      gmLayersRow();      // числа у слоёв считаются в выбранной главе
       gmPins();
       gmList();
       gmCard();
@@ -15008,7 +15094,9 @@ function colMat() {
      а не выжимка из имени и id. */
   if (isBook() && book()) return Object.assign({}, book(), { kind: "book" });
   if (isPiano() && piece()) return Object.assign({}, piece(), { title: piece().name, kind: "piece" });
-  if (isCourse() && course()) return Object.assign({}, course(), { id: curKey(), kind: "course" });
+  /* У курса имя лежит в name, как у пьесы: без подстановки в шапке собрания
+     стояло «Собрано 0 из 25 · undefined». */
+  if (isCourse() && course()) return Object.assign({}, course(), { id: curKey(), title: course().name, kind: "course" });
   return null;
 }
 
@@ -15103,6 +15191,12 @@ function colMarkSeen(b, список) {
 /* Что пришло за только что закрытую главу — для итога в конце чтения. */
 const colOfChapter = (b, n) => colItems(b).filter((x) => Number(x.ch) === Number(n));
 
+/* Откуда придёт остальное. У книги — из глав, у пьесы и рисунка — из занятий:
+   «придут с главами» над курсом рисунка обещало то, чего там нет. */
+const colОткуда = (b) => (b && b.kind && b.kind !== "book") ? "придут с занятиями" : "придут с главами";
+const colПусто = (b) => (b && b.kind && b.kind !== "book")
+  ? "открывается по занятиям." : "дочитай главу до конца.";
+
 /* ── Собрание: вкладка карты ── */
 function colRender() {
   const тело = $("#gmCol");
@@ -15174,7 +15268,7 @@ function colRender() {
       </div>
       ${ждут ? `<div class="cl-stack" aria-hidden="true">
         <span class="cl-ic">📦</span>
-        <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
+        <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>${colОткуда(b)}</i></span>
       </div>` : ""}
       ${мои.length ? `<div id="msGrid">
         ${мои.map((x) => `
@@ -15183,7 +15277,7 @@ function colRender() {
             <b>${esc(x.name)}</b>
             <em>${esc((x.t || "").split(" · ")[0])}</em>
           </button>`).join("")}
-      </div>` : `<div class="cl-none">Тут пока пусто — дочитай главу до конца.</div>`}`;
+      </div>` : `<div class="cl-none">Тут пока пусто — ${colПусто(b)}</div>`}`;
   }
   тело.scrollTop = 0;
   /* Помечаем просмотренным сразу, как показали. Пробовали на выходе, чтобы
@@ -15247,7 +15341,7 @@ async function pullMuseum() {
   try {
     const url = rawURL(MUS_FILE);
     if (!url) return false;
-    const r = await withTimeout(fetch(url, { cache: "no-store" }), 30000);
+    const r = await withTimeout(fetch(url), 30000);
     if (!r.ok) return false;
     const pack = JSON.parse(await r.text());
     if (!pack || !Array.isArray(pack.items)) return false;
@@ -16930,6 +17024,12 @@ async function syncNow(manual) {
     maybeArchive({ v: 9, savedAt: now(), profiles: { [profileId]: mine || exportData() } });
     // раз в сутки — но незнакомый материал ждать сутки не должен
     catalogPull(catalogMissing()).catch(() => {});
+    /* Музей тянем здесь же. Раньше его спрашивал экран артефактов — экран
+       выключили, и предметы перестали приезжать вовсе: собрание Аргуса, где
+       кроме них ничего нет, оказалось пустым, а кнопка карты говорила «карты
+       пока нет». Файл отдаётся с max-age=300, так что чаще раза в пять минут
+       он по сети и не пойдёт. */
+    pullMuseum().then((новое) => { if (новое) render(true); }).catch(() => {});
     syncError = "";
     syncPickers();
     if (stampBefore !== dataStamp()) render(true);   // тихо и только если данные правда изменились
