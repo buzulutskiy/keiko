@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 484";
+const APP_VERSION = "Кэйко 485";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -16511,14 +16511,17 @@ function gh(path, opts = {}, ms = 12000) {
     { "Authorization": "Bearer " + cfg.token, "Accept": "application/vnd.github+json" },
     opts.headers || {});
   return withTimeout(fetch("https://api.github.com" + path,
-    Object.assign({}, opts, { headers })), ms);
+    Object.assign({}, opts, { headers })), ms, (opts.method || "GET") + " " + path);
 }
 
 // без потолка по времени запрос в самолёте висит до системного таймаута — и всё приложение ждёт
-function withTimeout(promise, ms) {
+/* Подпись шага обязательна: «нет связи» одинаково выглядит и при обрыве, и при
+   слишком коротком потолке, а различить их надо — второе чинится, первое нет. */
+const timeoutMsg = (что) => (что ? "не дождались: " + что : "нет связи");
+function withTimeout(promise, ms, что) {
   return Promise.race([
     promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error("нет связи")), ms))
+    new Promise((_, rej) => setTimeout(() => rej(new Error(timeoutMsg(что))), ms))
   ]);
 }
 
@@ -16632,8 +16635,12 @@ async function syncNow(manual) {
        правкой затирала в гисте то, что там появилось. */
     const condTag = gistEtag || (cfg.gistEtagBy || {})[profileId] || "";
     const cond = condTag ? { headers: { "If-None-Match": condTag } } : {};
-    const r = await gh("/gists/" + cfg.gistId, cond);
-    if (r.status !== 304 && !r.ok) throw new Error("Ошибка сети (" + r.status + ")");
+    /* Сорок пять секунд, а не двенадцать по умолчанию. Гист отдаёт содержимое
+       всех файлов сразу — три профиля, больше полумегабайта, — и на мобильной
+       сети в общий потолок это не укладывалось: сверка падала с «нет связи»,
+       а «Повторить» упиралось в тот же потолок. */
+    const r = await gh("/gists/" + cfg.gistId, cond, 45000);
+    if (r.status !== 304 && !r.ok) throw new Error("Не скачалось (" + r.status + ")");
 
     /* cold: 304 при пустой памяти — гист не менялся с прошлой синхронизации,
        но слепка в памяти нет (перезапуск). Скачивать нечего: на прошлой
@@ -16796,11 +16803,14 @@ async function syncNow(manual) {
     if (changed) {
       // отправляем один файл — свой; чужие в гисте PATCH не трогает
       const payload = JSON.stringify(exportData());
+      /* Своя половина мегабайта уходит дольше, чем качается: даём минуту.
+         Раньше отправка отваливалась по таймауту, данные оставались только на
+         телефоне, и человек видел «сохранено локально» с бесполезной кнопкой. */
       const pr = await gh("/gists/" + cfg.gistId, {
         method: "PATCH",
         body: JSON.stringify({ files: { [PROF_FILE(profileId)]: { content: payload } } })
-      });
-      if (!pr.ok) throw new Error("Не сохранилось");
+      }, 60000);
+      if (!pr.ok) throw new Error("Не отправилось (" + pr.status + ")");
       /* После записи метка старая. Берём ту, что вернул сам PATCH: совпадёт —
          следующая сверка придёт пустой; не совпадёт — просто скачаем файл, как
          раньше. Хуже прежнего не будет.
