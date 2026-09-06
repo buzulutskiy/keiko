@@ -1896,32 +1896,11 @@
 
     #gmap[hidden] { display: none; }
 
-    /* ── Собрание ──
-       display:flex перебивает встроенное [hidden]{display:none} — без пары
-       строк экран висит поверх приложения с запуска. Это уже случалось. */
-    #col[hidden] { display: none; }
-    #col {
-      position: fixed; inset: 0; z-index: 80;
-      /* Цвет — базовый, картинка — тот же градиент, что рисует .bgfx на
-         главной: подставляется из paintBackdrop при открытии. */
-      background-color: var(--bg); background-repeat: no-repeat; background-size: cover;
-      display: flex; flex-direction: column;
-    }
-    #colTop { background: transparent; }
-    #colTop {
-      display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
-      padding: calc(env(safe-area-inset-top) + 12px) 14px 12px;
-      border-bottom: 1px solid var(--line);
-    }
-    #colTitle { flex: 1; font-size: 1.02rem; font-weight: 700; color: var(--ink); }
-    #colTop button {
-      width: 34px; height: 34px; border-radius: 50%; font-size: 1rem; flex: 0 0 auto;
-      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
-    }
-    #colBack[hidden] { display: none; }
-    #colBody {
+    /* ── Собрание: вкладка карты ── */
+    #gmCol[hidden] { display: none; }
+    #gmCol {
       flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-      padding: 14px 16px calc(env(safe-area-inset-bottom) + 40px);
+      padding: 12px 16px calc(env(safe-area-inset-bottom) + 40px);
     }
     .cl-lead { color: var(--dim); font-size: 0.84rem; line-height: 1.5; margin: 0 0 18px; max-width: 32em; }
     .cl-t {
@@ -1977,20 +1956,20 @@
     /* Непросмотренное. Рамка держится, пока в тему не заглянул: гасим её на
        выходе, а не на входе, иначе она мигала бы и исчезала. */
     /* Непросмотренное — та же тихая точка в углу плитки. */
-    #colBody .ms-tile.new::before {
+    #gmCol .ms-tile.new::before {
       content: ""; position: absolute; top: 12px; right: 12px; width: 7px; height: 7px;
       border-radius: 50%; background: var(--gold); opacity: 0.8;
     }
     /* Ссылки поиска в карточке — кнопками, как у артефактов: голыми ссылками
        они не читались как то, на что можно нажать. */
-    #colBody .gm-links { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 22px; }
-    #colBody .gm-links a {
+    #gmCol .gm-links { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 22px; }
+    #gmCol .gm-links a {
       padding: 9px 14px; border-radius: 11px; font-size: 0.85rem; font-weight: 650;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);
       text-decoration: none;
     }
-    #colBody #msGrid { margin-top: 4px; }
-    #colBody .ms-head { margin-top: 0; }
+    #gmCol #msGrid { margin-top: 4px; }
+    #gmCol .ms-head { margin-top: 0; }
     /* Метка нового — точка, а не значок с числом: она должна попадаться на
        глаза, а не требовать внимания. Число всё равно рядом, в счётчике темы. */
     .cl-dot {
@@ -3879,15 +3858,6 @@
   </div>
 
   <!-- Карта мест во весь экран: приближается пальцами, точка открывает карточку снизу -->
-  <div id="col" hidden aria-hidden="true">
-    <div id="colTop">
-      <div id="colTitle">Собрание</div>
-      <button id="colBack" type="button" aria-label="Назад" hidden>‹</button>
-      <button id="colClose" type="button" aria-label="Закрыть">✕</button>
-    </div>
-    <div id="colBody"></div>
-  </div>
-
   <div id="gmap" hidden aria-hidden="true">
     <div id="gmTop">
       <div id="gmTitle"></div>
@@ -3904,6 +3874,7 @@
     <div id="gmList" hidden></div>
     <div id="gmRead" hidden></div>
     <div id="gmWords" hidden></div>
+    <div id="gmCol" hidden></div>
     <div id="gmAsk" hidden></div>
     <div id="gmCard" hidden></div>
     <div id="gmShots" hidden aria-hidden="true"></div>

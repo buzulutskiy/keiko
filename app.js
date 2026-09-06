@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 481";
+const APP_VERSION = "Кэйко 482";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2050,7 +2050,11 @@ function showChapterGain(item) {
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
   /* Последним экраном ведём прямо в собрание: иначе «пришло семь слов»
      остаётся обещанием, а искать их надо самому. */
-  if (!overlayQueue.length) cheerGo = openCollection;
+  if (!overlayQueue.length) cheerGo = () => {
+    colView = null; colAt = null;
+    openPlaceMap(book(), -1);
+    if (gm) { gm.слой = "col"; gmLayersRow(); gmTitle(); gmList(); }
+  };
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
@@ -2560,11 +2564,9 @@ const MUS_TAB = false;
 function renderMusBtn() {
   const b = $("#musBtn");
   if (!b) return;
-  b.hidden = !colBtnOn();
-  /* Точки на ромбике нет: на главной она читается как «тебя ждут дела».
-     Внутри собрания метки остаются — там они помогают найти свежее, а не
-     подгоняют. */
-  b.classList.remove("hasnew");
+  /* Ромбика в шапке нет: собрание открывается вкладкой карты, и второй двери
+     в то же место не нужно. */
+  b.hidden = true;
   b.setAttribute("aria-label", "Собрание");
   b.setAttribute("title", "Собрание");
 }
@@ -11615,6 +11617,8 @@ function closePlaceMap() {
   /* Абзацы прошлой книги не должны дожидаться следующего открытия: пока
      новый текст качается, на экране висел бы чужой. */
   const чт = $("#gmRead"); if (чт) { чт.hidden = true; чт.innerHTML = ""; }
+  const сб = $("#gmCol"); if (сб) { сб.hidden = true; сб.innerHTML = ""; }
+  colView = null; colAt = null;
   gmAskHide();
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
@@ -11659,7 +11663,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
 /* «Справки» и «Слова» с карты сняты: справки целиком переехали в собрание, а
    слова — отдельная затея, к карте отношения не имеющая. Код обеих цел, они
    просто не перечислены здесь. */
-const ВКЛАДКИ = [["place", "Места"], ["read", "Текст"]];
+const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"], ["read", "Текст"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -11672,6 +11676,10 @@ function gmLayersOf() {
      что уходит в нейросеть по кнопке «Книга .md». Показываем её только там,
      где файл есть. */
   if (gmBookFile()) есть.add("read");
+  /* Собрание живёт вкладкой карты, а не отдельным экраном: всё, что про книгу,
+     открывается одной кнопкой. Отдельный ромбик в шапке был второй дверью в то
+     же место. */
+  if (isBook() && book() && colItems(book()).length) есть.add("col");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Файл книги для этой карты — только у книг, и только если он залит. */
@@ -11818,6 +11826,7 @@ function gmSpravki(p, bookId) {
    говорит, а прочитать про неё хочется. Карта остаётся у мест. */
 function gmList() {
   const box = $("#gmList"), сцена = $("#gmStage"), чтение = $("#gmRead"), слова = $("#gmWords");
+  const собр = $("#gmCol");
   if (!box || !gm) return;
   const вкладка = gmВкладка();
   const списком = вкладка === "all";
@@ -11825,8 +11834,10 @@ function gmList() {
   if (сцена) сцена.hidden = вкладка !== "place";
   if (чтение) чтение.hidden = вкладка !== "read";
   if (слова) слова.hidden = вкладка !== "ask";
+  if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "read") { box.innerHTML = ""; gmRead(); return; }
   if (вкладка === "ask") { box.innerHTML = ""; gmAskHide(); askPane(); return; }
+  if (вкладка === "col") { box.innerHTML = ""; gmAskHide(); colRender(); return; }
   gmAskHide();
   if (!списком) { box.innerHTML = ""; return; }
   const список = gmВидимые();
@@ -13228,15 +13239,6 @@ function bindPlaceMap() {
     clearTimeout(gmAskTimer);
     gmAskTimer = setTimeout(gmAskShow, 120);
   });
-  const колЗ = $("#colClose");
-  if (колЗ) колЗ.addEventListener("click", closeCollection);
-  const колН = $("#colBack");
-  /* Назад — на шаг: из вещи в тему, из темы в список тем. */
-  if (колН) колН.addEventListener("click", () => {
-    if (colAt) { colAt = null; colRender(); return; }
-    colView = null; colRender();
-  });
-
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
     const хиты = $("#gmHits");
@@ -15031,46 +15033,17 @@ function colMarkSeen(b, список) {
 /* Что пришло за только что закрытую главу — для итога в конце чтения. */
 const colOfChapter = (b, n) => colItems(b).filter((x) => Number(x.ch) === Number(n));
 
-/* ── Экран собрания ── */
-let colView = null;          // null — список тем, иначе id открытой темы
-
-function openCollection() {
-  const box = $("#col");
-  if (!box || !isBook()) return;
-  /* Всё, что открыто к этому дню, считаем уже виденным: метка «новое» нужна
-     для того, что придёт дальше, а не для двух сотен записей, накопленных до
-     её появления. Один раз на профиль. */
-  if (!data.colSeenV) {
-    for (const кн of data.book.books || [])
-      if (!кн.archived) colMarkSeen(кн, colItems(кн).filter((x) => colOpen(кн, x)));
-    data.colSeenV = 1; saveData(); schedulePush();
-  }
-  colView = null;
-  box.hidden = false; box.setAttribute("aria-hidden", "false");
-  box.style.backgroundImage = bgCss;      // тот же свет сверху, что на главной
-  colRender();
-  keepAwake(true);
-}
-function closeCollection() {
-  const box = $("#col");
-  if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
-  colView = null;
-  colAt = null;
-  keepAwake(false);
-  render();                  // счётчик на кнопке мог измениться
-}
-
+/* ── Собрание: вкладка карты ── */
 function colRender() {
-  const тело = $("#colBody"), назад = $("#colBack"), имя = $("#colTitle");
+  const тело = $("#gmCol");
   const b = book();
   if (!тело || !b) return;
+  colBackfill();
   const темы = colStats(b);
-  if (назад) назад.hidden = !colView && !colAt;
 
   if (!colView) {
     const есть = темы.reduce((n, t) => n + t.есть, 0);
     const всего = темы.reduce((n, t) => n + t.всего, 0);
-    if (имя) имя.textContent = "Собрание";
     /* Список тем — строками, как список артефактов: значок, имя, счётчик и
        полоса. Подпись темы не показываем: она перечисляла содержимое, то есть
        выдавала то, что ещё не открыто. */
@@ -15099,7 +15072,6 @@ function colRender() {
     const x = список.find((y) => y.id === colAt);
     if (!x) { colAt = null; return colRender(); }
     const i2 = список.indexOf(x), пред = список[i2 - 1], след = список[i2 + 1];
-    if (имя) имя.textContent = (t.icon ? t.icon + " " : "") + t.name;
     тело.innerHTML = `
       <div class="ms-top"><button class="back" data-colgo="" type="button">‹ ${esc(t.name)}</button></div>
       <div id="msOne">
@@ -15121,8 +15093,11 @@ function colRender() {
     const свои = colItems(b).filter((x) => x.theme === t.id);
     const мои = colOrder(b, t.id);
     const ждут = свои.length - мои.length;
-    if (имя) имя.textContent = (t.icon ? t.icon + " " : "") + t.name;
     тело.innerHTML = `
+      <div class="ms-top"><button class="back" data-theme="" type="button">‹ Собрание</button></div>
+      <div class="cl-top">
+        <span class="cl-h"><b>${esc(t.icon ? t.icon + " " : "")}${esc(t.name)}</b><em></em></span>
+      </div>
       <div class="cl-top">
         <span class="cl-h"><b>Собрано ${мои.length} из ${свои.length}</b><em></em></span>
         <span class="cl-bar"><i style="width:${свои.length ? Math.round(мои.length / свои.length * 100) : 0}%"></i></span>
@@ -15153,7 +15128,7 @@ function colRender() {
       .catch(() => { тянуть.textContent = "Не вышло — ещё раз"; тянуть.disabled = false; });
   });
   тело.querySelectorAll("[data-theme]").forEach((el) =>
-    el.addEventListener("click", () => { colView = el.dataset.theme; colAt = null; colRender(); }));
+    el.addEventListener("click", () => { colView = el.dataset.theme || null; colAt = null; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
     el.addEventListener("click", () => { colAt = el.dataset.item; colRender(); }));
   тело.querySelectorAll("[data-colgo]").forEach((el) =>
@@ -15168,7 +15143,17 @@ const colOrder = (b, id) => colItems(b)
 const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
                    animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
 
-let colAt = null;
+let colView = null;      // null — список тем, иначе id открытой темы
+let colAt = null;        // id раскрытой вещи
+/* Всё, что открыто к появлению метки, считаем уже виденным: она нужна для
+   того, что придёт дальше, а не для двух сотен накопленных записей. Один раз
+   на профиль. */
+function colBackfill() {
+  if (data.colSeenV) return;
+  for (const кн of data.book.books || [])
+    if (!кн.archived) colMarkSeen(кн, colItems(кн).filter((x) => colOpen(кн, x)));
+  data.colSeenV = 1; saveData(); schedulePush();
+}
 
 /* ── Музей артефактов ──
    Вещи из музеев, привязанные к книгам: что по прочитанному можно пойти и
@@ -16955,7 +16940,7 @@ function boot() {
 
   $("#gearBtn").addEventListener("click", openSettingsSheet);
   $("#musBtn").addEventListener("click", () => {
-    if (!MUS_TAB) { useMark("собрание"); openCollection(); return; }
+    if (!MUS_TAB) return;
     /* Второе нажатие возвращает туда, откуда пришёл: кнопка в шапке работает
        как переключатель, а не как ещё одна вкладка. */
     if (tab === "mus") { tab = cfg.tabBack || "home"; }

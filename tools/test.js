@@ -1081,7 +1081,7 @@ function ок(имя, факт, надо) {
      Имени в разметке нет вовсе, иначе его достанут выделением или поиском. */
   {
     const узлы = {};
-    for (const k of ["#colBody", "#colBack", "#colTitle"])
+    for (const k of ["#gmCol"])
       узлы[k] = { innerHTML: "", textContent: "", hidden: false, scrollTop: 0,
                   querySelectorAll: () => [], addEventListener() {} };
     const был = t.get("document.querySelector");
@@ -1091,7 +1091,7 @@ function ок(имя, факт, надо) {
     const хвост = t.get("data").book.entries.pop();
     t.set("colView", "rest");
     t.get("colRender")();
-    const h = узлы["#colBody"].innerHTML;
+    const h = узлы["#gmCol"].innerHTML;
     const свои = t.get("colItems")(b).filter((x) => x.theme === "rest");
     const мои = свои.filter((x) => t.get("colOpen")(b, x));
     ок("собрание: открытые — карточками", (h.match(/data-item=/g) || []).length, мои.length);
@@ -1106,7 +1106,7 @@ function ок(имя, факт, надо) {
     /* Сверху — пришедшее последним: собрание открывают сразу после главы, и
        видеть там надо её, а не первую страницу книги. */
     const порядок = (h.match(/<b>[^<]+<\/b>/g) || []).map((x) => x.slice(3, -4))
-      .filter((x) => !/^(Собрано|Ещё)/.test(x));
+      .filter((x) => !/^(Собрано|Ещё)/.test(x) && x !== "Остальное");   // шапка темы
     // вторая глава выше первой: Финка из второй, Скипетр из первой
     ок("собрание: свежее сверху", порядок[0], "Финка");
 
@@ -1114,7 +1114,7 @@ function ок(имя, факт, надо) {
        соседним: листать собрание, не возвращаясь в список. */
     t.set("colAt", t.get("colOrder")(b, "rest")[0].id);
     t.get("colRender")();
-    const о = узлы["#colBody"].innerHTML;
+    const о = узлы["#gmCol"].innerHTML;
     ок("вещь: открылась во весь экран", /id="msOne"/.test(о), true);
     ок("вещь: справка на месте", /ms-about/.test(о), true);
     ок("вещь: кнопки поиска", /ChatGPT/.test(о) && /Картинки/.test(о), true);
@@ -2319,9 +2319,9 @@ function ок(имя, факт, надо) {
 
   const былоGm = t.get("gm");
   t.set("gm", { места: t.get("mapWhole")(t.get("book")()), слой: "", часть: 0, at: null, части: [] });
-  /* Ни мест, ни залитого текста — вкладок нет вовсе, и карта остаётся на
-     своей по умолчанию. */
-  ок("карта: без мест и текста вкладок нет", t.get("gmLayersOf")().length, 0);
+  /* Ни мест, ни залитого текста — остаётся одно собрание. */
+  ок("карта: без мест и текста остаётся собрание",
+    t.get("gmLayersOf")().map((x) => x[0]), ["col"]);
   t.set("gm", былоGm);
 
   t.set("data.book", было.book);
