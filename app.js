@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 480";
+const APP_VERSION = "Кэйко 481";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4139,9 +4139,8 @@ $("#view").innerHTML = `
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
-          aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
-          title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
+        <button class="cta-side${кнопки.map.on ? "" : " away"}" id="bookMapBtn" type="button"
+          aria-label="Карта мест" title="Карта мест">🗺</button>
       </div>
       <div class="nudge">${nudge}</div>
     </div>`;
@@ -4441,8 +4440,10 @@ function mapMaterial() {
   }
   return null;
 }
-/* Кнопка собрания — только у книги и только если собирать есть что. */
-const colBtnOn = () => isBook() && !!book() && colItems(book()).length > 0;
+/* Кнопка собрания есть у любой книги. Раньше она ждала, пока доедет файл
+   разбора, и то появлялась, то исчезала на глазах. Пусто внутри — там и
+   скажем, и предложим загрузить. */
+const colBtnOn = () => isBook() && !!book();
 
 const mapBtnOn = () => {
   /* У пьесы карты нет. Заходить в справочник до занятия или после — некуда
@@ -4479,9 +4480,12 @@ function bookBtnState() {
   return { map: { on: mapBtnOn() } };
 }
 
+/* Кнопка карты появляется, когда доедет файл разбора, — и раньше при этом
+   двигала «Отметить» вбок. Место под неё держим всегда: меняется только
+   видимость, а не раскладка. */
 function syncBookBtns() {
   const map = document.getElementById("bookMapBtn");
-  if (map) map.hidden = !bookBtnState().map.on;
+  if (map) map.classList.toggle("away", !bookBtnState().map.on);
 }
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
@@ -11652,7 +11656,10 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    каждую вкладку по очереди. Теперь всё, кроме мест, лежит одним списком с
    секциями: в главе таких записей от трёх до двух десятков — это прокрутка,
    а не восемь нажатий. Места остаются отдельно: у них карта, а не список. */
-const ВКЛАДКИ = [["place", "Места"], ["all", "Справки"], ["read", "Текст"], ["ask", "Слова"]];
+/* «Справки» и «Слова» с карты сняты: справки целиком переехали в собрание, а
+   слова — отдельная затея, к карте отношения не имеющая. Код обеих цел, они
+   просто не перечислены здесь. */
+const ВКЛАДКИ = [["place", "Места"], ["read", "Текст"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -11664,7 +11671,7 @@ function gmLayersOf() {
   /* Третья вкладка — сам текст книги. Он уже лежит в каталоге: тем же файлом,
      что уходит в нейросеть по кнопке «Книга .md». Показываем её только там,
      где файл есть. */
-  if (gmBookFile()) { есть.add("read"); есть.add("ask"); }
+  if (gmBookFile()) есть.add("read");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Файл книги для этой карты — только у книг, и только если он залит. */
@@ -13227,7 +13234,7 @@ function bindPlaceMap() {
   /* Назад — на шаг: из вещи в тему, из темы в список тем. */
   if (колН) колН.addEventListener("click", () => {
     if (colAt) { colAt = null; colRender(); return; }
-    colLeave(); colView = null; colRender();
+    colView = null; colRender();
   });
 
   const кнТос = $("#gmToc");
@@ -15030,6 +15037,14 @@ let colView = null;          // null — список тем, иначе id от
 function openCollection() {
   const box = $("#col");
   if (!box || !isBook()) return;
+  /* Всё, что открыто к этому дню, считаем уже виденным: метка «новое» нужна
+     для того, что придёт дальше, а не для двух сотен записей, накопленных до
+     её появления. Один раз на профиль. */
+  if (!data.colSeenV) {
+    for (const кн of data.book.books || [])
+      if (!кн.archived) colMarkSeen(кн, colItems(кн).filter((x) => colOpen(кн, x)));
+    data.colSeenV = 1; saveData(); schedulePush();
+  }
   colView = null;
   box.hidden = false; box.setAttribute("aria-hidden", "false");
   box.style.backgroundImage = bgCss;      // тот же свет сверху, что на главной
@@ -15037,7 +15052,6 @@ function openCollection() {
   keepAwake(true);
 }
 function closeCollection() {
-  colLeave();
   const box = $("#col");
   if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
   colView = null;
@@ -15061,7 +15075,9 @@ function colRender() {
        полоса. Подпись темы не показываем: она перечисляла содержимое, то есть
        выдавала то, что ещё не открыто. */
     тело.innerHTML = !всего
-      ? `<div class="cl-none">У этой книги собрания пока нет.</div>`
+      ? `<div class="cl-none">Материалы книги ещё не загрузились.<br>
+           <button class="btn" id="colPull" type="button" style="margin-top:14px">Загрузить</button>
+         </div>`
       : `<div class="ms-head">Собрано ${есть} из ${всего} · «${esc(b.title)}»</div>` +
         темы.map((t) => `
           <button class="cl-t" data-theme="${t.id}" type="button">
@@ -15125,9 +15141,17 @@ function colRender() {
       </div>` : `<div class="cl-none">Тут пока пусто — дочитай главу до конца.</div>`}`;
   }
   тело.scrollTop = 0;
-  /* Помечаем просмотренным не при входе, а при выходе: иначе метка гасла бы
-     в тот же миг, когда её показали, и смотреть было бы не на что. */
-  if (colView && !colWas) colWas = colItems(b).filter((x) => x.theme === colView && colIsNew(b, x));
+  /* Помечаем просмотренным сразу, как показали. Пробовали на выходе, чтобы
+     метка не гасла на глазах, — но выход бывает не всегда: свернул приложение,
+     и назавтра та же тема снова с точкой. Разметка уже собрана выше, поэтому
+     в этот раз метки видны, а в следующий уже нет. */
+  if (colView) colMarkSeen(b, colItems(b).filter((x) => x.theme === colView && colIsNew(b, x)));
+  const тянуть = $("#colPull");
+  if (тянуть) тянуть.addEventListener("click", () => {
+    тянуть.textContent = "Загружаю…"; тянуть.disabled = true;
+    Promise.all([pullArts(b.id), pullMuseum()]).then(() => colRender())
+      .catch(() => { тянуть.textContent = "Не вышло — ещё раз"; тянуть.disabled = false; });
+  });
   тело.querySelectorAll("[data-theme]").forEach((el) =>
     el.addEventListener("click", () => { colView = el.dataset.theme; colAt = null; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
@@ -15144,13 +15168,7 @@ const colOrder = (b, id) => colItems(b)
 const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
                    animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
 
-let colAt = null, colWas = null;
-/* Уходя из темы, гасим её пометки. */
-function colLeave() {
-  const b = book();
-  if (b && colWas && colWas.length) colMarkSeen(b, colWas);
-  colWas = null;
-}
+let colAt = null;
 
 /* ── Музей артефактов ──
    Вещи из музеев, привязанные к книгам: что по прочитанному можно пойти и
