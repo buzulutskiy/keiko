@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 464";
+const APP_VERSION = "Кэйко 465";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11128,11 +11128,28 @@ function pracLog(u) {
   }
   for (const h of hands) e.spans.push({ hand: h, from: u.from, to: u.to });
   /* Минуты пишем сразу, а не только по кнопке «Завершить»: экран гаснет,
-     приложение уходит в фон, и до кнопки дело может не дойти. */
-  pracCount();
+     приложение уходит в фон, и до кнопки дело может не дойти. По той же
+     причине сразу пишем и карточку дня. */
+  pracEvent(pracCount());
   saveData();
   schedulePush();
   return hands.length;                        // сколько отрезков дописали — на случай отмены
+}
+
+/* Карточка дня у пьесы. Пишется на каждый закрытый отрезок, а не только по
+   кнопке «Завершить»: экран занятия закрывают как придётся — свайпом, кнопкой
+   домой, разрядившимся телефоном, — и тогда минуты, отрезки и разбор
+   сохранялись, а в ленте дня не было вовсе. «Поиграл, а в заметках пусто».
+   Звать можно сколько угодно раз: addEvent за день объединяет карточки и
+   переписывает текст свежими минутами. */
+function pracEvent(e) {
+  if (!e || !e.mins) return;
+  const closed = prac ? prac.closed.length : 0;
+  addEvent("session", piece().id, "piano",
+    "Занимался: " + piece().name + " · " + e.mins + " мин"
+    + (closed ? ", " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""),
+    { fields: { mins: e.mins, createdAt: now(),
+                awards: (prac && prac.wonAwards) || [], facts: (prac && prac.wonFacts) || [] } });
 }
 
 /* Занятие само пишет обычную отметку. */
@@ -11191,10 +11208,7 @@ function pracFinish() {
     schedulePush();
     won = pracCelebrate();
     // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
-    addEvent("session", piece().id, "piano",
-      "Занимался: " + piece().name + " · " + e.mins + " мин"
-      + (closed ? ", " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""),
-      { fields: { mins: e.mins, createdAt: now(), awards: prac.wonAwards || [], facts: prac.wonFacts || [] } });
+    pracEvent(e);
     toast("Занятие записано: " + e.mins + " мин"
       + (closed ? " · " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""));
   }
