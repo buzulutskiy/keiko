@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 485";
+const APP_VERSION = "Кэйко 486";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -756,9 +756,10 @@ function musOpen(x) {
    механизм на две поверхности, и потому нельзя рассинхронизироваться.
    По числу занятий считать нельзя: их к этому дню два десятка, и всё
    открылось бы разом. */
+/* Артефакт пьесы открыт, если его уже выдало собрание. Один список на две
+   поверхности: что показали после занятия, то и лежит в собрании. */
 function musOpenPiece(x, p) {
-  return withMaterial({ track: "piano", pieceId: p.id },
-    () => ((pracStore().theory) || []).includes(x.name));
+  return (((data.colGiven || {})[p.id]) || []).some((id) => id.endsWith("|" + x.id) || id === "art|" + x.id);
 }
 const musOpenSet = () => new Set(musItems().filter(musOpen).map((x) => x.id));
 
@@ -1941,13 +1942,8 @@ function saveEntry() {
       }
     });
   }
-  /* Одна заметка теории за занятие — и только у пьесы. Больше одной за раз не
-     даём: две подряд читаются как лекция, а смысл в том, чтобы каждый раз
-     уносить ровно одну мысль. */
-  if (isPiano() && !ctx.watch) {
-    const т = theoryNext();
-    if (т) { theoryTake(т); overlayQueue.push({ type: "theory", x: т }); }
-  }
+  /* Собрание пополняется и у пьесы с рисунком — ручной отметкой тоже. */
+  if (!isBook() && !ctx.watch) colПоказать(colGrant(colMat(), colПорция(colMat(), after.minutes || 20)));
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
      него данные меняли ещё трижды: musStamp, stampProgress и addEvent. Ни один
@@ -2007,9 +2003,13 @@ function nextOverlaySoon() {
   overlayHop = setTimeout(() => { overlayHop = 0; showNextOverlay(); }, 220);
 }
 
-/* Заметка теории после занятия. Тот же экран, что у артефакта, и по той же
-   причине: читать хочется ровно в ту минуту, когда закрыл сессию, — а не
-   когда-нибудь потом, зайдя в справочник. */
+/* Что открылось за занятие — на экран, по одной карточке. Тот же экран, что у
+   артефакта, и по той же причине: читать хочется ровно в ту минуту, когда
+   закрыл сессию, а не когда-нибудь потом, зайдя в справочник. */
+function colПоказать(список) {
+  for (const x of список || []) overlayQueue.push({ type: "theory", x });
+}
+
 function showTheory(x) {
   const step = $("#cheerStep");
   step.hidden = false;
@@ -2017,6 +2017,7 @@ function showTheory(x) {
   $("#cheerIc").textContent = x.icon || "🎼";
   $("#cheerTitle").textContent = x.name;
   $("#cheerText").textContent = [x.t, x.about].filter(Boolean).join(" — ");
+  $("#cheerStep").textContent = x.art ? "В собрание" : "Теория";
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Понятно";
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
@@ -4150,7 +4151,10 @@ $("#view").innerHTML = `
   syncBookBtns();        // состояние кнопок — из живых данных, а не из момента сборки строки
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
-  if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
+  if (bm) bm.addEventListener("click", () => {
+    colView = null; colAt = null;
+    openPlaceMap(mapMaterial() || book() || { id: curKey(), title: "", chapters: [] }, -1);
+  });
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -4442,41 +4446,17 @@ function mapMaterial() {
   }
   return null;
 }
-/* Кнопка собрания есть у любой книги. Раньше она ждала, пока доедет файл
-   разбора, и то появлялась, то исчезала на глазах. Пусто внутри — там и
-   скажем, и предложим загрузить. */
-const colBtnOn = () => isBook() && !!book();
+/* Собрание есть у любого материала, где собрано хоть что-то: у книги — карта
+   и артефакты, у пьесы — теория, у рисунка — приёмы и картины. */
+const colBtnOn = () => { const m = colMat(); return !!m && colItems(m).length > 0; };
 
+/* Кнопка открывает карту у книги и собрание у всего остального: у пьесы и
+   рисунка ни мест, ни текста нет, и внутри останется одна вкладка. */
 const mapBtnOn = () => {
-  /* У пьесы карты нет. Заходить в справочник до занятия или после — некуда
-     приложить: мотивации читать теорию просто так не возникает. Те же тридцать
-     заметок теперь приходят по одной в конце занятия, как артефакты у рисунка:
-     закрыл сессию — открылось, и вот тогда читаешь. */
-  if (isPiano()) return false;
+  if (!isBook()) return colBtnOn();
   const m = mapMaterial();
-  return !!m && mapWhole(m).length > 0 && (!!mapBox(m) || !mapHasPlaces(m));
+  return (!!m && mapWhole(m).length > 0 && (!!mapBox(m) || !mapHasPlaces(m))) || colBtnOn();
 };
-
-/* ── Теория пьесы: по одной заметке за занятие ──
-   Порядок — тот, в котором они лежат в файле разбора: от «две чёрные и три
-   чёрные» к каденции. Пропускать и выбирать нечего: следующая всегда та,
-   которую ещё не открывали. */
-function theoryList() {
-  const p = piece();
-  if (!p) return [];
-  const a = artsOf(p.id);
-  return (a && Array.isArray(a.map) ? a.map : []).filter((x) => x && x.name && x.about);
-}
-const theorySeen = () => (pracStore().theory = pracStore().theory || []);
-function theoryNext() {
-  const было = new Set(theorySeen());
-  return theoryList().find((x) => !было.has(x.name)) || null;
-}
-function theoryTake(x) {
-  if (!x) return;
-  theorySeen().push(x.name);
-  pracStore().updatedAt = now();
-}
 
 function bookBtnState() {
   return { map: { on: mapBtnOn() } };
@@ -11264,6 +11244,7 @@ function pracFinish() {
     if (шагов) части.push(шагов + " " + plural(шагов, "шаг", "шага", "шагов"));
     if (e.lessons && e.lessons.length)
       части.push(e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"));
+    colПоказать(colGrant(colMat(), colПорция(colMat(), e.mins)));
     if (части.length) addEvent("session", curKey(), "pastel",
       (course().mode === "watch" ? "Смотрел: " : "Рисовал: ") + course().name + " · " + части.join(", "),
       { fields: { mins: e.mins, steps: шагов, createdAt: now(),
@@ -11298,6 +11279,7 @@ function pracFinish() {
     saveData();
     schedulePush();
     won = pracCelebrate();
+    colПоказать(colGrant(colMat(), colПорция(colMat(), e.mins)));
     // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
     pracEvent(e);
     toast("Занятие записано: " + e.mins + " мин"
@@ -11679,7 +11661,7 @@ function gmLayersOf() {
   /* Собрание живёт вкладкой карты, а не отдельным экраном: всё, что про книгу,
      открывается одной кнопкой. Отдельный ромбик в шапке был второй дверью в то
      же место. */
-  if (isBook() && book() && colItems(book()).length) есть.add("col");
+  if (colMat() && colItems().length) есть.add("col");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Файл книги для этой карты — только у книг, и только если он залит. */
@@ -14971,16 +14953,30 @@ function colTheme(kind, name, темы) {
 const COL_MUS_KIND = { место: "art0", вещь: "thing", приём: "word",
                        материал: "thing", книга: "book", теория: "word",
                        картина: "art", искусство: "art", скульптура: "art",
-                       икона: "art", гравюра: "art", фото: "art" };
+                       икона: "art", гравюра: "art", фото: "art",
+                       мозаика: "art", "резьба по камню": "art", "место в книге": "art0" };
 /* Вид проставлен не у всех: у «Одиссеи» сорок два предмета — вазы, статуи,
    геммы — заведены без него. Такие получают собственный слой art0, и книга
    решает сама, куда их деть: у поэмы это отдельная тема «что можно увидеть»,
    а не хвост к местам. */
 const COL_MUS_DEF = "art0";
 
-/* Всё, что может попасть в собрание: записи карты и артефакты книги. */
+/* Материал, чьё собрание сейчас смотрим. У книги оно набирается по главам, у
+   пьесы и рисунка — по занятиям: глав там нет, зато есть вечера. */
+function colMat() {
+  /* Отдаём сам материал с пометкой вида: главам и страницам нужен весь объект,
+     а не выжимка из имени и id. */
+  if (isBook() && book()) return Object.assign({}, book(), { kind: "book" });
+  if (isPiano() && piece()) return Object.assign({}, piece(), { title: piece().name, kind: "piece" });
+  if (isCourse() && course()) return Object.assign({}, course(), { id: curKey(), kind: "course" });
+  return null;
+}
+
+/* Всё, что может попасть в собрание: записи карты и артефакты материала.
+   Одно и то же имя из обоих источников — одна вещь: у пьесы заметки теории
+   лежат и в разборе, и в музее. */
 function colItems(b0) {
-  const b = b0 || book();
+  const b = b0 || colMat();
   if (!b) return [];
   const темы = colThemes(b);
   /* Записи без главы («вокруг книги») тоже в собрании и открыты сразу: они не
@@ -14990,24 +14986,56 @@ function colItems(b0) {
      двести двенадцать — списком это не собрание, а карта, переписанная в
      столбик. Для мест есть карта, и она открыта с первого дня. Артефакты
      музеев при этом остаются: туда можно поехать, и это не то же самое. */
-  const из = bookMap(b).filter((p) => слойТочки(p) !== "place").map((p) => ({
+  const карта = b.kind === "book" ? bookMap(b) : ((artsOf(b.id) || {}).map || []);
+  const из = карта.filter((p) => слойТочки(p) !== "place").map((p) => ({
     id: слойТочки(p) + "|" + p.name, name: p.name, kind: слойТочки(p),
     ch: частьТочки(p), t: p.t || "", about: p.about || "", q: p.q || "",
     icon: p.icon || "", theme: colTheme(слойТочки(p), p.name, темы), art: false, rec: p,
   }));
+  const поИмени = new Set(из.map((x) => x.name));
   for (const x of musItems()) {
-    if (x.book !== b.id || !Number(x.ch)) continue;
+    if (x.book !== b.id || поИмени.has(x.name)) continue;
+    if (b.kind === "book" && !Number(x.ch)) continue;
     из.push({ id: "art|" + x.id, name: x.name, kind: "art0", ch: Number(x.ch),
               t: x.why || "", about: x.about || "", q: x.q || "", icon: x.icon || "🏺",
               theme: colTheme(COL_MUS_KIND[x.kind] || COL_MUS_DEF, x.name, темы), art: true, rec: x });
   }
   return из;
 }
-/* Открыто — когда глава дочитана до последней страницы. */
-const colOpen = (b, it) =>
-  !Number(it.ch) || bookProgressOf(b) >= chapterEnd(b, Number(it.ch) - 1);
+/* У книги открыто то, чья глава дочитана до последней страницы. У пьесы и
+   рисунка глав нет: там вещи выдаются по одной-две за занятие, и открытым
+   считается то, что уже выдали. */
+const colGiven = (id) => {
+  data.colGiven = data.colGiven || {};
+  return (data.colGiven[id] = data.colGiven[id] || []);
+};
+function colOpen(b, it) {
+  if (!b) return false;
+  if (b.kind && b.kind !== "book") return colGiven(b.id).includes(it.id);
+  return !Number(it.ch) || bookProgressOf(b) >= chapterEnd(b, Number(it.ch) - 1);
+}
+/* Сколько вещей открывает одно занятие. У пьесы — по времени за инструментом:
+   короткий заход это тоже занятие, но двадцать минут и час отличаются, и это
+   единственное место, где разница видна. У рисунка лист один, а вещей две:
+   приём и картина, чтобы за вечер было и чему поучиться, и на что посмотреть. */
+function colПорция(мат, мин) {
+  if (!мат) return 0;
+  if (мат.kind === "piece") return мин >= 40 ? 2 : мин >= 15 ? 1 : 0;
+  if (мат.kind === "course") return 2;
+  return 0;
+}
+/* Выдаём следующие по порядку — тем, в котором они лежат в разборе. */
+function colGrant(мат, сколько) {
+  if (!мат || сколько <= 0) return [];
+  const дано = colGiven(мат.id);
+  const новые = colItems(мат).filter((x) => !дано.includes(x.id)).slice(0, сколько);
+  if (!новые.length) return [];
+  for (const x of новые) дано.push(x.id);
+  saveData(); schedulePush();
+  return новые;
+}
 function colStats(b0) {
-  const b = b0 || book();
+  const b = b0 || colMat();
   const всё = colItems(b);
   return colThemes(b).map((t) => {
     const свои = всё.filter((x) => x.theme === t.id);
@@ -15038,7 +15066,7 @@ const colOfChapter = (b, n) => colItems(b).filter((x) => Number(x.ch) === Number
 /* ── Собрание: вкладка карты ── */
 function colRender() {
   const тело = $("#gmCol");
-  const b = book();
+  const b = colMat();
   if (!тело || !b) return;
   colBackfill();
   const темы = colStats(b);
