@@ -223,6 +223,12 @@
     #musBtn[hidden] { display: none; }
     #musBtn { font-size: 1.05rem; }
     #musBtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); border-color: transparent; }
+    /* Точка «есть новое» — та же тихая, что у тем внутри собрания. */
+    #musBtn.hasnew { position: relative; }
+    #musBtn.hasnew::after {
+      content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+      border-radius: 50%; background: var(--gold); opacity: 0.85; box-shadow: 0 0 0 2px var(--bg);
+    }
     #wallBtn[hidden] { display: none; }
     #wallBtn { font-size: 1rem; }
     #wallBtn.on { background: rgba(255, 201, 77, 0.16); color: var(--gold); border-color: transparent; }
@@ -3827,7 +3833,7 @@
     <header>
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
-      <button class="gear" id="musBtn" aria-label="Артефакты" title="Артефакты" hidden>◈</button>
+      <button class="gear" id="musBtn" aria-label="Собрание" title="Собрание" hidden>◈</button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 

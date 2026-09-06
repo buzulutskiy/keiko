@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 476";
+const APP_VERSION = "Кэйко 477";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2554,11 +2554,16 @@ function syncTabHeight() {
    каждый раз выбирать, куда идти. Код и экран целы: снимается одна строка,
    и раздел возвращается. */
 const MUS_TAB = false;
+/* Ромбик в шапке ведёт в собрание того материала, что открыт на главном:
+   отдельная кнопка в ряду с «отметить» и картой была третьей и лишней, а
+   собрание — это не действие дня, а место, куда заходят между делом. */
 function renderMusBtn() {
   const b = $("#musBtn");
   if (!b) return;
-  b.hidden = !MUS_TAB || !musItems().some(musOpen);
-  b.classList.toggle("on", tab === "mus");
+  b.hidden = !colBtnOn();
+  b.classList.toggle("hasnew", !!colNew().length);
+  b.setAttribute("aria-label", "Собрание");
+  b.setAttribute("title", "Собрание");
 }
 
 function renderTabbar() {
@@ -4125,8 +4130,6 @@ $("#view").innerHTML = `
             ? `<span class="cta-ok">${T("ctaDone")}</span><span class="cta-add">${isPiano() && piece().bars ? T("ctaAgain") : T("ctaAdd")}</span>`
             : (isBook() ? T("ctaBook") : isWatch() ? T("ctaWatch") : isPastel() && lessons().length ? T(courseWatch() ? "ctaLessonSeen" : "ctaLessonGo") : isPastel() && plainDraw() ? T("ctaDraw") : isCourse() ? T("ctaPastel") : T("ctaPiano"))}
       </button>
-        <button class="cta-side ${colNew().length ? "hasnew" : ""}" id="colBtn" type="button"
-          ${colBtnOn() ? "" : "hidden"} aria-label="Собрание" title="Собрание">🧺</button>
         <button class="cta-side" id="bookMapBtn" type="button" ${кнопки.map.on ? "" : "hidden"}
           aria-label="${isPiano() ? "Справочник по тактам" : "Карта мест"}"
           title="${isPiano() ? "Справочник по тактам" : "Карта мест"}">${isPiano() ? "📖" : "🗺"}</button>
@@ -4138,8 +4141,6 @@ $("#view").innerHTML = `
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => openPlaceMap(mapMaterial() || book(), -1));
-  const cb = $("#colBtn");
-  if (cb) cb.addEventListener("click", openCollection);
 
   const wtGo = $("#wishTodayGo");
   if (wtGo) wtGo.addEventListener("click", () => {
@@ -16908,6 +16909,7 @@ function boot() {
 
   $("#gearBtn").addEventListener("click", openSettingsSheet);
   $("#musBtn").addEventListener("click", () => {
+    if (!MUS_TAB) { useMark("собрание"); openCollection(); return; }
     /* Второе нажатие возвращает туда, откуда пришёл: кнопка в шапке работает
        как переключатель, а не как ещё одна вкладка. */
     if (tab === "mus") { tab = cfg.tabBack || "home"; }
