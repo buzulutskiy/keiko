@@ -1898,9 +1898,13 @@
        строк экран висит поверх приложения с запуска. Это уже случалось. */
     #col[hidden] { display: none; }
     #col {
-      position: fixed; inset: 0; z-index: 80; background: var(--bg);
+      position: fixed; inset: 0; z-index: 80;
+      /* Цвет — базовый, картинка — тот же градиент, что рисует .bgfx на
+         главной: подставляется из paintBackdrop при открытии. */
+      background-color: var(--bg); background-repeat: no-repeat; background-size: cover;
       display: flex; flex-direction: column;
     }
+    #colTop { background: transparent; }
     #colTop {
       display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
       padding: calc(env(safe-area-inset-top) + 12px) 14px 12px;

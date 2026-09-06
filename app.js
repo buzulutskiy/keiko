@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 478";
+const APP_VERSION = "Кэйко 479";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4005,6 +4005,9 @@ function readCoverTones(url) {
 
 let lastPainted = null;
 let bgTone = null;      // цвет верхнего фона — волны берут его же, чтобы не спорить
+/* Тот же градиент нужен экранам поверх главной: сплошная темнота на весь
+   экран читается как другое приложение, а свет сверху держит его своим. */
+let bgCss = "";
 
 function paintBackdrop(item) {
   const layers = document.querySelectorAll(".bgfx i");
@@ -4020,6 +4023,9 @@ function paintBackdrop(item) {
     `radial-gradient(760px 460px at -6% 4%, rgba(${c2}, 0.18), transparent 58%),` +
     `radial-gradient(760px 420px at 52% 110%, rgba(${c1}, 0.16), transparent 60%)`;
 
+  bgCss = css;
+  const собр = document.getElementById("col");
+  if (собр && !собр.hidden) собр.style.backgroundImage = css;
   if (layers[bgLayer].style.backgroundImage === css) return;   // тот же тон — не трогаем
   const next = layers[bgLayer ^ 1];
   next.style.backgroundImage = css;
@@ -15023,6 +15029,7 @@ function openCollection() {
   if (!box || !isBook()) return;
   colView = null;
   box.hidden = false; box.setAttribute("aria-hidden", "false");
+  box.style.backgroundImage = bgCss;      // тот же свет сверху, что на главной
   colRender();
   keepAwake(true);
 }
