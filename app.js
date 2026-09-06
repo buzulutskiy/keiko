@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 466";
+const APP_VERSION = "Кэйко 467";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -751,15 +751,14 @@ function musOpen(x) {
   if (!Number(x.ch)) return true;      // без главы — открыт сразу, но только своей книге
   return bookProgressOf(b) >= chapterEnd(b, Number(x.ch) - 1);
 }
-/* У пьесы нет ни глав, ни страниц — есть закрытые блоки по четыре такта.
-   ch говорит, сколько их должно быть позади. По занятиям считать нельзя: их к
-   этому дню уже два десятка, и все вещи открылись бы разом. А блок — это
-   настоящая веха: четыре такта, разобранные обеими руками и сшитые. */
+/* У пьесы артефакт открывает не число занятий и не блок, а сама очередь
+   теории: заметка пришла после занятия — она же появилась в собрании. Один
+   механизм на две поверхности, и потому нельзя рассинхронизироваться.
+   По числу занятий считать нельзя: их к этому дню два десятка, и всё
+   открылось бы разом. */
 function musOpenPiece(x, p) {
-  const n = Number(x.ch);
-  if (!n) return true;
   return withMaterial({ track: "piano", pieceId: p.id },
-    () => pracBlocks().filter(blockDone).length) >= n;
+    () => ((pracStore().theory) || []).includes(x.name));
 }
 const musOpenSet = () => new Set(musItems().filter(musOpen).map((x) => x.id));
 
