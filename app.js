@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 463";
+const APP_VERSION = "Кэйко 464";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1915,6 +1915,13 @@ function saveEntry() {
     });
   }
   if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
+  /* Одна заметка теории за занятие — и только у пьесы. Больше одной за раз не
+     даём: две подряд читаются как лекция, а смысл в том, чтобы каждый раз
+     уносить ровно одну мысль. */
+  if (isPiano() && !ctx.watch) {
+    const т = theoryNext();
+    if (т) { theoryTake(т); overlayQueue.push({ type: "theory", x: т }); }
+  }
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
      него данные меняли ещё трижды: musStamp, stampProgress и addEvent. Ни один
@@ -1956,6 +1963,7 @@ function showNextOverlay() {
   else if (item.type === "mus") showMus(item.x, item.i, item.n);
   else if (item.type === "musMany") showMusMany(item.list, item.n);
   else if (item.type === "bookDone") showBookDone(item.book);
+  else if (item.type === "theory") showTheory(item.x);
   else showFacts(item.list);
 }
 
@@ -1967,6 +1975,21 @@ let overlayHop = 0;
 function nextOverlaySoon() {
   if (overlayHop || !overlayQueue.length) return;
   overlayHop = setTimeout(() => { overlayHop = 0; showNextOverlay(); }, 220);
+}
+
+/* Заметка теории после занятия. Тот же экран, что у артефакта, и по той же
+   причине: читать хочется ровно в ту минуту, когда закрыл сессию, — а не
+   когда-нибудь потом, зайдя в справочник. */
+function showTheory(x) {
+  const step = $("#cheerStep");
+  step.hidden = false;
+  step.textContent = "Теория";
+  $("#cheerIc").textContent = x.icon || "🎼";
+  $("#cheerTitle").textContent = x.name;
+  $("#cheerText").textContent = [x.t, x.about].filter(Boolean).join(" — ");
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Понятно";
+  const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
+  $("#cheer").classList.add("show");
 }
 
 /* Открывшийся предмет музея. Отдельный экран, а не строчка в списке наград:
@@ -4337,9 +4360,35 @@ function mapMaterial() {
   return null;
 }
 const mapBtnOn = () => {
+  /* У пьесы карты нет. Заходить в справочник до занятия или после — некуда
+     приложить: мотивации читать теорию просто так не возникает. Те же тридцать
+     заметок теперь приходят по одной в конце занятия, как артефакты у рисунка:
+     закрыл сессию — открылось, и вот тогда читаешь. */
+  if (isPiano()) return false;
   const m = mapMaterial();
   return !!m && mapWhole(m).length > 0 && (!!mapBox(m) || !mapHasPlaces(m));
 };
+
+/* ── Теория пьесы: по одной заметке за занятие ──
+   Порядок — тот, в котором они лежат в файле разбора: от «две чёрные и три
+   чёрные» к каденции. Пропускать и выбирать нечего: следующая всегда та,
+   которую ещё не открывали. */
+function theoryList() {
+  const p = piece();
+  if (!p) return [];
+  const a = artsOf(p.id);
+  return (a && Array.isArray(a.map) ? a.map : []).filter((x) => x && x.name && x.about);
+}
+const theorySeen = () => (pracStore().theory = pracStore().theory || []);
+function theoryNext() {
+  const было = new Set(theorySeen());
+  return theoryList().find((x) => !было.has(x.name)) || null;
+}
+function theoryTake(x) {
+  if (!x) return;
+  theorySeen().push(x.name);
+  pracStore().updatedAt = now();
+}
 
 function bookBtnState() {
   return { map: { on: mapBtnOn() } };
