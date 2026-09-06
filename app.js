@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 479";
+const APP_VERSION = "Кэйко 480";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2561,7 +2561,10 @@ function renderMusBtn() {
   const b = $("#musBtn");
   if (!b) return;
   b.hidden = !colBtnOn();
-  b.classList.toggle("hasnew", !!colNew().length);
+  /* Точки на ромбике нет: на главной она читается как «тебя ждут дела».
+     Внутри собрания метки остаются — там они помогают найти свежее, а не
+     подгоняют. */
+  b.classList.remove("hasnew");
   b.setAttribute("aria-label", "Собрание");
   b.setAttribute("title", "Собрание");
 }
