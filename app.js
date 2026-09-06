@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 477";
+const APP_VERSION = "Кэйко 478";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13215,7 +13215,11 @@ function bindPlaceMap() {
   const колЗ = $("#colClose");
   if (колЗ) колЗ.addEventListener("click", closeCollection);
   const колН = $("#colBack");
-  if (колН) колН.addEventListener("click", () => { colLeave(); colView = null; colRender(); });
+  /* Назад — на шаг: из вещи в тему, из темы в список тем. */
+  if (колН) колН.addEventListener("click", () => {
+    if (colAt) { colAt = null; colRender(); return; }
+    colLeave(); colView = null; colRender();
+  });
 
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
@@ -15037,82 +15041,96 @@ function colRender() {
   const b = book();
   if (!тело || !b) return;
   const темы = colStats(b);
-  if (назад) назад.hidden = !colView;
+  if (назад) назад.hidden = !colView && !colAt;
 
   if (!colView) {
     const есть = темы.reduce((n, t) => n + t.есть, 0);
     const всего = темы.reduce((n, t) => n + t.всего, 0);
     if (имя) имя.textContent = "Собрание";
-    /* Подпись темы не показываем: она перечисляла содержимое — «Федотов, Перов,
-       Крамской», — то есть выдавала то, что ещё не открыто. */
+    /* Список тем — строками, как список артефактов: значок, имя, счётчик и
+       полоса. Подпись темы не показываем: она перечисляла содержимое, то есть
+       выдавала то, что ещё не открыто. */
     тело.innerHTML = !всего
       ? `<div class="cl-none">У этой книги собрания пока нет.</div>`
-      : `<p class="cl-lead">Собрано ${есть} из ${всего} за «${esc(b.title)}».
-           Пополняется, когда дочитываешь главу до конца.</p>` +
+      : `<div class="ms-head">Собрано ${есть} из ${всего} · «${esc(b.title)}»</div>` +
         темы.map((t) => `
           <button class="cl-t" data-theme="${t.id}" type="button">
-            <span class="cl-h"><b>${t.icon ? esc(t.icon) + " " : ""}${esc(t.name)}${
-              t.новых ? `<span class="cl-dot" aria-label="есть новое"></span>` : ""}</b><em>${
-              t.есть} из ${t.всего}${t.арт ? " · 🏺 " + t.арт : ""}</em></span>
-            <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
+            <span class="cl-row">
+              <span class="cl-tic">${esc(t.icon || "•")}</span>
+              <span class="cl-tx">
+                <span class="cl-h"><b>${esc(t.name)}${
+                  t.новых ? `<span class="cl-dot" aria-label="есть новое"></span>` : ""}</b><em>${
+                  t.есть} из ${t.всего}</em></span>
+                <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
+              </span>
+            </span>
           </button>`).join("");
+  } else if (colAt) {
+    /* Одна вещь во весь экран, как карточка артефакта: описание, ссылки и
+       переходы к соседним — чтобы листать собрание, не возвращаясь в список. */
+    const t = темы.find((x) => x.id === colView) || темы[0];
+    const список = colOrder(b, t.id);
+    const x = список.find((y) => y.id === colAt);
+    if (!x) { colAt = null; return colRender(); }
+    const i2 = список.indexOf(x), пред = список[i2 - 1], след = список[i2 + 1];
+    if (имя) имя.textContent = (t.icon ? t.icon + " " : "") + t.name;
+    тело.innerHTML = `
+      <div class="ms-top"><button class="back" data-colgo="" type="button">‹ ${esc(t.name)}</button></div>
+      <div id="msOne">
+        <div class="ms-big">${esc(x.icon || COL_ICON[x.kind] || "•")}</div>
+        <h3>${esc(x.name)}</h3>
+        <div class="ms-from">${x.ch ? "глава " + x.ch : "вокруг книги"}</div>
+        ${x.t ? `<p>${esc(x.t)}</p>` : ""}
+        ${x.about ? `<p class="ms-about">${esc(x.about)}</p>` : ""}
+        ${gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)}
+        <div class="ms-nav">
+          <button data-colgo="${esc(пред ? пред.id : "")}" type="button" ${пред ? "" : "disabled"}>‹ ${
+            esc(пред ? пред.name : "")}</button>
+          <button data-colgo="${esc(след ? след.id : "")}" type="button" ${след ? "" : "disabled"}>${
+            esc(след ? след.name : "")} ›</button>
+        </div>
+      </div>`;
   } else {
     const t = темы.find((x) => x.id === colView) || темы[0];
     const свои = colItems(b).filter((x) => x.theme === t.id);
-    /* Сверху — то, что пришло последним: человек открывает собрание сразу
-       после главы и хочет увидеть, чем она пополнила, а не первую страницу
-       книги. Записи без главы («вокруг книги») уходят в конец: они не привязаны
-       к чтению и «свежими» не бывают. */
-    const мои = свои.filter((x) => colOpen(b, x))
-      .sort((x, y) => (Number(y.ch) || 0) - (Number(x.ch) || 0));
-    // закрытые наоборот: ближайшее к текущей главе первым
-    const ждутСписок = свои.filter((x) => !colOpen(b, x))
-      .sort((x, y) => (Number(x.ch) || 0) - (Number(y.ch) || 0));
-    const ждут = ждутСписок.length;
+    const мои = colOrder(b, t.id);
+    const ждут = свои.length - мои.length;
     if (имя) имя.textContent = (t.icon ? t.icon + " " : "") + t.name;
-    /* Закрытые показываем ячейками без имени: видно, сколько ещё впереди, и
-       ничего не выдано. Имени в разметке нет вовсе — заглушка не текст, а
-       полоска, поэтому его не достать ни выделением, ни поиском. */
     тело.innerHTML = `
       <div class="cl-top">
-        <span class="cl-h"><b>Собрано ${мои.length} из ${свои.length}</b>${
-          мои.filter((x) => x.art).length ? `<em>🏺 ${мои.filter((x) => x.art).length}</em>` : "<em></em>"}</span>
+        <span class="cl-h"><b>Собрано ${мои.length} из ${свои.length}</b><em></em></span>
         <span class="cl-bar"><i style="width:${свои.length ? Math.round(мои.length / свои.length * 100) : 0}%"></i></span>
       </div>
-      <div class="cl-cards">
-        ${ждут ? `<div class="cl-stack" aria-hidden="true">
-          <span class="cl-ic">📦</span>
-          <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
-        </div>` : ""}
+      ${ждут ? `<div class="cl-stack" aria-hidden="true">
+        <span class="cl-ic">📦</span>
+        <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
+      </div>` : ""}
+      ${мои.length ? `<div id="msGrid">
         ${мои.map((x) => `
-          <div class="gl-it${colAt === x.id ? " on" : ""}${colIsNew(b, x) ? " new" : ""}">
-            <button class="gl-head" data-item="${esc(x.id)}" type="button">
-              <span class="gl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
-              <span class="gl-txt">
-                <b>${esc(x.name)}</b>
-                ${x.t ? `<i>${esc(x.t.split(" · ")[0])}</i>` : ""}
-              </span>
-            </button>
-            ${colAt === x.id && x.about ? `<p>${esc(x.about)}</p>` : ""}
-            ${colAt === x.id
-              ? gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)
-              : ""}
-          </div>`).join("")}
-      </div>
-      ${!свои.length ? `<div class="cl-none">Тут пока пусто.</div>` : ""}`;
+          <button class="ms-tile${colIsNew(b, x) ? " new" : ""}" data-item="${esc(x.id)}" type="button">
+            <i>${esc(x.icon || COL_ICON[x.kind] || "•")}</i>
+            <b>${esc(x.name)}</b>
+            <em>${esc((x.t || "").split(" · ")[0])}</em>
+          </button>`).join("")}
+      </div>` : `<div class="cl-none">Тут пока пусто — дочитай главу до конца.</div>`}`;
   }
   тело.scrollTop = 0;
-  /* Помечаем просмотренным не при входе, а при выходе: иначе рамка гасла бы
+  /* Помечаем просмотренным не при входе, а при выходе: иначе метка гасла бы
      в тот же миг, когда её показали, и смотреть было бы не на что. */
   if (colView && !colWas) colWas = colItems(b).filter((x) => x.theme === colView && colIsNew(b, x));
   тело.querySelectorAll("[data-theme]").forEach((el) =>
     el.addEventListener("click", () => { colView = el.dataset.theme; colAt = null; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
-    el.addEventListener("click", () => {
-      colAt = colAt === el.dataset.item ? null : el.dataset.item;   // второе нажатие закрывает
-      colRender();
-    }));
+    el.addEventListener("click", () => { colAt = el.dataset.item; colRender(); }));
+  тело.querySelectorAll("[data-colgo]").forEach((el) =>
+    el.addEventListener("click", () => { colAt = el.dataset.colgo || null; colRender(); }));
 }
+/* Порядок внутри темы: свежее сверху. Он же задаёт «предыдущее — следующее»
+   в карточке, иначе листание шло бы не так, как список. */
+const colOrder = (b, id) => colItems(b)
+  .filter((x) => x.theme === id && colOpen(b, x))
+  .sort((x, y) => (Number(y.ch) || 0) - (Number(x.ch) || 0));
+
 const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
                    animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
 

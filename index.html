@@ -1921,6 +1921,11 @@
       display: block; width: 100%; text-align: left; font: inherit; padding: 14px 0;
       background: none; border: 0; border-bottom: 1px solid var(--line);
     }
+    /* Строка темы — как строка в списке артефактов: значок слева, дальше имя,
+       счётчик и полоса. */
+    .cl-row { display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: center; }
+    .cl-tic { font-size: 1.45rem; line-height: 1; text-align: center; }
+    .cl-tx { min-width: 0; }
     .cl-t:first-of-type { border-top: 1px solid var(--line); }
     .cl-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
     .cl-h b { font-size: 1rem; font-weight: 650; color: var(--ink); }
@@ -1964,14 +1969,13 @@
     .cl-stack::after { left: 15px; right: 15px; bottom: -8px; opacity: 0.6; }
     /* Непросмотренное. Рамка держится, пока в тему не заглянул: гасим её на
        выходе, а не на входе, иначе она мигала бы и исчезала. */
-    /* Непросмотренное в собрании — та же тихая точка у имени, пока в тему не
-       заглянул. Рамка вокруг всей строки была слишком громкой. */
-    #colBody .gl-it.new .gl-txt b::after {
-      content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-      margin-left: 8px; vertical-align: middle; background: var(--gold); opacity: 0.75;
+    /* Непросмотренное — та же тихая точка в углу плитки. */
+    #colBody .ms-tile.new::before {
+      content: ""; position: absolute; top: 12px; right: 12px; width: 7px; height: 7px;
+      border-radius: 50%; background: var(--gold); opacity: 0.8;
     }
-    /* Имя вещи не режем: по нему ищут глазами, и обрезанное бесполезно. */
-    #colBody .gl-txt b { white-space: normal; overflow: visible; text-overflow: clip; }
+    #colBody #msGrid { margin-top: 4px; }
+    #colBody .ms-head { margin-top: 0; }
     /* Метка нового — точка, а не значок с числом: она должна попадаться на
        глаза, а не требовать внимания. Число всё равно рядом, в счётчике темы. */
     .cl-dot {
