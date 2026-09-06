@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 475";
+const APP_VERSION = "Кэйко 476";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1888,7 +1888,9 @@ function saveEntry() {
      другой. Когда открылось сразу много — например, отметили десяток глав за
      раз, — по одной их не листают: первые три показываем, остальные одним
      списком, как карточки знаний. */
-  musOverlays(freshMus).forEach((o) => overlayQueue.push(o));
+  /* Отдельных экранов «открылся артефакт» больше нет: они приходят в общем
+     итоге главы вместе со словами и вещами. */
+  if (MUS_TAB) musOverlays(freshMus).forEach((o) => overlayQueue.push(o));
 
   const stamped = stampProgress(fresh, freshFacts);
   /* Карточка дня пишется на каждую отметку, а не только когда что-то открылось.
@@ -2547,10 +2549,15 @@ function syncTabHeight() {
 /* Артефакты живут кнопкой в шапке, рядом с настройками: внизу шесть вкладок
    не помещаются по-человечески, а сюда раздел просится — его открывают реже,
    чем прогресс, но чаще, чем настройки. */
+/* Отдельного раздела артефактов больше нет: артефакты живут в собрании,
+   вместе со словами и вещами. Держать две двери в одно и то же — значит
+   каждый раз выбирать, куда идти. Код и экран целы: снимается одна строка,
+   и раздел возвращается. */
+const MUS_TAB = false;
 function renderMusBtn() {
   const b = $("#musBtn");
   if (!b) return;
-  b.hidden = !musItems().some(musOpen);
+  b.hidden = !MUS_TAB || !musItems().some(musOpen);
   b.classList.toggle("on", tab === "mus");
 }
 
@@ -15019,7 +15026,7 @@ function closeCollection() {
   const box = $("#col");
   if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
   colView = null;
-  colCard(null);
+  colAt = null;
   keepAwake(false);
   render();                  // счётчик на кнопке мог измениться
 }
@@ -15044,7 +15051,7 @@ function colRender() {
         темы.map((t) => `
           <button class="cl-t" data-theme="${t.id}" type="button">
             <span class="cl-h"><b>${t.icon ? esc(t.icon) + " " : ""}${esc(t.name)}${
-              t.новых ? `<span class="cl-dot">${t.новых}</span>` : ""}</b><em>${
+              t.новых ? `<span class="cl-dot" aria-label="есть новое"></span>` : ""}</b><em>${
               t.есть} из ${t.всего}${t.арт ? " · 🏺 " + t.арт : ""}</em></span>
             <span class="cl-bar"><i style="width:${Math.round(t.есть / t.всего * 100)}%"></i></span>
           </button>`).join("");
@@ -15077,51 +15084,37 @@ function colRender() {
           <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
         </div>` : ""}
         ${мои.map((x) => `
-          <button class="cl-c ${x.art ? "art" : ""}${colIsNew(b, x) ? " new" : ""}" data-item="${esc(x.id)}" type="button">
-            <span class="cl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
-            <span class="cl-n">
-              <b>${esc(x.name)}</b>
-              ${x.t ? `<i>${esc(x.t.split(" · ")[0])}</i>` : ""}
-            </span>
-          </button>`).join("")}
+          <div class="gl-it${colAt === x.id ? " on" : ""}${colIsNew(b, x) ? " new" : ""}">
+            <button class="gl-head" data-item="${esc(x.id)}" type="button">
+              <span class="gl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
+              <span class="gl-txt">
+                <b>${esc(x.name)}</b>
+                ${x.t ? `<i>${esc(x.t.split(" · ")[0])}</i>` : ""}
+              </span>
+            </button>
+            ${colAt === x.id && x.about ? `<p>${esc(x.about)}</p>` : ""}
+            ${colAt === x.id
+              ? gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)
+              : ""}
+          </div>`).join("")}
       </div>
       ${!свои.length ? `<div class="cl-none">Тут пока пусто.</div>` : ""}`;
   }
   тело.scrollTop = 0;
-  colCard(null);
   /* Помечаем просмотренным не при входе, а при выходе: иначе рамка гасла бы
      в тот же миг, когда её показали, и смотреть было бы не на что. */
   if (colView && !colWas) colWas = colItems(b).filter((x) => x.theme === colView && colIsNew(b, x));
   тело.querySelectorAll("[data-theme]").forEach((el) =>
-    el.addEventListener("click", () => { colView = el.dataset.theme; colRender(); }));
+    el.addEventListener("click", () => { colView = el.dataset.theme; colAt = null; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
-    el.addEventListener("click", () => colCard(el.dataset.item)));
+    el.addEventListener("click", () => {
+      colAt = colAt === el.dataset.item ? null : el.dataset.item;   // второе нажатие закрывает
+      colRender();
+    }));
 }
 const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
                    animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
 
-/* Справка к вещи — карточкой внизу самого экрана, как на карте. Общая шторка
-   лежит ниже собрания по слою, и открытую справку приходилось искать, закрыв
-   экран: выглядело как «нажал, и ничего не произошло». */
-function colCard(id) {
-  const card = $("#colCard"), b = book();
-  if (!card || !b) return;
-  const x = id && colItems(b).find((y) => y.id === id);
-  if (!x) { card.hidden = true; card.innerHTML = ""; colAt = null; return; }
-  colAt = id;
-  card.hidden = false;
-  card.innerHTML = `
-    <div class="cc-h">
-      <b>${esc(x.icon || COL_ICON[x.kind] || "•")} ${esc(x.name)}</b>
-      <button id="colCardX" type="button" aria-label="Закрыть">✕</button>
-    </div>
-    ${x.t ? `<p>${esc(x.t)}</p>` : ""}
-    ${x.about ? `<p class="cc-about">${esc(x.about)}</p>` : ""}
-    ${gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)}`;
-  card.scrollTop = 0;
-  const кн = $("#colCardX");
-  if (кн) кн.addEventListener("click", () => colCard(null));
-}
 let colAt = null, colWas = null;
 /* Уходя из темы, гасим её пометки. */
 function colLeave() {
