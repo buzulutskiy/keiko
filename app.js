@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 473";
+const APP_VERSION = "Кэйко 474";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14994,6 +14994,7 @@ function closeCollection() {
   const box = $("#col");
   if (box) { box.hidden = true; box.setAttribute("aria-hidden", "true"); }
   colView = null;
+  colCard(null);
   keepAwake(false);
   render();                  // счётчик на кнопке мог измениться
 }
@@ -15024,8 +15025,16 @@ function colRender() {
   } else {
     const t = темы.find((x) => x.id === colView) || темы[0];
     const свои = colItems(b).filter((x) => x.theme === t.id);
-    const мои = свои.filter((x) => colOpen(b, x));
-    const ждут = свои.length - мои.length;
+    /* Сверху — то, что пришло последним: человек открывает собрание сразу
+       после главы и хочет увидеть, чем она пополнила, а не первую страницу
+       книги. Записи без главы («вокруг книги») уходят в конец: они не привязаны
+       к чтению и «свежими» не бывают. */
+    const мои = свои.filter((x) => colOpen(b, x))
+      .sort((x, y) => (Number(y.ch) || 0) - (Number(x.ch) || 0));
+    // закрытые наоборот: ближайшее к текущей главе первым
+    const ждутСписок = свои.filter((x) => !colOpen(b, x))
+      .sort((x, y) => (Number(x.ch) || 0) - (Number(y.ch) || 0));
+    const ждут = ждутСписок.length;
     if (имя) имя.textContent = t.name;
     /* Закрытые показываем ячейками без имени: видно, сколько ещё впереди, и
        ничего не выдано. Имени в разметке нет вовсе — заглушка не текст, а
@@ -15037,6 +15046,10 @@ function colRender() {
         <span class="cl-bar"><i style="width:${свои.length ? Math.round(мои.length / свои.length * 100) : 0}%"></i></span>
       </div>
       <div class="cl-cards">
+        ${ждут ? `<div class="cl-stack" aria-hidden="true">
+          <span class="cl-ic">📦</span>
+          <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>придут с главами</i></span>
+        </div>` : ""}
         ${мои.map((x) => `
           <button class="cl-c ${x.art ? "art" : ""}" data-item="${esc(x.id)}" type="button">
             <span class="cl-ic">${esc(x.icon || COL_ICON[x.kind] || "•")}</span>
@@ -15045,44 +15058,42 @@ function colRender() {
               ${x.t ? `<i>${esc(x.t.split(" · ")[0])}</i>` : ""}
             </span>
           </button>`).join("")}
-        ${Array.from({ length: Math.min(ждут, 24) }, (_, i) => `
-          <div class="cl-c off" aria-hidden="true">
-            <span class="cl-ic">${esc(COL_ICON[(свои[мои.length + i] || {}).kind] || "•")}</span>
-            <span class="cl-n"><span class="cl-blur" style="width:${52 + (i * 37) % 40}%"></span></span>
-          </div>`).join("")}
       </div>
-      ${ждут > 24 ? `<div class="cl-soon">и ещё ${ждут - 24} впереди</div>` : ""}
       ${!свои.length ? `<div class="cl-none">Тут пока пусто.</div>` : ""}`;
   }
   тело.scrollTop = 0;
+  colCard(null);
   тело.querySelectorAll("[data-theme]").forEach((el) =>
     el.addEventListener("click", () => { colView = el.dataset.theme; colRender(); }));
   тело.querySelectorAll("[data-item]").forEach((el) =>
-    el.addEventListener("click", () => colSheet(el.dataset.item)));
+    el.addEventListener("click", () => colCard(el.dataset.item)));
 }
 const COL_ICON = { place: "📍", word: "📖", thing: "🔧", book: "📚", person: "👤",
                    animal: "🌿", art: "🖼", rock: "🪨", text: "✎", art0: "🏺" };
 
-/* Справка к вещи из собрания. Те же кнопки, что на карте: ChatGPT и картинки. */
-function colSheet(id) {
-  const b = book();
-  const x = colItems(b).find((y) => y.id === id);
-  if (!x) return;
-  sheetMode = "col";
-  openSheet(`
-    <div class="ach-sheet">
-      <div class="big open">${esc(x.icon || COL_ICON[x.kind] || "•")}</div>
-      <h3>${esc(x.name)}</h3>
-      ${x.t ? `<p style="max-width:340px">${esc(x.t)}</p>` : ""}
-      ${x.about ? `<p style="max-width:340px;color:var(--muted)">${esc(x.about)}</p>` : ""}
-      ${gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)}
+/* Справка к вещи — карточкой внизу самого экрана, как на карте. Общая шторка
+   лежит ниже собрания по слою, и открытую справку приходилось искать, закрыв
+   экран: выглядело как «нажал, и ничего не произошло». */
+function colCard(id) {
+  const card = $("#colCard"), b = book();
+  if (!card || !b) return;
+  const x = id && colItems(b).find((y) => y.id === id);
+  if (!x) { card.hidden = true; card.innerHTML = ""; colAt = null; return; }
+  colAt = id;
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="cc-h">
+      <b>${esc(x.icon || COL_ICON[x.kind] || "•")} ${esc(x.name)}</b>
+      <button id="colCardX" type="button" aria-label="Закрыть">✕</button>
     </div>
-    <div class="sheet-actions">
-      <button class="btn" id="colSheetClose" type="button">Закрыть</button>
-    </div>`);
-  const кн = $("#colSheetClose");
-  if (кн) кн.addEventListener("click", closeSheet);
+    ${x.t ? `<p>${esc(x.t)}</p>` : ""}
+    ${x.about ? `<p class="cc-about">${esc(x.about)}</p>` : ""}
+    ${gmSpravki({ kind: x.art ? "thing" : x.kind, name: x.name, t: x.t, q: x.q }, b.id)}`;
+  card.scrollTop = 0;
+  const кн = $("#colCardX");
+  if (кн) кн.addEventListener("click", () => colCard(null));
 }
+let colAt = null;
 
 /* ── Музей артефактов ──
    Вещи из музеев, привязанные к книгам: что по прочитанному можно пойти и

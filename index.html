@@ -1922,7 +1922,10 @@
       font-style: normal; font-size: 0.78rem; color: var(--dim);
       font-variant-numeric: tabular-nums; white-space: nowrap;
     }
-    .cl-bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; margin: 8px 0 6px; }
+    /* display: block обязателен — span по умолчанию инлайновый, и высота с
+       переполнением к нему не применяются: полоса просто не рисовалась. */
+    .cl-bar { display: block; height: 5px; border-radius: 3px; background: var(--track);
+              overflow: hidden; margin: 8px 0 6px; }
     .cl-bar i { display: block; height: 100%; border-radius: 3px; background: var(--gold); }
     .cl-hint { color: var(--dim); font-size: 0.78rem; line-height: 1.4; }
     /* Внутри темы: полоса сверху, дальше карточки. Закрытые — такие же ячейки
@@ -1941,9 +1944,40 @@
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cl-n i { display: block; font-style: normal; font-size: 0.78rem; color: var(--dim);
               margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cl-c.off { background: rgba(255, 255, 255, 0.02); border-style: dashed; }
-    .cl-c.off .cl-ic { opacity: 0.22; filter: blur(1.5px); }
-    .cl-blur { display: block; height: 11px; border-radius: 6px; background: var(--track); opacity: 0.6; }
+    /* Непройденное — одной стопкой сверху, а не хвостом из пустых ячеек:
+       видно, сколько впереди, и список не растягивается на два экрана. */
+    .cl-stack {
+      position: relative; margin-bottom: 16px;
+      display: grid; grid-template-columns: 34px 1fr; gap: 11px; align-items: center;
+      padding: 12px 13px; border-radius: 13px;
+      background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--glass-line);
+    }
+    .cl-stack::before, .cl-stack::after {
+      content: ""; position: absolute; left: 8px; right: 8px; bottom: -4px; height: 12px;
+      border-radius: 0 0 13px 13px; background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed var(--glass-line); border-top: 0; z-index: -1;
+    }
+    .cl-stack::after { left: 15px; right: 15px; bottom: -8px; opacity: 0.6; }
+    .cl-stack .cl-ic { opacity: 0.5; }
+    .cl-stack b { color: var(--muted); font-weight: 600; }
+    .cl-stack i { color: var(--dim); }
+
+    /* Карточка вещи — своя, внутри экрана. Общая шторка лежит ниже собрания по
+       слою, и её приходилось искать, закрыв экран. Как на карте. */
+    #colCard[hidden] { display: none; }
+    #colCard {
+      flex-shrink: 0; padding: 16px 18px calc(env(safe-area-inset-bottom) + 18px);
+      background: var(--sheet-solid); border-top: 1px solid var(--glass-line);
+      max-height: 56vh; overflow-y: auto; animation: gmUp 0.22s ease;
+    }
+    #colCard .cc-h { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+    #colCard .cc-h b { font-size: 1.1rem; flex: 1; }
+    #colCard .cc-h button {
+      width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; font-size: 0.9rem;
+      background: var(--glass); border: 1px solid var(--glass-line); color: var(--muted);
+    }
+    #colCard p { margin: 0 0 11px; font-size: 0.95rem; line-height: 1.6; color: var(--muted); }
+    #colCard .cc-about { font-size: 0.9rem; line-height: 1.62; color: var(--ink); opacity: 0.92; }
     .cl-soon { color: var(--dim); font-size: 0.82rem; padding: 14px 2px 0; line-height: 1.5; }
     .cl-none { color: var(--dim); font-size: 0.84rem; padding: 22px 2px; text-align: center; }
     /* Артефакты: раздел живёт вкладкой, поэтому ни своей шапки, ни крестика. */
@@ -3821,6 +3855,7 @@
       <button id="colClose" type="button" aria-label="Закрыть">✕</button>
     </div>
     <div id="colBody"></div>
+    <div id="colCard" hidden></div>
   </div>
 
   <div id="gmap" hidden aria-hidden="true">
