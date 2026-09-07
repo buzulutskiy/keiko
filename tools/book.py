@@ -203,6 +203,8 @@ def геокод(запрос, рамка=None):
 
 # ── подложка карты ─────────────────────────────────────────────────────────
 
+Number_ = lambda v: (str(v).isdigit() and int(v)) or 0
+
 мерк = lambda lat: math.log(math.tan(math.pi / 4 + lat * math.pi / 360))
 
 def подложка(точки, поле=0.012, зум=14, ширина=1700):
@@ -335,7 +337,32 @@ def проверить_собрание(spec):
     """Плотность по главам и распределение по темам. Тема на три записи
        читается как обрывок, глава на двадцать — как свалка."""
     карта = spec.get("map") or []
-    вещи = [x for x in карта if x.get("kind")]        # места в собрание не идут
+    # Как в приложении: места в собрание не идут, а одно имя в одном слое —
+    # одна запись. В файле слово размечено в каждой главе, где встречается
+    # («Стек» у «Столпов моря» — двадцать один раз), и без свода счёт врёт
+    # вдвое: показывает 294 там, где человек видит 147.
+    один = {}
+    for x in карта:
+        if not x.get("kind"): continue
+        ключ = x["kind"] + "|" + x["name"]
+        было = один.get(ключ)
+        длина = lambda y: len(y.get("about", "")) + len(y.get("t", ""))
+        if not было: один[ключ] = x
+        else:
+            глубже = x if длина(x) > длина(было) else было
+            рано = min([n for n in (было.get("part"), x.get("part")) if n] or [0])
+            один[ключ] = dict(глубже, part=рано) if рано else глубже
+    # Предметы музея — такая же часть собрания, они просто лежат в другом
+    # файле. Без них счёт занижен: у «Столпов моря» на семнадцать штук.
+    try:
+        муз = json.loads(гист(КАТАЛОГ, "museum.json")).get("items") or []
+    except Exception:
+        муз = []
+    имена = {x["name"] for x in один.values()}
+    свои = [x for x in муз if x.get("book") == spec["id"] and not x.get("hidden")
+            and not x.get("deleted") and x.get("name") not in имена and Number_(x.get("ch"))]
+    вещи = list(один.values()) + [{"kind": "art0", "name": x["name"], "part": int(x["ch"]),
+                                   "about": x.get("about", ""), "t": x.get("why", "")} for x in свои]
     по_гл, по_теме = {}, {}
     имена_тем = {t["id"]: (t.get("icon", "•"), t["name"]) for t in spec.get("themes", [])}
     for x in вещи:
@@ -343,12 +370,15 @@ def проверить_собрание(spec):
         t = тема_для(x, spec.get("themes") or [])
         по_теме[t] = по_теме.get(t, 0) + 1
     print(f"\n── собрание ──")
-    print(f"  вещей {len(вещи)}, мест на карте {len(карта) - len(вещи)}")
+    мест = len([x for x in карта if not x.get("kind")])
+    print(f"  вещей {len(вещи)} (из них предметов музея {len(свои)}), мест на карте {мест}")
     гл = spec["chapters"]
     for i, c in enumerate(гл):
         n = по_гл.get(i + 1, 0)
         стр = (гл[i + 1]["from"] if i + 1 < len(гл) else spec["pages"]) - c["from"]
-        знак = " ⚠" if стр and (n / стр > 0.5 or n < 3) else ""
+        # Ругаемся не на число, а на плотность: глава в пять страниц с пятью
+        # записями — это нормально, глава в сорок с двумя — пусто.
+        знак = " ⚠" if стр and (n / стр > 0.8 or (стр > 15 and n < 3)) else ""
         print(f"     {c['name'][:30]:30} {стр:>4} стр · {n:>3} вещей{знак}")
     if по_гл.get(0): print(f"     {'вокруг книги':30} {'':>4}     {по_гл[0]:>3}")
     for t, n in sorted(по_теме.items(), key=lambda x: -x[1]):
@@ -432,18 +462,28 @@ def build(путь_спеки):
 
     # 4. опись
     опись = json.loads(гист(КАТАЛОГ, "keiko-catalog.json"))
-    опись["materials"][key] = {
+    # Дописываем в существующую запись, а не заменяем её. В описи живут поля,
+    # которых в спеке нет и быть не должно: `arts` (есть ли разбор), `verse`
+    # (нумерация стихов у «Одиссеи»), `off`, `noAch`, старые `facts`. Замена
+    # целиком стёрла бы их молча — и «Одиссея» потеряла бы нумерацию строк.
+    было = опись["materials"].get(key) or {}
+    было.update({
         "cover": True, "md": True, "maxDays": spec.get("maxDays", 45),
         "ach": spec.get("ach", []), "words": spec.get("words", {}),
         "flavor": spec.get("flavor", {}), "ask": spec.get("ask", ""),
         "themes": spec.get("themes", []),
-    }
+    })
+    опись["materials"][key] = было
     опись["savedAt"] = int(time.time() * 1000)
     файлы_каталога["keiko-catalog.json"] = json.dumps(опись, ensure_ascii=False, separators=(",", ":"))
 
     # 5. профиль
     данные = json.loads(гист(ПРОФИЛИ, f"keiko-{профиль}.json"))
-    книга = {k: spec[k] for k in ("id", "title", "author", "pages") if k in spec}
+    # Запись книги тоже дополняем: `done`, `doneAt`, `archived` ставит человек
+    # в приложении, и перезапись спекой их бы сняла.
+    прежняя = next((b for b in данные["book"]["books"] if b.get("id") == key), {})
+    книга = dict(прежняя)
+    книга.update({k: spec[k] for k in ("id", "title", "author", "pages") if k in spec})
     for k in ("volume", "startPage", "art", "tone", "mode"):
         if spec.get(k) is not None: книга[k] = spec[k]
     книга["ratio"] = ratio
