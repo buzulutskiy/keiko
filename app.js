@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 505";
+const APP_VERSION = "Кэйко 506";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2748,6 +2748,41 @@ function normalizeActive() {
   if (first.courseId) data.pastel.activeCourse = first.courseId;
 }
 
+/* Материал, который отмечали последним. На открытии главная встаёт именно на
+   него: data.active меняется и от свайпа, и от синхронизации с другого
+   устройства, а вернуться хочется туда, где остановился по делу. */
+function lastMarkedItem() {
+  let когда = 0, чей = null;
+  const глянуть = (список, как) => {
+    for (const e of список || []) {
+      if (e.deleted) continue;
+      const t = Number(e.updatedAt || e.createdAt || 0);
+      if (t > когда) { когда = t; чей = как(e); }
+    }
+  };
+  глянуть(data.book.entries, (e) => ({ track: "book", id: e.bookId }));
+  глянуть(data.piano.entries, (e) => ({ track: "piano", id: e.pieceId }));
+  глянуть(data.pastel.entries, (e) => ({ track: "pastel", id: e.courseId }));
+  глянуть((data.watch || {}).entries, (e) => ({ track: "watch", id: e.videoId }));
+  return чей;
+}
+
+/* Ставим активным то, что отмечали последним, — но только на запуске и только
+   если материал ещё на главной: снятый с главной или пройденный возвращать
+   незачем. */
+function openOnLastMarked() {
+  const п = lastMarkedItem();
+  if (!п || !п.id) return;
+  const есть = railItems().some((it) =>
+    it.track === п.track && (it.bookId === п.id || it.pieceId === п.id || it.courseId === п.id || it.videoId === п.id));
+  if (!есть) return;
+  data.active = п.track;
+  if (п.track === "book") data.book.activeBook = п.id;
+  if (п.track === "piano") data.piano.activePiece = п.id;
+  if (п.track === "pastel") data.pastel.activeCourse = п.id;
+  if (п.track === "watch") data.watch.activeVideo = п.id;
+}
+
 function activeRailIndex(items) {
   const i = items.findIndex(it => it.track === data.active &&
     (it.track !== "piano" || it.pieceId === data.piano.activePiece) &&
@@ -3874,7 +3909,7 @@ function coverOf(item) {
         <img src="${esc(src)}" data-cov="${esc(b.id)}" alt="" width="465" height="720" decoding="async" fetchpriority="high">
       </div>`;
     return `
-      <div class="cover book ${esc(b.tone || "sea")}">
+      <div class="cover book ${esc(b.tone || "sea")}" data-covnone="${esc(b.id)}">
         <div><div class="cv-author">${esc(b.author || "")}</div></div>
         ${b.art === "wave" ? SEA_ART : b.art === "pine" ? PINE_ART : b.art === "quill" ? QUILL_ART : b.art === "lamp" ? LAMP_ART : `<div class="cv-mark">🦔</div>`}
         <div>
@@ -15792,13 +15827,29 @@ async function pullCover(id) {
 /* Обложки приезжают по одной. Раньше каждая дёргала полную громкую перерисовку —
    на полке это давало серию рывков. Теперь копим и перерисовываем один раз, тихо. */
 let coversTimer = 0;
+/* Обложка, приехавшая к уже нарисованной картинке, подставляется на месте.
+   Полная перерисовка нужна только там, где вместо фотографии стоит рисованная
+   обложка: у неё другая разметка. Считаем такие места и, если их нет,
+   экран не трогаем вовсе. */
+function coverPaint() {
+  let осталось = 0;
+  for (const el of document.querySelectorAll("img[data-cov]")) {
+    const src = coverCache.get(el.dataset.cov);
+    if (src && el.getAttribute("src") !== src) el.src = src;
+  }
+  for (const el of document.querySelectorAll("[data-covnone]"))
+    if (coverCache.get(el.dataset.covnone)) осталось++;
+  return осталось;
+}
+
 function coversArrived() {
+  const надо = coverPaint();
+  if (prac && prac.kind === "lesson") pracRender();
+  if (!надо) return;                 // всё подставилось на месте — экран цел
+  /* Ждём подольше: обложки приезжают чередой, и пересобирать экран под каждую
+     значит собрать его пять раз подряд. */
   clearTimeout(coversTimer);
-  coversTimer = setTimeout(() => {
-    render(true);
-    // картинка шага приезжает уже после того, как шаг открыт: показываем её
-    if (prac && prac.kind === "lesson") pracRender();
-  }, 260);
+  coversTimer = setTimeout(() => { coverPaint(); render(true); }, 900);
 }
 
 /* Наполнение каталога: файл, собранный из первой версии приложения.
@@ -17128,6 +17179,20 @@ async function syncNow(manual) {
        сверка обошлась одним пустым запросом. */
     const changed = cold ? strHash(myNorm) !== (cfg.syncNormBy || {})[profileId] : norm(mine) !== myNorm;
     if (changed) {
+      /* Пустое поверх полного не пишем. Устройство, у которого стёрли
+         хранилище (браузер вычистил, проверка, новый профиль), отправляло
+         наверх пустой профиль и стирало в гисте всё: книги, отметки, мысли.
+         Так уже случилось — спасла только история ревизий гиста. Если своё
+         пусто, а в гисте что-то есть, это не «я всё удалил», а «я ещё не
+         скачал»: молчим и ждём следующей сверки. */
+      const счёт = (o) => o ? ((o.book || {}).books || []).length + ((o.piano || {}).pieces || []).length
+        + ((o.book || {}).entries || []).length + ((o.piano || {}).entries || []).length
+        + ((o.pastel || {}).entries || []).length + (o.thoughts || []).length : 0;
+      if (!счёт(data) && счёт(mine)) {
+        syncError = "";
+        setSyncDot("");
+        return;                       // ничего не отправили — и ничего не потеряли
+      }
       // отправляем один файл — свой; чужие в гисте PATCH не трогает
       const payload = JSON.stringify(exportData());
       /* Своя половина мегабайта уходит дольше, чем качается: даём минуту.
@@ -17325,13 +17390,25 @@ function boot() {
       checkForUpdate(); if (selectedDate > todayStr()) selectedDate = todayStr(); syncNow(false); render(); }
   });
 
-  render();
+  /* Обложки из кэша достаём ДО первой отрисовки. Раньше экран рисовался
+     пустым, потом обложки приезжали по одной, и каждая тянула за собой полную
+     перерисовку: пять материалов — пять пересборок ленты подряд. Свайп,
+     начатый в эти секунды, откатывался к активной обложке.
+     Чтение из Cache Storage — дело местное и быстрое; на случай, если оно
+     всё-таки задумалось, рисуем через четверть секунды в любом случае. */
+  let первый = false;
+  const первая_отрисовка = () => {
+    if (первый) return; первый = true;
+    openOnLastMarked();
+    render();
+  };
+  setTimeout(первая_отрисовка, 250);
+  coverLoadAll().then(первая_отрисовка, первая_отрисовка);
   /* Просьба не выселять хранилище: ролики, звук и записи живут в Cache
      Storage, и система вправе вычистить его под давлением места. persist
      переводит хранилище в разряд «не трогать без крайности». Отказ — не
      беда, просто остаёмся как были. */
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch {}
-  coverLoadAll();                     // обложки из кэша — сразу, ещё до сети
   takeLoadAll().then(takesSweep);     // записи собственной игры, потом уборка сирот
   setTimeout(diaryFill, 3500);        // место и погода для записей, сделанных без сети
   audioLoadAll().then(() => {

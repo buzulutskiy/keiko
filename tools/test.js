@@ -3080,6 +3080,54 @@ const сеть = (() => {
   t.set("data", было);
 }
 
+/* ── Главная открывается на последнем отмеченном ── */
+{
+  const было = t.get("data");
+  t.set("data", {
+    active: "piano", piano: { activePiece: "p1", pieces: [{ id: "p1", name: "Пьеса", bars: 10 }],
+      entries: [{ id: "a", date: "2026-09-01", pieceId: "p1", updatedAt: 100 }] },
+    book: { activeBook: "kn", books: [{ id: "kn", title: "Книга", pages: 100, chapters: [{ from: 1 }] }],
+      entries: [{ id: "b", date: "2026-09-07", bookId: "kn", page: 20, updatedAt: 900 }] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    thoughts: [], wishes: [], hidden: {},
+  });
+  ок("последний отмеченный — книга", t.get("lastMarkedItem")(), { track: "book", id: "kn" });
+  t.get("openOnLastMarked")();
+  ок("главная встаёт на неё", t.get("data").active, "book");
+
+  /* Отметка у пьесы свежее — открываемся на пьесе. */
+  t.get("data").piano.entries[0].updatedAt = 2000;
+  t.get("openOnLastMarked")();
+  ок("свежая отметка перебивает", t.get("data").active, "piano");
+
+  /* Материала нет на главной — не возвращаем его. */
+  t.get("data").piano.pieces = [];
+  t.get("data").active = "book";
+  t.get("openOnLastMarked")();
+  ок("снятого с главной не возвращаем", t.get("data").active, "book");
+
+  t.set("data", было);
+}
+
+/* ── Пустое не затирает полное ── */
+{
+  /* Устройство с вычищенным хранилищем отправляло наверх пустой профиль и
+     стирало в гисте книги, отметки и мысли. Спасла только история ревизий. */
+  const счёт = (o) => o ? ((o.book || {}).books || []).length + ((o.piano || {}).pieces || []).length
+    + ((o.book || {}).entries || []).length + ((o.piano || {}).entries || []).length
+    + ((o.pastel || {}).entries || []).length + (o.thoughts || []).length : 0;
+  const пусто = { book: { books: [], entries: [] }, piano: { pieces: [], entries: [] },
+                  pastel: { entries: [] }, thoughts: [] };
+  const полно = { book: { books: [{ id: "kn" }], entries: [{ id: "e" }] },
+                  piano: { pieces: [], entries: [] }, pastel: { entries: [] },
+                  thoughts: [{ id: "t" }] };
+  ок("пустой профиль считается пустым", счёт(пусто), 0);
+  ок("полный — нет", счёт(полно) > 0, true);
+  ок("отправку пустого поверх полного запрещаем", !счёт(пусто) && !!счёт(полно), true);
+  ок("полное поверх полного отправляем", !(!счёт(полно) && счёт(полно)), true);
+  ок("пустое поверх пустого не мешаем", !(!счёт(пусто) && счёт(пусто)), true);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
