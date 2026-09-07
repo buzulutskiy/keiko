@@ -1171,15 +1171,18 @@ function ок(имя, факт, надо) {
     pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
     musAt: { "v1": Date.parse("2026-03-05T18:00:00") },
     thoughts: [{ id: "ev:session:kn:2026-03-05", event: "session", key: "kn", track: "book",
-                 date: "2026-03-05", createdAt: Date.parse("2026-03-05T18:00:00"), text: "Читал" }] });
+                 date: "2026-03-05", createdAt: Date.parse("2026-03-05T18:00:00"), text: "Читал",
+                 awards: [{ id: "a1", icon: "✦", name: "Ослепление Полифема — группа из Сперлонги" }] }] });
   t.set("CATALOG", { kn: { facts: [], ach: [] } });
-  t.set("MUSEUM", { items: [{ id: "v1", book: "kn", ch: 1,
-    name: "Ослепление Полифема — группа из Сперлонги", kind: "скульптура" }] });
+  t.set("MUSEUM", { items: [] });
   const узел = { hidden: false, innerHTML: "" };
   t.set("document.querySelector", (s) => (s === "#view" ? узел : null));
   t.set("tab", "notes");
   try { t.get("renderNotes")(); } catch (e) { /* остальной DOM тут не нужен */ }
-  const имя = (/data-ev-art="[^"]*"[^>]*>\s*<i>[^<]*<\/i><span>([^<]*)</.exec(узел.innerHTML) || [])[1] || "";
+  /* Фишка теперь одна — награда: артефакты из ленты сняты, собрание живёт
+     своим экраном. */
+  const имя = (/data-ev-ach="[^"]*"[^>]*>\s*<i>[^<]*<\/i><span>([^<]*)</.exec(узел.innerHTML) || [])[1] || "";
+  ок("лента: артефактов в карточке дня больше нет", /data-ev-art=/.test(узел.innerHTML), false);
   ок("лента: длинное имя обрезано", имя.length <= 29, true);
   ок("лента: обрезка помечена многоточием", имя.endsWith("…"), true);
   ок("лента: обрыв не посреди слова", /\s\S{0,3}…$/.test(имя), false);
@@ -2948,6 +2951,38 @@ const сеть = (() => {
     t.get("data").colSeen["bwv853|word|Октава"], 200);
 
   t.set("data", было);
+}
+
+/* ── Переход в собрание — у любого материала ── */
+{
+  const былиДанные = t.get("data");
+  const узлы = {};
+  const пусто = (id) => (узлы[id] = узлы[id] || {
+    hidden: true, textContent: "", innerHTML: "",
+    classList: { add(){}, remove(){}, toggle(){}, contains: () => false },
+    querySelector: () => null, addEventListener(){},
+  });
+  const былПоиск = t.get("document.querySelector");
+  t.set("document.querySelector", (s2) => (String(s2)[0] === "#" ? пусто(s2) : null));
+
+  /* У книги кнопка в собрание была, у пьесы и рисунка — нет: путь был написан
+     внутри итога главы и звал book() напрямую. */
+  const былаОчередь = t.get("overlayQueue");
+  t.set("overlayQueue", []);
+  t.set("cheerGo", null);
+  t.get("showTheory")({ name: "Октава", t: "восемь ступеней", icon: "🎹" });
+  ок("занятие: последним экраном ведут в собрание", узлы["#cheerOk"].textContent, "Открыть собрание");
+  ок("занятие: переход и правда назначен", typeof t.get("cheerGo"), "function");
+
+  t.set("cheerGo", null);
+  t.set("overlayQueue", [{ type: "theory", x: { name: "Терция" } }]);
+  t.get("showTheory")({ name: "Октава" });
+  ок("занятие: пока в очереди есть ещё — кнопка «Дальше»", узлы["#cheerOk"].textContent, "Дальше");
+  ок("занятие: и никуда не ведёт", t.get("cheerGo"), null);
+
+  t.set("overlayQueue", былаОчередь);
+  t.set("document.querySelector", былПоиск);
+  t.set("data", былиДанные);
 }
 
 /* ── Итог ── */

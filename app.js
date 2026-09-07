@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 494";
+const APP_VERSION = "Кэйко 495";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2017,15 +2017,28 @@ function colПоказать(список) {
   for (const x of список || []) overlayQueue.push({ type: "theory", x });
 }
 
+/* Открыть собрание того материала, которым сейчас занимаешься. Один путь для
+   книги, пьесы и рисунка: раньше он был написан внутри итога главы и звал
+   book() напрямую — у пьесы и рисунка перехода не было вовсе. */
+function colОткрыть() {
+  colView = null; colAt = null;
+  const м = mapMaterial() || book();
+  if (!м) return;
+  openPlaceMap(м, -1);
+  if (gm) { gm.слой = "col"; gmLayersRow(); gmTitle(); gmList(); }
+}
+
 function showTheory(x) {
   const step = $("#cheerStep");
   step.hidden = false;
-  step.textContent = "Теория";
+  step.textContent = x.art ? "В собрание" : "Теория";
   $("#cheerIc").textContent = x.icon || "🎼";
   $("#cheerTitle").textContent = x.name;
   $("#cheerText").textContent = [x.t, x.about].filter(Boolean).join(" — ");
-  $("#cheerStep").textContent = x.art ? "В собрание" : "Теория";
-  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Понятно";
+  /* Последним экраном — кнопка в собрание, как у итога главы. Без неё вещь
+     показывали и оставляли искать самому. */
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
+  if (!overlayQueue.length) cheerGo = colОткрыть;
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
@@ -2058,11 +2071,7 @@ function showChapterGain(item) {
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
   /* Последним экраном ведём прямо в собрание: иначе «пришло семь слов»
      остаётся обещанием, а искать их надо самому. */
-  if (!overlayQueue.length) cheerGo = () => {
-    colView = null; colAt = null;
-    openPlaceMap(book(), -1);
-    if (gm) { gm.слой = "col"; gmLayersRow(); gmTitle(); gmList(); }
-  };
+  if (!overlayQueue.length) cheerGo = colОткрыть;
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
@@ -7784,16 +7793,15 @@ function renderNotes() {
             <div class="ev-awards">
               <button class="ev-aw" type="button" data-ev-book="${esc(t.key)}"><i>📕</i><span>Показать итог</span></button>
             </div>` : ""}
-          ${((p) => p.ach.length || p.arts.length ? `
+          ${/* В карточке дня — только награды. Артефакты отсюда сняты: собрание
+                живёт своим экраном и пополняется само, а в ленте оно
+                превращало запись о занятии в список находок. */
+            ((p) => p.ach.length ? `
             <div class="ev-awards">
               ${p.ach.map((a) => `
                 <button class="ev-aw" type="button" data-ev-ach="${esc(a.id)}"
                   data-ev-key="${esc(t.key)}" data-ev-track="${esc(t.track)}">
                   <i>${esc(evIcon(t, a.id) || a.icon || "✦")}</i><span>${esc(чип(evName(t, a.id, "ach", a.name)))}</span>
-                </button>`).join("")}
-              ${p.arts.map((x) => `
-                <button class="ev-aw art" type="button" data-ev-art="${esc(x.id)}" data-ev-key="${esc(t.key)}">
-                  <i>${esc(x.icon || "🏺")}</i><span>${esc(чип(x.name))}</span>
                 </button>`).join("")}
             </div>` : "")(progressOf(t))}
           ${mediaHTML(t)}
