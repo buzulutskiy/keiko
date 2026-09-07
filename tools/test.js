@@ -2970,15 +2970,33 @@ const сеть = (() => {
   const былаОчередь = t.get("overlayQueue");
   t.set("overlayQueue", []);
   t.set("cheerGo", null);
-  t.get("showTheory")({ name: "Октава", t: "восемь ступеней", icon: "🎹" });
-  ок("занятие: последним экраном ведут в собрание", узлы["#cheerOk"].textContent, "Открыть собрание");
+  t.get("showColNew")({ n: 1 });
+  ок("занятие: последним экраном ведут в собрание", узлы["#cheerOk"].textContent, "Посмотреть");
   ок("занятие: переход и правда назначен", typeof t.get("cheerGo"), "function");
+  /* Текстов вещей на этом экране нет: их читают в собрании, а не листая
+     подряд десяток экранов после дочитанной главы. */
+  ок("занятие: на экране счёт, а не описание", узлы["#cheerText"].textContent, "Пришло 1 запись.");
+  ок("занятие: заголовок общий", узлы["#cheerTitle"].textContent, "В собрании новое");
 
   t.set("cheerGo", null);
-  t.set("overlayQueue", [{ type: "theory", x: { name: "Терция" } }]);
-  t.get("showTheory")({ name: "Октава" });
+  t.set("overlayQueue", [{ type: "ach", a: { name: "Награда" } }]);
+  t.get("showColNew")({ n: 3 });
   ок("занятие: пока в очереди есть ещё — кнопка «Дальше»", узлы["#cheerOk"].textContent, "Дальше");
   ок("занятие: и никуда не ведёт", t.get("cheerGo"), null);
+  ок("занятие: счёт во множественном", узлы["#cheerText"].textContent, "Пришло 3 записи.");
+
+  /* У книги тот же экран, только назван главой. */
+  t.set("overlayQueue", []);
+  t.get("showColNew")({ глава: "Песнь IV", n: 10 });
+  ок("глава: заголовок — её имя", узлы["#cheerTitle"].textContent, "Песнь IV");
+  ок("глава: подпись про главу", узлы["#cheerStep"].textContent, "Глава закрыта");
+  ок("глава: та же кнопка", узлы["#cheerOk"].textContent, "Посмотреть");
+
+  /* Пачка идёт одним экраном, а не по экрану на вещь. */
+  t.set("overlayQueue", []);
+  t.get("colПоказать")([{ id: "a" }, { id: "b" }, { id: "c" }]);
+  ок("очередь: на пачку — один экран", (t.get("overlayQueue") || []).length, 1);
+  ок("очередь: и он знает, сколько пришло", (t.get("overlayQueue") || [])[0].n, 3);
 
   t.set("overlayQueue", былаОчередь);
   t.set("document.querySelector", былПоиск);

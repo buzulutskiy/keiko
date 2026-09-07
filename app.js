@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 495";
+const APP_VERSION = "Кэйко 496";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1995,8 +1995,8 @@ function showNextOverlay() {
   else if (item.type === "mus") showMus(item.x, item.i, item.n);
   else if (item.type === "musMany") showMusMany(item.list, item.n);
   else if (item.type === "bookDone") showBookDone(item.book);
-  else if (item.type === "theory") showTheory(item.x);
-  else if (item.type === "chapter") showChapterGain(item);
+  else if (item.type === "col") showColNew(item);
+  else if (item.type === "chapter") showColNew({ глава: item.name, n: (item.list || []).length });
   else showFacts(item.list);
 }
 
@@ -2014,7 +2014,7 @@ function nextOverlaySoon() {
    артефакта, и по той же причине: читать хочется ровно в ту минуту, когда
    закрыл сессию, а не когда-нибудь потом, зайдя в справочник. */
 function colПоказать(список) {
-  for (const x of список || []) overlayQueue.push({ type: "theory", x });
+  if ((список || []).length) overlayQueue.push({ type: "col", n: список.length });
 }
 
 /* Открыть собрание того материала, которым сейчас занимаешься. Один путь для
@@ -2028,49 +2028,25 @@ function colОткрыть() {
   if (gm) { gm.слой = "col"; gmLayersRow(); gmTitle(); gmList(); }
 }
 
-function showTheory(x) {
-  const step = $("#cheerStep");
-  step.hidden = false;
-  step.textContent = x.art ? "В собрание" : "Теория";
-  $("#cheerIc").textContent = x.icon || "🎼";
-  $("#cheerTitle").textContent = x.name;
-  $("#cheerText").textContent = [x.t, x.about].filter(Boolean).join(" — ");
-  /* Последним экраном — кнопка в собрание, как у итога главы. Без неё вещь
-     показывали и оставляли искать самому. */
-  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
-  if (!overlayQueue.length) cheerGo = colОткрыть;
-  const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
-  $("#cheer").classList.add("show");
-}
-
 /* Чем глава пополнила собрание. Перечисляем по видам, а не по одной вещи:
    семь карточек подряд читаются как лекция, а список — как итог. */
-const COL_СЛОВА = {
-  place: ["место", "места", "мест"], word: ["слово", "слова", "слов"],
-  thing: ["вещь", "вещи", "вещей"], book: ["книга", "книги", "книг"],
-  person: ["человек", "человека", "человек"], animal: ["живность", "живности", "живности"],
-  art: ["картина", "картины", "картин"], rock: ["порода", "породы", "пород"],
-  text: ["справка", "справки", "справок"], art0: ["артефакт", "артефакта", "артефактов"],
-};
-function showChapterGain(item) {
-  const счёт = new Map();
-  for (const x of item.list) счёт.set(x.kind, (счёт.get(x.kind) || 0) + 1);
-  const части = [...счёт.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, n]) => {
-      const сл = COL_СЛОВА[k] || ["запись", "записи", "записей"];
-      return n + " " + plural(n, сл[0], сл[1], сл[2]);
-    });
+/* Один экран на всё, что пришло в собрание, — и у книги, и у пьесы, и у
+   рисунка. Он говорит, что новое есть, и ведёт туда, где на него смотрят.
+   Раньше каждая пришедшая вещь печаталась во весь экран своим описанием: за
+   дочитанную главу это десяток экранов подряд, которые пролистываешь не читая,
+   а прочесть их всё равно захочется потом и в другом месте. Собрание для того
+   и есть — там они лежат рядом и никуда не денутся. */
+function showColNew(item) {
+  const n = item.n || 0;
   const step = $("#cheerStep");
   step.hidden = false;
-  step.textContent = "Глава закрыта";
+  step.textContent = item.глава ? "Глава закрыта" : "Занятие";
   $("#cheerIc").textContent = "🧺";
-  $("#cheerTitle").textContent = item.name || "Глава дочитана";
-  $("#cheerText").textContent = "В собрание пришло: " + части.join(", ")
-    + (overlayQueue.length ? "." : ". Новое помечено рамкой.");
-  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Открыть собрание";
-  /* Последним экраном ведём прямо в собрание: иначе «пришло семь слов»
-     остаётся обещанием, а искать их надо самому. */
+  $("#cheerTitle").textContent = item.глава || "В собрании новое";
+  $("#cheerText").textContent = n
+    ? `Пришло ${n} ${plural(n, "запись", "записи", "записей")}.`
+    : "Появилось новое.";
+  $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Посмотреть";
   if (!overlayQueue.length) cheerGo = colОткрыть;
   const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
