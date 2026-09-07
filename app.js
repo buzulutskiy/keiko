@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 497";
+const APP_VERSION = "Кэйко 498";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -756,7 +756,7 @@ function musOpen(x) {
   const b = (data.book.books || []).find((y) => y.id === x.book);
   if (!b) return false;
   if (!Number(x.ch)) return true;      // без главы — открыт сразу, но только своей книге
-  return bookProgressOf(b) >= chapterEnd(b, Number(x.ch) - 1);
+  return chapterRead(b, x.ch);
 }
 /* У пьесы артефакт открывает не число занятий и не блок, а сама очередь
    теории: заметка пришла после занятия — она же появилась в собрании. Один
@@ -1798,6 +1798,13 @@ function saveEntry() {
   const beforeFacts = new Set(factsState().filter(f => f.open).map(f => f.id));
   const beforeMus = musOpenSet();
   const before = curStats();
+  /* Какие главы были дочитаны до этой отметки. Сравнение по курсору не годится
+     для книги вразбивку: там глава закрывается своим куском, а курсор может и
+     не сдвинуться. */
+  const закрытыеДо = new Set();
+  if (isBook() && book()) (book().chapters || []).forEach((c, i) => {
+    if (chapterRead(book(), i + 1)) закрытыеДо.add(i + 1);
+  });
   const note = ($("#noteInput") && $("#noteInput").value.trim()) || "";
 
   if (existing) {
@@ -1939,14 +1946,15 @@ function saveEntry() {
   /* Глава дочитана — показываем, чем это пополнило собрание. Не «молодец»,
      а перечень: столько-то слов, столько-то мест, вот артефакт. Это и есть
      итог вечера, ради которого стоило дочитать до конца главы. */
-  if (ctx.book && after.page > before.page) {
+  if (ctx.book && (after.page > before.page || after.covered > before.covered)) {
     const b0 = book();
     (b0.chapters || []).forEach((c, i) => {
-      const конец = chapterEnd(b0, i);
-      if (конец > before.page && конец <= after.page) {
-        const пришло = colOfChapter(b0, i + 1);
-        if (пришло.length) overlayQueue.push({ type: "chapter", name: c.name || "", list: пришло });
-      }
+      /* Закрылась ли глава именно этой отметкой: раньше не была дочитана, а
+         теперь дочитана. У книги вразбивку сдвиг курсора ничего не значит —
+         значение имеет, накрыт ли конец самой главы. */
+      if (закрытыеДо.has(i + 1) || !chapterRead(b0, i + 1)) return;
+      const пришло = colOfChapter(b0, i + 1);
+      if (пришло.length) overlayQueue.push({ type: "chapter", name: c.name || "", list: пришло });
     });
   }
   /* Собрание пополняется и у пьесы с рисунком — ручной отметкой тоже. */
@@ -5780,6 +5788,20 @@ function chapterEnd(bk, i) {
   const list = bk.chapters || [];
   const сл = list[i + 1];
   return сл ? сл.from - 1 : (bk.pages || 0);
+}
+
+/* Дочитана ли глава номер n. У книги, которую читают подряд, это просто
+   «курсор дошёл до её последней страницы». У книги, которую читают вразбивку,
+   так нельзя: сборник повестей начинают с любой, и отметка «Шинель, 155–195»
+   разом объявила бы прочитанным всё, что лежит раньше, — вместе с картой,
+   собранием и артефактами трёх непрочитанных повестей. Там считаем по самой
+   главе: накрыта ли её последняя страница отмеченными кусками. */
+function chapterRead(bk, n) {
+  if (!bk) return false;
+  const кон = chapterEnd(bk, Number(n) - 1);
+  if (!кон) return false;
+  if (bookMode(bk) !== "parts") return bookProgressOf(bk) >= кон;
+  return mergeSpans(bookSpans(bk)).some((sp) => sp.from <= кон && кон <= sp.to);
 }
 function openFactSheet(f) {
   sheetMode = "fact";
@@ -15214,7 +15236,7 @@ function colOpen(b, it) {
   if (b.kind && b.kind !== "book") return colGiven(b.id).includes(it.id);
   // без главы — по своей странице; порог проставлен в colПороги
   if (!Number(it.ch)) return !it.порог || bookProgressOf(b) >= it.порог;
-  return bookProgressOf(b) >= chapterEnd(b, Number(it.ch) - 1);
+  return chapterRead(b, it.ch);
 }
 /* Сколько вещей открывает одно занятие. Считаем занятия, а не минуты и не дни:
    сел дважды за вечер — две вещи, просидел час подряд — одна. Так у пьесы и у

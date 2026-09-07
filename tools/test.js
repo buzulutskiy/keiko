@@ -3003,6 +3003,43 @@ const сеть = (() => {
   t.set("data", былиДанные);
 }
 
+/* ── Сборник, который читают вразбивку ── */
+{
+  const было = t.get("data");
+  const bk = { id: "sb", title: "Сборник", pages: 221, startPage: 0, mode: "parts",
+    chapters: [{ name: "Невский проспект", from: 5 }, { name: "Нос", from: 51 },
+               { name: "Портрет", from: 84 }, { name: "Шинель", from: 155 },
+               { name: "Записки сумасшедшего", from: 195 }] };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    book: { books: [bk], activeBook: "sb", entries: [
+      /* Начал с «Шинели» — четвёртой повести. */
+      { id: "e1", date: "2026-09-07", bookId: "sb", spans: [{ from: 155, to: 194 }] },
+    ] }, thoughts: [], wishes: [] });
+
+  /* Курсор дошёл до 194-й, и по старому правилу это открыло бы три повести,
+     которых он не читал, вместе со всей их картой и собранием. */
+  ок("вразбивку: курсор ушёл далеко", t.get("bookProgressOf")(bk), 194);
+  ок("вразбивку: первая повесть закрыта", t.get("chapterRead")(bk, 1), false);
+  ок("вразбивку: вторая закрыта", t.get("chapterRead")(bk, 2), false);
+  ок("вразбивку: третья закрыта", t.get("chapterRead")(bk, 3), false);
+  ок("вразбивку: прочитанная открыта", t.get("chapterRead")(bk, 4), true);
+  ок("вразбивку: последняя ещё нет", t.get("chapterRead")(bk, 5), false);
+
+  /* Дочитал вторую повесть — открылась она, остальные на месте. */
+  t.get("data").book.entries.push({ id: "e2", date: "2026-09-08", bookId: "sb",
+    spans: [{ from: 51, to: 83 }] });
+  ок("вразбивку: дочитанная вторая открылась", t.get("chapterRead")(bk, 2), true);
+  ок("вразбивку: первая по-прежнему закрыта", t.get("chapterRead")(bk, 1), false);
+
+  /* У книги подряд правило прежнее: курсор дошёл — глава открыта. */
+  const линия = Object.assign({}, bk, { mode: "linear" });
+  t.get("data").book.books[0] = линия;
+  ок("подряд: правило не изменилось", t.get("chapterRead")(линия, 1), true);
+
+  t.set("data", было);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
