@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 492";
+const APP_VERSION = "Кэйко 493";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -248,6 +248,13 @@ function migrate(obj) {
   if (obj.musAt && typeof obj.musAt === "object") base.musAt = obj.musAt;
   if (obj.musLike && typeof obj.musLike === "object") base.musLike = obj.musLike;
   if (obj.factAt && typeof obj.factAt === "object") base.factAt = obj.factAt;
+  /* Собрание: что уже выдано за занятия и что просмотрено. Полей тут не было
+     вовсе — ни здесь, ни в выгрузке, ни в слиянии, — и выданная за занятие
+     вещь жила до первого перезапуска. Выглядело так, будто занятие ничего не
+     принесло, хотя карточка показывалась. */
+  if (obj.colGiven && typeof obj.colGiven === "object") base.colGiven = obj.colGiven;
+  if (obj.colSeen && typeof obj.colSeen === "object") base.colSeen = obj.colSeen;
+  if (obj.colSeenV) base.colSeenV = obj.colSeenV;
   if (obj.eventsV) base.eventsV = obj.eventsV;
   if (obj.pracTrimV) base.pracTrimV = obj.pracTrimV;
 
@@ -8200,6 +8207,23 @@ function pracStamp(mark) {
 
 const VID_KEYS = ["url", "ya", "yt", "vk"];
 
+/* Собрание с другого устройства. Выданное объединяем, а не заменяем: занимался
+   на телефоне, потом на ноутбуке — выдачи разные, и ни одну отбирать нельзя.
+   Просмотренное — по самой ранней метке: увидел один раз, значит увидел.
+   Полей этих не было ни в слиянии, ни в выгрузке, ни в разборе данных, и
+   выданная за занятие вещь жила до первого перезапуска: карточка показывалась,
+   а назавтра в собрании было пусто. */
+function colMerge(d) {
+  if (!d) return;
+  data.colGiven = data.colGiven || {};
+  for (const [k, список] of Object.entries(d.colGiven || {}))
+    data.colGiven[k] = [...new Set([...(data.colGiven[k] || []), ...(список || [])])];
+  data.colSeen = data.colSeen || {};
+  for (const [k, когда] of Object.entries(d.colSeen || {}))
+    data.colSeen[k] = Math.min(data.colSeen[k] || Infinity, когда) || когда;
+  if (d.colSeenV) data.colSeenV = d.colSeenV;
+}
+
 function mergePrac(mine, theirs) {
   const out = {};
   const ids = new Set([...Object.keys(mine || {}), ...Object.keys(theirs || {})]);
@@ -11158,10 +11182,16 @@ function pracCelebrate() {
 
 /* Торжество: сначала награды по одной, потом карточки знаний одним экраном. */
 function showWon(won) {
-  if (!won || (!won.ach.length && !won.facts.length)) return;
-  overlayQueue = [];
-  won.ach.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: won.ach.length }));
-  if (won.facts.length) overlayQueue.push({ type: "facts", list: won.facts });
+  const свои = [];
+  if (won) {
+    (won.ach || []).forEach((a, i) => свои.push({ type: "ach", a, i: i + 1, n: won.ach.length }));
+    if ((won.facts || []).length) свои.push({ type: "facts", list: won.facts });
+  }
+  /* Награды идут первыми, но всё, что уже стояло в очереди, остаётся. Здесь
+     было `overlayQueue = []`, и вещь, выданная за занятие, молча пропадала:
+     она открывалась и ложилась в собрание, а карточки не показывали. Видно
+     это было только по тому, что после занятия сразу шёл экран награды. */
+  overlayQueue = свои.concat(overlayQueue);
   showNextOverlay();
 }
 
@@ -11287,7 +11317,7 @@ function pracFinish() {
     closePractice();
     /* Показываем ПОСЛЕ закрытия: экран занятия лежит выше торжества, и пока
        он не убран, награду было не видно. */
-    if (won) setTimeout(() => showWon(won), 380);
+    setTimeout(() => showWon(won), 380);
     return;
   }
   const closed = prac ? prac.closed.length : 0;
@@ -11318,7 +11348,7 @@ function pracFinish() {
       + (closed ? " · " + closed + " " + plural(closed, "заход", "захода", "заходов") : ""));
   }
   closePractice();
-  if (won) setTimeout(() => showWon(won), 380);
+  setTimeout(() => showWon(won), 380);
 }
 
 
@@ -11846,6 +11876,33 @@ function gmSpravki(p, bookId) {
   return `<span class="gm-links">
     <a href="https://chatgpt.com/?q=${q}"${мимо}>ChatGPT</a>
     <a href="https://www.google.com/search?tbm=isch&q=${фото}" target="_blank" rel="noopener">Картинки</a>
+  </span>`;
+}
+
+/* Один запрос на всю тему. Двадцать камней по одному — это двадцать заходов в
+   поиск, и на третьем перестаёшь. Собираем открытое в один список и просим
+   разобрать всё разом: что это, откуда слово, чем интересно, где посмотреть.
+   Перечисляем только открытое — в списке иначе видно то, до чего не дочитал. */
+function colТемаПромт(b, t, список) {
+  if (!список || список.length < 2) return "";
+  const кн = b && b.kind === "book" ? b : null;
+  const что = список.map((x, i) => `${i + 1}. ${x.q || x.name}`).join("\n");
+  const откуда = b ? ` Это из «${b.title}»${
+    b.author ? `, ${String(b.author).split("·")[0].trim()}` : ""}.` : "";
+  /* Запрет на спойлеры — тот же, что в запросе про одну вещь: спрашивают про
+     камни, а нейросеть охотно добавляет, чем кончилось у героев. */
+  const молчок = кн
+    ? `\n\nСюжет книги «${кн.title}» не пересказывай и ничем не выдавай, чем она кончается и что случится с героями дальше.`
+    : "";
+  const вопрос = `Разбери по порядку весь список — это «${t.name}».${откуда}\n\n${что}\n\n`
+    + `На каждый пункт — короткий абзац простым языком, без терминов, которые сам же не объяснил: `
+    + `что это такое; откуда взялось слово или имя; чем оно интересно — один факт, который стоит знать; `
+    + `где на это можно посмотреть вживую или в интернете. Давай конкретику — названия, годы, места, — `
+    + `а не общие слова. К каждому пункту покажи фотографию или изображение.`
+    + молчок;
+  const мимо = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
+  return `<span class="gm-links cl-all">
+    <a href="https://chatgpt.com/?q=${encodeURIComponent(вопрос)}"${мимо}>Спросить обо всех ${список.length}</a>
   </span>`;
 }
 
@@ -14951,6 +15008,7 @@ function restoreBackup(file) {
     data.gut = mergeLists(data.gut || [], d.gut || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
       data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
+  colMerge(d);
 
     // материалы, которых у нас нет, тоже возвращаем
     for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
@@ -15300,6 +15358,7 @@ function colRender() {
         <span class="cl-h"><b>Собрано ${мои.length} из ${свои.length}</b><em></em></span>
         <span class="cl-bar"><i style="width:${свои.length ? Math.round(мои.length / свои.length * 100) : 0}%"></i></span>
       </div>
+      ${colТемаПромт(b, t, мои)}
       ${ждут ? `<div class="cl-stack" aria-hidden="true">
         <span class="cl-ic">📦</span>
         <span class="cl-n"><b>Ещё ${ждут} впереди</b><i>${colОткуда(b)}</i></span>
@@ -16562,6 +16621,7 @@ async function restoreArchive(file) {
   data.gut = mergeLists(data.gut || [], d.gut || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
+  colMerge(d);
   for (const p of (d.piano.pieces || [])) if (!data.piano.pieces.some(x => x.id === p.id)) data.piano.pieces.push(p);
   for (const b of (d.book.books || [])) if (!data.book.books.some(x => x.id === b.id)) data.book.books.push(b);
 
@@ -16783,7 +16843,8 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId });
+  talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId,
+  colGiven: data.colGiven, colSeen: data.colSeen, colSeenV: data.colSeenV });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
    достаточно поимённого максимума — числа только растут. */
@@ -16967,6 +17028,7 @@ async function syncNow(manual) {
          устройстве он оставался пустым — и первой же записью затирал в гисте
          и пройденные такты, и ссылку на видео. */
       data.practice = mergePrac(data.practice, remote.practice);
+      colMerge(remote);
       data.usage = mergeUsage(data.usage, remote.usage);
       /* Время открытия предмета: берём известное вместо «когда-то» (единицы),
          а из двух настоящих — раннее: открылся он тогда, когда открылся,

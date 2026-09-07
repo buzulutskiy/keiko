@@ -1964,6 +1964,10 @@
     /* Ссылки поиска в карточке — кнопками, как у артефактов: голыми ссылками
        они не читались как то, на что можно нажать. */
     #gmCol .gm-links { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 22px; }
+    /* Запрос обо всей теме — не такая же кнопка, как ссылки под одной вещью:
+       она одна и относится ко всему списку, поэтому во всю ширину. */
+    #gmCol .cl-all { margin: 12px 0 18px; }
+    #gmCol .cl-all a { flex: 1 1 auto; text-align: center; }
     #gmCol .gm-links a {
       padding: 9px 14px; border-radius: 11px; font-size: 0.85rem; font-weight: 650;
       background: var(--glass); border: 1px solid var(--glass-line); color: var(--ink);

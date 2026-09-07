@@ -2876,6 +2876,72 @@ const сеть = (() => {
   t.set("ARTS", былиARTS); t.set("MUSEUM", былМузей); t.set("data", былиДанные);
 }
 
+/* ── Очередь экранов после занятия ── */
+{
+  const былаОчередь = t.get("overlayQueue");
+  const показано = [];
+  const былПоказ = t.get("showNextOverlay");
+  t.set("showNextOverlay", function () {
+    показано.push(...(t.get("overlayQueue") || []).map((o) => o.type));
+    t.set("overlayQueue", []);
+  });
+
+  /* Вещь за занятие кладут в очередь до того, как посчитаны награды. Здесь
+     стояло overlayQueue = [], и она молча пропадала: открывалась и ложилась в
+     собрание, а карточки не было. */
+  t.set("overlayQueue", [{ type: "theory", x: { name: "Октава" } }]);
+  t.get("showWon")({ ach: [{ id: "a", name: "Награда" }], facts: [] });
+  ок("очередь: награда не выбрасывает выданную вещь", показано, ["ach", "theory"]);
+
+  показано.length = 0;
+  t.set("overlayQueue", [{ type: "theory", x: { name: "Терция" } }]);
+  t.get("showWon")(null);
+  ок("очередь: без награды вещь всё равно показывают", показано, ["theory"]);
+
+  показано.length = 0;
+  t.set("overlayQueue", []);
+  t.get("showWon")(null);
+  ок("очередь: показывать нечего — ничего и не показали", показано, []);
+
+  t.set("showNextOverlay", былПоказ);
+  t.set("overlayQueue", былаОчередь);
+}
+
+/* ── Выданное за занятие переживает перезапуск и синхронизацию ── */
+{
+  const было = t.get("data");
+  const снимок = {
+    v: 7, active: "piano", colGiven: { bwv853: ["word|Октава"] },
+    colSeen: { "bwv853|word|Октава": 500 }, colSeenV: 1,
+    piano: { pieces: [], entries: [] }, book: { books: [], entries: [] },
+    pastel: { entries: [], courses: [] }, thoughts: [], wishes: [],
+  };
+  /* Полей собрания не было ни в нормализации, ни в выгрузке, ни в слиянии —
+     выданная вещь жила до первого перезапуска и молча пропадала. */
+  const norm = t.get("migrate")(снимок);
+  ок("собрание: выданное переживает разбор данных",
+    (norm.colGiven || {}).bwv853, ["word|Октава"]);
+  ок("собрание: просмотренное тоже", !!(norm.colSeen || {})["bwv853|word|Октава"], true);
+
+  t.set("data", t.get("migrate")(снимок));
+  const наружу = t.get("exportData")();
+  ок("собрание: выданное уходит в гист", (наружу.colGiven || {}).bwv853, ["word|Октава"]);
+
+  /* Занимался на телефоне и на ноутбуке — выдачи разные, обе остаются. */
+  t.get("colMerge")({
+    v: 7, colGiven: { bwv853: ["word|Полутон"], more: ["word|Тема"] },
+    colSeen: { "bwv853|word|Октава": 200 },
+  });
+  ок("собрание: выдачи с двух устройств складываются",
+    t.get("data").colGiven.bwv853.slice().sort(), ["word|Октава", "word|Полутон"]);
+  ок("собрание: чужой материал приезжает целиком",
+    t.get("data").colGiven.more, ["word|Тема"]);
+  ок("собрание: просмотрено по самой ранней метке",
+    t.get("data").colSeen["bwv853|word|Октава"], 200);
+
+  t.set("data", было);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
