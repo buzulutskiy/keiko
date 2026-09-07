@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 489";
+const APP_VERSION = "Кэйко 490";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1943,7 +1943,7 @@ function saveEntry() {
     });
   }
   /* Собрание пополняется и у пьесы с рисунком — ручной отметкой тоже. */
-  if (!isBook() && !ctx.watch) colПоказать(colGrant(colMat(), colПорция(colMat(), after.minutes || 20)));
+  if (!isBook() && !ctx.watch) colПоказать(colGrant(colMat(), colПорция(colMat())));
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
      него данные меняли ещё трижды: musStamp, stampProgress и addEvent. Ни один
@@ -11276,7 +11276,7 @@ function pracFinish() {
     if (шагов) части.push(шагов + " " + plural(шагов, "шаг", "шага", "шагов"));
     if (e.lessons && e.lessons.length)
       части.push(e.lessons.length + " " + plural(e.lessons.length, "урок", "урока", "уроков"));
-    colПоказать(colGrant(colMat(), colПорция(colMat(), e.mins)));
+    colПоказать(colGrant(colMat(), colПорция(colMat())));
     if (части.length) addEvent("session", curKey(), "pastel",
       (course().mode === "watch" ? "Смотрел: " : "Рисовал: ") + course().name + " · " + части.join(", "),
       { fields: { mins: e.mins, steps: шагов, createdAt: now(),
@@ -11311,7 +11311,7 @@ function pracFinish() {
     saveData();
     schedulePush();
     won = pracCelebrate();
-    colПоказать(colGrant(colMat(), colПорция(colMat(), e.mins)));
+    colПоказать(colGrant(colMat(), colПорция(colMat())));
     // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
     pracEvent(e);
     toast("Занятие записано: " + e.mins + " мин"
@@ -15174,13 +15174,15 @@ function colOpen(b, it) {
   if (!Number(it.ch)) return !it.порог || bookProgressOf(b) >= it.порог;
   return bookProgressOf(b) >= chapterEnd(b, Number(it.ch) - 1);
 }
-/* Сколько вещей открывает одно занятие. У пьесы — по времени за инструментом:
-   короткий заход это тоже занятие, но двадцать минут и час отличаются, и это
-   единственное место, где разница видна. У рисунка лист один, а вещей две:
-   приём и картина, чтобы за вечер было и чему поучиться, и на что посмотреть. */
-function colПорция(мат, мин) {
+/* Сколько вещей открывает одно занятие. Считаем по занятиям, а не по минутам:
+   вечер за инструментом — это вечер, и час не должен приносить вдвое больше
+   часа, разбитого надвое. Раньше у пьесы порция зависела от времени, и выходил
+   счётчик, за которым тянет досидеть до сорока минут, — ровно то, чего в
+   приложении быть не должно. У пьесы одна вещь за занятие, у рисунка две:
+   приём и картина, чтобы было и чему поучиться, и на что посмотреть. */
+function colПорция(мат) {
   if (!мат) return 0;
-  if (мат.kind === "piece") return мин >= 40 ? 2 : мин >= 15 ? 1 : 0;
+  if (мат.kind === "piece") return 1;
   if (мат.kind === "course") return 2;
   return 0;
 }
