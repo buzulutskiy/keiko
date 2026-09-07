@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 498";
+const APP_VERSION = "Кэйко 499";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1067,14 +1067,31 @@ function bookStats() {
   /* Границы глав: закрыть главу за один присест — это событие, а не процент.
      Ловим прыжок, накрывший главу целиком, от её начала до конца. */
   const гр = (b.chapters || []).map((c) => Number(c.from) || 0).sort((x, y) => x - y);
+  /* У книги вразбивку отметка — не «дочитал до страницы», а список кусков, и
+     поля page у неё нет вовсе. Пока считали по нему, у сборника не работали
+     ни размах захода, ни «глава за присест», ни возврат назад: три награды из
+     двадцати шести были недостижимы, и понять это можно было только прогоном. */
+  const кусками = bookMode(b) === "parts";
+  let накрыто = [];                       // что уже покрыто прошлыми отметками
   for (const e of list) {
-    const jump = (e.page || 0) - running;
+    const свои = кусками ? (e.spans || []) : [];
+    const jump = кусками
+      ? свои.reduce((n, sp) => n + (Number(sp.to) - Number(sp.from) + 1), 0)
+      : (e.page || 0) - running;
     if (jump > maxJump) maxJump = jump;
     for (let i = 0; i < гр.length; i++) {
-      const конец = i + 1 < гр.length ? гр[i + 1] : (b.pages || 0);
-      if (гр[i] && running <= гр[i] && (e.page || 0) >= конец) { chapterInOne = true; break; }
+      const конец = i + 1 < гр.length ? гр[i + 1] - 1 : (b.pages || 0);
+      if (!гр[i]) continue;
+      const целиком = кусками
+        ? свои.some((sp) => Number(sp.from) <= гр[i] && Number(sp.to) >= конец)
+        : (running <= гр[i] && (e.page || 0) >= конец);
+      if (целиком) { chapterInOne = true; break; }
     }
-    if ((e.page || 0) < running) reread = true;
+    if (кусками) {
+      if (свои.some((sp) => накрыто.some((n) => Number(sp.from) <= n.to && n.from <= Number(sp.to))))
+        reread = true;
+      накрыто = mergeSpans(накрыто.concat(свои.map((sp) => ({ from: Number(sp.from), to: Number(sp.to) }))));
+    } else if ((e.page || 0) < running) reread = true;
     running = Math.max(running, e.page || 0);
     if (e.note) notes++;
     const dw = fromStr(e.date).getDay();
@@ -1089,12 +1106,22 @@ function bookStats() {
      этого не знает и занижало процент втрое.
      Вразнобой — там курсора нет, и процент честно считается по покрытию. */
   const parts = bookMode(b) === "parts";
+  /* Сто процентов должны быть достижимы. У сборника текст начинается с пятой
+     страницы, первые четыре — титул и содержание, покрыть их нечем, и доля
+     упиралась в 98%. Считаем от того, что вообще можно прочитать. */
+  const читаемых = Math.max(1, (b.pages || 0) - (b.startPage || 0));
   return {
     pages: b.pages, page, covered,
-    pct: b.pages ? (parts ? covered / b.pages : page / b.pages) * 100 : 0,
+    pct: b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapterInOne,
-    chapter: chapterAt(page), ...moments(list)
+    chapter: chapterAt(page),
+    /* Какие главы дочитаны — набором, для наград вида ["read", "has", 4].
+       Книге подряд хватило бы «докуда дошёл», но сборник повестей читают в
+       своём порядке, и награда за «Шинель» не должна приходить за то, что
+       курсор проехал мимо. */
+    read: new Set((b.chapters || []).map((c, i) => i + 1).filter((n) => chapterRead(b, n))),
+    ...moments(list)
   };
 }
 
