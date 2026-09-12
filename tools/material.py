@@ -86,7 +86,8 @@ def check(key, profile):
     проверь(ach, f"наград: {len(ach)}", "нет наград")
     ids = [a.get("id") for a in ach]
     проверь(len(set(ids)) == len(ids), "id наград уникальны", f"повторы id: {[i for i in ids if ids.count(i) > 1]}")
-    без = [a["id"] for a in ach if a["id"] not in words]
+    # текст награды лежит либо в words, либо прямо в ней (app.js: a.word || words[id])
+    без = [a["id"] for a in ach if a["id"] not in words and not a.get("word")]
     проверь(not без, "у всех наград есть текст", f"награды без текста в words: {без}")
     лишние = [w for w in words if w not in ids]
     проверь(not лишние, "лишних текстов нет", f"текст есть, а награды нет: {лишние}")
