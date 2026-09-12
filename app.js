@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 508";
+const APP_VERSION = "Кэйко 509";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11208,9 +11208,10 @@ function stampProgress(justAch, justFacts) {
   const nowAch = new Set((justAch || []).map((a) => a.id));
   const nowFacts = new Set((justFacts || []).map((f) => f.id));
   const fresh = { ach: [], facts: [] };
+  const состояние = achState();
   /* Проверяем именно отсутствие ключа: ранее полученное помечено единицей
      как «время неизвестно», и ноль здесь считался бы пустым местом. */
-  for (const a of achState())
+  for (const a of состояние)
     if (a.done && data.achAt[k + ":" + a.id] === undefined) {
       const сейчас = nowAch.has(a.id);
       data.achAt[k + ":" + a.id] = сейчас ? now() : 1;
@@ -11222,7 +11223,40 @@ function stampProgress(justAch, justFacts) {
       data.factAt[k + ":" + f.id] = сейчас ? now() : 1;
       if (сейчас) fresh.facts.push({ id: f.id, t: f.t });
     }
+  dropGoneAch(состояние);
   return fresh;
+}
+
+/* Метрики, которые целиком считаются по отметкам: поправил отметку —
+   поменялись и они. Времени отметки здесь нет намеренно. */
+const ПО_ОТМЕТКАМ = new Set(["page", "pct", "chapter", "read", "maxJump",
+  "reread", "chapterInOne", "blocks", "stageSet", "pctR", "pctL", "pctFirm",
+  "firmL", "touchedL", "maxPass", "maxRun"]);
+
+/* Отметил лишнего — лишние награды уходят вместе с ним. Отметка «дочитано»
+   поставила последнюю страницу вместо прочитанной, и вместе с ней открылись
+   награды за послесловие, комментарии и заход в полтораста страниц. Страницу
+   потом исправили, а награды остались: снять их было нечем — записаны они по
+   времени получения, и пересчёт умеет только добавлять.
+
+   Снимаем только то, что считается по самим отметкам. Ночь, выходной, возврат
+   после перерыва отменить нельзя: это случилось, и правкой страницы не
+   отменяется. Пустое состояние — каталог ещё не приехал — ничего не решает:
+   это тот же случай, что «своё пусто, а в гисте полно». */
+function dropGoneAch(состояние) {
+  if (!data.achAt) return 0;
+  const k = curKey();
+  const все = состояние || achState();
+  if (!k || !все.length) return 0;
+  let снято = 0;
+  for (const a of все) {
+    if (a.done || !Array.isArray(a.when) || !a.when.length) continue;
+    if (!a.when.every((c) => ПО_ОТМЕТКАМ.has(c[0]))) continue;
+    if (data.achAt[k + ":" + a.id] === undefined) continue;
+    delete data.achAt[k + ":" + a.id];
+    снято++;
+  }
+  return снято;
 }
 
 const achDoneSet = () => new Set(achState().filter((a) => a.done).map((a) => a.id));
@@ -17146,6 +17180,10 @@ async function syncNow(manual) {
       data.colSeen = mergeStamps(data.colSeen, remote.colSeen);
       data.achAt  = mergeStamps(data.achAt,  remote.achAt);
       data.factAt = mergeStamps(data.factAt, remote.factAt);
+      /* Слияние союзное: снятую здесь награду второе устройство привезёт
+         обратно, и убрать её через гист нельзя — вернётся первой же сверкой.
+         Поэтому сразу после слияния пересматриваем открытый материал. */
+      dropGoneAch();
       // спрятанное — свойство взгляда, а не данных: берём то, что свежее целиком
       if (remote.hidden && (remote.savedAt || 0) > (cfg.lastSync || 0)) data.hidden = remote.hidden;
       pracStamp(false);        // слияние — не правка, отметки времени не трогаем

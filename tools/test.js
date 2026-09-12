@@ -2115,6 +2115,53 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Поправил отметку — лишние награды снимаются ── */
+{
+  const было = {
+    cat: t.get("CATALOG"), active: t.get("data").active,
+    book: JSON.parse(JSON.stringify(t.get("data").book || {})),
+    piano: t.get("data").piano,
+    achAt: JSON.parse(JSON.stringify(t.get("data").achAt || {})),
+  };
+  t.set("data.piano", { pieces: [], activePiece: "", entries: [] });
+  t.set("CATALOG", { otkat: { ach: [
+    { id: "konec", icon: "🏺", name: "Дочитано", hint: "", secret: false, when: [["page", ">=", 90]] },
+    { id: "zahod", icon: "🌊", name: "Большой заход", hint: "", secret: true, when: [["maxJump", ">=", 50]] },
+    { id: "noch",  icon: "🕯", name: "Ночью", hint: "", secret: true, when: [["night", "is", true]] },
+    { id: "den",   icon: "📖", name: "Первый вечер", hint: "", secret: false, when: [["days", ">=", 1]] },
+  ], words: { konec: "т", zahod: "т", noch: "т", den: "т" } } });
+  t.set("data.book", {
+    activeBook: "otkat",
+    books: [{ id: "otkat", title: "Книга", pages: 100, startPage: 0 }],
+    entries: [{ id: "1", date: "2026-08-01", bookId: "otkat", page: 100 }],
+  });
+  t.set("data.active", "book");
+  t.set("data.achAt", { "otkat:konec": 111, "otkat:zahod": 111, "otkat:noch": 111, "otkat:den": 111 });
+
+  // отметку исправили: сотая страница оказалась ошибкой, прочитано сорок
+  t.get("data").book.entries[0].page = 40;
+  const снято = t.get("dropGoneAch")();
+  ок("откат: снято ровно две", снято, 2);
+  ок("откат: награда за страницу ушла", t.get("data").achAt["otkat:konec"], undefined);
+  ок("откат: размах захода ушёл", t.get("data").achAt["otkat:zahod"], undefined);
+  ок("откат: ночь осталась — она была", t.get("data").achAt["otkat:noch"], 111);
+  ок("откат: день чтения остался", t.get("data").achAt["otkat:den"], 111);
+
+  // вернули как было — награда возвращается обычным путём, через stampProgress
+  t.get("data").book.entries[0].page = 100;
+  ок("откат: снимать больше нечего", t.get("dropGoneAch")(), 0);
+
+  // каталог ещё не приехал: пустое состояние ничего не решает
+  t.set("data.achAt", { "otkat:konec": 111 });
+  t.set("CATALOG", {});
+  ок("откат: без каталога награды не трогаем",
+    [t.get("dropGoneAch")(), t.get("data").achAt["otkat:konec"]], [0, 111]);
+
+  t.set("CATALOG", было.cat); t.set("data.book", было.book);
+  t.set("data.piano", было.piano);
+  t.set("data.active", было.active); t.set("data.achAt", было.achAt);
+}
+
 /* ── Что предлагается для заметки ── */
 {
   const было = {
