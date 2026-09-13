@@ -2110,6 +2110,14 @@ function ок(имя, факт, надо) {
   ок("потолок: без потолка лестница целиком",
     t.get("achList")().map((a) => a.id), ["own", "d5", "d30"]);
 
+  // книга может отказаться от лестницы дней вовсе
+  t.set("CATALOG", { ...t.get("CATALOG"), kniga: {
+    ach: [{ id: "own", icon: "📖", name: "Своя", hint: "", secret: false, when: [["days", ">=", 1]] }],
+    noDays: true,
+  } });
+  ок("без лестницы: остались только свои",
+    t.get("achList")().map((a) => a.id), ["own"]);
+
   t.set("CATALOG", было.cat);
   t.set("data.book", было.book); t.set("data.piano", было.piano);
   t.set("data.active", было.active);
