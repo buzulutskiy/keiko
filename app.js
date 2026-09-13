@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 510";
+const APP_VERSION = "Кэйко 511";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1099,6 +1099,14 @@ function bookStats() {
     if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
     prev = e.date;
   }
+  /* Какая повесть «сейчас» — у сборника это не самая дальняя страница, а та,
+     где ты был в прошлый раз. Начал с «Шинели» на 155-й, перешёл к «Невскому»
+     на 5-ю — курсор помнит 194-ю и продолжал показывать «Шинель». */
+  let последняя = page;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const sp = list[i].spans || [];
+    if (sp.length) { последняя = Math.max(...sp.map((x) => Number(x.to) || 0)); break; }
+  }
   const covered = Math.min(b.pages || 0, bookCovered(b));
   /* Линейная книга считается как раньше — по курсору. Так и должно быть:
      у книги может стоять старт с середины (у «Снега на траве» со 183-й),
@@ -1118,7 +1126,7 @@ function bookStats() {
     pct: b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapterInOne,
-    chapter: chapterAt(page),
+    chapter: chapterAt(parts ? последняя : page),
     /* Какие главы дочитаны — набором, для наград вида ["read", "has", 4].
        Книге подряд хватило бы «докуда дошёл», но сборник повестей читают в
        своём порядке, и награда за «Шинель» не должна приходить за то, что
@@ -4190,8 +4198,34 @@ const subLine = (...parts) => parts.filter(Boolean)
   .map((p, i, a) => `<span class="sub-part">${p}${i < a.length - 1 ? " ·" : ""}</span>`)
   .join(" ");
 
+/* Сколько осталось страниц. У книги подряд — до последней. У сборника
+   вразбивку курсор не значит «прочитано»: начав «Шинель» со 155-й, человек
+   видел «осталось 62 страницы» — это до конца тома, хотя в самой «Шинели» их
+   тридцать пять, а первые сто пятьдесят не прочитаны вовсе. Пока повесть не
+   закрыта, считаем до её конца: рядом стоит её имя, и число должно быть про
+   неё. Закрыта — имя убираем и говорим про всю книгу, иначе число молча
+   меняет предмет. */
+function bookLeft(s) {
+  const b = book();
+  if (bookMode(b) !== "parts") return Math.max(0, (s.pages || 0) - s.page);
+  const гл = b.chapters || [];
+  const текстС = Number((гл[0] || {}).from) || 1;
+  const всего = Math.max(0, Math.max(1, (b.pages || 0) - текстС + 1) - s.covered);
+  const i = гл.findIndex((c) => Number(c.from) === Number((s.chapter || {}).from));
+  if (i < 0) return { своё: 0, всего };
+  const часть = { from: Number(гл[i].from) || 1,
+                  to: i + 1 < гл.length ? Number(гл[i + 1].from) - 1 : (b.pages || 0) };
+  const своё = Math.max(0, (часть.to - часть.from + 1) - partCovered(часть, mergeSpans(bookSpans(b))));
+  return { своё, всего };
+}
+
 function heroSub(s) {
-  if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(s.pages - s.page)}`);
+  if (isBook() && bookMode(book()) === "parts") {
+    const { своё, всего } = bookLeft(s);
+    return своё ? subLine(esc(s.chapter.name), `осталось ${stranic(своё)}`)
+                : subLine(`осталось ${stranic(всего)}`);
+  }
+  if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(bookLeft(s))}`);
   if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
   if (isCourse() && plainDraw()) {
     const n = s.days;
@@ -4740,11 +4774,27 @@ function paceForecast() {
 
   if (isBook()) {
     const b = book();
-    total = b.pages;
     unit = "page";
-    старт = b.startPage || 0;
-    let page = старт;
-    for (const e of list) { page = Math.max(page, e.page || 0); ряд.push({ d: e.date, n: page }); }
+    if (bookMode(b) === "parts") {
+      /* У сборника прироста по курсору нет вовсе: поля page у отметки не
+         существует, ряд получался плоским, темп нулевым — и срок «когда
+         дочитаю» не показывался ни разу за всю книгу. Считаем по покрытым
+         страницам, от первой главы: так же, как процент. */
+      const текстС = Number(((b.chapters || [])[0] || {}).from) || 1;
+      total = Math.max(1, (b.pages || 0) - текстС + 1);
+      старт = 0;
+      let накрыто = [];
+      for (const e of list) {
+        накрыто = mergeSpans(накрыто.concat((e.spans || [])
+          .map((sp) => ({ from: Number(sp.from), to: Number(sp.to) }))));
+        ряд.push({ d: e.date, n: накрыто.reduce((n, sp) => n + (sp.to - sp.from + 1), 0) });
+      }
+    } else {
+      total = b.pages;
+      старт = b.startPage || 0;
+      let page = старт;
+      for (const e of list) { page = Math.max(page, e.page || 0); ряд.push({ d: e.date, n: page }); }
+    }
   } else if (isWatch()) {
     return null;
   } else if (isCourse()) {
@@ -7744,7 +7794,7 @@ function renderNotes() {
     /* Карточек знаний в ленте больше нет: они сняты, и фишка вела в никуда.
        Вместо них — артефакты, открывшиеся этой отметкой: у них есть куда
        вести. */
-    return { ach: join(t.awards, live.ach), arts: join(t.arts, live.arts) };
+    return { ach: achAlive(t.key, join(t.awards, live.ach)), arts: join(t.arts, live.arts) };
   };
 
   if (!hasMaterials()) { renderEmpty("Моментов пока нет", "Они появятся вместе с первым материалом."); return; }
@@ -11263,6 +11313,22 @@ function dropGoneAch(состояние) {
     снято++;
   }
   return снято;
+}
+
+/* Награда в карточке дня живёт по id: имя и значок берём нынешние, а ту,
+   которой в описи больше нет, не показываем вовсе. Список наград материала
+   переписывается — и вечер, когда их выпало четыре, навсегда оставался с
+   четырьмя, хотя три из них сняты и открыть их уже нельзя. */
+function achAlive(key, list) {
+  const c = catOf(key);
+  if (!c || !Array.isArray(c.ach)) return list || [];
+  const общие = c.noDays ? [] : ((CATALOG[COMMON_ACH] || {}).ach || []);
+  const по = new Map(общие.concat(c.ach).map((a) => [a.id, a]));
+  const fl = c.flavor || {};
+  return (list || []).filter((x) => x && по.has(x.id)).map((x) => {
+    const a = по.get(x.id), f = fl[x.id] || {};
+    return { ...x, icon: f.icon || a.icon || x.icon, name: f.name || a.name || x.name };
+  });
 }
 
 const achDoneSet = () => new Set(achState().filter((a) => a.done).map((a) => a.id));
