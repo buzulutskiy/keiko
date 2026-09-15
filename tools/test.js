@@ -2163,6 +2163,27 @@ function ок(имя, факт, надо) {
   ок("сборник: в кольце обычная доля, счёт — в подписи", t.get("ringSign")(ст), "");
   ок("сборник: место под кнопку карты не держим",
     t.get("bookBtnState")(), { map: { on: false, keep: false } });
+
+  /* Свайп не пересобирает главную: класс ряда кнопок переставляет syncBookBtns,
+     иначе дырка от карты остаётся от того материала, на котором экран собрали. */
+  {
+    const классы = new Set(["solo"]);
+    const ряд = { classList: {
+      toggle: (к, в) => { в ? классы.add(к) : классы.delete(к); },
+      add: (к) => классы.add(к), remove: (к) => классы.delete(к), contains: (к) => классы.has(к) } };
+    const кнопка = { parentElement: ряд, classList: { toggle() {}, add() {}, remove() {} } };
+    const былПоиск = t.get("document.getElementById");
+    t.set("document.getElementById", (id) => (id === "bookMapBtn" ? кнопка : null));
+    t.get("syncBookBtns")();
+    ок("сборник: у ряда кнопок остаётся solo", классы.has("solo"), true);
+    t.get("data").book.books[0].mode = "linear";
+    t.get("data").book.books[0].pages = 100;
+    t.get("syncBookBtns")();
+    ок("обычная книга: место под карту держим", классы.has("solo"), false);
+    t.get("data").book.books[0].mode = "list";
+    delete t.get("data").book.books[0].pages;
+    t.set("document.getElementById", былПоиск);
+  }
   ок("сборник: срока «когда дочитаю» нет", t.get("paceForecast")(), null);
   ок("сборник: сам собой дочитанным не становится", t.get("bookDone")(t.get("book")()), false);
 

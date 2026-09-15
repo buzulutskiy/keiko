@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 519";
+const APP_VERSION = "Кэйко 520";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4607,8 +4607,16 @@ function bookBtnState() {
    двигала «Отметить» вбок. Место под неё держим всегда: меняется только
    видимость, а не раскладка. */
 function syncBookBtns() {
+  const st = bookBtnState();
   const map = document.getElementById("bookMapBtn");
-  if (map) map.classList.toggle("away", !bookBtnState().map.on);
+  if (!map) return;
+  map.classList.toggle("away", !st.map.on);
+  /* Ряд кнопок правим здесь же. Лента свайпается без полной перерисовки, и
+     класс, поставленный при сборке строки, оставался от прошлого материала:
+     перелистнул на сборник статей — карты у него нет и не будет, а дырка
+     рядом с «Отметить» оставалась от книги, на которой экран собрали. */
+  const ряд = map.parentElement;
+  if (ряд) ряд.classList.toggle("solo", !st.map.keep);
 }
 
 /* Разбор материала спрашиваем сами, не дожидаясь каталога. Каталог носит лишь
@@ -4690,7 +4698,7 @@ function rangeStats(from, to) {
       for (let i = Math.max(1, sp.from); i <= sp.to; i++) barSet.add(i);
   const bars = barSet.size;
 
-  const bookList = data.book.entries.filter(inRange);
+  const книжные = data.book.entries.filter(inRange);   // не bookList: так зовётся содержание сборника
   const pages = pagesRead(from, to);
 
   const pastel = data.pastel.entries.filter(inRange);
@@ -4708,15 +4716,15 @@ function rangeStats(from, to) {
   const watchList = watchEntries().filter(inRange);
   const watched = watchList.length;
 
-  const days = new Set([...piano, ...bookList, ...pastel, ...watchList].map(e => e.date)).size;
+  const days = new Set([...piano, ...книжные, ...pastel, ...watchList].map(e => e.date)).size;
   const tracks = new Set([
     ...(piano.length ? ["piano"] : []),
-    ...(bookList.length ? ["book"] : []),
+    ...(книжные.length ? ["book"] : []),
     ...(pastel.length ? ["pastel"] : []),
     ...(watchList.length ? ["watch"] : [])
   ]);
   return { days, bars, pages, lessons, draws, watched, tracks,
-           entries: piano.length + bookList.length + pastel.length + watchList.length };
+           entries: piano.length + книжные.length + pastel.length + watchList.length };
 }
 
 /* ── Когда материал кончится ──
