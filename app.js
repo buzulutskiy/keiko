@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 523";
+const APP_VERSION = "Кэйко 524";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4281,10 +4281,11 @@ function heroSub(s) {
     return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
       courseSize());
   }
-  const п = pianoWeekPlan();
-  return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`,
-    п.набрано ? "на неделе набрано"
-      : `сегодня ${п.сегодня} из ${п.надо} мин`);
+  /* У пьесы подписи нет вовсе. Проценты по рукам («𝄞 62% · 𝄢 40%») говорили о
+     разборе то, что и так стоит в кольце общим числом, а минуты недели —
+     разговор занятия, и они переехали на его экран. Остаются заголовок,
+     кольцо и строка ниже: сколько дней играю и когда примерно закончу. */
+  return "";
 }
 
 function renderHome() {
@@ -4312,7 +4313,7 @@ $("#view").innerHTML = `
       ${ringHTML(shownPct(s), ringSign(s))}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
-        <p>${sub}</p>
+        ${sub ? `<p>${sub}</p>` : ""}
         ${paceHTML()}
       </div>
       <div class="cta-row${кнопки.map.keep ? "" : " solo"}">
@@ -4708,7 +4709,7 @@ function updateHeroInfo() {
   const title = $(".hero-title");
   if (title) title.innerHTML = `
     <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
-    <p>${heroSub(s)}</p>
+    ${heroSub(s) ? `<p>${heroSub(s)}</p>` : ""}
     ${paceHTML()}`;
 
   const cta = $("#ctaBtn");
@@ -11111,12 +11112,14 @@ function pracRender() {
     return;
   }
   const m = Math.floor(pracMin());
-  /* Рядом с минутами захода — сколько всего сегодня из ориентира на день:
-     видно, много ли ещё сидеть, и не надо считать в уме. */
+  /* В шапке занятия — только минуты, и всё сразу: сколько сегодня наиграно
+     вместе с этим заходом, сколько на сегодня выходит по ориентиру и сколько
+     идёт прямо сейчас. Название пьесы отсюда убрано: она одна на экране, и
+     читать её второй раз незачем. */
   const п = pianoWeekPlan();
-  const хвост = п.набрано ? "" : ` · сегодня ${п.сегодня + m} из ${п.надо}`;
-  $("#pracWhere").textContent = piece().name
-    + (prac.startedAt ? " · " + m + " мин" + хвост : "");
+  const сегодня = п.сегодня + m;
+  $("#pracWhere").textContent = (п.набрано ? `сегодня ${сегодня} мин` : `сегодня ${сегодня} из ${п.надо}`)
+    + (prac.startedAt ? ` · сейчас ${m}` : "");
   const box = $("#pracStage");
 
   const u = pracUnitNow();
@@ -11127,7 +11130,6 @@ function pracRender() {
   pracVideo(u);
 
   const w = pracWhere();
-  const имя = blockWhy(w.bl).why;
   const блоков = w.blocks.length;
   const готово = w.blocks.filter(blockDone).length;
 
@@ -11147,7 +11149,6 @@ function pracRender() {
   box.innerHTML = `
     <div class="wk">
       <div class="wk-task">
-        <p class="wk-kind">${esc(имя || "такты " + w.bl.from + "–" + w.bl.to)}</p>
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${esc(шаг)}</p>
         <div class="dots big">${dotsHTML(свои, сколько)}</div>
