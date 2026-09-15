@@ -471,7 +471,8 @@ def build(путь_спеки):
     json.dump(spec, open(путь_спеки, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     файлы_каталога = {
-        f"book-{key}.md": текст,
+        # текст книги в каталог больше не кладём: вкладка «Текст» снята,
+        # а шесть мегабайт чужих текстов там держать незачем (attic/tekst-knigi.md)
         f"cover-{key}.txt": cover,
     }
     # Версия картинки — время записи, а не единица: по ней строится ключ
@@ -493,7 +494,7 @@ def build(путь_спеки):
     # целиком стёрла бы их молча — и «Одиссея» потеряла бы нумерацию строк.
     было = опись["materials"].get(key) or {}
     было.update({
-        "cover": True, "md": True, "maxDays": spec.get("maxDays", 45),
+        "cover": True, "maxDays": spec.get("maxDays", 45),
         "ach": spec.get("ach", []), "words": spec.get("words", {}),
         "flavor": spec.get("flavor", {}), "ask": spec.get("ask", ""),
         "themes": spec.get("themes", []),

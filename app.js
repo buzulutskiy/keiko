@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 520";
+const APP_VERSION = "Кэйко 521";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -926,8 +926,6 @@ const ASK_DEFAULT =
 /* Книга целиком одним markdown-файлом: его прикладывают к запросу, чтобы
    нейросеть разбирала по тексту, а не по памяти. Лежит в каталоге рядом с
    обложками; в описи материала стоит только флажок, что файл есть. */
-const CAT_BOOK_FILE = (id) => `book-${id}.md`;
-const hasBookFile = (b) => !!(catOf((b || book()).id) || {}).md;
 
 const askTpl = (b) => {
   const c = catOf((b || book()).id);
@@ -10455,48 +10453,6 @@ async function toPNG(src) {
   return await new Promise(r => c.toBlob(r, "image/png"));
 }
 
-/* ── Отдать файл книги ──
-   На телефоне «скачать» — это лист «Поделиться»: оттуда файл кладут в Файлы
-   или сразу отправляют в приложение нейросети, ради чего всё и затевалось.
-   Где листа нет (настольный браузер) — обычная ссылка на скачивание. */
-async function giveBookFile(b, кнопка) {
-  const bk = b || book();
-  let готово = "";
-  const было = кнопка ? кнопка.textContent : "";
-  if (кнопка) { кнопка.disabled = true; кнопка.textContent = "Качаю…"; }
-  try {
-    let текст = await catRaw(CAT_BOOK_FILE(bk.id), 60000);
-    if (!текст) {
-      const files = await catalogFiles(false);
-      текст = await catText(files, CAT_BOOK_FILE(bk.id), 60000);
-    }
-    if (!текст) { toast("Файл книги не приехал"); return; }
-    const имя = (bk.title || "Книга").replace(/[\/:*?"<>|]/g, "") + ".md";
-    const blob = new Blob([текст], { type: "text/markdown" });
-    const файл = (typeof File === "function") ? new File([blob], имя, { type: "text/markdown" }) : null;
-    if (файл && navigator.canShare && navigator.canShare({ files: [файл] })) {
-      await navigator.share({ files: [файл], title: bk.title || "Книга" });
-      готово = "✓ Отдано";
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = имя;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    готово = "✓ Скачано";
-  } catch (e) {
-    // отмена листа «Поделиться» — не ошибка, ругаться тут не на что
-    if (!(e && e.name === "AbortError")) toast("Не вышло отдать файл");
-  } finally {
-    if (кнопка) {
-      кнопка.disabled = false;
-      кнопка.textContent = было;
-      delete кнопка.dataset.was;
-      if (готово) btnSay(кнопка, готово);
-    }
-  }
-}
 
 /* ── Картинка шага ──
    Лежит в каталоге рядом с обложками и тянется тем же путём: файл с data-URI,
@@ -11590,10 +11546,6 @@ function openPlaceMap(bk, i, выбрать) {
   pullMuseum().then((новое) => {
     if (новое && gm) { gmLayersRow(); gmTitle(); gmList(); }
   }).catch(() => {});
-  /* Полоса «Объясни» живёт внутри карты и переживала её закрытие: с прошлой
-     книгой, прошлой фразой и прошлым обработчиком. Открыли карту другой книги,
-     нажали — и в ChatGPT уезжал фрагмент из «Одиссеи». Гасим на входе. */
-  gmAskHide();
   /* Файл с местами мог обновиться в гисте — спрашиваем при каждом открытии
      карты. Раньше это делал экран разбора; его сняли, и файл перестал
      обновляться совсем: на телефоне навсегда оставалась первая версия. */
@@ -11877,13 +11829,8 @@ function renderMuseum() {
 
 function closePlaceMap() {
   closeShots();
-  gmAskHide();
-  /* Абзацы прошлой книги не должны дожидаться следующего открытия: пока
-     новый текст качается, на экране висел бы чужой. */
-  const чт = $("#gmRead"); if (чт) { чт.hidden = true; чт.innerHTML = ""; }
   const сб = $("#gmCol"); if (сб) { сб.hidden = true; сб.innerHTML = ""; }
   colView = null; colAt = null;
-  gmAskHide();
   const поле = $("#gmFind"); if (поле) поле.value = "";
   const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
   const box = $("#gmap");
@@ -11927,7 +11874,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
 /* «Справки» и «Слова» с карты сняты: справки целиком переехали в собрание, а
    слова — отдельная затея, к карте отношения не имеющая. Код обеих цел, они
    просто не перечислены здесь. */
-const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"], ["read", "Текст"]];
+const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -11940,23 +11887,12 @@ function gmLayersOf() {
      может не быть вовсе (карта открыта старым кодом) — тогда считаем, что
      подложка есть: так было всегда. */
   if (gm.подложка === false) есть.delete("place");
-  /* Третья вкладка — сам текст книги. Он уже лежит в каталоге: тем же файлом,
-     что уходит в нейросеть по кнопке «Книга .md». Показываем её только там,
-     где файл есть. */
-  if (gmBookFile()) есть.add("read");
   /* Собрание живёт вкладкой карты, а не отдельным экраном: всё, что про книгу,
      открывается одной кнопкой. Отдельный ромбик в шапке был второй дверью в то
      же место. */
   if (colMat() && colItems().length) есть.add("col");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
-/* Файл книги для этой карты — только у книг, и только если он залит. */
-const gmBookFile = () => {
-  if (!gm || !gm.id) return "";
-  const b = (data.book.books || []).find((x) => x.id === gm.id);
-  return b && hasBookFile(b) ? gm.id : "";
-};
-
 /* Сколько всего в главе — по всем слоям сразу, с разбивкой. В содержании
    человек ищет «где про это почитать», а не «где точки на карте»: глава с
    одними словами и людьми не должна выглядеть пустой. */
@@ -12114,20 +12050,17 @@ function colТемаПромт(b, t, список) {
 /* Слой книг и людей показываем списком: точка на глобусе ничего о книге не
    говорит, а прочитать про неё хочется. Карта остаётся у мест. */
 function gmList() {
-  const box = $("#gmList"), сцена = $("#gmStage"), чтение = $("#gmRead"), слова = $("#gmWords");
+  const box = $("#gmList"), сцена = $("#gmStage"), слова = $("#gmWords");
   const собр = $("#gmCol");
   if (!box || !gm) return;
   const вкладка = gmВкладка();
   const списком = вкладка === "all";
   box.hidden = !списком;
   if (сцена) сцена.hidden = вкладка !== "place";
-  if (чтение) чтение.hidden = вкладка !== "read";
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
-  if (вкладка === "read") { box.innerHTML = ""; gmRead(); return; }
-  if (вкладка === "ask") { box.innerHTML = ""; gmAskHide(); askPane(); return; }
-  if (вкладка === "col") { box.innerHTML = ""; gmAskHide(); colRender(); return; }
-  gmAskHide();
+  if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
+  if (вкладка === "col") { box.innerHTML = ""; colRender(); return; }
   if (!списком) { box.innerHTML = ""; return; }
   const список = gmВидимые();
   if (!список.length) {
@@ -12162,55 +12095,6 @@ function gmList() {
   }).join("");
 }
 
-/* ── Текст книги ──
-   Третья вкладка карты. Задача одна: наткнулся на непонятную фразу — выделил
-   её пальцем и одной кнопкой отправил в нейросеть вместе с тем, из какой она
-   книги и главы. До этого приходилось фотографировать страницу, распознавать
-   и объяснять руками, из чего это вообще.
-
-   Файл берём тот же, что уходит по кнопке «Книга .md»: он уже лежит в
-   каталоге, и второй копии заводить незачем. Мегабайт качаем один раз за
-   сессию и держим в памяти — в localStorage такому не место, там обложки. */
-let gmText = null;          // { id, разделы: [{имя, абзацы}], грузим }
-let gmAskTimer = 0;         // выделение дёргается пальцем — ждём, пока устоится
-
-function gmParseBook(текст) {
-  const разделы = [];
-  let тек = null;
-  for (const строка of String(текст || "").split("\n")) {
-    const s2 = строка.trim();
-    if (!s2) continue;
-    const h = /^#{1,3}\s+(.+)$/.exec(s2);
-    if (h) { тек = { имя: h[1].trim(), абзацы: [] }; разделы.push(тек); continue; }
-    if (!тек) { тек = { имя: "", абзацы: [] }; разделы.push(тек); }
-    тек.абзацы.push(s2);
-  }
-  /* Служебные куски конвертера в чтении только мешают: содержание дублирует
-     наше собственное, выходные данные читать незачем. */
-  const мусор = /^(оглавление|перед текстом|выходные данные|сноски)$/i;
-  return разделы.filter((r) => r.абзацы.length && !мусор.test(r.имя));
-}
-
-async function gmLoadBook(id0) {
-  const id = id0 || gmBookFile();
-  if (!id) return null;
-  if (gmText && gmText.id === id && !gmText.грузим) return gmText;
-  if (gmText && gmText.грузим === id) return null;      // уже качается
-  gmText = { id, разделы: [], грузим: id };
-  const сырое = await catRaw(CAT_BOOK_FILE(id), 60000);
-  if (!сырое) { gmText = null; return null; }
-  gmText = { id, разделы: gmParseBook(сырое), грузим: "" };
-  return gmText;
-}
-
-/* Какой раздел файла отвечает выбранной главе. Разделов и глав почти никогда
-   не поровну: у Достоевского пять частей против сорока шести глав в файле, у
-   «Одиссеи» — двадцать четыре песни против двадцати девяти разделов, из
-   которых первые два про самого Гомера. Поэтому сначала ищем по названию, и
-   только если не нашли — по доле. */
-/* Номер, спрятанный в названии раздела. У «Одиссеи» содержание нумерует песни
-   римскими («Песнь XII»), а файл — словами («ПЕСНЬ ДВЕНАДЦАТАЯ»), и по буквам
-   они не сходятся никогда. Разбираем и то и другое к числу. */
 const ЕДИНИЦЫ = ["", "перв", "втор", "трет", "четверт", "пят", "шест", "седьм", "восьм",
   "девят", "десят", "одиннадцат", "двенадцат", "тринадцат", "четырнадцат", "пятнадцат",
   "шестнадцат", "семнадцат", "восемнадцат", "девятнадцат"];
@@ -12239,193 +12123,6 @@ function gmNum(имя) {
   }
   const d = /(?:^|\s)(\d{1,3})(?=[\s.,:;]|$)/.exec(s2);
   return d ? Number(d[1]) : 0;
-}
-
-function gmSectionFor(разделы, n, части0) {
-  const части = части0 || gmParts();
-  const чисто = (x) => String(x || "").toLowerCase().replace(/ё/g, "е")
-    .replace(/^\s*(глава|песнь|часть|письмо)\s+[^.]{1,20}\.\s*/i, "")
-    .replace(/[^0-9a-zа-я ]+/gi, " ").replace(/\s+/g, " ").trim();
-  // какого рода единица у главы: песнь, часть, письмо
-  const род = (x) => (/(песн|част|письм|глав)/.exec(String(x || "").toLowerCase()) || [""])[0];
-  const c = части.find((x) => Number(x.n) === Number(n));
-  const имя = чисто(c && c.name);
-  if (имя.length >= 4) {
-    const i = разделы.findIndex((r) => {
-      const s2 = чисто(r.имя);
-      return s2.length >= 4 && (s2.includes(имя) || имя.includes(s2));
-    });
-    if (i >= 0) return i;
-  }
-  /* По номеру внутри названия. Собственная нумерация файла («Глава 3.») тут не
-     годится — она сквозная и к песням отношения не имеет, поэтому её сперва
-     срезаем. */
-  const хочу = gmNum(c && c.name) || Number(n);
-  const мой = род(c && c.name);
-  if (хочу) {
-    const i = разделы.findIndex((r) => {
-      const голый = чисто(r.имя);
-      if (!голый || gmNum(голый) !== хочу) return false;
-      /* Если глава называет свою единицу — песнь, часть, письмо, — раздел
-         должен называть ту же. Иначе «Часть первая» цеплялась за «ГЛАВА I». */
-      return !мой || род(r.имя).startsWith(мой) || голый.includes(мой);
-    });
-    if (i >= 0) return i;
-  }
-  const всего = части.length || 1;
-  let i = Math.max(0, Math.min(разделы.length - 1,
-    Math.floor((Number(n) - 1) / всего * разделы.length)));
-  /* Титул и прочая мелочь в начале — не то, ради чего открывают текст. Если
-     попали в кусок в пару абзацев, шагаем к первому настоящему. Только в самом
-     начале книги: дальше короткий раздел — это короткий раздел, а не титул. */
-  while (i < разделы.length - 1 && i < 3 && разделы[i].абзацы.length < 3) i++;
-  return i;
-}
-
-/* Куда открывать текст, когда глава не выбрана: примерно туда, докуда дочитал.
-   Точного соответствия страниц и знаков нет и быть не может, поэтому берём
-   долю прочитанного и ту же долю разделов. Дальше поиском. */
-function gmReadStart(разделы) {
-  const b = (data.book.books || []).find((x) => x.id === gm.id);
-  if (!b || !b.pages) return 0;
-  const стр = bookProgressOf(b);
-  if (!стр) return 0;
-  return Math.min(разделы.length - 1, Math.floor(стр / b.pages * разделы.length));
-}
-
-const gmEsc = (s2) => s2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function gmMark(текст, что) {
-  if (!что) return esc(текст);
-  return esc(текст).replace(new RegExp(gmEsc(esc(что)), "gi"), (m) => `<mark>${m}</mark>`);
-}
-
-/* Собственная нумерация файла в заголовке раздела спорит с содержанием, по
-   которому человек и выбирал главу: «Глава 14. ПЕСНЬ ДВЕНАДЦАТАЯ» при
-   выбранной двенадцатой песни, «Глава 35» первой строкой четвёртой части.
-   Оставляем только то, что заголовок говорит словами. */
-function gmЗаголовок(имя) {
-  return String(имя || "").trim()
-    .replace(/^\s*глава\s+\d+\.?\s*/i, "")
-    .replace(/^\s*(часть|песнь|письмо)\s+[^.]{1,20}\.?\s*$/i, "")
-    .trim();
-}
-
-/* Глава содержания и разделы файла — не одно и то же. У «Униженных» содержание
-   знает четыре части, а в файле сорок шесть глав: часть — это диапазон, а не
-   один раздел. Раньше показывался только первый, и до тридцать шестой главы
-   было не добраться вовсе. */
-function gmSectionRange(разделы, n, части0) {
-  const части = части0 || gmParts();
-  const i = части.findIndex((c) => Number(c.n) === Number(n));
-  const от = gmSectionFor(разделы, n, части);
-  let до = разделы.length;
-  if (i >= 0 && i + 1 < части.length) {
-    const след = gmSectionFor(разделы, части[i + 1].n, части);
-    if (след > от) до = след;
-  }
-  return [от, Math.max(от + 1, до)];
-}
-
-function gmRead() {
-  const box = $("#gmRead");
-  if (!box || !gm) return;
-  if (!gmText || gmText.id !== gmBookFile() || gmText.грузим) {
-    box.innerHTML = `<div class="rd-load">Текст книги загружается…</div>`;
-    gmLoadBook().then((t) => { if (t && gmВкладка() === "read") gmRead(); })
-      .catch(() => { box.innerHTML = `<div class="rd-load">Текст не приехал — попробуй ещё раз</div>`; });
-    return;
-  }
-  const разделы = gmText.разделы;
-  if (!разделы.length) { box.innerHTML = `<div class="rd-load">В файле книги пусто</div>`; return; }
-  /* Пересчитываем при каждой смене главы. Раньше раздел вычислялся один раз:
-     человек переключал главу сверху, а текст оставался тот же. Свой выбор —
-     «дальше» или переход из поиска — при этом не сбрасывается: глава-то не
-     менялась. */
-  if (gm.чтение == null || gm.чтениеГл !== gm.часть) {
-    gm.чтение = gm.часть > 0 ? gmSectionFor(разделы, gm.часть) : gmReadStart(разделы);
-    gm.чтениеГл = gm.часть;
-    gm.метка = null;
-  }
-
-  /* Ищем внутри открытой главы, а не по всей книге. Глава выбирается сверху,
-     содержанием, и поиск по всему тому выдавал бы совпадения из мест, до
-     которых человек ещё не дошёл, — а это ровно те спойлеры, от которых мы
-     бережём всё остальное. Да и искать обычно хотят в том, что сейчас перед
-     глазами. */
-  const q = (gm.поиск || "").trim();
-  /* Выбрана глава — показываем её целиком. Не выбрана («вся книга») —
-     по одному разделу с кнопкой «дальше»: полтора мегабайта Достоевского
-     телефон в разметке не удержит. */
-  const с = Math.max(0, Math.min(gm.чтение || 0, разделы.length - 1));
-  const [от, до] = gm.часть > 0 ? gmSectionRange(разделы, gm.часть) : [с, с + 1];
-  if (q.length >= 2) {
-    const найдено = [];
-    let счёт = 0;
-    for (let i = от; i < до; i++) {
-      const r0 = разделы[i];
-      const слова = gmЗаголовок(r0.имя);
-      r0.абзацы.forEach((p) => {
-        const j = счёт++;
-        const at = p.toLowerCase().indexOf(q.toLowerCase());
-        if (at < 0 || найдено.length >= 60) return;
-        найдено.push({ j, имя: слова,
-          кусок: (at > 40 ? "…" : "") + p.slice(Math.max(0, at - 40), at + q.length + 90)
-            + (at + q.length + 90 < p.length ? "…" : "") });
-      });
-    }
-    box.innerHTML = найдено.length
-      ? найдено.map((h) => `
-          <button class="rd-hit" data-rdp="${h.j}" type="button">
-            ${h.имя ? `<b>${esc(h.имя)}</b>` : ""}${gmMark(h.кусок, q)}
-          </button>`).join("")
-        + (найдено.length >= 60 ? `<div class="rd-more">Показаны первые 60 — уточни запрос</div>` : "")
-      : `<div class="rd-load">В этой главе ничего не нашлось.<br>Другая глава выбирается содержанием сверху.</div>`;
-    box.scrollTop = 0;
-    document.querySelectorAll("#gmRead [data-rdp]").forEach((el) =>
-      el.addEventListener("click", () => {
-        gm.метка = Number(el.dataset.rdp);
-        gm.поиск = "";
-        const поле = $("#gmFind"); if (поле) поле.value = "";
-        gmRead();
-      }));
-    return;
-  }
-
-  /* Глава показывается целиком. Делить её на куски с кнопкой «дальше» было
-     нечестно вдвойне: у «Униженных» часть — это дюжина глав файла, и счётчик
-     «11 из 12» говорил о нумерации, которой человек нигде не видел. */
-  /* У стихотворной книги строки нумеруются — по той же нумерации, по которой
-     человек отмечает непонятное. Номер при каждой строке, кратные пяти
-     заметнее: так их находят глазом, не считая по одной. Счёт идёт внутри
-     главы, как у Гомера, и потому сходится с любым изданием. */
-  const встих = askVerse({ id: gm.id });
-  let абз = 0;
-  const тело = разделы.slice(от, до).map((r0, k) => {
-    const слова = gmЗаголовок(r0.имя);
-    // между главами файла — либо их собственные слова, либо просто разделитель
-    const шапка = k === 0 && !слова ? ""
-      : слова ? `<div class="rd-h">${esc(слова)}</div>`
-      : `<div class="rd-br">✦</div>`;
-    return шапка + r0.абзацы.map((p) => {
-      const n = ++абз;
-      return встих
-        ? `<p class="rd-p rd-v" data-p="${n - 1}"><i${n % 5 ? "" : ' class="on"'}>${n}</i>${esc(p)}</p>`
-        : `<p class="rd-p" data-p="${n - 1}">${esc(p)}</p>`;
-    }).join("");
-  }).join("");
-  const ещё = gm.часть === 0 && до < разделы.length;
-  box.innerHTML = тело
-    + (ещё ? `<button class="rd-hit" data-rdnext="1" type="button"><b>дальше</b>${
-        esc(gmЗаголовок(разделы[до].имя) || "следующий кусок")}</button>` : "");
-  const дальше = box.querySelector("[data-rdnext]");
-  if (дальше) дальше.addEventListener("click", () => { gm.чтение = до; gm.метка = null; gmRead(); });
-  /* Пришли из поиска — подводим к тому самому абзацу, а не к началу главы. */
-  if (gm.метка != null) {
-    const el = box.querySelector(`[data-p="${gm.метка}"]`);
-    if (el) { el.scrollIntoView({ block: "center" }); el.style.background = "rgba(255,201,77,.12)"; }
-    gm.метка = null;
-  } else box.scrollTop = 0;
-  gmAskHide();
 }
 
 /* ── Непонятные слова ──
@@ -12477,176 +12174,10 @@ const askVerse = (b0) => !!(catOf(((b0 || book()) || {}).id) || {}).verse;
    спросить без цитаты. Запрещать одно ради другого незачем. */
 const askЧисло = (w) => /^\d{1,4}$/.test(String(w || "").trim());
 
-/* Стих номер n внутри той главы, где его отметили. Соседние строки берём с
-   собой: одна строка гекзаметра обрывается на середине фразы. */
-/* Насколько шире брать цитату. Иногда непонятно не слово, а весь абзац — и
-   тогда одно предложение в промте бесполезно. Три ступени: дальше человеку
-   проще спросить про всю главу. */
-const ASK_СТРОК = [1, 4, 10];                       // у стиха — строк в каждую сторону
-const ASK_ШИРЕ = ["по фразе", "весь абзац", "абзац с соседними"];
-const ASK_ШИРЕ_СТИХ = ["три строки", "девять строк", "двадцать одна строка"];
-
-function askVerseAt(разделы, b, гл, n, ширина) {
-  const части = (b.chapters || []).map((c, i) => ({ n: i + 1, name: c.name || "" }));
-  const номер = Number(гл) || askГлава(b) || 1;
-  const [от, до] = gmSectionRange(разделы, номер, части);
-  const строки = [];
-  for (let i = от; i < до; i++) строки.push(...разделы[i].абзацы);
-  const k = Number(n) - 1;
-  if (!строки.length || !(k >= 0) || k >= строки.length) return null;
-  const w = ASK_СТРОК[Math.max(0, Math.min(ASK_СТРОК.length - 1, Number(ширина) || 0))];
-  return { i: от, стих: Number(n),
-           фраза: строки.slice(Math.max(0, k - w), k + w + 1).join(" ").slice(0, 1200),
-           раздел: (части[номер - 1] || {}).name || "" };
-}
-
-/* Цитата нужной ширины. У прозы ступени идут по разметке — фраза, абзац,
-   абзац с соседями; у стиха ширина уже учтена при поиске строки. */
-function askQuote(разделы, м, ширина) {
-  if (!м) return "";
-  if (м.стих) return м.фраза;
-  const w = Number(ширина) || 0;
-  if (!w) return м.фраза;
-  const абз = (разделы[м.i] || {}).абзацы || [];
-  const j = Number(м.j) || 0;
-  const куски = w === 1 ? [абз[j]] : [абз[j - 1], абз[j], абз[j + 1]];
-  return куски.filter(Boolean).join("\n").slice(0, 1200) || м.фраза;
-}
-
-function askAdd(слово) {
-  const w = String(слово || "").trim();
-  if (!w || !book()) return null;
-  const a = { id: uid(), bookId: book().id, ch: askГлава(), word: w,
-              createdAt: now(), updatedAt: now() };
-  asksAll().push(a);
-  saveData(); schedulePush();
-  return a;
-}
-/* Удаление — пометкой: иначе телефон вернёт слово первой же синхронизацией. */
-function askDrop(id, разобрано) {
-  const a = asksAll().find((x) => x.id === id);
-  if (!a) return;
-  if (разобрано) a.done = true; else a.deleted = true;
-  a.updatedAt = now();
-  saveData(); schedulePush();
-}
-
-/* Предложение, в котором стоит найденное слово. Границы — по точке с пробелом,
-   а не по любой точке: сокращения вроде «т. е.» резать нечего. */
-function askSentence(абзац, at) {
-  const s = String(абзац || "");
-  let от = 0;
-  for (let i = at; i > 0; i--)
-    if (/[.!?…]/.test(s[i - 1]) && /\s/.test(s[i]) && /[А-ЯЁA-Z«—]/.test(s[i + 1] || "")) { от = i + 1; break; }
-  let до = s.length;
-  for (let i = at; i < s.length; i++)
-    if (/[.!?…]/.test(s[i]) && (!s[i + 1] || /\s/.test(s[i + 1]))) { до = i + 1; break; }
-  return s.slice(от, до).trim();
-}
-
-/* Кандидаты на «то самое место». Сначала точное вхождение, потом по основе:
-   набирают «фальшфейер», а в книге стоит «фальшфейера». Ищем только до
-   прочитанной главы включительно — дальше по книге то же слово встретится в
-   сцене, до которой человек ещё не дошёл. */
-/* Как называется раздел файла на языке содержания. Собственные заголовки
-   файла бывают голым номером — «Глава 35.», — и подтверждать по ним нечего;
-   человек выбирал главу по своему оглавлению, его и показываем. */
-function askМетки(разделы, b) {
-  const метки = new Array(разделы.length).fill("");
-  const главы = b.chapters || [];
-  const части = главы.map((c, i) => ({ n: i + 1, name: c.name || "" }));
-  for (let n = 1; n <= части.length; n++) {
-    const [от, до] = gmSectionRange(разделы, n, части);
-    for (let i = от; i < до && i < метки.length; i++) метки[i] = части[n - 1].name;
-  }
-  for (let i = 0; i < метки.length; i++)
-    if (!метки[i]) метки[i] = gmЗаголовок(разделы[i].имя);
-  return метки;
-}
-
-function askCandidates(разделы, слово, окно, метки) {
-  const w = String(слово || "").toLowerCase().replace(/ё/g, "е").trim();
-  if (w.length < 3) return [];
-  const основы = [w];
-  for (const n of [1, 2, 3]) if (w.length - n >= 4) основы.push(w.slice(0, w.length - n));
-  const о = typeof окно === "number" ? { от: 0, до: окно } : (окно || {});
-  const до = о.до == null ? разделы.length : Math.min(о.до, разделы.length);
-  const от = Number(о.от) || 0;
-  for (const основа of основы) {
-    const найдено = [];
-    for (let i = 0; i < до && найдено.length < 8; i++) {
-      const абз = разделы[i].абзацы;
-      абз.forEach((п, j) => {
-        const низ = п.toLowerCase().replace(/ё/g, "е");
-        let at = низ.indexOf(основа);
-        while (at >= 0 && найдено.length < 8) {
-          let фраза = askSentence(п, at);
-          /* У стиха каждая строка — свой абзац, и одна строка обрывается на
-             запятой: по ней не понять, то ли это место. Добираем соседние. */
-          if (фраза.length < 80)
-            фраза = [абз[j - 1], фраза, абз[j + 1]].filter(Boolean).join(" ").trim().slice(0, 260);
-          if (фраза.length > 10 && !найдено.some((x) => x.фраза === фраза))
-            найдено.push({ i, j, фраза, раздел: (метки && метки[i]) || gmЗаголовок(разделы[i].имя) });
-          at = низ.indexOf(основа, at + основа.length);
-        }
-      });
-    }
-    /* Ближайшее к текущей главе — первым. Раньше выдача шла от начала книги,
-       и на тринадцатой песни первым кандидатом показывалась первая: слово
-       почти всегда встретилось там, где ты сейчас, а не там, где оно впервые
-       появилось в книге. */
-    if (найдено.length) return найдено.sort((a, b) => {
-      const своя = (x) => (x.i >= от && x.i < до ? 0 : 1);
-      return своя(a) - своя(b) || b.i - a.i;
-    });
-  }
-  return [];
-}
-
-/* Где человек сейчас и докуда вообще искать. Два числа, и оба важны: «до» —
-   граница прочитанного, дальше нельзя (там сцены, до которых он не дошёл),
-   «от» — начало текущей главы. Слово почти всегда встретилось в ней, и
-   показывать его надо оттуда, а не с начала книги. */
-function askОкно(разделы, b) {
-  const главы = b.chapters || [];
-  if (!главы.length) return { от: 0, до: разделы.length };
-  const стр = bookProgress();
-  let n = 1;
-  главы.forEach((c, i) => { if (стр >= (Number(c.from) || 0)) n = i + 1; });
-  const части = главы.map((c, i) => ({ n: i + 1, name: c.name || "" }));
-  const [от, до] = gmSectionRange(разделы, n, части);
-  return { от, до };
-}
-
-/* Словарь книги для подсказок. Набирать «фальшфейер» целиком с телефона в
-   руках, когда в другой руке книга, — долго; три буквы и тычок в подсказку
-   быстрее. Заодно слово гарантированно есть в тексте, и место потом найдётся.
-   Словарь строим только по прочитанному: иначе подсказка выдаст имя из главы,
-   до которой человек не дошёл. */
+/* Подсказки слов строились по словарю из текста книги; текста в каталоге
+   больше нет, словарь не строится, и askSuggest всегда отдаёт пусто. Сам
+   поиск по тексту и подтверждение цитат уехали в attic/tekst-knigi.md. */
 let askIndex = null;
-function askBuildIndex(id, разделы, окно) {
-  const о = typeof окно === "number" ? { от: 0, до: окно } : (окно || {});
-  const до = Math.min(о.до == null ? разделы.length : о.до, разделы.length);
-  const от = Number(о.от) || 0;
-  if (askIndex && askIndex.id === id && askIndex.до === до && askIndex.от === от) return askIndex;
-  /* Всё прочитанное, но с приоритетом текущей главы. Отсекать прошлые главы
-     нельзя: короткие рассказы читают по два-три за раз, не прерываясь на
-     отметку страницы, — и слово из только что прочитанного рассказа
-     приложение считает «прошлой главой». Дальше непрочитанного не идём: там
-     спойлер. */
-  const счёт = new Map(), ближе = new Map();
-  for (let i = 0; i < до; i++) {
-    const d = i >= от ? 0 : от - i;                  // удалённость от текущей главы
-    for (const п of разделы[i].абзацы)
-      for (const m of String(п).toLowerCase().replace(/ё/g, "е").match(/[а-яa-z][а-яa-z-]{3,}/g) || []) {
-        счёт.set(m, (счёт.get(m) || 0) + 1);
-        if (!ближе.has(m) || d < ближе.get(m)) ближе.set(m, d);
-      }
-  }
-  askIndex = { id, от, до,
-    слова: [...счёт.entries()].map(([w, n]) => ({ w, n, d: ближе.get(w) })) };
-  return askIndex;
-}
 /* Сначала по удалённости от текущей главы, потом редкое выше частого:
    отмечают то, что попалось только что, а непонятным оказывается
    встретившееся раз-другой, а не «который» и «сказал». */
@@ -12668,7 +12199,7 @@ function askPrompt(готовые, b) {
   главы.forEach((c) => { if (стр >= (Number(c.from) || 0)) гл = c.name || ""; });
   const список = готовые.map((x, i) =>
     `${i + 1}. ${x.где ? x.где : `«${x.word}»`}${
-      x.фраза ? `\n   В книге: «${x.фраза}»` : " — места в тексте не нашлось"}`).join("\n");
+      x.фраза ? `\n   В книге: «${x.фраза}»` : ""}`).join("\n");
   /* Спрашивают не «что значит слово», а «объясни это место целиком»: что за
      вещь, как выглядит, что за событие, что за книга. Поэтому промт задаёт
      порядок ответа — иначе выходит пересказ цитаты своими словами и ничего
@@ -12754,11 +12285,6 @@ function askPane() {
     });
     $("#askPlus").addEventListener("click", добавить);
     $("#askGo").addEventListener("click", askRun);
-    /* Словарь подсказок — из текста книги, он же нужен для поиска мест. Пока
-       качается, поле работает как обычное. */
-    if (hasBookFile(b) && !стих) gmLoadBook(b.id).then((t) => {
-      if (t && gmВкладка() === "ask") { askBuildIndex(b.id, t.разделы, askОкно(t.разделы, b)); askSugRender(); }
-    }).catch(() => {});
   }
   askChips();
 }
@@ -12767,70 +12293,12 @@ async function askRun() {
   const b = book();
   const список = asksOpen();
   if (!b || !список.length) return;
-  openSheet(`<div class="ask-sheet"><div class="rd-load">Ищу места в книге…</div></div>`);
-  const t = await gmLoadBook(b.id).catch(() => null);
-  if (!t) { openSheet(`<div class="ask-sheet"><div class="rd-load">Текст книги не приехал — попробуй ещё раз</div></div>
-    <div class="sheet-actions"><button class="btn" id="askClose" type="button">Закрыть</button></div>`);
-    $("#askClose").addEventListener("click", closeSheet); return; }
-  const окно = askОкно(t.разделы, b);
-  const метки = askМетки(t.разделы, b);
-  const стих = askVerse(b);
-  askRunState = {
-    i: 0, k: 0, ш: 0, готовые: [], b, разделы: t.разделы,
-    список: список.map((a) => ({ ...a,
-      строка: стих,
-      места: стих
-        ? [askVerseAt(t.разделы, b, a.ch, a.word, 0)].filter(Boolean)
-        : askCandidates(t.разделы, a.word, окно, метки) })),
-  };
-  askCard();
-}
-
-function askCard() {
-  const st = askRunState;
-  if (!st) return;
-  if (st.i >= st.список.length) return askFinish();
-  const cur = st.список[st.i];
-  /* У стиха ширина задаётся при поиске строки, у прозы — при показе цитаты. */
-  const строка = cur.строка;
-  const м = строка
-    ? askVerseAt(st.разделы, st.b, cur.ch, cur.word, st.ш)
-    : cur.места[st.k];
-  const цитата = строка ? (м && м.фраза) : askQuote(st.разделы, м, st.ш);
-  const ещё = !строка && cur.места.length > st.k + 1;
-  const шире = st.ш + 1 < ASK_ШИРЕ.length;
-  const подпись = (строка ? ASK_ШИРЕ_СТИХ : ASK_ШИРЕ)[st.ш];
-  openSheet(`
-    <div class="ask-sheet">
-      <div class="ask-step">${st.i + 1} из ${st.список.length}</div>
-      <h3>${esc(строка ? "Стих " + cur.word : cur.word)}</h3>
-      ${м
-        ? `<p class="ask-quote">${esc(цитата)}</p>
-           <div class="ask-where">${esc([м.раздел, подпись].filter(Boolean).join(" · "))}</div>`
-        : `<p class="ask-hint">${строка
-            ? "В этой песни столько строк нет — проверь номер."
-            : "В тексте книги это слово не нашлось. Можно спросить и так — без цитаты."}</p>`}
-    </div>
-    <div class="sheet-actions">
-      ${м ? `<button class="btn gold" id="askYes" type="button">Да, это оно</button>` : ""}
-      ${м && шире ? `<button class="btn" id="askWide" type="button">Шире</button>` : ""}
-      ${ещё ? `<button class="btn" id="askNext" type="button">Другое место</button>` : ""}
-      <button class="btn" id="askSkip" type="button">${м ? "Пропустить" : "Спросить без цитаты"}</button>
-    </div>`);
-  const да = $("#askYes");
-  if (да) да.addEventListener("click", () => {
-    st.готовые.push({ id: cur.id, word: cur.word, фраза: цитата,
-                      где: строка ? `${м.раздел}, стих ${cur.word}` : "" });
-    st.i++; st.k = 0; st.ш = 0; askCard();
-  });
-  const шире_кн = $("#askWide");
-  if (шире_кн) шире_кн.addEventListener("click", () => { st.ш++; askCard(); });
-  const др = $("#askNext");
-  if (др) др.addEventListener("click", () => { st.k++; st.ш = 0; askCard(); });
-  $("#askSkip").addEventListener("click", () => {
-    if (!м) st.готовые.push({ id: cur.id, word: cur.word, фраза: "" });
-    st.i++; st.k = 0; st.ш = 0; askCard();
-  });
+  /* Текста книги в каталоге больше нет, значит и цитату подставить неоткуда:
+     раньше здесь искались места в файле и подтверждались по одному. Осталось
+     главное — слова и глава, из которой они. Страницу человек и так держит
+     перед глазами, а если нужна точная фраза, её проще сфотографировать. */
+  askRunState = { готовые: список.map((a) => ({ id: a.id, word: a.word, фраза: "", где: "" })) };
+  askFinish();
 }
 
 function askFinish() {
@@ -12844,62 +12312,6 @@ function askFinish() {
   const url = `https://chatgpt.com/?q=${encodeURIComponent(текст)}`;
   closeSheet();
   toast(`Разбор на ${st.готовые.length} ${plural(st.готовые.length, "место", "места", "мест")} — и в буфере`);
-  if (navigator.standalone === true) location.href = url;
-  else window.open(url, "_blank", "noopener");
-}
-
-/* ── Полоса «Объясни» ──
-   Показывается, как только внутри текста что-то выделено. Внизу экрана, а не
-   у выделения: там айфон рисует своё меню и перекрыл бы кнопку. */
-function gmAskHide() {
-  const bar = $("#gmAsk");
-  if (bar) { bar.hidden = true; bar.innerHTML = ""; }
-}
-function gmAskShow() {
-  const bar = $("#gmAsk");
-  if (!bar) return;
-  if (!gm || gmВкладка() !== "read") { gmAskHide(); return; }
-  const sel = window.getSelection && window.getSelection();
-  const фраза = sel ? String(sel).trim().replace(/\s+/g, " ") : "";
-  const внутри = sel && sel.rangeCount && $("#gmRead")
-    && $("#gmRead").contains(sel.getRangeAt(0).commonAncestorContainer);
-  if (!фраза || фраза.length < 2 || !внутри) { gmAskHide(); return; }
-  bar.hidden = false;
-  bar.innerHTML = `<span>${esc(фраза.slice(0, 90))}${фраза.length > 90 ? "…" : ""}</span>
-    <button id="gmAskGo" type="button">Объясни</button>`;
-  /* Книгу и раздел снимаем прямо сейчас, вместе с фразой, а не в момент
-     нажатия. Состояние карты и показанный текст расходятся: карту открыли для
-     одной книги, а на экране ещё абзацы прошлой — и в промт уезжала не та
-     книга. Что выделено, из того и берём. */
-  const гл = (gm.части || []).find((x) => Number(x.n) === gm.часть);
-  const откуда = gmText && gmText.id === gmBookFile()
-    ? { id: gmText.id,
-        раздел: гл ? gmИмяГлавы(гл.n, гл.name) : gmЗаголовок((gmText.разделы[gm.чтение] || {}).имя) }
-    : { id: gmBookFile(), раздел: "" };
-  const кн = $("#gmAskGo");
-  if (кн) кн.addEventListener("click", () => gmAsk(фраза, откуда));
-}
-
-function gmAsk(фраза, откуда) {
-  const из = откуда || { id: gm.id, раздел: "" };
-  const b = (data.book.books || []).find((x) => x.id === из.id);
-  const автор = b ? String(b.author || "").split("·")[0].trim() : "";
-  const раздел = из.раздел;
-  /* Без спойлеров — то же правило, что у всей карты: объясняем прочитанное и
-     не рассказываем, что будет дальше. */
-  /* Длину режем: адрес с вопросом уезжает в ChatGPT целиком, и на длинном
-     выделении его обрезали по дороге — открывался прошлый разговор вместо
-     нового. Полутора тысяч знаков хватает на несколько абзацев. */
-  const кусок = фраза.length > 1500 ? фраза.slice(0, 1500) + "…" : фраза;
-  const текст = `Вот фрагмент из книги «${b ? b.title : ""}»${автор ? `, ${автор}` : ""}`
-    + `${раздел ? `, ${раздел}` : ""}:\n\n«${кусок}»\n\n`
-    + `Объясни коротко: что здесь происходит, что значат непонятные слова и обороты, `
-    + `на что тут стоит обратить внимание. Пиши конкретно, без общих фраз. `
-    + `Не рассказывай, что будет дальше в книге.`;
-  const вопрос = encodeURIComponent(текст);
-  useMark("текст-вопрос");
-  copyRaw(текст);   // если вопрос не подставится сам — он уже в буфере
-  const url = `https://chatgpt.com/?q=${вопрос}`;
   if (navigator.standalone === true) location.href = url;
   else window.open(url, "_blank", "noopener");
 }
@@ -12957,7 +12369,7 @@ function gmNavRow() {
   if (!ряд || !gm) return;
   const главы = gmParts().length > 1;
   const искать = gm.места.length > 3;
-  const своя = gmВкладка() === "place" || gmВкладка() === "read";
+  const своя = gmВкладка() === "place";
   ряд.hidden = !своя || (!главы && !искать);
   if (кн) {
     кн.hidden = !главы;
@@ -13557,24 +12969,11 @@ function bindPlaceMap() {
 
   const поле = $("#gmFind");
   if (поле) {
-    /* На вкладке текста то же поле ищет по книге, а не по записям карты:
-       двух полей на одном экране не надо, а искать хочется там, где смотришь. */
-    const искать = () => {
-      if (gm && gmВкладка() === "read") { gm.поиск = поле.value; gmRead(); return; }
-      gmSearch(поле.value);
-    };
+    const искать = () => gmSearch(поле.value);
     поле.addEventListener("input", искать);
     поле.addEventListener("focus", искать);
   }
 
-  /* Выделение внутри текста — единственное, чего ждёт полоса «Объясни».
-     selectionchange приходит и на снятие выделения, поэтому она же его и
-     прячет. */
-  document.addEventListener("selectionchange", () => {
-    if (!gm || gmВкладка() !== "read") return;
-    clearTimeout(gmAskTimer);
-    gmAskTimer = setTimeout(gmAskShow, 120);
-  });
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
     const хиты = $("#gmHits");
@@ -14606,7 +14005,6 @@ function openLogSheet() {
         <button class="btn mm-btn" id="aiMenu" type="button" aria-label="Ещё" aria-expanded="false"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="16" cy="10" r="1.7"/></svg></button>
         <div class="mm-pop" id="aiPop" hidden>
           <button class="mm-item" id="askCopy" type="button">Промт для ИИ</button>
-          ${hasBookFile() ? `<button class="mm-item" id="bookFile" type="button">Книга .md</button>` : ""}
         </div>
       </div>` : ""}
     </div>`);
@@ -14640,8 +14038,6 @@ function bindAiMenu() {
     const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
     copyRaw(askText(book(), i)).then((ok) => btnSay(ac, ok ? "✓ Скопировано" : "Не вышло"));
   });
-  const bf = $("#bookFile");
-  if (bf) bf.addEventListener("click", () => giveBookFile(book(), bf));
 }
 
 function renderSheetBody() {
