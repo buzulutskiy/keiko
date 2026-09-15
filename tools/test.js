@@ -1774,6 +1774,8 @@ function ок(имя, факт, надо) {
     piano: { activePiece: "bwv853", entries: [],
       pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
   ок("пьеса: кнопки карты и собрания нет", t.get("mapBtnOn")(), false);
+  ок("пьеса: и места под неё не держим — «Отметить» на всю ширину",
+    t.get("bookBtnState")(), { map: { on: false, keep: false } });
   t.set("data", было.данные); t.set("CATALOG", было.cat);
 }
 
@@ -1854,6 +1856,14 @@ function ок(имя, факт, надо) {
   ок("сборник: в кольце обычная доля, счёт — в подписи", t.get("ringSign")(ст), "");
   ок("сборник: место под кнопку карты не держим",
     t.get("bookBtnState")(), { map: { on: false, keep: false } });
+  /* У обычной книги место держим: разбор с картой приезжает из каталога
+     позже, и кнопка не должна двигать раскладку, когда появится. */
+  t.get("data").book.books[0].mode = "linear";
+  t.get("data").book.books[0].pages = 100;
+  ок("книга: место под карту держим и до разбора",
+    t.get("bookBtnState")().map.keep, true);
+  t.get("data").book.books[0].mode = "list";
+  delete t.get("data").book.books[0].pages;
 
   /* Свайп не пересобирает главную: класс ряда кнопок переставляет syncBookBtns,
      иначе дырка от карты остаётся от того материала, на котором экран собрали. */
