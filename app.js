@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 526";
+const APP_VERSION = "Кэйко 527";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2080,8 +2080,9 @@ function saveEntry() {
       if (пришло.length) overlayQueue.push({ type: "chapter", name: c.name || "", list: пришло });
     });
   }
-  /* Собрание пополняется и у пьесы с рисунком — ручной отметкой тоже. */
-  if (!isBook() && !ctx.watch) colПоказать(colGrant(colMat(), colПорция(colMat())));
+  /* Собрание пополняется у рисунка — ручной отметкой тоже. У пьесы собрания
+     нет вовсе: теория по заметке за занятие снята, и выдавать нечего. */
+  if (!isBook() && !ctx.watch && !isPiano()) colПоказать(colGrant(colMat(), colПорция(colMat())));
 
   /* Второе сохранение — не лишнее. Выше по функции saveData уже был, но после
      него данные меняли ещё трижды: musStamp, stampProgress и addEvent. Ни один
@@ -4271,35 +4272,40 @@ function bookLeft(s) {
   return { своё, всего };
 }
 
-function heroSub(s) {
+function heroParts(s) {
   if (isBook() && bookMode(book()) === "list") {
     const c = s.список || { прочитано: 0, всего: 0 };
-    return subLine(`${c.прочитано} из ${c.всего} статей`,
-      s.chapter.name ? "читаю " + esc(s.chapter.name) : "");
+    return [`${c.прочитано} из ${c.всего} статей`,
+      s.chapter.name ? "читаю " + esc(s.chapter.name) : ""];
   }
   if (isBook() && bookMode(book()) === "parts") {
     const { своё, всего } = bookLeft(s);
-    return своё ? subLine(esc(s.chapter.name), `осталось ${stranic(своё)}`)
-                : subLine(`осталось ${stranic(всего)}`);
+    return своё ? [esc(s.chapter.name), `осталось ${stranic(своё)}`]
+                : [`осталось ${stranic(всего)}`];
   }
-  if (isBook()) return subLine(esc(s.chapter.name), `осталось ${stranic(bookLeft(s))}`);
-  if (isWatch()) return subLine(esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел");
+  if (isBook()) return [esc(s.chapter.name), `осталось ${stranic(bookLeft(s))}`];
+  if (isWatch()) return [esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел"];
   if (isCourse() && plainDraw()) {
     const n = s.days;
-    return subLine(course().done ? "Рисунок закончен" : "Рисую",
-      n ? `${n} ${plural(n, "день", "дня", "дней")} за листом` : "ещё ни одного дня");
+    return [course().done ? "Рисунок закончен" : "Рисую",
+      n ? `${n} ${plural(n, "день", "дня", "дней")} за листом` : "ещё ни одного дня"];
   }
   if (isCourse()) {
     const at = lessonNext();
-    return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
-      courseSize());
+    return [at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
+      courseSize()];
   }
   /* У пьесы подписи нет вовсе. Проценты по рукам («𝄞 62% · 𝄢 40%») говорили о
      разборе то, что и так стоит в кольце общим числом, а минуты недели —
      разговор занятия, и они переехали на его экран. Остаются заголовок,
      кольцо и строка ниже: сколько дней играю и когда примерно закончу. */
-  return "";
+  return [];
 }
+/* Подпись и срок — одна строка, а не две. Порознь они переносились у книги
+   на два ряда («осталось 150 страниц» и ниже «3 дня · ещё неделя»), хотя
+   вместе помещаются в одну. Склеиваем теми же точками-разделителями. */
+const heroSub = (s) => subLine(...heroParts(s), ...paceParts());
+
 
 function renderHome() {
   if (!hasMaterials()) { renderEmpty("Здесь появятся материалы", "Пока не добавлено ни одного: ни пьесы, ни книги, ни курса."); return; }
@@ -4327,7 +4333,6 @@ $("#view").innerHTML = `
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         ${sub ? `<p>${sub}</p>` : ""}
-        ${paceHTML()}
       </div>
       <div class="cta-row${кнопки.map.keep ? "" : " solo"}">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
@@ -4651,6 +4656,8 @@ const colBtnOn = () => { const m = colMat(); return !!m && colItems(m).length > 
 /* Кнопка открывает карту у книги и собрание у всего остального: у пьесы и
    рисунка ни мест, ни текста нет, и внутри останется одна вкладка. */
 const mapBtnOn = () => {
+  /* У пьесы кнопки нет совсем: ни карты, ни собрания — там нечего открывать. */
+  if (isPiano()) return false;
   if (!isBook()) return colBtnOn();
   const m = mapMaterial();
   return (!!m && mapWhole(m).length > 0 && (!!mapBox(m) || !mapHasPlaces(m))) || colBtnOn();
@@ -4722,8 +4729,7 @@ function updateHeroInfo() {
   const title = $(".hero-title");
   if (title) title.innerHTML = `
     <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
-    ${heroSub(s) ? `<p>${heroSub(s)}</p>` : ""}
-    ${paceHTML()}`;
+    ${heroSub(s) ? `<p>${heroSub(s)}</p>` : ""}`;
 
   const cta = $("#ctaBtn");
   if (cta) {
@@ -5007,14 +5013,14 @@ function paceWhen(f) {
   return { days, when, text: humanWhen(when, days) };
 }
 
-function paceHTML() {
+function paceParts() {
   /* У рисунка нет срока: конца, к которому он идёт, никто не назначал. Дни же
      стоят строкой выше — «Рисую · 1 день за листом», — и повторять их под ней
      незачем. Молчим. */
-  if (isCourse() && plainDraw()) return "";
+  if (isCourse() && plainDraw()) return [];
   const f = paceForecast();
-  if (!f) return "";
-  if (f.done) return `<span class="pace">Материал пройден 🎉</span>`;
+  if (!f) return [];
+  if (f.done) return ["Материал пройден 🎉"];
   /* Не «сколько осталось занятий» — это цифра, с которой нечего делать, — а
      сколько уже позади и сколько примерно ещё. Число занятий впереди меняется
      от каждого захода и потому только раздражает; день, который идёт сейчас,
@@ -5025,7 +5031,7 @@ function paceHTML() {
      дней книга просто лежала — оттого за вечер и выходит девятнадцать
      страниц, а в день одиннадцать. Пропуски в первое число не идут, они и не
      считаются занятием. */
-  return `<span class="pace">${subLine(paceDays(), paceText(w))}</span>`;
+  return [paceDays(), paceText(w)];
 }
 
 /* «7 дней с книгой» — сколько дней ты к ней возвращался. Число одно и только
@@ -11561,7 +11567,6 @@ function pracFinish() {
     saveData();
     schedulePush();
     won = pracCelebrate();
-    colПоказать(colGrant(colMat(), colПорция(colMat())));
     // след в ленте остаётся и без закрытых отрезков — иначе занятия будто не было
     pracEvent(e);
     toast("Занятие записано: " + e.mins + " мин"
