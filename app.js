@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 514";
+const APP_VERSION = "Кэйко 515";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -35,7 +35,6 @@ const DEFAULT_BOOKS = [];
 const DIANA_BOOKS = [];
 
 const FIRM_AT = 3;
-const DONE_TITLES = ["Молодец!", "Красавчик!", "Есть!", "Сделано!"];
 const DOW = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const DOW_FULL = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
 // «чаще по вторникам» — падеж списком, а не цепочкой замен
@@ -1938,7 +1937,10 @@ function saveEntry() {
 
   overlayQueue = [];
   // итог по книге идёт первым: он про саму книгу, награды и карточки — после
-  if (justClosed) overlayQueue.push({ type: "bookDone", book: justClosed });
+  /* После отметки открываются только две вещи: награда и «в собрании новое».
+     Итог дочитанной книги сюда не встаёт — он приходил следом за наградой за
+     конец, то есть два экрана подряд об одном и том же. Сам итог никуда не
+     делся: он записан в карточку «Дочитал» в ленте, оттуда и открывается. */
   // каждая награда — свой экран: раньше показывалась только последняя,
   // а промежуточные пропадали, хотя открылись честно
   fresh.forEach((a, i) => overlayQueue.push({ type: "ach", a, i: i + 1, n: fresh.length }));
@@ -1986,7 +1988,6 @@ function saveEntry() {
         снимок ? { mediaId: снимок.id, mediaKind: "photo" } : {}),
     });
   }
-  if (freshFacts.length) overlayQueue.push({ type: "facts", list: freshFacts });
   /* Глава дочитана — показываем, чем это пополнило собрание. Не «молодец»,
      а перечень: столько-то слов, столько-то мест, вот артефакт. Это и есть
      итог вечера, ради которого стоило дочитать до конца главы. */
@@ -2014,7 +2015,7 @@ function saveEntry() {
   schedulePush();
 
   if (overlayQueue.length) { showNextOverlay(); return; }
-  showDone(before, after, !!existing, ctx);
+  markToast(!!existing);
 }
 
 let overlayQueue = [];
@@ -2100,7 +2101,6 @@ function showColNew(item) {
     : "Появилось новое.";
   $("#cheerOk").textContent = overlayQueue.length ? "Дальше" : "Посмотреть";
   if (!overlayQueue.length) cheerGo = colОткрыть;
-  const ка = $("#cheerAsk"); if (ка) ка.hidden = true;
   $("#cheer").classList.add("show");
 }
 
@@ -2224,48 +2224,14 @@ function showCheer(a, i, n) {
   $("#cheer").classList.add("show");
 }
 
-function showDone(before, after, wasExisting, ctx) {
+/* После отметки — тихо. Здесь стоял экран «Красавчик! Дочитал до 159-й
+   страницы, это 2% книги»: похвала за нажатие кнопки и процент, который и так
+   нарисован на главной. Приходило это каждый раз, и на его фоне настоящая
+   награда переставала что-либо значить. Предложение разобрать непонятные
+   слова уехало на свой экран — там у него своя кнопка и свой список. */
+function markToast(wasExisting) {
   if (selectedDate !== todayStr()) { toast(fmtDay(selectedDate) + " отмечено"); return; }
-  if (wasExisting) { toast("Запись дополнена"); return; }
-
-  $("#cheerStep").hidden = true;
-  $("#cheerIc").textContent = "🎉";
-  $("#cheerTitle").textContent = rnd(DONE_TITLES);
-  let text;
-  if (ctx.book) {
-    const g = after.page - before.page;
-    text = g > 0 ? `Дочитал до ${after.page}-й страницы (+${stranic(g)}), это ${Math.round(after.pct)}% книги. ` : "Перечитывал уже пройденное — тоже дело. ";
-  } else if (ctx.watch) {
-    text = before.watched
-      ? "Пересмотрел — значит, зацепило. "
-      : `«${ctx.title}» — посмотрено. Видео ушло с главной, но осталось в библиотеке. `;
-  } else if (ctx.course) {
-    const g = after.done - before.done;
-    text = g > 0
-      ? `+${g} ${plural(g, "урок", "урока", "уроков")}, пройдено ${after.done} из ${after.lessons}. `
-      : "Возвращался к пройденному — тоже дело. ";
-  } else {
-    const g = (after.touchedR + after.touchedL) - (before.touchedR + before.touchedL);
-    text = g > 0 ? `+${takty(g)} к разбору, всего ${Math.round(after.pct)}%. ` : "Повторение — эти такты стали крепче. ";
-  }
-  /* Про серию — ни слова. Она превращает пропуск в потерю: пропустил день —
-     и вместо занятия думаешь о сгоревшем счётчике. На экране прогресса её
-     убрали давно, а здесь она оставалась и подмешивалась в каждую отметку. */
-  $("#cheerText").textContent = text;
-  /* Разбор предлагается здесь же, сразу после отметки дня, — и потому это
-     часть чтения, а не отдельное занятие: прочитал, отметил страницу, разобрал
-     непонятное, всё одним движением. Кнопки нет, если слов нет: напоминать о
-     долге мы не будем. */
-  const ка = $("#cheerAsk");
-  if (ка) {
-    const n = ctx.book ? asksOpen().length : 0;
-    ка.hidden = !n;
-    if (n) {
-      ка.textContent = `Разобрать ${n} ${plural(n, "слово", "слова", "слов")}`;
-      ка.onclick = () => { $("#cheer").classList.remove("show"); askRun(); };
-    }
-  }
-  $("#cheer").classList.add("show");
+  toast(wasExisting ? "Запись дополнена" : "Отмечено");
 }
 
 /* Удалили запись за день — из разбора уходит и то, что в этот день закрылось.
@@ -11357,13 +11323,12 @@ function pracCelebrate() {
   return { ach: freshAch, facts: freshFacts };
 }
 
-/* Торжество: сначала награды по одной, потом карточки знаний одним экраном. */
+/* Торжество: только награды, по одной. Карточки знаний отсюда убраны — после
+   отметки открывается либо награда, либо «в собрании новое», и больше ничего.
+   Сами карточки никуда не делись: они лежат на своей вкладке у материала. */
 function showWon(won) {
   const свои = [];
-  if (won) {
-    (won.ach || []).forEach((a, i) => свои.push({ type: "ach", a, i: i + 1, n: won.ach.length }));
-    if ((won.facts || []).length) свои.push({ type: "facts", list: won.facts });
-  }
+  if (won) (won.ach || []).forEach((a, i) => свои.push({ type: "ach", a, i: i + 1, n: won.ach.length }));
   /* Награды идут первыми, но всё, что уже стояло в очереди, остаётся. Здесь
      было `overlayQueue = []`, и вещь, выданная за занятие, молча пропадала:
      она открывалась и ложилась в собрание, а карточки не показывали. Видно

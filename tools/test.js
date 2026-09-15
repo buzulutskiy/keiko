@@ -2135,6 +2135,30 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── После отметки открывается только награда или собрание ── */
+{
+  const src = require("fs").readFileSync(__dirname + "/../app.js", "utf8");
+  const типы = [...src.matchAll(/overlayQueue\.push\(\{\s*type:\s*"(\w+)"/g)].map((m) => m[1]);
+  ок("отметка: в очередь встают только награда и собрание",
+    [...new Set(типы)].sort(), ["ach", "chapter", "col"]);
+  ок("отметка: карточки знаний не всплывают", /type: "facts"/.test(src), false);
+}
+
+/* ── После отметки — тихо, без похвалы и процентов ── */
+{
+  const было={ сег: t.get("selectedDate"), toast: t.get("toast") };
+  const сказано=[];
+  t.set("toast", (s) => сказано.push(s));
+  t.set("selectedDate", t.get("todayStr")());
+  t.get("markToast")(false);
+  t.get("markToast")(true);
+  t.set("selectedDate", "2020-01-02");
+  t.get("markToast")(false);
+  ок("отметка: без похвалы и процентов", сказано, ["Отмечено", "Запись дополнена", "2 января отмечено"]);
+  ок("отметка: похвалы в коде не осталось", t.get("typeof DONE_TITLES"), "undefined");
+  t.set("selectedDate", было.сег); t.set("toast", было.toast);
+}
+
 /* ── Поправил отметку — лишние награды снимаются ── */
 {
   const было = {
