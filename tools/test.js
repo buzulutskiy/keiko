@@ -1862,6 +1862,12 @@ function ок(имя, факт, надо) {
   t.get("data").book.books[0].pages = 100;
   ок("книга: место под карту держим и до разбора",
     t.get("bookBtnState")().map.keep, true);
+  /* У курса кнопка есть — место под неё держим, пока музей едет из гиста. */
+  t.get("data").active = "pastel";
+  t.get("data").pastel = { activeCourse: "argos", entries: [],
+    courses: [{ id: "argos", name: "Аргус", lessons: [] }] };
+  ок("курс: место под кнопку собрания держим", t.get("bookBtnState")().map.keep, true);
+  t.get("data").active = "book";
   t.get("data").book.books[0].mode = "list";
   delete t.get("data").book.books[0].pages;
 
