@@ -2139,8 +2139,8 @@ function ок(имя, факт, надо) {
 {
   const src = require("fs").readFileSync(__dirname + "/../app.js", "utf8");
   const типы = [...src.matchAll(/overlayQueue\.push\(\{\s*type:\s*"(\w+)"/g)].map((m) => m[1]);
-  ок("отметка: в очередь встают только награда и собрание",
-    [...new Set(типы)].sort(), ["ach", "chapter", "col"]);
+  ок("отметка: в очередь встают награда, собрание и итог дочитанной книги",
+    [...new Set(типы)].sort(), ["ach", "bookDone", "chapter", "col"]);
   ок("отметка: карточки знаний не всплывают", /type: "facts"/.test(src), false);
 }
 
