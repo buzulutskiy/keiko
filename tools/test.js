@@ -2135,6 +2135,42 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Сборник статей: состояния вместо страниц ── */
+{
+  const было={ данные: t.get("data"), выбор: t.get("pickItems") };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    book: { activeBook: "polka",
+      books: [{ id: "polka", title: "Полка", mode: "list",
+        chapters: [{ name: "Предисловие" }, { name: "«Слово о полку Игореве»" },
+                   { name: "Гоголь. «Шинель»" }, { name: "Белый. «Петербург»" }] }],
+      entries: [
+        { id: "e1", date: "2026-09-10", bookId: "polka", createdAt: 1, marks: { "1": "read" } },
+        { id: "e2", date: "2026-09-12", bookId: "polka", createdAt: 2, marks: { "1": "done", "2": "read" } },
+      ] } });
+  t.set("pickItems", {});
+  ок("сборник: состояния берутся из отметок",
+    t.get("listStates")(t.get("book")()), ["", "done", "read", ""]);
+  ок("сборник: считает прочитанные, а не страницы",
+    [t.get("listCount")(t.get("book")()).прочитано, t.get("listCount")(t.get("book")()).всего], [1, 4]);
+  const ст = t.get("curStats")();
+  ок("сборник: доля — по статьям", Math.round(ст.pct), 25);
+  ок("сборник: «сейчас читаю» — помеченная статья", ст.chapter.name, "Гоголь. «Шинель»");
+  ок("сборник: в подписи статьи, а не страницы",
+    /1 из 4 статей/.test(t.get("heroSub")(ст)), true);
+  ок("сборник: в кольце счёт, а не процент", t.get("ringSign")(ст), "1/4");
+  ок("сборник: срока «когда дочитаю» нет", t.get("paceForecast")(), null);
+  ок("сборник: сам собой дочитанным не становится", t.get("bookDone")(t.get("book")()), false);
+
+  /* Поздняя отметка перебивает раннюю — это и есть отмена. */
+  t.get("data").book.entries.push(
+    { id: "e3", date: "2026-09-13", bookId: "polka", createdAt: 3, marks: { "1": "" } });
+  ок("сборник: снятая отметка снимается",
+    t.get("listStates")(t.get("book")())[1], "");
+
+  t.set("data", было.данные); t.set("pickItems", было.выбор);
+}
+
 /* ── После отметки открывается только награда или собрание ── */
 {
   const src = require("fs").readFileSync(__dirname + "/../app.js", "utf8");

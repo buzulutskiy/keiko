@@ -227,6 +227,8 @@
     /* Кнопка на месте, но невидима: без этого её появление сдвигало «Отметить»
        вбок в тот момент, когда доезжал файл разбора. */
     .cta-side.away { visibility: hidden; pointer-events: none; }
+    /* У сборника статей карты нет вовсе — «Отметить» занимает всю ширину. */
+    .cta-row.solo .cta-side { display: none; }
     #musBtn.hasnew { position: relative; }
     #musBtn.hasnew::after {
       content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
@@ -1151,6 +1153,29 @@
     .pt-acts { display: flex; gap: 7px; margin-top: 10px; }
     .pt-acts .btn { min-height: 40px; font-size: 0.82rem; flex: 1; }
     .pt-hint { margin-top: 10px; color: var(--dim); font-size: 0.76rem; line-height: 1.4; }
+
+    /* ── Сборник статей: содержание списком, нажатие меняет состояние ── */
+    .ls-head {
+      color: var(--dim); font-size: 0.78rem; margin-bottom: 8px;
+      font-variant-numeric: tabular-nums;
+    }
+    .ls-list { display: flex; flex-direction: column; gap: 6px; }
+    .ls-row {
+      display: flex; align-items: center; gap: 9px; text-align: left;
+      border: 1px solid var(--line); background: var(--card); color: var(--ink);
+      border-radius: 12px; padding: 9px 11px; font: inherit; font-size: 0.85rem;
+      cursor: pointer; line-height: 1.3;
+    }
+    .ls-mark {
+      width: 18px; flex-shrink: 0; text-align: center;
+      color: var(--dim); font-size: 0.9rem;
+    }
+    .ls-name { flex: 1; min-width: 0; }
+    .ls-row.read { border-color: var(--green); }
+    .ls-row.read .ls-mark { color: var(--green); }
+    .ls-row.done { border-color: rgba(255, 201, 77, 0.45); }
+    .ls-row.done .ls-mark { color: var(--gold); }
+    .ls-row.done .ls-name { color: var(--dim); }
 
     /* ── Вложения в моментах ── */
     .th-attach { display: flex; gap: 6px; }

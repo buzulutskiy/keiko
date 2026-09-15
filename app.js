@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 517";
+const APP_VERSION = "Кэйко 518";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -69,6 +69,7 @@ let pickLessons = [];
 let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
 let drawSince = 0;                          // с какого момента открыта шторка рисования
 let pickSpans = [];    // отмеченные в этой сессии куски книги
+let pickItems = {};    // переключённые в этой сессии статьи сборника: индекс → состояние
 let partOpen = null;   // какая часть сейчас раскрыта
 let libBook = null;    // открытый материал в «Библиотеке»: "bk:id" | "pf:id" | "ps:pastel"
 let partUpto = {};     // выбранная страница внутри части             // выбранные уроки курса
@@ -632,6 +633,9 @@ const bookCovered = (b) => mergeSpans(bookSpans(b)).reduce((n, sp) => n + (sp.to
    исчезала бы сама, стоило доотметить последнюю страницу. */
 function bookDone(b) {
   const bk = b || book();
+  /* Сборник статей не закрывается сам: его можно не дочитывать вовсе, и
+     решение «прочитана» тут только твоё. */
+  if (bk && bookMode(bk) === "list") return false;
   if (!bk || !bk.pages) return false;
   if (bookMode(bk) === "parts") return bookCovered(bk) >= bk.pages;
   let page = bk.startPage || 0;
@@ -1107,6 +1111,9 @@ function bookStats() {
     if (sp.length) { последняя = Math.max(...sp.map((x) => Number(x.to) || 0)); break; }
   }
   const covered = Math.min(b.pages || 0, bookCovered(b));
+  /* Сборник статей: страниц нет, считается по самим статьям. */
+  const список = bookMode(b) === "list" ? listCount(b) : null;
+  const сейчасЧитаю = список ? listNow(b) : null;
   /* Линейная книга считается как раньше — по курсору. Так и должно быть:
      у книги может стоять старт с середины (у «Снега на траве» со 183-й),
      и всё до него уже прочитано, просто не отмечено записями. Покрытие
@@ -1121,11 +1128,14 @@ function bookStats() {
   const текстС = Number(((b.chapters || [])[0] || {}).from) || 1;
   const читаемых = Math.max(1, (b.pages || 0) - текстС + 1);
   return {
-    pages: b.pages, page, covered,
-    pct: b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
+    pages: b.pages, page, covered, список,
+    articles: список ? список.прочитано : 0,
+    pct: список ? (список.всего ? список.прочитано / список.всего * 100 : 0)
+       : b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
     days: list.length, streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapterInOne,
-    chapter: chapterAt(parts ? последняя : page),
+    chapter: список ? { name: сейчасЧитаю ? сейчасЧитаю.name : "", from: 0 }
+           : chapterAt(parts ? последняя : page),
     /* Какие главы дочитаны — набором, для наград вида ["read", "has", 4].
        Книге подряд хватило бы «докуда дошёл», но сборник повестей читают в
        своём порядке, и награда за «Шинель» не должна приходить за то, что
@@ -1375,6 +1385,14 @@ const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
 /* У рисунка мерить нечего: он или идёт, или закончен. Процент тут — ложная
    точность, поэтому в кольце прочерк, пока лист не закрыт. */
 const noPct = () => isCourse() && plainDraw() && !course().done;
+/* Что написать в кольце вместо процента. У сборника статей процент — ложная
+   мера: статьи разной длины, и «двадцать процентов» не значит ничего, а
+   «12 из 61» значит. */
+function ringSign(s) {
+  if (isBook() && bookMode(book()) === "list")
+    return `${(s.список || {}).прочитано || 0}/${(s.список || {}).всего || 0}`;
+  return noPct() ? "—" : "";
+}
 
 /* Размер материала словами: столько-то шагов у занятия по шагам, столько-то
    минут у лекции. Стоит в подписи под названием вместо доли пройденного:
@@ -1852,7 +1870,11 @@ function saveEntry() {
 
   if (existing) {
     if (isWatch()) { /* пересмотр: новых единиц нет, важна только сама дата */ }
-    else if (isBook() && bookMode(book()) === "parts") {
+    else if (isBook() && bookMode(book()) === "list") {
+      /* Переключения статей за день складываем в одну запись: вечером можно
+         начать одну, дочитать другую и снять отметку с третьей. */
+      existing.marks = Object.assign({}, existing.marks || {}, pickItems);
+    } else if (isBook() && bookMode(book()) === "parts") {
       existing.spans = mergeSpans((existing.spans || []).concat(pickSpans));
     /* Максимум отсюда убран: он не пускал исправить опечатку в тот же день.
        Отметил 250 вместо 205 — и до полуночи с этим ничего не сделать.
@@ -1870,7 +1892,8 @@ function saveEntry() {
       { id: uid(), date: selectedDate, note, createdAt: now(), updatedAt: now() },
       isWatch() ? { videoId: video().id } :
       isBook() ? Object.assign({ bookId: book().id },
-        bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage })
+        bookMode(book()) === "list" ? { marks: { ...pickItems } }
+          : bookMode(book()) === "parts" ? { spans: pickSpans.slice() } : { page: pickPage })
       : isCourse() ? (plainDraw()
           ? { courseId: course().id, lessons: [] }
           : { lessons: pickLessons.slice() })
@@ -1912,7 +1935,7 @@ function saveEntry() {
 
   pending = [];
   pickLessons = [];
-  pickSpans = [];
+  pickSpans = []; pickItems = {};
   saveData();
   schedulePush();
   closeSheet();
@@ -4187,6 +4210,11 @@ function bookLeft(s) {
 }
 
 function heroSub(s) {
+  if (isBook() && bookMode(book()) === "list") {
+    const c = s.список || { прочитано: 0, всего: 0 };
+    return subLine(`${c.прочитано} из ${c.всего} статей`,
+      s.chapter.name ? "читаю " + esc(s.chapter.name) : "");
+  }
   if (isBook() && bookMode(book()) === "parts") {
     const { своё, всего } = bookLeft(s);
     return своё ? subLine(esc(s.chapter.name), `осталось ${stranic(своё)}`)
@@ -4229,13 +4257,13 @@ $("#view").innerHTML = `
       </button>` : ""}
     <div class="hero">
       ${coverRailHTML()}
-      ${ringHTML(shownPct(s), noPct() ? "—" : "")}
+      ${ringHTML(shownPct(s), ringSign(s))}
       <div class="hero-title">
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         <p>${sub}</p>
         ${paceHTML()}
       </div>
-      <div class="cta-row">
+      <div class="cta-row${кнопки.map.keep ? "" : " solo"}">
       <button class="cta ${!gistReady() ? "locked" : doneToday ? "done" : ""}" id="ctaBtn" type="button">
         ${!gistReady()
           ? "🔒 Подключить синхронизацию"
@@ -4506,7 +4534,7 @@ function setActiveMaterial(item) {
   zenHold = 0;
   zenArm();
   paintBackdrop(item);
-  pending = []; pickLessons = []; pickSpans = [];
+  pending = []; pickLessons = []; pickSpans = []; pickItems = {};
   selectedDate = todayStr();
   syncPickers();
   saveData();
@@ -4563,7 +4591,11 @@ const mapBtnOn = () => {
 };
 
 function bookBtnState() {
-  return { map: { on: mapBtnOn() } };
+  /* Место под кнопку карты держим всегда — она приезжает вместе с разбором и
+     не должна двигать раскладку. Исключение — сборник статей: у него карты и
+     собрания нет и не будет, и пустая дырка рядом с «Отметить» бессмысленна. */
+  const своя = isBook() && bookMode(book()) === "list";
+  return { map: { on: mapBtnOn() && !своя, keep: !своя } };
 }
 
 /* Кнопка карты появляется, когда доедет файл разбора, — и раньше при этом
@@ -4609,7 +4641,7 @@ function updateHeroInfo() {
   const ring = $(".ring-wrap");
   if (ring) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = ringHTML(shownPct(s), noPct() ? "—" : "");
+    tmp.innerHTML = ringHTML(shownPct(s), ringSign(s));
     ring.innerHTML = tmp.firstElementChild.innerHTML;
   }
 
@@ -4741,6 +4773,9 @@ function paceForecast() {
 
   if (isBook()) {
     const b = book();
+    /* У сборника статей срока нет: его можно не дочитывать вовсе, и обещать
+       дату окончания тому, у кого нет обязательства дочитать, — вранье. */
+    if (bookMode(b) === "list") return null;
     unit = "page";
     if (bookMode(b) === "parts") {
       /* У сборника прироста по курсору нет вовсе: поля page у отметки не
@@ -10806,6 +10841,14 @@ function lessonRender(box) {
    предыдущий заход по этой книге. «До 210-й» само по себе не говорит
    ничего: то ли двадцать страниц, то ли две. */
 function bookRunOf(e) {
+  const кн = (data.book.books || []).find((x) => x.id === (e.bookId || ""));
+  if (кн && bookMode(кн) === "list") {
+    const сп = bookList(кн), пары = Object.entries(e.marks || {});
+    if (!пары.length) return "";
+    const слово = { read: "начал", done: "дочитал", "": "снял отметку" };
+    return пары.map(([i, с]) => ((сп[Number(i)] || {}).name || "статья") + " — " + (слово[с] || "снял отметку"))
+               .join(" · ");
+  }
   const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
   if (!b) return "";
 
@@ -14526,7 +14569,7 @@ function openLogSheet() {
     return;
   }
   sheetMode = "log";
-  pickSpans = []; partOpen = null; partUpto = {};
+  pickSpans = []; partOpen = null; partUpto = {}; pickItems = {};
   if (isCourse() && plainDraw()) { pickDrawDone = false; drawSince = now(); }
   syncPickers();
   const existing = entryFor(selectedDate);
@@ -14591,9 +14634,11 @@ function bindAiMenu() {
 
 function renderSheetBody() {
   const parts = isBook() && bookMode(book()) === "parts";
-  $("#sheetBody").innerHTML = parts ? bookPartsUI()
+  const список = isBook() && bookMode(book()) === "list";
+  $("#sheetBody").innerHTML = список ? bookListUI() : parts ? bookPartsUI()
     : isBook() ? bookSheetUI() : isWatch() ? watchSheetUI() : isCourse() ? pastelSheetUI() : pianoSheetUI();
-  if (parts) bindBookPartsSheet();
+  if (список) bindBookListSheet();
+  else if (parts) bindBookPartsSheet();
   else if (isBook()) bindBookSheet();
   else if (isWatch()) { /* выбирать нечего: у ролика одно состояние */ }
   else if (isCourse()) { if (plainDraw()) bindDrawSheet(); else bindPastelSheet(); }
@@ -14732,6 +14777,43 @@ function partCovered(part, spans) {
 
 /* Шторка для сборника — два уровня, чтобы не мешать всё в одном экране:
    сначала оглавление, потом одна часть с кнопкой назад. */
+/* Шторка сборника статей: всё содержание списком, нажатие переключает
+   состояние по кругу — не начата, читаю, прочитана. Ни страниц, ни ползунков:
+   статью или читаешь, или дочитал, третьего эта книга не знает. */
+function listStateNow(b) {
+  return listStates(b).map((s, i) => (pickItems[i] != null ? pickItems[i] : s));
+}
+const lsMark = (s) => s === "done" ? "✓" : s === "read" ? "▸" : "";
+function bookListUI() {
+  const b = book(), сост = listStateNow(b), сп = bookList(b);
+  const прочитано = сост.filter((x) => x === "done").length;
+  return `
+    <div class="ls-head" id="lsHead">${прочитано} из ${сп.length} статей</div>
+    <div class="ls-list">
+      ${сп.map((p, i) => `
+        <button class="ls-row ${сост[i]}" data-ls="${i}" type="button">
+          <span class="ls-mark">${lsMark(сост[i])}</span>
+          <span class="ls-name">${esc(p.name || "")}</span>
+        </button>`).join("")}
+    </div>`;
+}
+function bindBookListSheet() {
+  const b = book(), корень = $("#sheetBody");
+  if (!корень) return;
+  корень.querySelectorAll("[data-ls]").forEach((el) => el.addEventListener("click", () => {
+    const i = Number(el.dataset.ls);
+    const было = pickItems[i] != null ? pickItems[i] : (listStates(b)[i] || "");
+    /* По кругу: не начата → читаю → прочитана → не начата. Третий нажим —
+       это и есть отмена, отдельной кнопки «снять» не нужно. */
+    const стало = было === "" ? "read" : было === "read" ? "done" : "";
+    pickItems[i] = стало;
+    el.className = "ls-row " + стало;
+    const м = el.querySelector(".ls-mark"); if (м) м.textContent = lsMark(стало);
+    const ш = $("#lsHead");
+    if (ш) ш.textContent = `${listStateNow(b).filter((x) => x === "done").length} из ${bookList(b).length} статей`;
+  }));
+}
+
 function bookPartsUI() {
   const b = book();
   const done = mergeSpans(bookSpans(b));
@@ -15952,7 +16034,42 @@ async function catalogUpload(file) {
 
 /* Как читается книга. Роман идёт подряд, сборник — вразнобой:
    там отмечают рассказы, а не «докуда дошёл». */
-const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
+const bookMode = (b) => (b && (b.mode === "parts" || b.mode === "list")) ? b.mode : "linear";
+
+/* ── Книга-сборник статей ──
+   «Полка» — шесть десятков статей о разных книгах, и читают её выборочно:
+   открыл одну, дочитал через три вечера, к другой не вернулся вовсе. Страниц
+   у неё нет — читается с устройства, — а срок «когда дочитаю» бессмыслен:
+   дочитывать её никто не обязан. Отсюда третий режим: список статей с тремя
+   состояниями и счёт «столько-то из стольких-то», без страниц и процентов. */
+const bookList = (b) => ((b || book()).chapters || []);
+function listStates(b) {
+  const bk = b || book();
+  const n = bookList(bk).length;
+  const сост = new Array(n).fill("");
+  const es = bookEntriesOf(bk.id).slice().sort((a, x) =>
+    a.date === x.date ? (a.createdAt || 0) - (x.createdAt || 0) : (a.date < x.date ? -1 : 1));
+  /* Состояние статьи — последнее сказанное о ней: отметки идут по датам, и
+     поздняя перебивает раннюю. Так работает и отмена: «не начата» — такая же
+     отметка, как «читаю». */
+  for (const e of es)
+    for (const [i, состояние] of Object.entries(e.marks || {})) {
+      const k = Number(i);
+      if (k >= 0 && k < n) сост[k] = (состояние === "read" || состояние === "done") ? состояние : "";
+    }
+  return сост;
+}
+function listCount(b) {
+  const c = listStates(b);
+  return { всего: c.length, прочитано: c.filter((x) => x === "done").length,
+           читаю: c.filter((x) => x === "read").length };
+}
+// какую статью читаю сейчас — последняя, помеченная «читаю»
+function listNow(b) {
+  const c = listStates(b), сп = bookList(b);
+  for (let i = c.length - 1; i >= 0; i--) if (c[i] === "read") return { i, name: (сп[i] || {}).name || "" };
+  return null;
+}
 
 /* Процент книги считается от той части, которую читаешь в приложении. Книгу
    можно завести с середины — «Снег на траве» начат со 183-й страницы, — и
@@ -15960,6 +16077,10 @@ const bookMode = (b) => (b && b.mode === "parts") ? "parts" : "linear";
    читай. Закрытая книга — сто процентов по определению: это решение, а не
    расчёт. */
 function bookPct(b) {
+  if (b && bookMode(b) === "list") {
+    const c = listCount(b);
+    return c.всего ? Math.round(c.прочитано / c.всего * 100) : 0;
+  }
   if (!b || !b.pages) return 0;
   if (b.done) return 100;
   const всего = Math.max(1, b.pages - (b.startPage || 0));
@@ -16071,10 +16192,14 @@ function libraryUI() {
     const cov = Math.min(b.pages || 0, bookCovered(b));
     const pct = bookPct(b);
     const когда = bookSpanDates(b);
+    /* У сборника статей ни страниц, ни процента: мера — сами статьи. */
+    const счёт = bookMode(b) === "list" ? listCount(b) : null;
     const meta = b.done
       ? `прочитана${когда ? " · " + когда : ""} · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`
-      : `${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`
-        + (когда ? " · " + когда : "");
+      : счёт
+        ? `${счёт.прочитано} из ${счёт.всего} статей` + (когда ? " · " + когда : "")
+        : `${pct}% · ${cov} из ${b.pages} стр · ${ent.length} ${plural(ent.length, "запись", "записи", "записей")}`
+          + (когда ? " · " + когда : "");
     return row("bk:" + b.id, coverSrc(b.id, b.cover || ""), "📖", b.title, b.author, pct, meta);
   };
   const bookRows = books.filter(b => !b.done).map(bookRow);

@@ -50,10 +50,13 @@ def check(key, profile):
         return
 
     # ── поля книги ──
-    for f in ("id", "title", "author", "pages"):
+    # у сборника статей страниц нет вовсе — это его режим, а не недочёт
+    обяз = ("id", "title", "author") if book.get("mode") == "list" else ("id", "title", "author", "pages")
+    for f in обяз:
         проверь(book.get(f), f"есть {f}: {str(book.get(f))[:40]}", f"не заполнено поле {f}")
-    проверь(isinstance(book.get("pages"), int) and book["pages"] > 0,
-            f"страниц: {book.get('pages')}", "pages должно быть числом больше нуля")
+    if book.get("mode") != "list":
+        проверь(isinstance(book.get("pages"), int) and book["pages"] > 0,
+                f"страниц: {book.get('pages')}", "pages должно быть числом больше нуля")
     проверь(book.get("art") in ("wave", "pine", "quill", "lamp"),
             f"art: {book.get('art')}", f"art должен быть wave/pine/quill/lamp, а не {book.get('art')!r}")
     проверь(book.get("tone") in ("violet", "sea", "snow", "night", "wine", "forest", "pastel"),
@@ -62,7 +65,14 @@ def check(key, profile):
 
     ch = book.get("chapters") or []
     проверь(ch, f"глав: {len(ch)}", "нет содержания — приложение не покажет текущую главу")
-    if ch:
+    # Сборник статей (mode: list) страниц не имеет вовсе: у глав только имена
+    список = book.get("mode") == "list"
+    if список:
+        проверь(all(c.get("name") for c in ch), "у всех статей есть имя",
+                "статья без имени — в содержании будет пустая строка")
+        проверь(not book.get("pages") and not book.get("startPage"),
+                "страниц нет, как и задумано", "у сборника статей не должно быть pages/startPage")
+    elif ch:
         порядок = all(ch[i]["from"] <= ch[i + 1]["from"] for i in range(len(ch) - 1))
         проверь(порядок, "главы идут по возрастанию", "главы не по порядку — chapterAt соврёт")
         за = [c["name"] for c in ch if c["from"] > book["pages"]]
@@ -83,6 +93,10 @@ def check(key, profile):
 
     # ── награды ──
     ach, words = m.get("ach") or [], m.get("words") or {}
+    # материал может просить обойтись без наград: noAch в описи
+    if m.get("noAch"):
+        проверь(not ach, "наград нет — и не должно быть (noAch)", "noAch: true, но награды заданы")
+        return
     проверь(ach, f"наград: {len(ach)}", "нет наград")
     ids = [a.get("id") for a in ach]
     проверь(len(set(ids)) == len(ids), "id наград уникальны", f"повторы id: {[i for i in ids if ids.count(i) > 1]}")
@@ -96,7 +110,7 @@ def check(key, profile):
             if not a.get(f) and f != "hint":
                 ОШ.append(f"награда {a.get('id')}: не заполнено {f}")
     стр = [a["id"] for a in ach for c in a.get("when", [])
-           if c[0] == "page" and c[2] > book["pages"]]
+           if c[0] == "page" and c[2] > (book.get("pages") or 0)]
     проверь(not стр, "награды не просят страниц больше, чем есть", f"недостижимы по страницам: {стр}")
     заметки = [a["id"] for a in ach for c in a.get("when", []) if c[0] == "notes"]
     проверь(not заметки, "нет наград за заметки", f"поле заметки убрано из приложения, недостижимо: {заметки}")
