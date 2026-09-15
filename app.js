@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 522";
+const APP_VERSION = "Кэйко 523";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -198,6 +198,8 @@ function emptyData() {
     kanyeAt: 0,    // когда Канье заходил впервые: первый визит гарантирован
     weekGoal: 4,   // общая цель: сколько дней в неделю заниматься чем угодно
     goalAt: 0,     // когда её меняли: без этого чужая цель молча затирала свою
+    pianoWeek: 150,  // мягкий ориентир у пьесы: сколько минут в неделю играть
+    pianoWeekAt: 0,  // когда его меняли — по той же причине, что и у цели
     archive: [],   // пройденные материалы
     takes: [],     // записи собственной игры: как звучало в тот день
     takesId: "",   // гист с файлами вложений — общий для всех устройств
@@ -287,6 +289,8 @@ function migrate(obj) {
 
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
   if (Number(obj.goalAt) > 0) base.goalAt = Number(obj.goalAt);
+  if (Number(obj.pianoWeek) > 0) base.pianoWeek = Math.round(obj.pianoWeek);
+  if (Number(obj.pianoWeekAt) > 0) base.pianoWeekAt = Number(obj.pianoWeekAt);
   /* Одиночные записи о наградах и карточках убраны навсегда: награда живёт
      внутри сессии, в которую открылась. Отсеиваем их прямо на входе — и то,
      что лежит в телефоне, и то, что приезжает из гиста. Иначе достаточно
@@ -1667,6 +1671,38 @@ function factsState() {
 function fmtRange(from, to) {
   const f = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
   return from === to ? f.format(fromStr(from)) : `${f.format(fromStr(from))} — ${f.format(fromStr(to))}`;
+}
+
+/* ── Мягкий ориентир у пьесы ──
+   Сколько минут сегодня, чтобы за неделю набралось столько, сколько хочется.
+   Не награда и не счётчик: пропустил день — остаток просто делится на дни,
+   которые ещё есть, и число на сегодня растёт. Пропустил пять — видно, что
+   набрать всё уже не выйдет, и это нормально: цифра показывает положение дел,
+   а не требует его исправить. Поэтому ни серий, ни «догоняй», ни красного.
+
+   Сегодняшнюю норму считаем от того, что сыграно ДО сегодня: иначе она
+   уменьшалась бы прямо во время занятия, и «12 из 21» превращалось в «12 из
+   12» на середине. */
+function pianoWeekPlan() {
+  const цель = Number(data.pianoWeek) > 0 ? Number(data.pianoWeek) : 150;
+  const от = dateStr(mondayOf(new Date()));
+  const сег = todayStr();
+  let доСегодня = 0, сегодня = 0;
+  for (const e of (data.piano.entries || [])) {
+    if (e.deleted || e.date < от) continue;
+    const м = Number(e.mins) || 0;
+    if (e.date < сег) доСегодня += м; else if (e.date === сег) сегодня += м;
+  }
+  const деньНедели = (fromStr(сег).getDay() + 6) % 7;      // понедельник — ноль
+  const впереди = 7 - деньНедели;                          // считая сегодняшний
+  const остаток = Math.max(0, цель - доСегодня);
+  /* «Набрано» смотрит на всю неделю вместе с сегодняшним: сел в понедельник и
+     отыграл всё разом — ориентир замолкает сразу, а не назавтра. Норма же дня
+     считается без сегодняшнего, иначе она таяла бы по ходу занятия. */
+  const набрано = доСегодня + сегодня >= цель;
+  return { цель, неделя: доСегодня + сегодня, сегодня,
+           надо: набрано || !остаток ? 0 : Math.ceil(остаток / впереди),
+           впереди, набрано };
 }
 
 function goalProgress() {
@@ -4245,7 +4281,10 @@ function heroSub(s) {
     return subLine(at ? (lessons()[at.i] || {}).title || "" : "Курс пройден",
       courseSize());
   }
-  return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`);
+  const п = pianoWeekPlan();
+  return subLine(`𝄞 ${Math.round(s.pctR)}%`, `𝄢 ${Math.round(s.pctL)}%`,
+    п.набрано ? "на неделе набрано"
+      : `сегодня ${п.сегодня} из ${п.надо} мин`);
 }
 
 function renderHome() {
@@ -11072,7 +11111,12 @@ function pracRender() {
     return;
   }
   const m = Math.floor(pracMin());
-  $("#pracWhere").textContent = piece().name + (prac.startedAt ? " · " + m + " мин" : "");
+  /* Рядом с минутами захода — сколько всего сегодня из ориентира на день:
+     видно, много ли ещё сидеть, и не надо считать в уме. */
+  const п = pianoWeekPlan();
+  const хвост = п.набрано ? "" : ` · сегодня ${п.сегодня + m} из ${п.надо}`;
+  $("#pracWhere").textContent = piece().name
+    + (prac.startedAt ? " · " + m + " мин" + хвост : "");
   const box = $("#pracStage");
 
   const u = pracUnitNow();
@@ -16560,7 +16604,7 @@ async function connectGitHub(token) {
 const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
-  talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId,
+  talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, pianoWeek: data.pianoWeek, pianoWeekAt: data.pianoWeekAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId,
   colGiven: data.colGiven, colSeen: data.colSeen, colSeenV: data.colSeenV });
 
 /* Счётчики использования: каждое устройство пишет только свою ветку, поэтому
@@ -16726,6 +16770,10 @@ async function syncNow(manual) {
          вчерашняя чужая правка побеждала твою сегодняшнюю: скачивание идёт
          раньше отправки, чужое значение ложилось поверх и уезжало обратно уже
          как твоё. У записей такого не бывает: там у каждой свой updatedAt. */
+      if (remote.pianoWeek && (remote.pianoWeekAt || 0) > (data.pianoWeekAt || 0)) {
+        data.pianoWeek = remote.pianoWeek;
+        data.pianoWeekAt = remote.pianoWeekAt;
+      }
       if (remote.weekGoal && (remote.goalAt || 0) > (data.goalAt || 0)) {
         data.weekGoal = remote.weekGoal;
         data.goalAt = remote.goalAt;
