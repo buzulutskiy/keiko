@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 518";
+const APP_VERSION = "Кэйко 519";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1385,14 +1385,11 @@ const shownPct = (s) => isPiano() && piece() && piece().bars ? pctRoute()
 /* У рисунка мерить нечего: он или идёт, или закончен. Процент тут — ложная
    точность, поэтому в кольце прочерк, пока лист не закрыт. */
 const noPct = () => isCourse() && plainDraw() && !course().done;
-/* Что написать в кольце вместо процента. У сборника статей процент — ложная
-   мера: статьи разной длины, и «двадцать процентов» не значит ничего, а
-   «12 из 61» значит. */
-function ringSign(s) {
-  if (isBook() && bookMode(book()) === "list")
-    return `${(s.список || {}).прочитано || 0}/${(s.список || {}).всего || 0}`;
-  return noPct() ? "—" : "";
-}
+/* Что написать в кольце вместо процента. У сборника статей в кольце стоит
+   обычная доля: «0/61» там читается как дробь и выглядит хуже нуля процентов,
+   а счёт статей и так стоит подписью под названием — два раза одно и то же
+   число ни к чему. */
+function ringSign(s) { return noPct() ? "—" : ""; }
 
 /* Размер материала словами: столько-то шагов у занятия по шагам, столько-то
    минут у лекции. Стоит в подписи под названием вместо доли пройденного:
@@ -3903,17 +3900,25 @@ function coverSrc(id, fallback) {
   return fallback;
 }
 
+/* Пропорция обложки — одна и та же у нарисованной заглушки и у настоящей
+   фотографии. Иначе выходит скачок: пока обложка не приехала, коробка имеет
+   пропорцию из CSS, приехала — берёт свою, ширина меняется, и вся лента
+   съезжает вбок у человека под пальцем. Запасное значение одно на всех, а не
+   «3 / 4.1» у заглушки и «3 / 4.4» у фотографии. */
+const COVER_RATIO = "3 / 4.1";
+const coverRatio = (x) => esc((x && x.ratio) || COVER_RATIO);
+
 // обложка любого материала — не зависит от активного трека
 function coverOf(item) {
   if (item.track === "book") {
     const b = item.book || book();
     const src = coverSrc(b.id, b.cover);
     if (src) return `
-      <div class="cover photo" style="aspect-ratio:${esc(b.ratio || "3 / 4.4")}">
-        <img src="${esc(src)}" data-cov="${esc(b.id)}" alt="" width="465" height="720" decoding="async" fetchpriority="high">
+      <div class="cover photo" style="aspect-ratio:${coverRatio(b)}">
+        <img src="${esc(src)}" data-cov="${esc(b.id)}" alt="" decoding="async" fetchpriority="high">
       </div>`;
     return `
-      <div class="cover book ${esc(b.tone || "sea")}" data-covnone="${esc(b.id)}">
+      <div class="cover book ${esc(b.tone || "sea")}" style="aspect-ratio:${coverRatio(b)}" data-covnone="${esc(b.id)}">
         <div><div class="cv-author">${esc(b.author || "")}</div></div>
         ${b.art === "wave" ? SEA_ART : b.art === "pine" ? PINE_ART : b.art === "quill" ? QUILL_ART : b.art === "lamp" ? LAMP_ART : `<div class="cv-mark">🦔</div>`}
         <div>
@@ -3947,7 +3952,7 @@ function coverOf(item) {
     const ck = keyOfCourse(c);
     const csrc = coverSrc(ck, c.cover || "");
     if (csrc) return `
-      <div class="cover photo titled" style="aspect-ratio:${esc(c.ratio || "3 / 4.1")}">
+      <div class="cover photo titled" style="aspect-ratio:${coverRatio(c)}">
         <img src="${esc(csrc)}" data-cov="${esc(ck)}" alt="" loading="lazy" decoding="async">
         <div class="cv-over">
           <div class="cv-author">${esc(sub)}</div>
@@ -3958,7 +3963,7 @@ function coverOf(item) {
         </div>
       </div>`;
     return `
-      <div class="cover pastel">
+      <div class="cover pastel" style="aspect-ratio:${coverRatio(c)}">
         <div><div class="cv-author">${esc(sub)}</div></div>
         <div class="smears"><i></i><i></i><i></i><i></i></div>
         <div>
@@ -3970,11 +3975,11 @@ function coverOf(item) {
   const p = item.piece;
   const psrc = coverSrc(p.id, p.cover);
   if (psrc) return `
-    <div class="cover photo" style="aspect-ratio:${esc(p.ratio || "3 / 4.4")}">
-      <img src="${esc(psrc)}" data-cov="${esc(p.id)}" alt="" width="509" height="720" decoding="async" fetchpriority="high">
+    <div class="cover photo" style="aspect-ratio:${coverRatio(p)}">
+      <img src="${esc(psrc)}" data-cov="${esc(p.id)}" alt="" decoding="async" fetchpriority="high">
     </div>`;
   return `
-    <div class="cover piano ${esc(p.tone || "violet")}">
+    <div class="cover piano ${esc(p.tone || "violet")}" style="aspect-ratio:${coverRatio(p)}">
       <div><div class="cv-author">${esc(p.author || "")}</div></div>
       ${p.art === "wave" ? WAVE_ART : KEYS_ART}
       <div>
@@ -10843,11 +10848,10 @@ function lessonRender(box) {
 function bookRunOf(e) {
   const кн = (data.book.books || []).find((x) => x.id === (e.bookId || ""));
   if (кн && bookMode(кн) === "list") {
-    const сп = bookList(кн), пары = Object.entries(e.marks || {});
+    const пары = Object.entries(e.marks || {});
     if (!пары.length) return "";
     const слово = { read: "начал", done: "дочитал", "": "снял отметку" };
-    return пары.map(([i, с]) => ((сп[Number(i)] || {}).name || "статья") + " — " + (слово[с] || "снял отметку"))
-               .join(" · ");
+    return пары.map(([имя, с]) => имя + " — " + (слово[с] || "снял отметку")).join(" · ");
   }
   const b = (data.book.books || []).find((x) => x.id === (e.bookId || "snow-1"));
   if (!b) return "";
@@ -14781,7 +14785,11 @@ function partCovered(part, spans) {
    состояние по кругу — не начата, читаю, прочитана. Ни страниц, ни ползунков:
    статью или читаешь, или дочитал, третьего эта книга не знает. */
 function listStateNow(b) {
-  return listStates(b).map((s, i) => (pickItems[i] != null ? pickItems[i] : s));
+  const сп = bookList(b);
+  return listStates(b).map((s, i) => {
+    const имя = (сп[i] || {}).name || "";
+    return pickItems[имя] != null ? pickItems[имя] : s;
+  });
 }
 const lsMark = (s) => s === "done" ? "✓" : s === "read" ? "▸" : "";
 function bookListUI() {
@@ -14802,11 +14810,12 @@ function bindBookListSheet() {
   if (!корень) return;
   корень.querySelectorAll("[data-ls]").forEach((el) => el.addEventListener("click", () => {
     const i = Number(el.dataset.ls);
-    const было = pickItems[i] != null ? pickItems[i] : (listStates(b)[i] || "");
+    const имя = (bookList(b)[i] || {}).name || "";
+    const было = pickItems[имя] != null ? pickItems[имя] : (listStates(b)[i] || "");
     /* По кругу: не начата → читаю → прочитана → не начата. Третий нажим —
        это и есть отмена, отдельной кнопки «снять» не нужно. */
     const стало = было === "" ? "read" : было === "read" ? "done" : "";
-    pickItems[i] = стало;
+    pickItems[имя] = стало;
     el.className = "ls-row " + стало;
     const м = el.querySelector(".ls-mark"); if (м) м.textContent = lsMark(стало);
     const ш = $("#lsHead");
@@ -16045,19 +16054,18 @@ const bookMode = (b) => (b && (b.mode === "parts" || b.mode === "list")) ? b.mod
 const bookList = (b) => ((b || book()).chapters || []);
 function listStates(b) {
   const bk = b || book();
-  const n = bookList(bk).length;
-  const сост = new Array(n).fill("");
+  const сп = bookList(bk);
+  /* Ключ отметки — имя статьи, а не её номер: список можно пересортировать
+     (например, собрать по авторам), и номера после этого укажут на чужое. */
+  const по = {};
   const es = bookEntriesOf(bk.id).slice().sort((a, x) =>
     a.date === x.date ? (a.createdAt || 0) - (x.createdAt || 0) : (a.date < x.date ? -1 : 1));
-  /* Состояние статьи — последнее сказанное о ней: отметки идут по датам, и
-     поздняя перебивает раннюю. Так работает и отмена: «не начата» — такая же
-     отметка, как «читаю». */
+  /* Состояние статьи — последнее сказанное о ней: поздняя отметка перебивает
+     раннюю. Так работает и отмена: «не начата» — такая же отметка. */
   for (const e of es)
-    for (const [i, состояние] of Object.entries(e.marks || {})) {
-      const k = Number(i);
-      if (k >= 0 && k < n) сост[k] = (состояние === "read" || состояние === "done") ? состояние : "";
-    }
-  return сост;
+    for (const [имя, состояние] of Object.entries(e.marks || {}))
+      по[имя] = (состояние === "read" || состояние === "done") ? состояние : "";
+  return сп.map((c) => по[c.name] || "");
 }
 function listCount(b) {
   const c = listStates(b);

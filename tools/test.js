@@ -2145,8 +2145,10 @@ function ок(имя, факт, надо) {
         chapters: [{ name: "Предисловие" }, { name: "«Слово о полку Игореве»" },
                    { name: "Гоголь. «Шинель»" }, { name: "Белый. «Петербург»" }] }],
       entries: [
-        { id: "e1", date: "2026-09-10", bookId: "polka", createdAt: 1, marks: { "1": "read" } },
-        { id: "e2", date: "2026-09-12", bookId: "polka", createdAt: 2, marks: { "1": "done", "2": "read" } },
+        { id: "e1", date: "2026-09-10", bookId: "polka", createdAt: 1,
+          marks: { "«Слово о полку Игореве»": "read" } },
+        { id: "e2", date: "2026-09-12", bookId: "polka", createdAt: 2,
+          marks: { "«Слово о полку Игореве»": "done", "Гоголь. «Шинель»": "read" } },
       ] } });
   t.set("pickItems", {});
   ок("сборник: состояния берутся из отметок",
@@ -2158,13 +2160,22 @@ function ок(имя, факт, надо) {
   ок("сборник: «сейчас читаю» — помеченная статья", ст.chapter.name, "Гоголь. «Шинель»");
   ок("сборник: в подписи статьи, а не страницы",
     /1 из 4 статей/.test(t.get("heroSub")(ст)), true);
-  ок("сборник: в кольце счёт, а не процент", t.get("ringSign")(ст), "1/4");
+  ок("сборник: в кольце обычная доля, счёт — в подписи", t.get("ringSign")(ст), "");
+  ок("сборник: место под кнопку карты не держим",
+    t.get("bookBtnState")(), { map: { on: false, keep: false } });
   ок("сборник: срока «когда дочитаю» нет", t.get("paceForecast")(), null);
   ок("сборник: сам собой дочитанным не становится", t.get("bookDone")(t.get("book")()), false);
 
+  /* Список можно пересортировать: отметки держатся за имя, а не за номер. */
+  t.get("data").book.books[0].chapters.reverse();
+  ок("сборник: после пересортировки отметки остались на своих статьях",
+    t.get("listStates")(t.get("book")()), ["", "read", "done", ""]);
+  t.get("data").book.books[0].chapters.reverse();
+
   /* Поздняя отметка перебивает раннюю — это и есть отмена. */
   t.get("data").book.entries.push(
-    { id: "e3", date: "2026-09-13", bookId: "polka", createdAt: 3, marks: { "1": "" } });
+    { id: "e3", date: "2026-09-13", bookId: "polka", createdAt: 3,
+      marks: { "«Слово о полку Игореве»": "" } });
   ок("сборник: снятая отметка снимается",
     t.get("listStates")(t.get("book")())[1], "");
 
