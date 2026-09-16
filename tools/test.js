@@ -1765,6 +1765,37 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Минуты недели: растут от простоя и обнуляются в понедельник ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), сег: t.get("todayStr") };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    pianoWeek: 150,
+    piano: { activePiece: "bwv853", entries: [],
+      pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
+  const день = (d) => t.set("todayStr", () => d);   // 2026-09-14 — понедельник
+
+  /* Не играл ни дня: остаток делится на то, что осталось, и число растёт. */
+  const надо = [];
+  for (const d of ["2026-09-14","2026-09-15","2026-09-16","2026-09-17","2026-09-18","2026-09-19","2026-09-20"]) {
+    день(d); надо.push(t.get("pianoWeekPlan")().надо);
+  }
+  ок("неделя: простой поднимает дневное число", надо, [22, 25, 30, 38, 50, 75, 150]);
+
+  /* Поиграл в понедельник — во вторник просят меньше. */
+  t.get("data").piano.entries=[{ id: "p1", date: "2026-09-14", pieceId: "bwv853", mins: 30 }];
+  день("2026-09-15");
+  ок("неделя: сыгранное уменьшает остаток", t.get("pianoWeekPlan")().надо, 20);
+
+  /* Понедельник следующей недели: прошлая не считается вовсе. */
+  t.get("data").piano.entries=[{ id: "p1", date: "2026-09-19", pieceId: "bwv853", mins: 200 }];
+  день("2026-09-21");
+  const п = t.get("pianoWeekPlan")();
+  ок("неделя: с понедельника счёт с нуля", [п.неделя, п.надо, п.набрано], [0, 22, false]);
+
+  t.set("todayStr", было.сег); t.set("data", было.данные);
+}
+
 /* ── Шапка занятия: один текст на всех, кто её пишет ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };

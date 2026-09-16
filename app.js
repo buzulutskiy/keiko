@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 530";
+const APP_VERSION = "Кэйко 531";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1685,8 +1685,11 @@ function fmtRange(from, to) {
    12» на середине. */
 function pianoWeekPlan() {
   const цель = Number(data.pianoWeek) > 0 ? Number(data.pianoWeek) : 150;
-  const от = dateStr(mondayOf(new Date()));
   const сег = todayStr();
+  /* Понедельник считаем от «сегодня» приложения, а не от системной даты:
+     иначе неделя и день берутся из разных источников, и на стыке суток или
+     при сдвинутой дате они расходятся. */
+  const от = dateStr(mondayOf(fromStr(сег)));
   let доСегодня = 0, сегодня = 0;
   for (const e of (data.piano.entries || [])) {
     if (e.deleted || e.date < от) continue;
