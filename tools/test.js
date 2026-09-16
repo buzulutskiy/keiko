@@ -1765,6 +1765,29 @@ function ок(имя, факт, надо) {
   t.set("data.active", было.active);
 }
 
+/* ── Шапка занятия: один текст на всех, кто её пишет ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
+  const сег=t.get("todayStr")();
+  const деньНедели=(t.get("fromStr")(сег).getDay()+6)%7, впереди=7-деньНедели;
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    pianoWeek: 7*30,
+    piano: { activePiece: "bwv853", entries: [],
+      pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
+  // pracMin считает от startedAt, поэтому «восемь минут» задаём временем входа
+  t.set("prac", { kind: "piece", startedAt: Date.now() - 8 * 60000, breakMs: 0, counted: 8 });
+  const план=Math.ceil(210/впереди);
+  ок("шапка занятия: заход из остатка дня", t.get("pracWhereText")(), `8 из ${план} мин`);
+  /* Часы раз в секунду и перерисовка экрана берут строку из одного места:
+     раньше вторые затирали первых старым «Прелюдия · 8 мин», и оно мигало. */
+  ок("шапка занятия: названия пьесы в ней нет",
+    /Прелюдия/.test(t.get("pracWhereText")()), false);
+  t.get("data").piano.entries=[{ id: "p", date: сег, pieceId: "bwv853", mins: 400 }];
+  ок("шапка занятия: день набран — плана нет", t.get("pracWhereText")(), "8 мин");
+  t.set("prac", было.prac); t.set("data", было.данные);
+}
+
 /* ── У пьесы ни карты, ни собрания ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };

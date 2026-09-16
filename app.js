@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 529";
+const APP_VERSION = "Кэйко 530";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -11129,7 +11129,7 @@ function lessonNote(i, step, sec) {
 function pracRender() {
   if (!prac) return;
   if (prac.kind === "lesson") {
-    $("#pracWhere").textContent = course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
+    $("#pracWhere").textContent = pracWhereText();
     /* Урок — не пьеса: прячем плеер и видео и рисуем свою лестницу. Раньше
        здесь была опечатка (else цеплялся к видео, а не к kind), и урок
        проваливался в код пианино, где падал на piece(). */
@@ -11139,12 +11139,7 @@ function pracRender() {
     return;
   }
   const m = Math.floor(pracMin());
-  /* В шапке занятия — только минуты: этот заход и сколько дня осталось на его
-     начало. Название пьесы отсюда убрано, она и так одна на экране.
-     Знаменатель фиксируется на входе: по ходу занятия растёт только левое
-     число, а на следующем заходе остаток уже меньше. */
-  const осталось = pracLeftToday(prac.counted);
-  $("#pracWhere").textContent = осталось ? `${m} из ${осталось} мин` : `${m} мин`;
+  $("#pracWhere").textContent = pracWhereText();
   const box = $("#pracStage");
 
   const u = pracUnitNow();
@@ -11274,11 +11269,22 @@ function openPractice() {
 const pracTicking = () => !!(prac && prac.taskAt && prac.at
   && prac.screen !== "watch" && prac.at.phase !== "step");
 
+/* Текст шапки занятия строит одна функция — её зовут и перерисовка экрана, и
+   часы раз в секунду. Порознь они писали разное: pracRender — «8 из 30 мин»,
+   а часы через секунду затирали это старым «Прелюдия · 8 мин». Со стороны это
+   выглядело как мигание, и плана на день было не разглядеть. */
+function pracWhereText() {
+  if (!prac) return "";
+  if (prac.kind === "lesson")
+    return course().name + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
+  const m = Math.floor(pracMin());
+  const осталось = pracLeftToday(prac.counted);
+  return осталось ? `${m} из ${осталось} мин` : `${m} мин`;
+}
+
 function pracClock() {
   const el = $("#pracWhere");
-  if (!el || !prac) return;
-  const имя = prac.kind === "lesson" ? course().name : (piece() ? piece().name : "");
-  el.textContent = имя + (prac.startedAt ? " · " + Math.floor(pracMin()) + " мин" : "");
+  if (el && prac) el.textContent = pracWhereText();
 }
 
 function closePractice() {
