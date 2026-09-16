@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 537";
+const APP_VERSION = "Кэйко 538";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -12075,8 +12075,7 @@ const СЛОИ = [["place", "Места"], ["book", "Книги"], ["person", "�
    справку. Таблица ниже — запасная, чтобы у нового материала список не был
    голым, пока значки не проставлены. */
 const GM_ICONS = { book: "📖", person: "👤", art: "🖼", thing: "🏺",
-                   animal: "🐾", rock: "🪨", word: "🔤", text: "📜", place: "📍",
-                   time: "🕰" };
+                   animal: "🐾", rock: "🪨", word: "🔤", text: "📜", place: "📍" };
 const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
 
 /* Вкладки на карте — две: места и всё остальное. Слоёв восемь, в строку они
@@ -12093,18 +12092,12 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    Второй двери у них нет и не было: слова набирают на самом экране, так что
    это не «вход потеряли», а «затею отложили». Либо ей находят своё место,
    либо она уезжает в attic целиком — но не остаётся вот так. */
-const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"], ["time", "Время"]];
+const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
 const gmВкладка = () => (gm && gm.слой) || (gmLayersOf()[0] || ["place"])[0];
-/* «Время» — своя вкладка, не слой собрания. Запись там отвечает на вопрос
-   «какой сейчас год в книге и что в этот год происходило вокруг»: это не вещь,
-   которую собирают, а обстановка, в которой читаешь. */
-const вкладкаТочки = (p) => {
-  const слой = слойТочки(p);
-  return слой === "place" ? "place" : слой === "time" ? "time" : "all";
-};
+const вкладкаТочки = (p) => (слойТочки(p) === "place" ? "place" : "all");
 function gmLayersOf() {
   if (!gm) return [];
   const есть = new Set(gm.места.map(вкладкаТочки));
@@ -12279,14 +12272,13 @@ function gmList() {
   const собр = $("#gmCol");
   if (!box || !gm) return;
   const вкладка = gmВкладка();
-  const списком = вкладка === "all" || вкладка === "time";
+  const списком = вкладка === "all";
   box.hidden = !списком;
   if (сцена) сцена.hidden = вкладка !== "place";
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
   if (вкладка === "col") { box.innerHTML = ""; colRender(); return; }
-  if (вкладка === "time") { gmTimeList(box); return; }
   if (!списком) { box.innerHTML = ""; return; }
   const список = gmВидимые();
   if (!список.length) {
@@ -12312,77 +12304,6 @@ function gmList() {
         <span class="gl-ic">${esc(gmIcon(p))}</span>
         <span class="gl-txt">
           <b>${esc(м ? м[1] : p.name)}${м ? `<em>${esc(м[2])}</em>` : ""}</b>
-          <i>${esc((p.t || "").split(" · ")[0])}</i>
-        </span>
-      </button>
-      ${открыт && p.about ? `<p>${esc(p.about)}</p>` : ""}
-      ${открыт ? gmSpravki(p) : ""}
-    </div>`;
-  }).join("");
-}
-
-/* Год записи. Число, но бывает и промежуток — царствование, десятилетие:
-   тогда сортируем по первому числу, а показываем как написано. */
-const gmYear = (p) => {
-  const m = /-?\d{3,4}/.exec(String((p && p.year) || ""));
-  return m ? Number(m[0]) : 0;
-};
-
-/* Год — ссылка в Википедию. Своими руками всех событий года не напишешь, да и
-   незачем: у Википедии на каждый год отдельная статья, и там это уже собрано
-   и отсортировано. Наше дело — дать дверь, а не пересказывать.
-   Десятилетие («начало 1830-х») ведёт на статью о десятилетии, точный год —
-   на год. «Не названо» двери не получает: вести некуда. */
-const gmYearWiki = (год) => {
-  const s = String(год || "");
-  const дес = /(\d{3,4})-[ехм]/.exec(s);
-  if (дес) return "https://ru.wikipedia.org/wiki/" + encodeURIComponent(дес[1] + "-е_годы");
-  const m = /\d{3,4}/.exec(s);
-  return m ? "https://ru.wikipedia.org/wiki/" + encodeURIComponent(m[0] + "_год") : "";
-};
-
-/* История места, о котором читаешь: у книги про Петербург — история
-   Петербурга. Задаётся в разборе полем `timePlace: {name, wiki}`; wiki — имя
-   статьи в русской Википедии. Без него строки просто нет: подставлять
-   «историю» наугад значит врать. */
-const gmTimePlace = () => {
-  const t = (artsOf(gm && gm.id) || {}).timePlace;
-  return t && t.wiki && t.name ? t : null;
-};
-
-/* Лента времени: какой год сейчас в книге и что происходило вокруг.
-   Своё событие книги (`own`) выделено — это её точка на шкале, всё прочее
-   стоит рядом для масштаба. Правило о спойлерах то же, что у карты: запись
-   висит при главе и говорит только о прочитанном, — поэтому прятать здесь
-   ничего не надо, достаточно не забегать вперёд в самом тексте. */
-function gmTimeList(box) {
-  const список = gmВидимые().slice().sort((a, b) =>
-    gmYear(a) - gmYear(b) || String(a.name || "").localeCompare(String(b.name || "")));
-  if (!список.length) {
-    box.innerHTML = `<div class="gl-none">В этой главе время не размечено — выбери другую или «Все».</div>`;
-    return;
-  }
-  const место = gmTimePlace();
-  /* Строка места стоит над лентой: она про всю книгу, а не про отдельный год. */
-  const шапкаМеста = место
-    ? `<a class="tl-place" href="https://ru.wikipedia.org/wiki/${encodeURIComponent(место.wiki)}"
-         target="_blank" rel="noopener">История: ${esc(место.name)} <b>↗</b></a>`
-    : "";
-  let год = "";
-  box.innerHTML = шапкаМеста + список.map((p) => {
-    const свой = String(p.year || "");
-    const адрес = gmYearWiki(свой);
-    const шапка = свой === год ? ""
-      : адрес
-        ? `<a class="tl-year" href="${адрес}" target="_blank" rel="noopener">${esc(свой)} <b>↗</b></a>`
-        : `<div class="tl-year">${esc(свой || "без года")}</div>`;
-    год = свой;
-    const открыт = gm.at === p.name;
-    return шапка + `<div class="gl-it tl-it${p.own ? " own" : ""}${открыт ? " on" : ""}">
-      <button class="gl-head" data-gm="${esc(p.name)}" type="button">
-        <span class="gl-ic">${esc(gmIcon(p))}</span>
-        <span class="gl-txt">
-          <b>${esc(p.name)}</b>
           <i>${esc((p.t || "").split(" · ")[0])}</i>
         </span>
       </button>
@@ -15117,9 +15038,7 @@ function colItems(b0) {
      столбик. Для мест есть карта, и она открыта с первого дня. Артефакты
      музеев при этом остаются: туда можно поехать, и это не то же самое. */
   const карта = b.kind === "book" ? bookMap(b) : ((artsOf(b.id) || {}).map || []);
-  /* Время в собрание не идёт по той же причине, что и места: у него своя
-     вкладка, и «1833 год» — не находка, которую кладут в коробку. */
-  const из = карта.filter((p) => !["place", "time"].includes(слойТочки(p))).map((p) => ({
+  const из = карта.filter((p) => слойТочки(p) !== "place").map((p) => ({
     id: слойТочки(p) + "|" + p.name, name: p.name, kind: слойТочки(p),
     ch: частьТочки(p), t: p.t || "", about: p.about || "", q: p.q || "",
     icon: p.icon || "", theme: colTheme(слойТочки(p), p.name, темы), art: false, rec: p,
