@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 538";
+const APP_VERSION = "Кэйко 539";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -692,6 +692,27 @@ function bookProgressOf(b) {
   return Math.min(page, b.pages || page);
 }
 
+/* Где человек сейчас — НЕ самая дальняя страница, а та, где он был в прошлый
+   раз. У книги подряд это одно и то же: курсор только растёт. У сборника
+   повестей — разное, и разница решающая: прочитал «Шинель» (155–195), перешёл
+   к «Носу» (51–84) — самая дальняя страница так и осталась 195-й, то есть
+   «Записками сумасшедшего».
+   Правило это уже было — в `bookStats`, для строки под заголовком, — но карта
+   про него не знала и открывалась на последней главе тома, хотя читают вторую.
+   Теперь оно одно на двоих: считает эта функция, а `bookStats` и
+   `mapHereChapter` её зовут. */
+function bookNowPage(b) {
+  const bk = b || book();
+  const далеко = bookProgressOf(bk);
+  if (bookMode(bk) !== "parts") return далеко;
+  const list = bookEntriesOf(bk.id).slice().sort((a, x) => a.date < x.date ? -1 : 1);
+  for (let i = list.length - 1; i >= 0; i--) {
+    const sp = list[i].spans || [];
+    if (sp.length) return Math.max(...sp.map((x) => Number(x.to) || 0));
+  }
+  return далеко;
+}
+
 /* Предмет открывается, когда дочитана его глава: до этого он виден силуэтом.
    Смысл тот же, что у разборов, — не показывать то, до чего человек ещё не
    дошёл. Предмет без главы (ch = 0) открыт сразу: он про книгу целиком. */
@@ -1022,7 +1043,10 @@ function mapHereChapter(b) {
     const n = w && w.bl ? w.bl.i + 1 : (w && w.finished ? главы.length : 1);
     return Math.min(Math.max(1, n), главы.length);
   }
-  const стр = bookProgressOf(bk);
+  /* Не самая дальняя страница, а та, где был в прошлый раз: см. bookNowPage.
+     По «докуда дошёл» карта сборника открывалась на последней повести тома
+     независимо от того, какую читаешь. */
+  const стр = bookNowPage(bk);
   /* Книга не начата — открываем первую главу, а не всю карту: пустая карта
      со всеми точками сразу — это список, а не место, куда пришёл читать. */
   if (!стр || стр <= (bk.startPage || 0)) return главы.length ? 1 : 0;
@@ -1133,14 +1157,8 @@ function bookStats() {
     if (prev && daysBetween(prev, e.date) >= 7) comeback = true;
     prev = e.date;
   }
-  /* Какая повесть «сейчас» — у сборника это не самая дальняя страница, а та,
-     где ты был в прошлый раз. Начал с «Шинели» на 155-й, перешёл к «Невскому»
-     на 5-ю — курсор помнит 194-ю и продолжал показывать «Шинель». */
-  let последняя = page;
-  for (let i = list.length - 1; i >= 0; i--) {
-    const sp = list[i].spans || [];
-    if (sp.length) { последняя = Math.max(...sp.map((x) => Number(x.to) || 0)); break; }
-  }
+  /* Какая повесть «сейчас» — считает `bookNowPage`, одна на всех. */
+  const последняя = bookNowPage(b);
   const covered = Math.min(b.pages || 0, bookCovered(b));
   /* Сборник статей: страниц нет, считается по самим статьям. */
   const список = bookMode(b) === "list" ? listCount(b) : null;

@@ -1978,6 +1978,53 @@ function ок(имя, факт, надо) {
   t.set("prac", было.prac); t.set("data", было.данные);
 }
 
+/* ── Сборник: «сейчас» — последняя отметка, а не дальняя страница ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
+  const книга={ id:"gogol", kind:"book", title:"Петербургские повести", pages:221,
+    startPage:0, mode:"parts",
+    chapters:[{from:5,name:"Невский проспект"},{from:51,name:"Нос"},
+              {from:84,name:"Портрет"},{from:155,name:"Шинель"},
+              {from:195,name:"Записки сумасшедшего"}] };
+  /* Его настоящие отметки: три повести подряд, последняя — вторая по счёту. */
+  const отм=[
+    { id:"g1", date:"2026-09-13", bookId:"gogol", spans:[{from:155,to:194}] },
+    { id:"g2", date:"2026-09-14", bookId:"gogol", spans:[{from:195,to:206}] },
+    { id:"g3", date:"2026-09-15", bookId:"gogol", spans:[{from:195,to:221}] },
+    { id:"g4", date:"2026-09-16", bookId:"gogol", spans:[{from:51,to:55}] },
+  ];
+  t.set("data", { active:"book", piano:{pieces:[],entries:[]},
+    pastel:{courses:[],entries:[]}, watch:{videos:[],entries:[]},
+    book:{ activeBook:"gogol", books:[книга], entries:отм } });
+
+  ок("сборник: дальняя страница — последняя повесть",
+    t.get("bookProgressOf")(книга), 221);
+  ок("сборник: а «сейчас» — там, где был в прошлый раз",
+    t.get("bookNowPage")(книга), 55);
+
+  /* Ради чего всё: карта должна открыться на «Носе», а не на «Записках». */
+  t.set("CATALOG", { gogol: { arts: true } });
+  t.set("ARTS", { gogol: { map: [1,2,3,4,5].map((n) => (
+    { kind:"place", name:"точка "+n, lat:59.9, lon:30.3, part:n })) } });
+  ок("сборник: карта открывается на той повести, которую читаешь",
+    t.get("mapHereChapter")(книга), 2);
+
+  /* Вернулся к «Запискам» — карта идёт следом. */
+  t.get("data").book.entries.push({ id:"g5", date:"2026-09-17", bookId:"gogol",
+    spans:[{from:206,to:210}] });
+  ок("сборник: перешёл обратно — и карта за ним",
+    t.get("mapHereChapter")(книга), 5);
+
+  /* У книги подряд правило прежнее: там курсор только растёт. */
+  const подряд={ id:"lin", kind:"book", title:"Подряд", pages:300, startPage:0,
+    chapters:[{from:1,name:"Раз"},{from:100,name:"Два"}] };
+  t.get("data").book.books.push(подряд);
+  t.get("data").book.entries.push({ id:"l1", date:"2026-09-10", bookId:"lin", page:150 });
+  ок("книга подряд: «сейчас» — это курсор", t.get("bookNowPage")(подряд), 150);
+
+  t.set("CATALOG", было.cat); t.set("data", было.данные);
+}
+
 /* ── У пьесы ни карты, ни собрания ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
