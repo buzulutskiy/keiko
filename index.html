@@ -858,6 +858,16 @@
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .rec .note { color: var(--muted); font-size: 0.86rem; overflow-wrap: anywhere; }
+    /* Подпись, по которой правят минуты. Выглядит как та же подпись — кнопкой
+       её выдаёт только пунктир: ряд в списке дня и так тесный, ещё одну
+       настоящую кнопку рядом с «✕» ставить некуда. */
+    .rec button.note {
+      background: none; border: 0; padding: 0; margin: 0; font: inherit;
+      color: var(--muted); font-size: 0.86rem; overflow-wrap: anywhere;
+      text-align: left; cursor: pointer;
+      text-decoration: underline dotted; text-underline-offset: 3px;
+      text-decoration-color: rgba(255,255,255,.28);
+    }
     .rec .del { color: var(--dim); width: 30px; height: 30px; border-radius: 8px; font-size: 1rem; }
     .empty { color: var(--dim); font-size: 0.87rem; text-align: center; padding: 4px 0; }
 

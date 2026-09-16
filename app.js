@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 534";
+const APP_VERSION = "Кэйко 535";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -460,6 +460,12 @@ function activeDays() {
    занятий на заходы (две сессии за вечер — две записи) счёт бы поехал: «12
    дней играю» превратилось бы в «19», а вместе с ним и награды, которые
    смотрят на `days` — «неделя», «месяц», «сто дней». Считаем по датам. */
+/* Подпись записи с минутами собирает одна функция: её пишут трое — счётчик
+   занятия, счётчик урока и ручная правка минут, — и расходиться им нельзя. */
+const minsNote = (track, mins, at) =>
+  (track === "pastel" ? "урок по плану · " : "занятие по плану · ")
+  + mins + " мин · с " + fmtClock(at);
+
 /* Время начала записи — им и различают два захода за один вечер. */
 const fmtClock = (ms) => {
   const d = new Date(Number(ms) || 0);
@@ -5553,14 +5559,45 @@ function renderDayBox() {
 
   $("#dayBox").innerHTML = `
     ${list.length
-      ? `<div class="day-list">${list.map(x => `
+      ? `<div class="day-list">${list.map(x => {
+          /* Минуты можно поправить прямо здесь. Записи, сделанные до
+             разделения на заходы, слепили несколько подходов в одну строку, и
+             разнять их приложению нечем: момент разрыва нигде не записан, а
+             человек его помнит. Пригождается и дальше: телефон пролежал в
+             кармане с открытым занятием — число неверное, а удалять всю
+             запись жалко, там есть и настоящее. */
+          const правится = typeof x.entry.mins === "number";
+          const текст = x.entry.note ? esc(x.entry.note) : esc(x.title);
+          return `
           <div class="rec">
             <span class="what">${x.icon} ${x.what}</span>
-            <span class="note">${x.entry.note ? esc(x.entry.note) : esc(x.title)}</span>
+            ${правится
+              ? `<button class="note fix" data-fix="${x.entry.id}" data-track="${x.track}"
+                   type="button" title="Поправить минуты">${текст}</button>`
+              : `<span class="note">${текст}</span>`}
             <button class="del" data-del="${x.entry.id}" data-track="${x.track}" type="button">✕</button>
-          </div>`).join("")}</div>`
+          </div>`; }).join("")}</div>`
       : `<div class="empty">В этот день ничего не отмечено</div>`}
 `;
+
+  $("#dayBox").querySelectorAll("[data-fix]").forEach(b =>
+    b.addEventListener("click", () => {
+      const track = b.dataset.track;
+      const e = data[track].entries.find(x => x.id === b.dataset.fix);
+      if (!e) return;
+      const ответ = prompt("Сколько минут на самом деле?", String(e.mins || 0));
+      if (ответ === null) return;
+      const n = Math.round(Number(String(ответ).replace(",", ".")));
+      if (!isFinite(n) || n < 0) { toast("Нужно число минут"); return; }
+      e.mins = n;
+      /* Подходы внутри записи после правки — выдумка: считали их для старого
+         устройства, где запись была одна на день. Запись теперь одна и есть. */
+      e.sessions = 1;
+      e.note = minsNote(track, n, e.createdAt);
+      e.updatedAt = now();
+      saveData(); schedulePush(); render();
+      toast(n ? "Стало " + n + " " + plural(n, "минута", "минуты", "минут") : "Минуты убраны");
+    }));
 
   document.querySelectorAll("[data-del]").forEach(b =>
     b.addEventListener("click", () => {
@@ -11147,7 +11184,7 @@ function lessonCount() {
   const cur = pracMin();
   e.mins = Math.round((e.mins || 0) + Math.max(0, cur - (prac.counted || 0)));
   prac.counted = cur;
-  e.note = "урок по плану · " + e.mins + " мин · с " + fmtClock((prac && prac.startedAt) || e.createdAt);
+  e.note = minsNote("pastel", e.mins, (prac && prac.startedAt) || e.createdAt);
   e.updatedAt = now();
   return e;
 }
@@ -11545,7 +11582,7 @@ function pracCount() {
      глазами, и «12 мин» напротив «12 мин» выбрать нельзя. Берём начало
      ЗАХОДА, а не создания записи: запись заводится на второй минуте, и «с
      19:02» вместо «с 19:00» — мелкая, но неправда. */
-  e.note = "занятие по плану · " + e.mins + " мин · с " + fmtClock((prac && prac.startedAt) || e.createdAt);
+  e.note = minsNote("piano", e.mins, (prac && prac.startedAt) || e.createdAt);
   e.updatedAt = now();
   return e;
 }

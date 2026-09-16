@@ -1885,6 +1885,32 @@ function ок(имя, факт, надо) {
   t.set("prac", было.prac); t.set("data", было.данные);
 }
 
+/* ── Минуты записи можно поправить руками ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  const сег=t.get("todayStr")();
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    pianoWeek: 150,
+    piano: { activePiece: "bwv853",
+      entries: [{ id: "e1", date: сег, pieceId: "bwv853", spans: [], mins: 49, sessions: 2,
+                  note: "занятие по плану · 49 мин · 2 подхода",
+                  createdAt: t.get("fromStr")(сег).setHours(9, 51, 0, 0), updatedAt: 1 }],
+      pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
+  /* Ровно случай, ради которого правка и появилась: запись, слепленная до
+     разделения на заходы. Разнять её нечем — момент разрыва нигде не записан. */
+  const e = t.get("data").piano.entries[0];
+  e.mins = 12; e.sessions = 1;
+  e.note = t.get("minsNote")("piano", 12, e.createdAt);
+  ок("правка: подпись собирается одним писателем",
+    e.note, "занятие по плану · 12 мин · с 09:51");
+  ок("правка: минуты дня стали настоящими", t.get("pianoWeekPlan")().сегодня, 12);
+  /* Подпись урока отличается только словом. */
+  ок("правка: у курса своя подпись",
+    t.get("minsNote")("pastel", 12, e.createdAt), "урок по плану · 12 мин · с 09:51");
+  t.set("data", было.данные);
+}
+
 /* ── Шапка занятия: один текст на всех, кто её пишет ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
