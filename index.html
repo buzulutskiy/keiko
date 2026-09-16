@@ -541,6 +541,12 @@
       scrollbar-width: none;
       -webkit-overflow-scrolling: touch;
       padding: 6px 0;
+      /* Края ленты растворяются, а не обрезаются. Соседние обложки упирались
+         в границу экрана и кончались резкой вертикальной линией — будто их
+         отрезали ножом. Маска гасит их к самому краю, и лента читается как
+         продолжающаяся за экран. */
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 7%, #000 93%, transparent 100%);
+      mask-image: linear-gradient(90deg, transparent 0, #000 7%, #000 93%, transparent 100%);
       /* лента сжимается, если экрану не хватает высоты */
       height: clamp(210px, 39vh, 310px);
       flex: 0 1 auto;
