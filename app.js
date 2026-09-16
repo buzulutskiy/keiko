@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 533";
+const APP_VERSION = "Кэйко 534";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -455,6 +455,19 @@ function activeDays() {
 }
 
 // серия по конкретному материалу: занимался именно им день за днём
+/* Сколько РАЗНЫХ дней в списке записей. Раньше везде стояло `list.length`, и
+   это было верно ровно потому, что запись была одна на день. С разделением
+   занятий на заходы (две сессии за вечер — две записи) счёт бы поехал: «12
+   дней играю» превратилось бы в «19», а вместе с ним и награды, которые
+   смотрят на `days` — «неделя», «месяц», «сто дней». Считаем по датам. */
+/* Время начала записи — им и различают два захода за один вечер. */
+const fmtClock = (ms) => {
+  const d = new Date(Number(ms) || 0);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+};
+
+const daysCount = (list) => new Set((list || []).map((e) => e.date)).size;
+
 function streak() {
   const days = new Set(entries().map(e => e.date));
   return streakFrom(days);
@@ -578,7 +591,7 @@ function pianoStats() {
   }
   const путь = pctRoute();
   return {
-    bars, passes: p, days: list.length, streak: streak(), streakAll: streakAll(),
+    bars, passes: p, days: daysCount(list), streak: streak(), streakAll: streakAll(),
     touchedR, touchedL, firmR, firmL, maxPass,
     pctR: руки.pctR, pctL: руки.pctL,
     // общий процент — доля пройденного пути: те же заходы, только все разом
@@ -1144,7 +1157,7 @@ function bookStats() {
     articles: список ? список.прочитано : 0,
     pct: список ? (список.всего ? список.прочитано / список.всего * 100 : 0)
        : b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
-    days: list.length, streak: streak(), streakAll: streakAll(),
+    days: daysCount(list), streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapterInOne,
     chapter: список ? { name: сейчасЧитаю ? сейчасЧитаю.name : "", from: 0 }
            : chapterAt(parts ? последняя : page),
@@ -1282,7 +1295,7 @@ function pastelStats() {
       lessons: 1, done: готов ? 1 : 0, doneSet: new Set(), spentSec: 0,
       stepsDone: готов ? 1 : 0, steps: 1, stages: 0, stageSet: new Set(), lessonSet: new Set(),
       pct: готов ? 100 : 0, totalSec: 0, doneSec: 0, minutes: 0, minutesAll: 0, minutesLeft: 0,
-      days: list.length, streak: streak(), streakAll: streakAll(),
+      days: daysCount(list), streak: streak(), streakAll: streakAll(),
       weekend, comeback, notes, maxAtOnce, nextLesson: null, drawDone: готов,
       shots: takesFor(curKey()).filter((t) => t.kind === "photo").length,
       /* Сколько дней прошло с первого листа. У рисунка нет ни уроков, ни
@@ -1335,7 +1348,7 @@ function pastelStats() {
     totalSec, doneSec, minutes: Math.round(doneSec / 60),
     minutesAll: Math.round(totalSec / 60),
     minutesLeft: Math.max(0, Math.round((totalSec - doneSec) / 60)),
-    days: list.length, streak: streak(), streakAll: streakAll(),
+    days: daysCount(list), streak: streak(), streakAll: streakAll(),
     weekend, comeback, notes, maxAtOnce,
     nextLesson: next < 0 ? null : next,
     ...moments(list)
@@ -1348,7 +1361,7 @@ function watchStats() {
   return {
     done: v.done ? 1 : 0, lessons: 1, watched: v.done,
     pct: v.done ? 100 : 0,
-    days: list.length, streak: streak(), streakAll: streakAll(),
+    days: daysCount(list), streak: streak(), streakAll: streakAll(),
     first: list[0] ? list[0].date : "", last: list.length ? list[list.length - 1].date : "",
     notes: list.filter(e => e.note).length
   };
@@ -5554,7 +5567,10 @@ function renderDayBox() {
       const track = b.dataset.track;
       const e = data[track].entries.find(x => x.id === b.dataset.del);
       if (!e) return;
-      if (!confirm(`Удалить запись за ${fmtDay(e.date)}?\n\nПрогресс по этому дню пропадёт.`)) return;
+      /* Называем, что именно удаляем, и не пугаем всем днём: записей за день
+         теперь может быть несколько, и уходит только выбранная. */
+      if (!confirm(`Удалить запись?\n\n${fmtDay(e.date)} · ${e.note || "отметка"}\n\n`
+        + "Остальные записи этого дня останутся.")) return;
       dropEntry(e, track);
       render();
       toast("Запись удалена");
@@ -11107,32 +11123,31 @@ function lessonPhoto(i, blob) {
   schedulePush();
 }
 
-/* Запись занятия по курсу — обычная отметка урока, как при ручной. */
+/* Запись занятия по курсу — своя на каждый заход, как и у пьесы.
+   Раньше искалась по дню И по курсу: без курса два курса, отмеченные в один
+   день, писались в одну запись — минуты одного уходили в статистику другого.
+   Теперь ключ ещё точнее — сам заход, и починить неверный можно, не трогая
+   остальные. */
 function lessonEntry(make) {
   const ds = todayStr();
-  /* Запись ищем по дню И по курсу: без курса два курса, отмеченные в один
-     день, писались в одну запись — минуты одного уходили в статистику
-     другого. Старые записи без courseId считаем принадлежащими первому. */
-  const первый = firstCourseId();
-  const мой = course().id;
-  let e = data.pastel.entries.find((x) => !x.deleted && x.date === ds
-    && (x.courseId || первый) === мой);
+  let e = prac && prac.entryId
+    ? data.pastel.entries.find((x) => !x.deleted && x.id === prac.entryId) || null
+    : null;
   if (!e && make) {
-    e = { id: uid(), date: ds, courseId: course().id, lessons: [], mins: 0, sessions: 0,
+    e = { id: uid(), date: ds, courseId: course().id, lessons: [], mins: 0, sessions: 1,
           note: "урок по плану", createdAt: now(), updatedAt: now() };
     data.pastel.entries.push(e);
+    if (prac) prac.entryId = e.id;
   }
   return e || null;
 }
 
 function lessonCount() {
   const e = lessonEntry(true);
-  if (!prac.sessionCounted) { e.sessions = (e.sessions || 0) + 1; prac.sessionCounted = true; }
   const cur = pracMin();
   e.mins = Math.round((e.mins || 0) + Math.max(0, cur - (prac.counted || 0)));
   prac.counted = cur;
-  e.note = "урок по плану · " + e.mins + " мин"
-    + (e.sessions > 1 ? " · " + e.sessions + " " + plural(e.sessions, "подход", "подхода", "подходов") : "");
+  e.note = "урок по плану · " + e.mins + " мин · с " + fmtClock((prac && prac.startedAt) || e.createdAt);
   e.updatedAt = now();
   return e;
 }
@@ -11474,17 +11489,31 @@ function pracNote(u, sec) {
   if (st.log.length > PRAC_LOG_MAX) st.log.splice(0, st.log.length - PRAC_LOG_MAX);
 }
 
-/* Сегодняшняя запись занятия: одна на день, как и при ручной отметке. */
+/* Запись занятия — СВОЯ НА КАЖДЫЙ ЗАХОД, а не одна на день.
+   Была одна на день, и минуты трёх подходов складывались в неё же. Пока всё
+   идёт как задумано, разницы нет. А как только запись оказывается неверной —
+   приложение осталось открытым в кармане и накрутило одиннадцать минут, —
+   чинить нечего: в прогрессе лежит один общий итог за день, и удалить из него
+   можно только весь день целиком, вместе с настоящим занятием. Теперь каждый
+   заход лежит отдельно: лишний удаляется поодиночке, остальные и минуты дня
+   остаются на месте. Дневные числа от этого не меняются — всё, что считает
+   минуты за день, складывает записи, а всё, что считает дни, ходит через
+   `daysCount`. */
 const PRAC_MIN_ENTRY = 2;             // минут: короче — это не занятие, а взгляд одним глазом
 
 function pracEntry(make) {
   const ds = todayStr();
-  let e = data.piano.entries.find((x) => !x.deleted && x.date === ds && (x.pieceId || "bwv853") === piece().id);
+  /* Ищем запись ЭТОГО захода, а не сегодняшнюю. Запись могли удалить прямо во
+     время занятия — тогда её и не ищем дальше: нажали «удалить», значит
+     хотели, чтобы этих минут не было. */
+  let e = prac && prac.entryId
+    ? data.piano.entries.find((x) => !x.deleted && x.id === prac.entryId) || null
+    : null;
   /* Заглянул на секунду — записи не будет. Раньше в истории заводились
      занятия по одной секунде: формально правда, а по смыслу мусор. */
   if (!e && make && prac && pracMin() < PRAC_MIN_ENTRY) return null;
   if (!e && make) {
-    e = { id: uid(), date: ds, pieceId: piece().id, spans: [], mins: 0, sessions: 0,
+    e = { id: uid(), date: ds, pieceId: piece().id, spans: [], mins: 0, sessions: 1,
           note: "занятие по плану", createdAt: now(), updatedAt: now() };
     /* Отрезки, закрытые до того, как минута набралась, не пропадают:
        они дожидались здесь и уходят в запись целиком. */
@@ -11493,6 +11522,7 @@ function pracEntry(make) {
       prac.pending = [];
     }
     data.piano.entries.push(e);
+    if (prac) prac.entryId = e.id;
   }
   return e || null;
 }
@@ -11501,15 +11531,21 @@ function pracEntry(make) {
    захода: позанимался час в три подхода — в истории осталось двадцать минут
    от последнего. Дописываем только прирост с прошлой записи. */
 function pracCount() {
-  const e = pracEntry(true);
-  if (!e) return null;                 // ещё не минута — записи пока нет
-  if (!prac.sessionCounted) { e.sessions = (e.sessions || 0) + 1; prac.sessionCounted = true; }
   const cur = pracMin();
   const add = Math.max(0, cur - (prac.counted || 0));
+  /* Дописывать нечего — и заводить запись незачем. Без этой проверки удаление
+     записи прямо во время занятия тут же рождало на её месте новую, пустую:
+     минуты-то уже зачтены в `counted`, прибавить нечего, а запись создавалась. */
+  if (!pracEntry(false) && !add) return null;
+  const e = pracEntry(true);
+  if (!e) return null;                 // ещё не минута — записи пока нет
   prac.counted = cur;
   e.mins = Math.round((e.mins || 0) + add);
-  e.note = "занятие по плану · " + e.mins + " мин"
-    + (e.sessions > 1 ? " · " + e.sessions + " " + plural(e.sessions, "подход", "подхода", "подходов") : "");
+  /* Час начала — чтобы два захода за вечер различались в списке: удаляют
+     глазами, и «12 мин» напротив «12 мин» выбрать нельзя. Берём начало
+     ЗАХОДА, а не создания записи: запись заводится на второй минуте, и «с
+     19:02» вместо «с 19:00» — мелкая, но неправда. */
+  e.note = "занятие по плану · " + e.mins + " мин · с " + fmtClock((prac && prac.startedAt) || e.createdAt);
   e.updatedAt = now();
   return e;
 }

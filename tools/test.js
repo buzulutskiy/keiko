@@ -1829,6 +1829,62 @@ function ок(имя, факт, надо) {
   t.set("todayStr", было.сег); t.set("data", было.данные);
 }
 
+/* ── Занятие пишется своей записью на каждый заход ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
+  const сег=t.get("todayStr")();
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    pianoWeek: 150,
+    piano: { activePiece: "bwv853", entries: [],
+      pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
+
+  /* Первый заход: десять минут. */
+  t.set("prac", { kind: "piece", startedAt: Date.now() - 10 * 60000, breakMs: 0, counted: 0 });
+  t.get("pracCount")();
+  t.get("pracCount")();                       // часы тикают, запись та же
+  let зап = t.get("data").piano.entries.filter((e) => !e.deleted);
+  ок("заход: первый пишет одну запись", зап.length, 1);
+  const первый = зап[0].id;
+
+  /* Второй заход того же вечера — новая запись, а не прибавка к прошлой. */
+  t.set("prac", { kind: "piece", startedAt: Date.now() - 4 * 60000, breakMs: 0, counted: 0 });
+  t.get("pracCount")();
+  зап = t.get("data").piano.entries.filter((e) => !e.deleted);
+  ок("заход: второй заводит свою запись", зап.length, 2);
+  ок("заход: записи за один день", зап.map((e) => e.date), [сег, сег]);
+  ок("заход: минуты по заходам, а не в общий котёл",
+    зап.map((e) => e.mins), [10, 4]);
+  /* Час начала в подписи — по нему их и различают в списке. */
+  ок("заход: в подписи час начала", /· с \d\d:\d\d$/.test(зап[1].note), true);
+
+  /* День при этом остался одним днём: на «days» смотрят награды. */
+  ок("заход: два захода — всё равно один день",
+    t.get("daysCount")(зап), 1);
+  ок("заход: и у пьесы в статистике день один", t.get("pianoStats")().days, 1);
+  /* Сегодняшние минуты складываются из обеих записей. */
+  ок("заход: минуты дня складываются", t.get("pianoWeekPlan")().сегодня, 14);
+
+  /* Ради чего всё: лишний заход убирается поодиночке, настоящий остаётся. */
+  зап[1].deleted = true; зап[1].updatedAt = t.get("now")();
+  ок("заход: удалили лишний — минуты вернулись к настоящим",
+    t.get("pianoWeekPlan")().сегодня, 10);
+  ок("заход: и день на месте", t.get("pianoStats")().days, 1);
+  /* Удалили прямо во время занятия — новых минут в удалённую не дописываем. */
+  t.set("prac", { kind: "piece", startedAt: Date.now() - 4 * 60000, breakMs: 0,
+                  counted: 4, entryId: зап[1].id });
+  t.get("pracCount")();
+  ок("заход: в удалённую запись минуты не возвращаются",
+    t.get("data").piano.entries.find((e) => e.id === зап[1].id).mins, 4);
+  ок("заход: удалённая так и осталась удалённой",
+    t.get("data").piano.entries.find((e) => e.id === зап[1].id).deleted, true);
+  /* И пустышки на её месте не появилось: дописывать было нечего. */
+  ок("заход: пустой записи на ноль минут не заводится",
+    t.get("data").piano.entries.filter((e) => !e.deleted).length, 1);
+
+  t.set("prac", было.prac); t.set("data", было.данные);
+}
+
 /* ── Шапка занятия: один текст на всех, кто её пишет ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
@@ -3119,4 +3175,5 @@ Promise.resolve(сеть).then(() => {
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
   console.log(`тесты: ${всего} из ${всего} прошли`);
 }, (e) => { console.error(e); process.exit(1); });
+
 
