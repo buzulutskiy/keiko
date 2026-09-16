@@ -1635,6 +1635,23 @@
       font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase;
       color: var(--dim); background: var(--bg);
     }
+    /* Лента времени. Год — крупная засечка на шкале, поэтому он не такой же
+       подзаголовок, как «Люди · 4»: по нему глаз ведёт сверху вниз. */
+    .tl-year {
+      font-variant-numeric: tabular-nums;
+      font-size: 1.05rem; font-weight: 700; color: var(--gold, #f0b429);
+      margin: 18px 0 6px; padding-left: 2px;
+    }
+    .tl-year:first-child { margin-top: 4px; }
+    /* Событие самой книги — на шкале это её собственная точка, остальное
+       стоит рядом для масштаба. Отличаем полосой слева, а не цветом текста:
+       цветной текст в списке читается как ссылка. */
+    .tl-it { position: relative; padding-left: 12px; }
+    .tl-it::before {
+      content: ""; position: absolute; left: 2px; top: 6px; bottom: 6px;
+      width: 2px; border-radius: 2px; background: rgba(255,255,255,.12);
+    }
+    .tl-it.own::before { background: var(--gold, #f0b429); }
     .gl-sec:first-child { margin-top: 0; }
 
     /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
