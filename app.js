@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 536";
+const APP_VERSION = "Кэйко 537";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -12328,6 +12328,28 @@ const gmYear = (p) => {
   return m ? Number(m[0]) : 0;
 };
 
+/* Год — ссылка в Википедию. Своими руками всех событий года не напишешь, да и
+   незачем: у Википедии на каждый год отдельная статья, и там это уже собрано
+   и отсортировано. Наше дело — дать дверь, а не пересказывать.
+   Десятилетие («начало 1830-х») ведёт на статью о десятилетии, точный год —
+   на год. «Не названо» двери не получает: вести некуда. */
+const gmYearWiki = (год) => {
+  const s = String(год || "");
+  const дес = /(\d{3,4})-[ехм]/.exec(s);
+  if (дес) return "https://ru.wikipedia.org/wiki/" + encodeURIComponent(дес[1] + "-е_годы");
+  const m = /\d{3,4}/.exec(s);
+  return m ? "https://ru.wikipedia.org/wiki/" + encodeURIComponent(m[0] + "_год") : "";
+};
+
+/* История места, о котором читаешь: у книги про Петербург — история
+   Петербурга. Задаётся в разборе полем `timePlace: {name, wiki}`; wiki — имя
+   статьи в русской Википедии. Без него строки просто нет: подставлять
+   «историю» наугад значит врать. */
+const gmTimePlace = () => {
+  const t = (artsOf(gm && gm.id) || {}).timePlace;
+  return t && t.wiki && t.name ? t : null;
+};
+
 /* Лента времени: какой год сейчас в книге и что происходило вокруг.
    Своё событие книги (`own`) выделено — это её точка на шкале, всё прочее
    стоит рядом для масштаба. Правило о спойлерах то же, что у карты: запись
@@ -12340,10 +12362,20 @@ function gmTimeList(box) {
     box.innerHTML = `<div class="gl-none">В этой главе время не размечено — выбери другую или «Все».</div>`;
     return;
   }
+  const место = gmTimePlace();
+  /* Строка места стоит над лентой: она про всю книгу, а не про отдельный год. */
+  const шапкаМеста = место
+    ? `<a class="tl-place" href="https://ru.wikipedia.org/wiki/${encodeURIComponent(место.wiki)}"
+         target="_blank" rel="noopener">История: ${esc(место.name)} <b>↗</b></a>`
+    : "";
   let год = "";
-  box.innerHTML = список.map((p) => {
+  box.innerHTML = шапкаМеста + список.map((p) => {
     const свой = String(p.year || "");
-    const шапка = свой === год ? "" : `<div class="tl-year">${esc(свой || "без года")}</div>`;
+    const адрес = gmYearWiki(свой);
+    const шапка = свой === год ? ""
+      : адрес
+        ? `<a class="tl-year" href="${адрес}" target="_blank" rel="noopener">${esc(свой)} <b>↗</b></a>`
+        : `<div class="tl-year">${esc(свой || "без года")}</div>`;
     год = свой;
     const открыт = gm.at === p.name;
     return шапка + `<div class="gl-it tl-it${p.own ? " own" : ""}${открыт ? " on" : ""}">

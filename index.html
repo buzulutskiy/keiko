@@ -1643,6 +1643,19 @@
       margin: 18px 0 6px; padding-left: 2px;
     }
     .tl-year:first-child { margin-top: 4px; }
+    /* Год-ссылка выглядит как год, а не как ссылка: подчёркивать засечку
+       шкалы незачем. Что она ведёт наружу, говорит стрелка. */
+    a.tl-year { display: inline-block; text-decoration: none; }
+    a.tl-year b { font-weight: 600; opacity: .5; font-size: .8em; }
+    a.tl-year:active { opacity: .7; }
+    /* Строка места — над всей лентой: она про книгу целиком. */
+    .tl-place {
+      display: block; margin: 2px 0 10px; padding: 9px 12px;
+      border: 1px solid rgba(255,255,255,.12); border-radius: 12px;
+      color: var(--muted); font-size: .9rem; text-decoration: none;
+    }
+    .tl-place b { font-weight: 600; opacity: .55; }
+    .tl-place:active { background: rgba(255,255,255,.05); }
     /* Событие самой книги — на шкале это её собственная точка, остальное
        стоит рядом для масштаба. Отличаем полосой слева, а не цветом текста:
        цветной текст в списке читается как ссылка. */
