@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 541";
+const APP_VERSION = "Кэйко 542";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9201,18 +9201,15 @@ function plPaint() {
     b.classList.toggle("on", Number(b.dataset.rate) === plRate(id)));
   box.querySelectorAll("[data-grid]").forEach((b) =>
     b.classList.toggle("on", Number(b.dataset.grid) === plGrid(id)));
-  /* Ряд тактов. Выбран либо один такт (pick), либо «все» — тогда горит нуль.
-     Тактов бывает сорок, ряд прокручивается, и нужный сам подтягивается в
-     видимую часть: иначе после перехода на другой кусок его надо искать. */
+  /* Выбор такта. Нуль — кусок целиком; рядом с «все» показываем его границы,
+     иначе непонятно, что такое «все». */
   const выбран = Number(plOpt(id).pick) || 0;
-  const рядТактов = box.querySelector(".pl-bars");
-  if (рядТактов && !рядТактов.dataset.at1 || (рядТактов && рядТактов.dataset.at1 !== String(выбран))) {
-    рядТактов.querySelectorAll("[data-bar]").forEach((b) =>
-      b.classList.toggle("on", Number(b.dataset.bar) === выбран));
-    рядТактов.dataset.at1 = String(выбран);
-    const цель = рядТактов.querySelector("[data-bar].on")
-      || рядТактов.querySelector(`[data-bar="${prac && prac.cur ? prac.cur.from : 0}"]`);
-    if (цель && цель.scrollIntoView) цель.scrollIntoView({ block: "nearest", inline: "center" });
+  const сел = box.querySelector("#plBarSel"), метка = box.querySelector("#plBarLabel");
+  if (сел) {
+    if (сел.value !== String(выбран)) сел.value = String(выбран);
+    const u = prac && prac.cur;
+    if (метка) метка.textContent = выбран ? "такт " + выбран
+      : (u && u.from ? (u.from === u.to ? "такт " + u.from : `все · ${u.from}–${u.to}`) : "все");
   }
   const va = box.querySelector('[data-set="a"]'), vb = box.querySelector('[data-set="b"]');
   if (va) va.textContent = plClock(sel.a);
@@ -9358,10 +9355,16 @@ function pracPlayer() {
       <button data-pl="all">Весь трек</button>
       <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
-    ${plBars().length ? `<div class="pl-set pl-bars">
+    ${plBars().length ? `<div class="pl-set pl-barsel">
       <em>Такт</em>
-      <button data-bar="0">все</button>
-      ${plBars().map((n) => `<button data-bar="${n}">${n}</button>`).join("")}
+      <span class="th-select">
+        <span class="ts-label" id="plBarLabel">все</span>
+        <span class="ts-arrow">▾</span>
+        <select id="plBarSel" aria-label="Какой такт зациклить">
+          <option value="0">все такты куска</option>
+          ${plBars().map((n) => `<option value="${n}">такт ${n}</option>`).join("")}
+        </select>
+      </span>
     </div>` : ""}
     <div class="pl-tools">
       <span class="pl-set">
@@ -9391,6 +9394,8 @@ function pracPlayer() {
   if (st0.plOpen === undefined) st0.plOpen = true;   // по умолчанию открыт
   box.classList.toggle("folded", !st0.plOpen);
   pracAudioEl = box.querySelector("audio");
+  const барСел = box.querySelector("#plBarSel");
+  if (барСел) барСел.addEventListener("change", () => plBarPick(Number(барСел.value)));
   pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
   pracAudioEl.addEventListener("pause", plPaint);
@@ -13652,8 +13657,6 @@ function bindPractice() {
     }
 
     const id = pracAudioEl.dataset.for;
-    const такт = e.target.closest("[data-bar]");
-    if (такт) { plBarPick(Number(такт.dataset.bar)); return; }
     const rate = e.target.closest("[data-rate]");
     if (rate) { plOpt(id).rate = Number(rate.dataset.rate); pracSaveLoops(); plApplyRate(); plPaint(); return; }
     const grid = e.target.closest("[data-grid]");
