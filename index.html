@@ -2448,6 +2448,50 @@
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }
+    /* Удары записи. Каждая палочка — нажатие, высота равна силе. Светлые
+       вертикали — доли такта: сразу видно, что попало на долю, а что между
+       ними. Смотреть можно без звука. */
+    .pl-hits { margin-top: 10px; }
+    .hit-lane {
+      position: relative; height: 52px; border-radius: 9px;
+      background: var(--glass); border: 1px solid var(--glass-line);
+      overflow: hidden;
+    }
+    .hit {
+      position: absolute; bottom: 0; width: 2px; margin-left: -1px;
+      border-radius: 2px 2px 0 0; background: var(--gold, #f0b429);
+    }
+    .hit-beat {
+      position: absolute; top: 0; bottom: 0; width: 1px;
+      background: rgba(255,255,255,.14);
+    }
+    .hit-note { margin-top: 5px; font-size: 0.66rem; color: var(--dim); }
+
+    /* Карта темпа: полоса, где ширина такта равна его длине. Смотреть можно
+       без звука — видно, где исполнитель держит, а где идёт вперёд. Заливка
+       тем плотнее, чем такт длиннее медианного: второй, слабый признак того
+       же самого, чтобы отклонение читалось и на узкой полосе. */
+    .pl-tempo { margin-top: 10px; }
+    .tm-strip { display: flex; gap: 2px; height: 36px; align-items: stretch; }
+    .tm-bar {
+      position: relative; flex: 1 1 0; min-width: 0;
+      padding: 0; border: 0; background: none; border-radius: 7px;
+      overflow: hidden; cursor: pointer;
+    }
+    .tm-bar i {
+      position: absolute; inset: 0; border-radius: 7px;
+      background: var(--gold, #f0b429);
+    }
+    .tm-bar b {
+      position: relative; display: grid; place-items: center; height: 100%;
+      font-size: 0.62rem; font-weight: 700; color: #1a1408;
+      font-variant-numeric: tabular-nums;
+    }
+    .tm-bar.on { outline: 2px solid var(--ink); outline-offset: -2px; }
+    .tm-note {
+      margin-top: 6px; font-size: 0.68rem; line-height: 1.45; color: var(--dim);
+    }
+
     /* Выбор такта — селектом. Рядом кнопок не делаем: тактов бывает сорок,
        ряд из сорока кнопок едет вбок и нужный в нём надо искать. Родной
        список открывается колесом и листается одним движением. */

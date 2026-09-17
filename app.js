@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 542";
+const APP_VERSION = "Кэйко 543";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9092,6 +9092,72 @@ function barSpan(n) {
   const b = дальше ? m[дальше] : 0;
   return b > m[n] ? { a: m[n], b } : null;
 }
+/* ── Удары записи ──
+   Снято с самой записи заранее, скриптом: где выросла энергия — там нажали
+   клавишу. В разборе это `hits`: пары «секунда, сила». Приложение ничего не
+   считает, только рисует, — разбор звука в браузере стоил бы секунд на
+   телефоне и батареи.
+   Смотрят на это без звука: видно, сколько в такте нажатий, какие громче и
+   какие попадают на долю, а какие между. Какая это клавиша — из картинки не
+   узнать, и не надо: ноты человек знает, ему нужен ритм. */
+const plHits = () => (pracDoc() || {}).hits || null;
+const plBeats = () => Number((pracDoc() || {}).beats) || 0;
+
+/* Удары внутри отрезка — в долях его ширины, вместе с силой. */
+function plHitsIn(a, b) {
+  const h = plHits();
+  if (!h || !(b > a)) return [];
+  return h.filter((u) => u[0] >= a && u[0] < b)
+    .map((u) => ({ x: (u[0] - a) / (b - a), s: Math.max(0.15, Math.min(1, u[1])) }));
+}
+
+/* ── Карта темпа ──
+   Разметка тактов — это уже запись того, как играет исполнитель: между двумя
+   метками ровно столько времени, сколько он на такт потратил. Рисуем это
+   полосой, где ширина такта равна его длине. Видно не «приблизительно
+   медленно», а где именно он держит, а где идёт вперёд, — и смотреть на это
+   можно без звука.
+   Ничего не вычисляем сверх того, что в метках: пульс — это доли, поделённые
+   на секунды, и берётся он из описи (`beats`), а не угадывается по слуху. */
+function plTempoData() {
+  const m = pracMarks();
+  const такты = plBars();
+  if (!m || такты.length < 2) return null;
+  const ряд = такты.map((n) => ({ n, len: barSpan(n) ? barSpan(n).b - barSpan(n).a : 0 }))
+    .filter((x) => x.len > 0);
+  if (ряд.length < 2) return null;
+  const длины = ряд.map((x) => x.len).slice().sort((a, b) => a - b);
+  const сред = длины[Math.floor(длины.length / 2)];      // медиана: один кривой такт не должен смещать всё
+  ряд.forEach((x) => { x.dev = сред ? (x.len - сред) / сред : 0; });
+  const доли = Number((pracDoc() || {}).beats) || 0;
+  return { ряд, сред, пульс: доли && сред ? Math.round(доли * 60 / сред) : 0, доли };
+}
+
+function plTempoHTML() {
+  const t = plTempoData();
+  if (!t) return "";
+  const всего = t.ряд.reduce((a, x) => a + x.len, 0);
+  const самый = t.ряд.slice().sort((a, b) => b.len - a.len)[0];
+  const быстрый = t.ряд.slice().sort((a, b) => a.len - b.len)[0];
+  const сек = (v) => String(Math.round(v * 10) / 10).replace(".", ",");
+  return `
+    <div class="pl-tempo">
+      <div class="tm-strip">
+        ${t.ряд.map((x) => `
+          <button class="tm-bar" data-tempo="${x.n}" style="flex-grow:${x.len.toFixed(3)}"
+            title="такт ${x.n} · ${сек(x.len)} с" type="button">
+            <i style="opacity:${(0.25 + Math.min(1, Math.max(0, 0.5 + x.dev * 1.6)) * 0.75).toFixed(2)}"></i>
+            <b>${x.n}</b>
+          </button>`).join("")}
+      </div>
+      <div class="tm-note">
+        Такт в среднем ${сек(t.сред)} с${t.пульс ? ` · пульс ≈ ${t.пульс} в минуту` : ""}
+        · дольше всех ${самый.n}-й (${сек(самый.len)} с), короче всех ${быстрый.n}-й (${сек(быстрый.len)} с)
+        · размечено ${t.ряд.length} ${plural(t.ряд.length, "такт", "такта", "тактов")}, ${сек(всего)} с
+      </div>
+    </div>`;
+}
+
 /* Выбор такта руками. Ноль — «все»: вернуться к куску целиком, как его
    поставила разметка. Выбор держится, пока не перешёл на другой кусок:
    `plFollow` при переходе его снимает. */
@@ -9204,6 +9270,25 @@ function plPaint() {
   /* Выбор такта. Нуль — кусок целиком; рядом с «все» показываем его границы,
      иначе непонятно, что такое «все». */
   const выбран = Number(plOpt(id).pick) || 0;
+  /* Дорожку пересобираем, только когда отрезок и правда сменился: plPaint
+     зовётся по timeupdate, то есть несколько раз в секунду. */
+  const лента = box.querySelector(".hit-lane");
+  if (лента) {
+    const ключ = sel.a.toFixed(2) + "-" + sel.b.toFixed(2);
+    if (лента.dataset.at !== ключ) {
+      лента.dataset.at = ключ;
+      const доли = plBeats();
+      const линии = доли > 1
+        ? Array.from({ length: доли - 1 }, (_, i) =>
+            `<span class="hit-beat" style="left:${((i + 1) / доли * 100).toFixed(2)}%"></span>`).join("")
+        : "";
+      лента.innerHTML = линии + plHitsIn(sel.a, sel.b).map((u) =>
+        `<span class="hit" style="left:${(u.x * 100).toFixed(2)}%;height:${(18 + u.s * 82).toFixed(0)}%"></span>`
+      ).join("");
+    }
+  }
+  box.querySelectorAll("[data-tempo]").forEach((b) =>
+    b.classList.toggle("on", Number(b.dataset.tempo) === (Number(plOpt(id).pick) || 0)));
   const сел = box.querySelector("#plBarSel"), метка = box.querySelector("#plBarLabel");
   if (сел) {
     if (сел.value !== String(выбран)) сел.value = String(выбран);
@@ -9355,6 +9440,9 @@ function pracPlayer() {
       <button data-pl="all">Весь трек</button>
       <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
+    ${plHits() ? `<div class="pl-hits"><div class="hit-lane"></div>
+      <div class="hit-note">удары записи · доли — светлые линии</div></div>` : ""}
+    ${plTempoHTML()}
     ${plBars().length ? `<div class="pl-set pl-barsel">
       <em>Такт</em>
       <span class="th-select">
@@ -13657,6 +13745,8 @@ function bindPractice() {
     }
 
     const id = pracAudioEl.dataset.for;
+    const темп = e.target.closest("[data-tempo]");
+    if (темп) { plBarPick(Number(темп.dataset.tempo)); return; }
     const rate = e.target.closest("[data-rate]");
     if (rate) { plOpt(id).rate = Number(rate.dataset.rate); pracSaveLoops(); plApplyRate(); plPaint(); return; }
     const grid = e.target.closest("[data-grid]");
