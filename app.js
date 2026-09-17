@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 545";
+const APP_VERSION = "Кэйко 546";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9261,6 +9261,17 @@ const plSnap = (t, id, dur) => {
   return Math.max(0, Math.min(dur || t, Math.round(t / g) * g));
 };
 
+/* Звук можно выключить, не останавливая запись: смотришь на рисунок, по нему
+   едет линия — и играешь сам. Слушать Рихтера при этом незачем, он мешает
+   собственным рукам. Именно `muted`, а не пауза: пауза остановила бы и
+   линию, а она-то и нужна.
+   Держится по вещи, как скорость и сетка: у каждой записи своё. */
+function plApplyMute() {
+  const el = pracAudioEl;
+  if (!el) return;
+  try { el.muted = !!plOpt(el.dataset.for).mute; } catch {}
+}
+
 function plApplyRate() {
   const el = pracAudioEl;
   if (!el) return;
@@ -9291,6 +9302,12 @@ function plPaint() {
     + " · " + plClock(sel.b - sel.a);
   const btn = box.querySelector('[data-pl="play"]');
   if (btn) btn.textContent = el.paused ? "▶︎ Слушать" : "❚❚ Пауза";
+  const тихо = box.querySelector('[data-pl="mute"]');
+  if (тихо) {
+    const выкл = !!plOpt(el.dataset.for).mute;
+    тихо.textContent = выкл ? "🔇 Со звуком" : "Заглушить";
+    тихо.classList.toggle("on", выкл);
+  }
 
   const id = el.dataset.for;
   const bar = box.querySelector(".pl-bar");
@@ -9484,6 +9501,7 @@ function pracPlayer() {
       <button data-pl="play">▶︎ Слушать</button>
       <button data-pl="replay">↺ Сначала</button>
       <button data-pl="all">Весь трек</button>
+      <button data-pl="mute">Заглушить</button>
       <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
     ${plWave() ? `<div class="pl-wave">
@@ -9534,11 +9552,12 @@ function pracPlayer() {
   pracAudioEl = box.querySelector("audio");
   const барСел = box.querySelector("#plBarSel");
   if (барСел) барСел.addEventListener("change", () => plBarPick(Number(барСел.value)));
-  pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plPaint(); });
+  pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plApplyMute(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
   pracAudioEl.addEventListener("pause", plPaint);
   pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
   plApplyRate();
+  plApplyMute();
   plPaint();
 }
 
@@ -13779,6 +13798,16 @@ function bindPractice() {
         try { pracAudioEl.currentTime = sel.a; } catch {}
         pracAudioEl.play().catch(() => {});
         plPaint();
+        return;
+      }
+      /* Строго перед общей веткой ниже: там всякое неизвестное имя считается
+         кнопкой «Весь трек» и сбрасывает отрезок. Поставь заглушку после — и
+         она вместо звука снимала бы выделение такта. */
+      if (b.dataset.pl === "mute") {
+        const o = plOpt(pracAudioEl.dataset.for);
+        o.mute = !o.mute;
+        pracSaveLoops(); plApplyMute(); plPaint();
+        toast(o.mute ? "Запись заглушена — рисунок и линия остались" : "Звук записи вернулся");
         return;
       }
       if (b.dataset.pl === "play") {
