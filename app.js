@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 546";
+const APP_VERSION = "Кэйко 547";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9197,20 +9197,50 @@ function plTempoHTML() {
     </div>`;
 }
 
-/* Выбор такта руками. Ноль — «все»: вернуться к куску целиком, как его
-   поставила разметка. Выбор держится, пока не перешёл на другой кусок:
-   `plFollow` при переходе его снимает. */
-function plBarPick(n) {
+/* Выбор тактов руками: с какого по какой. Играют не только по одному —
+   «первый и второй», «с первого по четвёртый», — и это должно быть одним
+   кругом, а не четырьмя отдельными. Ноль вместо `с` значит «все такты
+   куска»: вернуться к тому, что поставила разметка.
+   Выбор держится, пока не перешёл на другой кусок: `plFollow` его снимает. */
+function plBarPick(с, по) {
   const el = pracAudioEl;
   if (!el) return;
   const o = plOpt(el.dataset.for);
-  const sp = n ? barSpan(n) : (prac && prac.cur ? markSpan(prac.cur) : null);
-  if (!sp) return;
-  o.a = sp.a; o.b = sp.b;
-  if (n) o.pick = n; else delete o.pick;
+  if (!с) {
+    const sp = prac && prac.cur ? markSpan(prac.cur) : null;
+    if (!sp) return;
+    o.a = sp.a; o.b = sp.b; delete o.bf; delete o.bt;
+  } else {
+    const такты = plBars();
+    const до = Math.max(с, Number(по) || с);
+    const a = barSpan(с), b = barSpan(такты.includes(до) ? до : с);
+    if (!a || !b) return;
+    o.a = a.a; o.b = b.b; o.bf = с; o.bt = такты.includes(до) ? до : с;
+  }
   pracSaveLoops();
-  try { el.currentTime = sp.a; } catch {}
+  try { el.currentTime = o.a; } catch {}
   plPaint();
+}
+
+/* Какой такт показывать на рисунке. Рисунок всегда в пределах ОДНОГО такта:
+   два такта в ту же ширину — вдвое мельче, четыре — вчетверо, и смотреть
+   становится не на что. Поэтому при выборе нескольких тактов картинка не
+   сжимается, а переключается: играет третий — виден третий.
+   Выделение не по тактам (весь трек, края подвинуты рукой) рисуем как есть:
+   тактов там нет, переключать нечего. */
+function plShownSpan(sel) {
+  const el = pracAudioEl;
+  if (!el) return sel;
+  const o = plOpt(el.dataset.for);
+  const с = Number(o.bf) || 0;
+  if (!с) return sel;
+  const по = Math.max(с, Number(o.bt) || с);
+  const t = el.currentTime;
+  for (let n = с; n <= по; n++) {
+    const sp = barSpan(n);
+    if (sp && t >= sp.a && t < sp.b) return sp;
+  }
+  return barSpan(с) || sel;
 }
 
 /* Отрезок под текущий такт выставляется один раз на такт: дальше края можно
@@ -9229,7 +9259,7 @@ function plFollow(u) {
     return;
   }
   o.followed = метка; o.a = sp.a; o.b = sp.b;
-  delete o.pick;                 // новый кусок — выбор такта начинается заново
+  delete o.bf; delete o.bt;      // новый кусок — выбор тактов начинается заново
   pracSaveLoops();
   try { if (pracAudioEl.currentTime < sp.a || pracAudioEl.currentTime > sp.b) pracAudioEl.currentTime = sp.a; } catch {}
   plPaint();
@@ -9323,31 +9353,49 @@ function plPaint() {
     b.classList.toggle("on", Number(b.dataset.rate) === plRate(id)));
   box.querySelectorAll("[data-grid]").forEach((b) =>
     b.classList.toggle("on", Number(b.dataset.grid) === plGrid(id)));
-  /* Выбор такта. Нуль — кусок целиком; рядом с «все» показываем его границы,
-     иначе непонятно, что такое «все». */
-  const выбран = Number(plOpt(id).pick) || 0;
-  /* Холст перерисовываем, только когда сменился отрезок или ширина: plPaint
-     зовётся по timeupdate, несколько раз в секунду, а рисование не бесплатно.
-     Бегунок при этом двигаем каждый раз — он и должен ехать. */
+  /* Выбор тактов: с какого по какой. Нуль — кусок целиком. */
+  const о = plOpt(id);
+  const с = Number(о.bf) || 0, по = Math.max(с, Number(о.bt) || с);
+  /* Холст перерисовываем, только когда сменился показанный такт или ширина:
+     plPaint зовётся по timeupdate, несколько раз в секунду, а рисование не
+     бесплатно. Бегунок при этом двигаем каждый раз — он и должен ехать.
+     Рисуем не весь выбранный круг, а такт, который сейчас звучит: два такта в
+     ту же ширину вдвое мельче, четыре — вчетверо, и смотреть не на что.
+     Картинка не сжимается, а переключается по ходу игры. */
   const холст = box.querySelector(".wv-cv");
   if (холст) {
-    const ключ = sel.a.toFixed(2) + "-" + sel.b.toFixed(2) + "@" + холст.clientWidth;
-    if (холст.dataset.at !== ключ) { холст.dataset.at = ключ; plWaveDraw(холст, sel.a, sel.b); }
+    const вид = plShownSpan(sel);
+    const ключ = вид.a.toFixed(2) + "-" + вид.b.toFixed(2) + "@" + холст.clientWidth;
+    if (холст.dataset.at !== ключ) { холст.dataset.at = ключ; plWaveDraw(холст, вид.a, вид.b); }
     const бег = box.querySelector(".wv-head");
     if (бег) {
-      const доля = (el.currentTime - sel.a) / (sel.b - sel.a);
+      const доля = (el.currentTime - вид.a) / (вид.b - вид.a);
       бег.hidden = !(доля >= 0 && доля <= 1);
       if (!бег.hidden) бег.style.left = (доля * 100).toFixed(2) + "%";
     }
   }
-  box.querySelectorAll("[data-tempo]").forEach((b) =>
-    b.classList.toggle("on", Number(b.dataset.tempo) === (Number(plOpt(id).pick) || 0)));
+  /* На полосе темпа горит весь выбранный круг, а не один такт. */
+  box.querySelectorAll("[data-tempo]").forEach((b) => {
+    const n = Number(b.dataset.tempo);
+    b.classList.toggle("on", !!с && n >= с && n <= по);
+  });
   const сел = box.querySelector("#plBarSel"), метка = box.querySelector("#plBarLabel");
+  const селДо = box.querySelector("#plBarTo"), коробДо = box.querySelector("#plBarToBox"),
+        меткаДо = box.querySelector("#plBarToLabel");
   if (сел) {
-    if (сел.value !== String(выбран)) сел.value = String(выбран);
+    if (сел.value !== String(с)) сел.value = String(с);
     const u = prac && prac.cur;
-    if (метка) метка.textContent = выбран ? "такт " + выбран
+    if (метка) метка.textContent = с ? "с " + с + "-го"
       : (u && u.from ? (u.from === u.to ? "такт " + u.from : `все · ${u.from}–${u.to}`) : "все");
+  }
+  /* Второй список нужен, только когда выбран первый такт: «по» без «с» —
+     полфразы. И в нём только такты не раньше выбранного: диапазон задом
+     наперёд запрещаем до нажатия, а не после. */
+  if (коробДо) коробДо.hidden = !с;
+  if (селДо && с) {
+    [...селДо.options].forEach((op) => { op.hidden = Number(op.value) < с; });
+    if (селДо.value !== String(по)) селДо.value = String(по);
+    if (меткаДо) меткаДо.textContent = "по " + по + "-й";
   }
   const va = box.querySelector('[data-set="a"]'), vb = box.querySelector('[data-set="b"]');
   if (va) va.textContent = plClock(sel.a);
@@ -9512,13 +9560,20 @@ function pracPlayer() {
     </div>` : ""}
     ${plTempoHTML()}
     ${plBars().length ? `<div class="pl-set pl-barsel">
-      <em>Такт</em>
+      <em>Такты</em>
       <span class="th-select">
         <span class="ts-label" id="plBarLabel">все</span>
         <span class="ts-arrow">▾</span>
-        <select id="plBarSel" aria-label="Какой такт зациклить">
+        <select id="plBarSel" aria-label="С какого такта">
           <option value="0">все такты куска</option>
-          ${plBars().map((n) => `<option value="${n}">такт ${n}</option>`).join("")}
+          ${plBars().map((n) => `<option value="${n}">с ${n}-го</option>`).join("")}
+        </select>
+      </span>
+      <span class="th-select" id="plBarToBox" hidden>
+        <span class="ts-label" id="plBarToLabel">по</span>
+        <span class="ts-arrow">▾</span>
+        <select id="plBarTo" aria-label="По какой такт">
+          ${plBars().map((n) => `<option value="${n}">по ${n}-й</option>`).join("")}
         </select>
       </span>
     </div>` : ""}
@@ -9550,8 +9605,17 @@ function pracPlayer() {
   if (st0.plOpen === undefined) st0.plOpen = true;   // по умолчанию открыт
   box.classList.toggle("folded", !st0.plOpen);
   pracAudioEl = box.querySelector("audio");
-  const барСел = box.querySelector("#plBarSel");
-  if (барСел) барСел.addEventListener("change", () => plBarPick(Number(барСел.value)));
+  const барСел = box.querySelector("#plBarSel"), барДо = box.querySelector("#plBarTo");
+  const взять = () => plBarPick(Number(барСел ? барСел.value : 0),
+                                Number(барДо ? барДо.value : 0));
+  if (барСел) барСел.addEventListener("change", () => {
+    /* Сдвинули начало за конец — конец едет следом: молча свернуть диапазон
+       в один такт значит сделать не то, что просили, и не сказать об этом. */
+    const с = Number(барСел.value);
+    if (барДо && с && Number(барДо.value) < с) барДо.value = String(с);
+    взять();
+  });
+  if (барДо) барДо.addEventListener("change", взять);
   pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plApplyMute(); plPaint(); });
   pracAudioEl.addEventListener("play", plTick);
   pracAudioEl.addEventListener("pause", plPaint);
@@ -13829,7 +13893,7 @@ function bindPractice() {
 
     const id = pracAudioEl.dataset.for;
     const темп = e.target.closest("[data-tempo]");
-    if (темп) { plBarPick(Number(темп.dataset.tempo)); return; }
+    if (темп) { const n = Number(темп.dataset.tempo); plBarPick(n, n); return; }
     const rate = e.target.closest("[data-rate]");
     if (rate) { plOpt(id).rate = Number(rate.dataset.rate); pracSaveLoops(); plApplyRate(); plPaint(); return; }
     const grid = e.target.closest("[data-grid]");

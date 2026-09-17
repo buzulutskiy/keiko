@@ -2019,6 +2019,55 @@ function ок(имя, факт, надо) {
   t.set("waveCache", { id: "", buf: null });
 }
 
+/* ── Круг из нескольких тактов, рисунок — по одному ── */
+{
+  const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
+               данные: JSON.parse(JSON.stringify(t.get("data"))),
+               prac: t.get("prac"), el: t.get("pracAudioEl") };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
+  t.set("PRACTICE_DATA", { p1: { beats: 3,
+    marks: { 1: 0, 2: 6, 3: 12, 4: 18, 5: 24 } } });
+  /* Поддельный звук: нужен только dataset.for и currentTime. */
+  let время = 0;
+  t.set("pracAudioEl", { dataset: { for: "p1" },
+    get currentTime() { return время; }, set currentTime(v) { время = v; } });
+  t.set("prac", { cur: { from: 1, to: 4 } });
+  const о = () => t.get("plOpt")("p1");
+  for (const k of Object.keys(о())) delete о()[k];
+
+  /* Круг с первого по второй: от начала первого до конца второго. */
+  t.get("plBarPick")(1, 2);
+  ок("круг: с первого по второй", [о().a, о().b], [0, 12]);
+  ок("круг: границы запомнены тактами", [о().bf, о().bt], [1, 2]);
+  ок("круг: курсор встал в начало", время, 0);
+
+  /* А рисунок при этом — в пределах ОДНОГО такта, и переключается сам. */
+  const вид = () => t.get("plShownSpan")({ a: о().a, b: о().b });
+  ок("рисунок: пока играет первый — виден первый", вид(), { a: 0, b: 6 });
+  время = 7;
+  ок("рисунок: пошёл второй — виден второй", вид(), { a: 6, b: 12 });
+  время = 99;
+  ок("рисунок: курсор вне круга — показываем первый такт круга", вид(), { a: 0, b: 6 });
+
+  /* Задом наперёд не бывает: конец раньше начала сворачивается в один такт. */
+  t.get("plBarPick")(3, 1);
+  ок("круг: конец раньше начала — остаётся один такт", [о().a, о().b], [12, 18]);
+
+  /* Ноль — весь кусок, границы по тактам снимаются. */
+  t.get("plBarPick")(0);
+  ок("круг: ноль возвращает кусок целиком", [о().a, о().b], [0, 24]);
+  ок("круг: и тактовых границ больше нет",
+    [о().bf === undefined, о().bt === undefined], [true, true]);
+  /* Без тактовых границ рисунок не переключается — рисуем что дали. */
+  ок("рисунок: без тактового круга — как есть",
+    t.get("plShownSpan")({ a: 3, b: 9 }), { a: 3, b: 9 });
+
+  t.set("pracAudioEl", было.el); t.set("prac", было.prac);
+  t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
+}
+
 /* ── Такты по одному: выбор из размеченных ── */
 {
   const было={ prac: t.get("prac"), pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),

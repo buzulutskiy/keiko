@@ -2498,9 +2498,11 @@
     /* Выбор такта — селектом. Рядом кнопок не делаем: тактов бывает сорок,
        ряд из сорока кнопок едет вбок и нужный в нём надо искать. Родной
        список открывается колесом и листается одним движением. */
-    .pl-barsel { margin-top: 9px; }
-    .pl-barsel .th-select { flex: 1; min-height: 38px; border-radius: 9px; }
+    .pl-barsel { margin-top: 9px; gap: 6px; }
+    .pl-barsel .th-select { flex: 1; min-width: 0; min-height: 38px; border-radius: 9px; padding: 0 10px; }
     .pl-barsel .ts-label { font-size: 0.78rem; font-weight: 600; }
+    /* Второй список прячется целиком, а не гаснет: «по» без «с» — полфразы. */
+    .pl-barsel .th-select[hidden] { display: none; }
     .pl-set { display: flex; align-items: center; gap: 4px; }
     .pl-set em {
       font-style: normal; font-size: 0.68rem; color: var(--dim);
