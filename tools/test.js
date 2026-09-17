@@ -2018,6 +2018,27 @@ function ок(имя, факт, надо) {
   t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
 }
 
+/* ── Плеер пересобирается, когда приехал разбор ── */
+{
+  const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
+               данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
+  /* Подпись плеера: из чего он собран. Запись приходит раньше разбора, и по
+     одному только id плеер, собранный до разбора, оставался бы навсегда. */
+  const подпись = () => ["p1", t.get("plHits")() ? t.get("plHits")().length : 0,
+                         t.get("plBars")().length, t.get("plBeats")()].join("|");
+  t.set("PRACTICE_DATA", { p1: {} });
+  const пусто = подпись();
+  ок("плеер: без разбора собран из пустого", пусто, "p1|0|0|0");
+  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 12 },
+                                 hits: [[0, 1], [2, 0.5]] } });
+  ок("плеер: разбор приехал — подпись другая", подпись() !== пусто, true);
+  ок("плеер: и в ней всё, что рисуется", подпись(), "p1|2|2|3");
+  t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
+}
+
 /* ── Такты по одному: выбор из размеченных ── */
 {
   const было={ prac: t.get("prac"), pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),

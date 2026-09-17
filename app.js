@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 543";
+const APP_VERSION = "Кэйко 544";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9418,9 +9418,19 @@ function pracPlayer() {
     box.innerHTML = `<div class="pl-wait">${plWaitHTML(id)}</div>`;
     return;
   }
-  if (pracAudioEl && pracAudioEl.dataset.for === id) { box.hidden = false; return; }
+  /* Разбор приезжает из каталога ПОЗЖЕ плеера: запись лежит на телефоне и
+     подхватывается сразу, а `keiko-practice.json` докачивается сверкой. Пока
+     здесь стоял только сравниватель id, собранный до разбора плеер оставался
+     навсегда — без дорожки ударов и без карты темпа, и понять это было
+     невозможно: данные есть, а на экране их нет. Поэтому в подпись входит и
+     то, из чего плеер собран. Изменилось — пересобираем. */
+  const подпись = [id, plHits() ? plHits().length : 0, plBars().length, plBeats()].join("|");
+  if (pracAudioEl && pracAudioEl.dataset.for === id && box.dataset.sig === подпись) {
+    box.hidden = false; return;
+  }
 
   box.hidden = false;
+  box.dataset.sig = подпись;
   box.innerHTML = `
     <button class="pl-fold" data-pl="fold" type="button">
       <span>♪ Как это звучит</span><i>${pracStore().plOpen ? "свернуть" : "развернуть"}</i>
@@ -11530,8 +11540,12 @@ function openLesson() {
 
 function openPractice() {
   if (!isPiano() || !piece().bars) { toast("Практика пока только для пьес"); return; }
-  // разбора может не быть на этом устройстве — просим каталог сразу
-  if (!pracDoc() && cfg.token && cfg.catalogId)
+  /* Разбор спрашиваем при КАЖДОМ входе в занятие, а не только когда его нет
+     вовсе. Каталог сам обновляется раз в сутки, и правка разметки — сдвинутая
+     метка такта, снятые удары — доезжала до телефона когда придётся. А ждут
+     её сейчас: сел заниматься — значит, работаешь с той разметкой, которая
+     есть на эту минуту. Запрос условный, чаще всего это пустое 304. */
+  if (cfg.token && cfg.catalogId)
     catalogPull(true).then(() => { if (prac) pracRender(); }).catch(() => {});
   /* Промежуточного экрана «занятие такое-то · продолжить» больше нет: он
      ничего не решал, а вставал между тобой и первым тактом. Открыл — играешь. */
