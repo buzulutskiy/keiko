@@ -30,6 +30,9 @@ const стубЭл = () => ({
 const sandbox = {
   console, setTimeout, clearTimeout, setInterval, clearInterval,
   Date, Math, JSON, Intl, URL, fetch: async () => { throw new Error("сети в тестах нет"); },
+  /* Браузерные, а значит и здесь: огибающая записи лежит в разборе базой-64,
+     и без них проверка рисунка звука молча получала null. */
+  atob, btoa, TextEncoder, TextDecoder,
   crypto: globalThis.crypto,
   navigator: { onLine: false, serviceWorker: null, clipboard: null, vibrate() {} },
   /* Настоящее хранилище в памяти: saveData пишет и тут же перечитывает запись,
@@ -1987,56 +1990,33 @@ function ок(имя, факт, надо) {
   t.set("todayStr", было.сег); t.set("data", было.данные);
 }
 
-/* ── Удары записи: рисуем то, что снято заранее ── */
+/* ── Рисунок звука: берём готовую огибающую ── */
 {
   const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
                данные: JSON.parse(JSON.stringify(t.get("data"))) };
   t.set("data", { active: "piano", book: { books: [], entries: [] },
     pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
     piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
-  t.set("PRACTICE_DATA", { p1: { beats: 3,
-    marks: { 9: 50, 10: 56, 11: 62 },
-    hits: [[49.5, 0.4], [50.0, 1], [52.1, 0.5], [54.2, 0.3], [56.0, 0.9], [61.0, 0.2]] } });
+  /* Четыре байта: 0, 128, 255, 64 — «AID/QA==» в базе-64. */
+  const b64 = Buffer.from([0, 128, 255, 64]).toString("base64");
+  t.set("PRACTICE_DATA", { p1: { beats: 3, wave: { rate: 50, data: b64 } } });
+  t.set("waveCache", { id: "", buf: null });
+  const w = t.get("plWave")();
+  ок("рисунок: разворачивается из базы-64", [w.rate, Array.from(w.v)], [50, [0, 128, 255, 64]]);
+  /* Второй раз берём из памяти, а не разворачиваем заново. */
+  ок("рисунок: помнится по вещи", t.get("plWave")() === w, true);
 
-  /* Берём только те, что попали в отрезок, и переводим в доли ширины. */
-  const в=t.get("plHitsIn")(50, 56);
-  /* 49,5 не попал — раньше начала; 56,0 не попал — конец отрезка не включаем,
-     иначе удар на границе рисовался бы в двух тактах сразу. */
-  ок("удары: считаем только попавшие в отрезок", в.length, 3);
-  ок("удары: первый в начале отрезка", Math.round(в[0].x * 1000), 0);
-  ок("удары: середина отрезка", Math.round(в[2].x * 100), 70);
-  /* Совсем тихий удар всё равно должен быть виден: высота не нулевая. */
-  ок("удары: тихий не пропадает", t.get("plHitsIn")(60, 62)[0].s >= 0.15, true);
-  ок("удары: пустой отрезок — пусто", t.get("plHitsIn")(100, 110), []);
-  ок("удары: перевёрнутый отрезок — пусто", t.get("plHitsIn")(56, 50), []);
-  ок("доли: берутся из описи", t.get("plBeats")(), 3);
-
-  /* Нет снятых ударов — дорожки не будет вовсе. */
-  t.set("PRACTICE_DATA", { p1: { marks: { 9: 50, 10: 56 } } });
-  ок("удары: без снятых дорожки нет", t.get("plHits")(), null);
-  ок("удары: и рисовать нечего", t.get("plHitsIn")(50, 56), []);
-  t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
-}
-
-/* ── Плеер пересобирается, когда приехал разбор ── */
-{
-  const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
-               данные: JSON.parse(JSON.stringify(t.get("data"))) };
-  t.set("data", { active: "piano", book: { books: [], entries: [] },
-    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
-    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
-  /* Подпись плеера: из чего он собран. Запись приходит раньше разбора, и по
-     одному только id плеер, собранный до разбора, оставался бы навсегда. */
-  const подпись = () => ["p1", t.get("plHits")() ? t.get("plHits")().length : 0,
-                         t.get("plBars")().length, t.get("plBeats")()].join("|");
+  /* Нет огибающей — нет и холста. */
   t.set("PRACTICE_DATA", { p1: {} });
-  const пусто = подпись();
-  ок("плеер: без разбора собран из пустого", пусто, "p1|0|0|0");
-  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 12 },
-                                 hits: [[0, 1], [2, 0.5]] } });
-  ок("плеер: разбор приехал — подпись другая", подпись() !== пусто, true);
-  ок("плеер: и в ней всё, что рисуется", подпись(), "p1|2|2|3");
+  t.set("waveCache", { id: "", buf: null });
+  ок("рисунок: без огибающей ничего не рисуем", t.get("plWave")(), null);
+  /* Битая база-64 не должна ронять экран занятия. */
+  t.set("PRACTICE_DATA", { p1: { wave: { rate: 50, data: "не база-64 вовсе!!" } } });
+  t.set("waveCache", { id: "", buf: null });
+  const плохо = t.get("plWave")();
+  ок("рисунок: битые данные не роняют занятие", плохо === null || плохо.v.length >= 0, true);
   t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
+  t.set("waveCache", { id: "", buf: null });
 }
 
 /* ── Такты по одному: выбор из размеченных ── */

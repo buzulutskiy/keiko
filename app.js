@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 544";
+const APP_VERSION = "Кэйко 545";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9092,23 +9092,62 @@ function barSpan(n) {
   const b = дальше ? m[дальше] : 0;
   return b > m[n] ? { a: m[n], b } : null;
 }
-/* ── Удары записи ──
-   Снято с самой записи заранее, скриптом: где выросла энергия — там нажали
-   клавишу. В разборе это `hits`: пары «секунда, сила». Приложение ничего не
-   считает, только рисует, — разбор звука в браузере стоил бы секунд на
-   телефоне и батареи.
-   Смотрят на это без звука: видно, сколько в такте нажатий, какие громче и
-   какие попадают на долю, а какие между. Какая это клавиша — из картинки не
-   узнать, и не надо: ноты человек знает, ему нужен ритм. */
-const plHits = () => (pracDoc() || {}).hits || null;
+/* ── Рисунок звука ──
+   Огибающая записи, снятая заранее скриптом: пик громкости за каждую
+   пятидесятую долю секунды, байт на точку, в разборе — базой-64 (`wave`).
+   Четыре минуты записи весят шестнадцать килобайт.
+   Первой пробой были «удары»: где энергия скачком выросла — там нажали
+   клавишу. Точки получились верные, но смотреть на них оказалось не на что:
+   палочки не музыка. Человеку нужен сам рисунок — где громко, где тихо, где
+   провал, — и по нему бегущая линия. Удары сняты с экрана и из разбора.
+   Считать это в браузере не стали: секунды работы на телефоне и батарея,
+   а картинка от запуска к запуску одна и та же. */
 const plBeats = () => Number((pracDoc() || {}).beats) || 0;
 
-/* Удары внутри отрезка — в долях его ширины, вместе с силой. */
-function plHitsIn(a, b) {
-  const h = plHits();
-  if (!h || !(b > a)) return [];
-  return h.filter((u) => u[0] >= a && u[0] < b)
-    .map((u) => ({ x: (u[0] - a) / (b - a), s: Math.max(0.15, Math.min(1, u[1])) }));
+let waveCache = { id: "", buf: null };
+function plWave() {
+  const id = piece().id;
+  if (waveCache.id === id) return waveCache.buf;
+  const w = (pracDoc() || {}).wave;
+  let buf = null;
+  if (w && w.data && w.rate) {
+    try {
+      const b = atob(w.data);
+      const u = new Uint8Array(b.length);
+      for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+      buf = { rate: Number(w.rate), v: u };
+    } catch {}
+  }
+  waveCache = { id, buf };
+  return buf;
+}
+
+/* Рисуем кусок огибающей от a до b во всю ширину холста, зеркально от
+   середины — так рисунок читается как звук, а не как график. */
+function plWaveDraw(cv, a, b) {
+  const w = plWave();
+  if (!cv || !w || !(b > a)) return;
+  const кратно = Math.min(2, window.devicePixelRatio || 1);
+  const W = Math.round(cv.clientWidth * кратно), H = Math.round(cv.clientHeight * кратно);
+  if (!W || !H) return;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const g = cv.getContext("2d");
+  if (!g) return;
+  g.clearRect(0, 0, W, H);
+  const от = Math.max(0, Math.floor(a * w.rate)), до = Math.min(w.v.length, Math.ceil(b * w.rate));
+  const точек = до - от;
+  if (точек < 2) return;
+  g.fillStyle = "rgba(240, 180, 41, 0.85)";
+  const серед = H / 2, полоса = Math.max(1, Math.floor(W / точек));
+  for (let x = 0; x < W; x++) {
+    /* На каждый столбец берём максимум из попавших в него точек: иначе при
+       сжатии длинного куска громкие места пропадают между выборками. */
+    const i0 = от + Math.floor(x / W * точек), i1 = от + Math.floor((x + 1) / W * точек);
+    let пик = 0;
+    for (let i = i0; i <= Math.min(до - 1, Math.max(i0, i1 - 1)); i++) пик = Math.max(пик, w.v[i]);
+    const h = Math.max(1, (пик / 255) * (H - 2));
+    g.fillRect(x, серед - h / 2, полоса, h);
+  }
 }
 
 /* ── Карта темпа ──
@@ -9270,21 +9309,18 @@ function plPaint() {
   /* Выбор такта. Нуль — кусок целиком; рядом с «все» показываем его границы,
      иначе непонятно, что такое «все». */
   const выбран = Number(plOpt(id).pick) || 0;
-  /* Дорожку пересобираем, только когда отрезок и правда сменился: plPaint
-     зовётся по timeupdate, то есть несколько раз в секунду. */
-  const лента = box.querySelector(".hit-lane");
-  if (лента) {
-    const ключ = sel.a.toFixed(2) + "-" + sel.b.toFixed(2);
-    if (лента.dataset.at !== ключ) {
-      лента.dataset.at = ключ;
-      const доли = plBeats();
-      const линии = доли > 1
-        ? Array.from({ length: доли - 1 }, (_, i) =>
-            `<span class="hit-beat" style="left:${((i + 1) / доли * 100).toFixed(2)}%"></span>`).join("")
-        : "";
-      лента.innerHTML = линии + plHitsIn(sel.a, sel.b).map((u) =>
-        `<span class="hit" style="left:${(u.x * 100).toFixed(2)}%;height:${(18 + u.s * 82).toFixed(0)}%"></span>`
-      ).join("");
+  /* Холст перерисовываем, только когда сменился отрезок или ширина: plPaint
+     зовётся по timeupdate, несколько раз в секунду, а рисование не бесплатно.
+     Бегунок при этом двигаем каждый раз — он и должен ехать. */
+  const холст = box.querySelector(".wv-cv");
+  if (холст) {
+    const ключ = sel.a.toFixed(2) + "-" + sel.b.toFixed(2) + "@" + холст.clientWidth;
+    if (холст.dataset.at !== ключ) { холст.dataset.at = ключ; plWaveDraw(холст, sel.a, sel.b); }
+    const бег = box.querySelector(".wv-head");
+    if (бег) {
+      const доля = (el.currentTime - sel.a) / (sel.b - sel.a);
+      бег.hidden = !(доля >= 0 && доля <= 1);
+      if (!бег.hidden) бег.style.left = (доля * 100).toFixed(2) + "%";
     }
   }
   box.querySelectorAll("[data-tempo]").forEach((b) =>
@@ -9424,7 +9460,7 @@ function pracPlayer() {
      навсегда — без дорожки ударов и без карты темпа, и понять это было
      невозможно: данные есть, а на экране их нет. Поэтому в подпись входит и
      то, из чего плеер собран. Изменилось — пересобираем. */
-  const подпись = [id, plHits() ? plHits().length : 0, plBars().length, plBeats()].join("|");
+  const подпись = [id, plWave() ? plWave().v.length : 0, plBars().length, plBeats()].join("|");
   if (pracAudioEl && pracAudioEl.dataset.for === id && box.dataset.sig === подпись) {
     box.hidden = false; return;
   }
@@ -9450,8 +9486,12 @@ function pracPlayer() {
       <button data-pl="all">Весь трек</button>
       <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
-    ${plHits() ? `<div class="pl-hits"><div class="hit-lane"></div>
-      <div class="hit-note">удары записи · доли — светлые линии</div></div>` : ""}
+    ${plWave() ? `<div class="pl-wave">
+      <canvas class="wv-cv"></canvas>
+      <span class="wv-head" hidden></span>
+      ${plBeats() > 1 ? Array.from({ length: plBeats() - 1 }, (_, i) =>
+        `<span class="wv-beat" style="left:${((i + 1) / plBeats() * 100).toFixed(2)}%"></span>`).join("") : ""}
+    </div>` : ""}
     ${plTempoHTML()}
     ${plBars().length ? `<div class="pl-set pl-barsel">
       <em>Такт</em>

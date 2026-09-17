@@ -2448,24 +2448,27 @@
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }
-    /* Удары записи. Каждая палочка — нажатие, высота равна силе. Светлые
-       вертикали — доли такта: сразу видно, что попало на долю, а что между
-       ними. Смотреть можно без звука. */
-    .pl-hits { margin-top: 10px; }
-    .hit-lane {
-      position: relative; height: 52px; border-radius: 9px;
+    /* Рисунок звука: огибающая записи, снятая заранее. Показывает выбранный
+       отрезок целиком, по нему едет линия. Смотреть можно и без звука —
+       видно, где громко, где провал, где начинается следующая фраза. */
+    .pl-wave {
+      position: relative; margin-top: 10px; height: 76px;
+      border-radius: 10px; overflow: hidden;
       background: var(--glass); border: 1px solid var(--glass-line);
-      overflow: hidden;
     }
-    .hit {
-      position: absolute; bottom: 0; width: 2px; margin-left: -1px;
-      border-radius: 2px 2px 0 0; background: var(--gold, #f0b429);
-    }
-    .hit-beat {
+    .wv-cv { display: block; width: 100%; height: 100%; }
+    .wv-beat {
       position: absolute; top: 0; bottom: 0; width: 1px;
-      background: rgba(255,255,255,.14);
+      background: rgba(255,255,255,.13);
     }
-    .hit-note { margin-top: 5px; font-size: 0.66rem; color: var(--dim); }
+    /* Бегунок. Тонкая линия во всю высоту — её видно и на громком месте,
+       где рисунок заполняет холст почти целиком. */
+    .wv-head {
+      position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+      background: var(--ink); box-shadow: 0 0 6px rgba(255,255,255,.55);
+      pointer-events: none;
+    }
+    .wv-head[hidden] { display: none; }
 
     /* Карта темпа: полоса, где ширина такта равна его длине. Смотреть можно
        без звука — видно, где исполнитель держит, а где идёт вперёд. Заливка
