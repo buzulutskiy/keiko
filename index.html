@@ -2448,6 +2448,14 @@
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }
+    /* Ряд тактов. Их бывает сорок, в строку они не влезают — ряд едет вбок,
+       а нужный подтягивается сам. Кнопки не тянутся по ширине, как в других
+       рядах: там их пять и они делят строку, здесь их сорок и каждая должна
+       быть размером с палец, а не с волосок. */
+    .pl-bars { margin-top: 9px; overflow-x: auto; scrollbar-width: none; }
+    .pl-bars::-webkit-scrollbar { display: none; }
+    .pl-bars button { flex: none; min-width: 34px; padding: 7px 8px; }
+    .pl-bars em { position: sticky; left: 0; background: var(--bg); z-index: 1; }
     .pl-set { display: flex; align-items: center; gap: 4px; }
     .pl-set em {
       font-style: normal; font-size: 0.68rem; color: var(--dim);

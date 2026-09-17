@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 540";
+const APP_VERSION = "Кэйко 541";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9072,6 +9072,42 @@ function markSpan(u) {
   }
   return b > a ? { a, b } : null;
 }
+/* Какие такты размечены — по ним и выбирают. Ключи разметки, отсортированные
+   по числу; последний выкидываем, если за ним ничего нет: такт без конца
+   зациклить нельзя. */
+function plBars() {
+  const m = pracMarks();
+  if (!m) return [];
+  const все = Object.keys(m).map(Number).filter((n) => n > 0 && isFinite(m[n]))
+    .sort((a, b) => a - b);
+  return все.filter((n, i) => i < все.length - 1);
+}
+/* Отрезок ОДНОГО такта: от его метки до метки следующего размеченного.
+   Не то же, что markSpan: тот берёт кусок целиком, от первого такта до конца
+   последнего, а здесь нужен ровно один такт — чтобы ловить ритм по одному. */
+function barSpan(n) {
+  const m = pracMarks();
+  if (!m || !(m[n] >= 0)) return null;
+  const дальше = Object.keys(m).map(Number).filter((k) => k > n).sort((a, b) => a - b)[0];
+  const b = дальше ? m[дальше] : 0;
+  return b > m[n] ? { a: m[n], b } : null;
+}
+/* Выбор такта руками. Ноль — «все»: вернуться к куску целиком, как его
+   поставила разметка. Выбор держится, пока не перешёл на другой кусок:
+   `plFollow` при переходе его снимает. */
+function plBarPick(n) {
+  const el = pracAudioEl;
+  if (!el) return;
+  const o = plOpt(el.dataset.for);
+  const sp = n ? barSpan(n) : (prac && prac.cur ? markSpan(prac.cur) : null);
+  if (!sp) return;
+  o.a = sp.a; o.b = sp.b;
+  if (n) o.pick = n; else delete o.pick;
+  pracSaveLoops();
+  try { el.currentTime = sp.a; } catch {}
+  plPaint();
+}
+
 /* Отрезок под текущий такт выставляется один раз на такт: дальше края можно
    двигать руками, и приложение их не перебивает. */
 function plFollow(u) {
@@ -9088,6 +9124,7 @@ function plFollow(u) {
     return;
   }
   o.followed = метка; o.a = sp.a; o.b = sp.b;
+  delete o.pick;                 // новый кусок — выбор такта начинается заново
   pracSaveLoops();
   try { if (pracAudioEl.currentTime < sp.a || pracAudioEl.currentTime > sp.b) pracAudioEl.currentTime = sp.a; } catch {}
   plPaint();
@@ -9164,6 +9201,19 @@ function plPaint() {
     b.classList.toggle("on", Number(b.dataset.rate) === plRate(id)));
   box.querySelectorAll("[data-grid]").forEach((b) =>
     b.classList.toggle("on", Number(b.dataset.grid) === plGrid(id)));
+  /* Ряд тактов. Выбран либо один такт (pick), либо «все» — тогда горит нуль.
+     Тактов бывает сорок, ряд прокручивается, и нужный сам подтягивается в
+     видимую часть: иначе после перехода на другой кусок его надо искать. */
+  const выбран = Number(plOpt(id).pick) || 0;
+  const рядТактов = box.querySelector(".pl-bars");
+  if (рядТактов && !рядТактов.dataset.at1 || (рядТактов && рядТактов.dataset.at1 !== String(выбран))) {
+    рядТактов.querySelectorAll("[data-bar]").forEach((b) =>
+      b.classList.toggle("on", Number(b.dataset.bar) === выбран));
+    рядТактов.dataset.at1 = String(выбран);
+    const цель = рядТактов.querySelector("[data-bar].on")
+      || рядТактов.querySelector(`[data-bar="${prac && prac.cur ? prac.cur.from : 0}"]`);
+    if (цель && цель.scrollIntoView) цель.scrollIntoView({ block: "nearest", inline: "center" });
+  }
   const va = box.querySelector('[data-set="a"]'), vb = box.querySelector('[data-set="b"]');
   if (va) va.textContent = plClock(sel.a);
   if (vb) vb.textContent = plClock(sel.b);
@@ -9308,6 +9358,11 @@ function pracPlayer() {
       <button data-pl="all">Весь трек</button>
       <button data-pl="reset" hidden>↩︎ Вернуть отрезок</button>
     </div>
+    ${plBars().length ? `<div class="pl-set pl-bars">
+      <em>Такт</em>
+      <button data-bar="0">все</button>
+      ${plBars().map((n) => `<button data-bar="${n}">${n}</button>`).join("")}
+    </div>` : ""}
     <div class="pl-tools">
       <span class="pl-set">
         <em>Скорость</em>
@@ -13597,6 +13652,8 @@ function bindPractice() {
     }
 
     const id = pracAudioEl.dataset.for;
+    const такт = e.target.closest("[data-bar]");
+    if (такт) { plBarPick(Number(такт.dataset.bar)); return; }
     const rate = e.target.closest("[data-rate]");
     if (rate) { plOpt(id).rate = Number(rate.dataset.rate); pracSaveLoops(); plApplyRate(); plPaint(); return; }
     const grid = e.target.closest("[data-grid]");
@@ -14785,6 +14842,10 @@ async function checkForUpdate() {
 
 // полная переустановка: снимаем service worker, чистим кэши, грузим заново
 async function forceUpdate() {
+  /* Первым делом — минуты занятия в запись. Дальше страница перезагрузится,
+     и `prac` из памяти исчезнет. На `pagehide` надеяться можно, но не нужно:
+     на айфоне он приходит не всегда, а стоит это один вызов. */
+  pracFlush(true);
   const btn = $("#sUpdate");
   if (btn) { btn.textContent = "Обновляю…"; btn.disabled = true; }
   toast("Обновляю приложение…");
@@ -14821,6 +14882,11 @@ async function forceUpdate() {
 // новая версия при запуске ставится сама: одна попытка за сессию, дальше остаётся баннер
 function maybeAutoUpdate() {
   if (!newVersion || sheetMode) return;
+  /* Идёт занятие — не трогаем. Перезагрузка посреди игры уносит экран,
+     на котором сейчас работают, а баннер никуда не денется: обновится, когда
+     закончит. Минуты при этом не пропадут и так (см. pracFlush), но выдернуть
+     человека из-за инструмента — само по себе не дело. */
+  if (prac && prac.startedAt) return;
   try {
     if (sessionStorage.getItem("keiko-autoupd") === newVersion) return;
     sessionStorage.setItem("keiko-autoupd", newVersion);

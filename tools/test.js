@@ -1987,6 +1987,36 @@ function ок(имя, факт, надо) {
   t.set("todayStr", было.сег); t.set("data", было.данные);
 }
 
+/* ── Такты по одному: выбор из размеченных ── */
+{
+  const было={ prac: t.get("prac"), pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
+               данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
+  /* Разметка: такт → секунда, где он начинается. Последний конца не имеет. */
+  t.set("PRACTICE_DATA", { p1: { marks: { 9: 50.44, 10: 56.71, 11: 62.5, 12: 68.87, 13: 72.99 } } });
+  ок("такты: выбирать можно все, кроме последнего — у него нет конца",
+    t.get("plBars")(), [9, 10, 11, 12]);
+  ок("такт по одному: от своей метки до следующей",
+    t.get("barSpan")(9), { a: 50.44, b: 56.71 });
+  ок("такт по одному: последний размеченный отрезка не даёт",
+    t.get("barSpan")(13), null);
+  ок("такт по одному: неразмеченный — тоже", t.get("barSpan")(7), null);
+
+  /* Кусок целиком — это другое: от первого такта до конца последнего. */
+  t.set("prac", { cur: { from: 9, to: 12 } });
+  ок("кусок целиком: от девятого до конца двенадцатого",
+    t.get("markSpan")({ from: 9, to: 12 }), { a: 50.44, b: 72.99 });
+  ок("кусок целиком не равен одному такту",
+    t.get("markSpan")({ from: 9, to: 12 }).b !== t.get("barSpan")(9).b, true);
+
+  /* Без разметки выбирать нечего — ряда не будет. */
+  t.set("PRACTICE_DATA", { p1: {} });
+  ок("такты: без разметки ряда нет", t.get("plBars")(), []);
+  t.set("PRACTICE_DATA", было.pd); t.set("prac", было.prac); t.set("data", было.данные);
+}
+
 /* ── Шапка занятия: один текст на всех, кто её пишет ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
