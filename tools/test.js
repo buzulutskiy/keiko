@@ -2068,6 +2068,45 @@ function ок(имя, факт, надо) {
   t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
 }
 
+/* ── Метроном: щелчки по разметке ── */
+{
+  const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
+               данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] } });
+  /* Три доли в такте, такты по шесть секунд. */
+  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 12, 4: 18 } } });
+
+  ок("метроном: доля — треть такта", Math.round(t.get("metBeat")() * 100) / 100, 2);
+
+  /* Щелчок на долю: три на такт, первый сильный. */
+  const g1=t.get("metGrid")(1);
+  ок("метроном: на долю — три щелчка в такте", g1.slice(0, 3).map((x) => x.t), [0, 2, 4]);
+  ок("метроном: первый в такте сильный",
+    g1.slice(0, 4).map((x) => x.силён), [true, false, false, true]);
+  ок("метроном: считаем по всем размеченным тактам", g1.length, 9);
+
+  /* Дробление: щелчков вчетверо больше, доли те же. */
+  const g4=t.get("metGrid")(4);
+  ок("метроном: на четверть доли — двенадцать в такте", g4.length, 36);
+  ок("метроном: шаг вчетверо мельче", Math.round(g4[1].t * 100) / 100, 0.5);
+  ок("метроном: сильная доля всё равно на начале такта",
+    [g4[0].силён, g4[1].силён, g4[12].силён], [true, false, true]);
+
+  /* Такты у исполнителя разной длины — щелчок идёт за ними, а не по линейке. */
+  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 15, 4: 21 } } });
+  const g2=t.get("metGrid")(1);
+  ок("метроном: длинный такт — доли шире",
+    g2.slice(3, 6).map((x) => x.t), [6, 9, 12]);
+
+  /* Нет разметки — нет и сетки; метроном тогда работает ровным, от медианы. */
+  t.set("PRACTICE_DATA", { p1: { beats: 3 } });
+  ок("метроном: без разметки сетки нет", t.get("metGrid")(1), []);
+  ок("метроном: и доли посчитать не из чего", t.get("metBeat")(), 0);
+  t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
+}
+
 /* ── Такты по одному: выбор из размеченных ── */
 {
   const было={ prac: t.get("prac"), pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),

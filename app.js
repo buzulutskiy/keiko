@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 549";
+const APP_VERSION = "Кэйко 550";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9371,6 +9371,104 @@ const plSnap = (t, id, dur) => {
    собственным рукам. Именно `muted`, а не пауза: пауза остановила бы и
    линию, а она-то и нужна.
    Держится по вещи, как скорость и сетка: у каждой записи своё. */
+/* ── Метроном ──
+   Щёлкает поверх записи. Пока она играет, щелчки ставятся по самой разметке:
+   внутри каждого такта доли делятся поровну, а такты у исполнителя разной
+   длины — и щелчок идёт за ним. Строгий метроном так не умеет, зато здесь
+   слышно, как человек держит время, а не как держит его машина. Когда запись
+   на паузе — ровный щелчок по среднему темпу, то есть обычный метроном, под
+   который и играют.
+   Звук берём из уже поднятого движка (`Howler.ctx`): свой контекст на айфоне
+   пришлось бы будить отдельным касанием, а этот разбужен первым же. */
+const MET_DIV = [1, 2, 4, 8];              // щелчков на долю
+const metCtx = () => (window.Howler && Howler.ctx) || null;
+const metDiv = (id) => (MET_DIV.includes(Number(plOpt(id).met)) ? Number(plOpt(id).met) : 0);
+let metTimer = 0, metNext = 0, metLast = -1, metWas = -1, metBeatN = 0;
+let metGridCache = { key: "", grid: null };
+
+/* Секунд на долю у этой записи — по медианному такту. */
+function metBeat() {
+  const t = plTempoData();
+  const доли = plBeats() || 1;
+  return t && t.сред > 0 ? t.сред / доли : 0;
+}
+
+/* Все моменты щелчков по разметке. Считаем один раз на вещь и дробление. */
+function metGrid(div) {
+  const id = piece().id;
+  const ключ = id + "|" + div + "|" + plBars().length;
+  if (metGridCache.key === ключ) return metGridCache.grid;
+  const доли = plBeats() || 1, out = [];
+  for (const n of plBars()) {
+    const sp = barSpan(n);
+    if (!sp) continue;
+    const всего = доли * div, шаг = (sp.b - sp.a) / всего;
+    for (let i = 0; i < всего; i++) out.push({ t: sp.a + i * шаг, силён: i === 0 });
+  }
+  metGridCache = { key: ключ, grid: out };
+  return out;
+}
+
+/* Сам щелчок: короткий тон. Сильная доля выше и громче — по ней и слышно,
+   где начинается такт; без этого щелчки сливаются в ровный шум. */
+function metClick(когда, силён) {
+  const ctx = metCtx();
+  if (!ctx) return;
+  try {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "square";
+    o.frequency.value = силён ? 1560 : 920;
+    g.gain.setValueAtTime(0.0001, когда);
+    g.gain.exponentialRampToValueAtTime(силён ? 0.35 : 0.2, когда + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, когда + 0.045);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(когда); o.stop(когда + 0.06);
+  } catch {}
+}
+
+function metSchedule() {
+  const ctx = metCtx(), el = pracAudioEl;
+  if (!ctx || !el) return;
+  const div = metDiv(el.dataset.for);
+  if (!div) return;
+  if (ctx.state === "suspended") { try { ctx.resume(); } catch {} }
+  const до = ctx.currentTime + 0.25;        // заглядываем на четверть секунды вперёд
+  if (!el.paused) {
+    const rate = el.playbackRate || 1, сейчас = el.currentTime;
+    /* Перемотали назад (круг пошёл заново) — забываем, что уже отщёлкали. */
+    if (сейчас < metWas - 0.05) metLast = -1;
+    metWas = сейчас;
+    for (const g of metGrid(div)) {
+      if (g.t <= metLast || g.t < сейчас) continue;
+      const когда = ctx.currentTime + (g.t - сейчас) / rate;
+      if (когда > до) break;
+      metClick(когда, g.силён);
+      metLast = g.t;
+    }
+    return;
+  }
+  /* Пауза — обычный ровный метроном. */
+  const шаг = metBeat() / div;
+  if (!(шаг > 0.02)) return;
+  if (!metNext || metNext < ctx.currentTime) { metNext = ctx.currentTime + 0.1; metBeatN = 0; }
+  const доли = plBeats() || 1;
+  while (metNext < до) {
+    metClick(metNext, metBeatN % (доли * div) === 0);
+    metBeatN++;
+    metNext += шаг;
+  }
+}
+
+function metSync() {
+  const el = pracAudioEl;
+  const надо = !!(el && metDiv(el.dataset.for));
+  if (надо && !metTimer) {
+    metNext = 0; metLast = -1; metWas = -1; metBeatN = 0;
+    metTimer = setInterval(metSchedule, 60);
+  }
+  if (!надо && metTimer) { clearInterval(metTimer); metTimer = 0; }
+}
+
 function plApplyMute() {
   const el = pracAudioEl;
   if (!el) return;
@@ -9428,6 +9526,20 @@ function plPaint() {
     b.classList.toggle("on", Number(b.dataset.rate) === plRate(id)));
   box.querySelectorAll("[data-grid]").forEach((b) =>
     b.classList.toggle("on", Number(b.dataset.grid) === plGrid(id)));
+  const дроб = metDiv(id);
+  box.querySelectorAll("[data-met]").forEach((b) =>
+    b.classList.toggle("on", Number(b.dataset.met) === дроб));
+  const метНота = box.querySelector("#metNote");
+  if (метНота) {
+    const доля = metBeat();
+    if (!дроб || !доля) метНота.textContent = "";
+    else {
+      const темп = Math.round(60 / (доля / дроб) * (el.playbackRate || 1));
+      const доли = plBeats() || 1;
+      метНота.textContent = `${темп} щелчков в минуту · ${доли * дроб} на такт · `
+        + (el.paused ? "ровный" : "по долям исполнителя");
+    }
+  }
   /* Выбор тактов: с какого по какой. Нуль — кусок целиком. */
   const о = plOpt(id);
   const с = Number(о.bf) || 0, по = Math.max(с, Number(о.bt) || с);
@@ -9673,6 +9785,15 @@ function pracPlayer() {
         <em>Шаг</em>
         ${PL_GRIDS.map((g) => `<button data-grid="${g}">${g}с</button>`).join("")}
       </span>
+      ${plBeats() ? `<span class="pl-set">
+        <em>Метроном</em>
+        <button data-met="0">выкл</button>
+        <button data-met="1">доля</button>
+        <button data-met="2">½</button>
+        <button data-met="4">¼</button>
+        <button data-met="8">⅛</button>
+      </span>
+      <div class="met-note" id="metNote"></div>` : ""}
     </div>
     </div>
     <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
@@ -9697,6 +9818,7 @@ function pracPlayer() {
   pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
   plApplyRate();
   plApplyMute();
+  metSync();
   plPaint();
 }
 
@@ -10090,6 +10212,7 @@ function vidPaint() {
 /* Петля. У ютуба своего «доиграл до сих пор» нет, поэтому просто спрашиваем
    время по часам — этого хватает и работает одинаково для обоих плееров. */
 function vidTick() {
+  if (metTimer) { clearInterval(metTimer); metTimer = 0; }
   clearInterval(vidTimer);
   vidTimer = setInterval(() => {
     if (!V.ready()) return;
@@ -13967,6 +14090,15 @@ function bindPractice() {
     }
 
     const id = pracAudioEl.dataset.for;
+    const мет = e.target.closest("[data-met]");
+    if (мет) {
+      /* Движок будим прямо здесь: нажатие — это жест, а вне жеста айфон
+         звуковой контекст запускать не даёт, и метроном ушёл бы в тишину. */
+      unlockAudio();
+      plOpt(id).met = Number(мет.dataset.met);
+      pracSaveLoops(); metSync(); plPaint();
+      return;
+    }
     const темп = e.target.closest("[data-tempo]");
     if (темп) { const n = Number(темп.dataset.tempo); plBarPick(n, n); return; }
     const rate = e.target.closest("[data-rate]");
