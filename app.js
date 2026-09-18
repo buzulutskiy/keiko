@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 548";
+const APP_VERSION = "Кэйко 549";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8334,6 +8334,33 @@ const LS_DAILY = () => "keiko-daily" + suffix();   // старое место х
    вчера не вернулось к тебе завтра же как «мысль дня»: ты её и так помнишь. */
 const DAILY_AGAIN = 60;
 const DAILY_FRESH = 14;
+/* И сколько молчат цитаты книги, которая ещё в работе. Выдержка от записи тут
+   не помогает вовсе: цитату выписывают, пока книгу читают, и через две недели
+   она не «забылась» — она ровно та, над которой сидишь. Из сорока семи
+   записанных сорок одна оказалась из «Снега на траве», выписанной за те же
+   недели, — и все сорок одна считались годными, хотя человек их только что
+   переписывал своей рукой. Поэтому отсчёт от последней отметки в самой книге:
+   закрыл книгу, полтора месяца не возвращался — тогда цитата снова новость. */
+const DAILY_REST_BOOK = 42;
+
+/* Когда в последний раз отмечали этот материал. Ключ у мысли тот же, что у
+   материала (`keyOf`), так что искать надо по всем четырём спискам отметок. */
+function lastMarkOf(key) {
+  if (!key || !data) return "";
+  let d = "";
+  const взять = (списки, поле, деф) => {
+    for (const e of (списки || [])) {
+      if (e.deleted) continue;
+      if (((e[поле] || деф) || "") !== key) continue;
+      if (String(e.date || "") > d) d = String(e.date);
+    }
+  };
+  взять((data.book || {}).entries, "bookId", "snow-1");
+  взять((data.piano || {}).entries, "pieceId", "bwv853");
+  взять((data.pastel || {}).entries, "courseId", "");
+  взять(typeof watchEntries === "function" ? watchEntries() : [], "videoId", "");
+  return d;
+}
 
 function dailyState() {
   if (!data) return {};
@@ -8406,6 +8433,10 @@ function maybeDailyThought() {
   const годна = (t) => {
     const род = родилась(t);
     if (род && daysBetween(род, сег) < DAILY_FRESH) return false;   // ещё отлёживается
+    /* Книга в работе — её цитаты молчат. Считаем от последней отметки в самой
+       книге, а не от записи цитаты: пока читаешь, всё выписанное при тебе. */
+    const отметка = lastMarkOf(t.key);
+    if (отметка && daysBetween(отметка, сег) < DAILY_REST_BOOK) return false;
     const когда = показан[t.id];
     return !(когда && daysBetween(когда, сег) < DAILY_AGAIN);
   };
