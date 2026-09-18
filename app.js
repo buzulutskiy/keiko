@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 547";
+const APP_VERSION = "Кэйко 548";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8328,6 +8328,13 @@ const LS_DAILY = () => "keiko-daily" + suffix();   // старое место х
 /* Отметка «сегодня уже показывали» лежит в данных профиля: она переживает
    обновление приложения и очистку кэшей, а заодно уезжает в гист —
    на втором устройстве мысль дня в тот же день не повторится. */
+/* Сколько мысль отдыхает после показа и сколько отлёживается свежая.
+   Два месяца — чтобы одна и та же не мелькала: цитата, встреченная третий раз
+   за месяц, перестаёт быть цитатой. Две недели у новой — чтобы записанное
+   вчера не вернулось к тебе завтра же как «мысль дня»: ты её и так помнишь. */
+const DAILY_AGAIN = 60;
+const DAILY_FRESH = 14;
+
 function dailyState() {
   if (!data) return {};
   if (!data.daily) {
@@ -8336,7 +8343,28 @@ function dailyState() {
     data.daily = { date: old.date || "", seen: Array.isArray(old.seen) ? old.seen : [], off: !!old.off };
     saveData();
   }
+  if (dailyDates(data.daily)) saveData();
   return data.daily;
+}
+
+/* Перевод старого списка показов в даты. `seen` пополнялся строго по одной
+   записи в день, так что последняя показана в `date`, предыдущая днём раньше
+   и так далее. Это не догадка, а то, как список и набирался, — и без такого
+   перевода двухмесячный отдых начался бы с чистого листа, то есть вчерашняя
+   мысль могла бы прийти сегодня же. */
+function dailyDates(st) {
+  if (!st || st.shown) return false;
+  const shown = {};
+  const seen = Array.isArray(st.seen) ? st.seen : [];
+  const конец = st.date && /^\d{4}-\d{2}-\d{2}$/.test(st.date) ? fromStr(st.date) : null;
+  seen.forEach((id, i) => {
+    if (!конец) return;
+    const d = new Date(конец);
+    d.setDate(d.getDate() - (seen.length - 1 - i));
+    shown[id] = dateStr(d);
+  });
+  st.shown = shown;
+  return true;
 }
 
 function saveDaily(st) {
@@ -8368,17 +8396,33 @@ function maybeDailyThought() {
   const list = thoughts().filter((t) => !t.event && String(t.text || "").trim());
   if (!list.length) return;                              // нечего показывать — молчим
 
-  const seen = Array.isArray(st.seen) ? st.seen : [];
-  let pool = list.filter(t => !seen.includes(t.id));
-  const fresh = pool.length ? seen : [];                 // круг пройден — начинаем заново
-  if (!pool.length) {
-    const last = seen[seen.length - 1];                  // но вчерашнюю мысль не повторяем
-    pool = list.filter(t => t.id !== last);
-    if (!pool.length) pool = list;
-  }
+  /* Круг «показали все — начинаем заново» снят. Он гнал повтор тем быстрее,
+     чем меньше мыслей записано: на двух десятках цитата возвращалась каждые
+     три недели. Теперь у каждой свой отдых, и если отдохнувших нет — сегодня
+     мысли дня просто не будет. Молчать не страшно; надоесть — страшно. */
+  const сег = todayStr();
+  const показан = st.shown || {};
+  const родилась = (t) => (t.createdAt ? dateStr(new Date(Number(t.createdAt))) : t.date) || t.date;
+  const годна = (t) => {
+    const род = родилась(t);
+    if (род && daysBetween(род, сег) < DAILY_FRESH) return false;   // ещё отлёживается
+    const когда = показан[t.id];
+    return !(когда && daysBetween(когда, сег) < DAILY_AGAIN);
+  };
+  const pool = list.filter(годна);
+  if (!pool.length) return;                              // всё либо свежее, либо только что было
+  /* Сперва те, которых не показывали ни разу: новое интереснее забытого. */
+  const никогда = pool.filter((t) => !показан[t.id]);
+  const откуда = никогда.length ? никогда : pool;
 
-  const pick = pool[Math.floor(Math.random() * pool.length)];
-  saveDaily({ ...st, date: todayStr(), seen: [...fresh, pick.id].slice(-2000) });
+  const pick = откуда[Math.floor(Math.random() * откуда.length)];
+  /* Список показанных подрезаем по возрасту, а не по числу: две тысячи ключей
+     висели вечно, хотя всё старше двух месяцев ни на что уже не влияет. */
+  const свежие = {};
+  for (const [id, d] of Object.entries(показан))
+    if (daysBetween(d, сег) < DAILY_AGAIN) свежие[id] = d;
+  свежие[pick.id] = сег;
+  saveDaily({ ...st, date: сег, seen: [...(st.seen || []), pick.id].slice(-2000), shown: свежие });
   showDailyThought(pick);
 }
 
@@ -17355,7 +17399,13 @@ async function syncNow(manual) {
         const seen = [...(mine.seen || [])];
         const было = new Set(seen);
         for (const id of (theirs.seen || [])) if (!было.has(id)) { было.add(id); seen.push(id); }
-        data.daily = { date: newer.date || "", off: !!newer.off, n: newer.n || 0, seen: seen.slice(-2000) };
+        /* Даты показа сводим по позднейшей: мысль отдыхает от последнего
+           показа, а не от первого, и устройство, видевшее её позже, право. */
+        const shown = { ...(mine.shown || {}) };
+        for (const [id, d] of Object.entries(theirs.shown || {}))
+          if (!shown[id] || String(d) > String(shown[id])) shown[id] = String(d);
+        data.daily = { date: newer.date || "", off: !!newer.off, n: newer.n || 0,
+                       seen: seen.slice(-2000), shown };
       }
       normalizeActive();
       saveData();
