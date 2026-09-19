@@ -3862,7 +3862,10 @@
        переключается щелчком. */
     .rs-breath {
       font-size: 2.6rem; font-weight: 200; letter-spacing: 0.04em;
-      color: var(--ink); transition: opacity .9s ease, letter-spacing 3.5s ease;
+      color: var(--ink);
+      /* Короче фазы вдоха: иначе буквы всё ещё разъезжаются, когда слово уже
+         сменилось, и рисунок отстаёт от дыхания на полкруга. */
+      transition: opacity .8s ease, letter-spacing 1.8s ease;
     }
     .rs-breath.out { opacity: .45; letter-spacing: 0.16em; }
     .rs-word {
