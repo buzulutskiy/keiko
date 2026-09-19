@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 553";
+const APP_VERSION = "Кэйко 554";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8443,6 +8443,32 @@ let restTimer = 0, restUntil = 0, restRaf = 0, restT0 = 0;
 const restText = (сек) =>
   Math.floor(сек / 60) + ":" + String(Math.floor(сек % 60)).padStart(2, "0");
 
+/* Вдох короче выдоха: на длинном выдохе пульс замедляется сам, это и есть
+   вся механика успокоения. Четыре и шесть — круг в десять секунд. */
+const REST_IN = 4, REST_OUT = 6;
+const REST_CYCLE = REST_IN + REST_OUT;
+
+/* Где сейчас в круге дыхания: слово и доля фазы от нуля до единицы. */
+function restBreath(сек) {
+  const t = ((сек % REST_CYCLE) + REST_CYCLE) % REST_CYCLE;
+  return t < REST_IN
+    ? { слово: "вдох", вдох: true, доля: t / REST_IN }
+    : { слово: "выдох", вдох: false, доля: (t - REST_IN) / REST_OUT };
+}
+
+/* Тихие строки. Наблюдения, а не указания: «шея, плечи» можно заметить, а
+   «расслабь плечи» — это уже задание, а заданий здесь не бывает. */
+const REST_WORDS = [
+  "дыхание само",
+  "шея, плечи",
+  "звуки вокруг",
+  "мысли проходят",
+  "спешить некуда",
+  "тяжесть в руках",
+  "ничего не нужно",
+];
+const restWord = (сек) => REST_WORDS[Math.floor(сек / 40) % REST_WORDS.length];
+
 function restOpen() {
   const box = $("#rest");
   if (!box) return;
@@ -8468,7 +8494,10 @@ function restStart(мин) {
   restUntil = Date.now() + м * 60000;
   $("#restPick").hidden = true;
   $("#restRun").hidden = false;
+  /* Подсказку показываем полминуты и убираем: на спокойном экране постоянная
+     строчка мелким шрифтом — единственное, что тянет читать. */
   $("#restNote").textContent = "нажми ✕, если хватит раньше";
+  setTimeout(() => { const н = $("#restNote"); if (н && restTimer) н.textContent = ""; }, 30000);
   restTick();
   clearInterval(restTimer);
   restTimer = setInterval(restTick, 250);
@@ -8479,9 +8508,30 @@ function restTick() {
   if (!el) return;
   const сек = Math.max(0, Math.round((restUntil - Date.now()) / 1000));
   el.textContent = restText(сек);
+
+  const прошло = (Date.now() - restT0) / 1000;
+  const б = restBreath(прошло);
+  const бэл = $("#restBreath");
+  if (бэл) {
+    if (бэл.textContent !== б.слово) бэл.textContent = б.слово;
+    бэл.classList.toggle("out", !б.вдох);
+  }
+  /* Строку меняем через темноту, а не рывком: на спокойном экране любое
+     мгновенное движение выдёргивает обратно. */
+  const сэл = $("#restWord");
+  if (сэл) {
+    const надо = restWord(прошло);
+    if (сэл.dataset.w !== надо) {
+      сэл.dataset.w = надо;
+      сэл.classList.add("fade");
+      setTimeout(() => { if (сэл.dataset.w === надо) { сэл.textContent = надо; сэл.classList.remove("fade"); } }, 700);
+    }
+  }
   if (сек > 0) return;
   clearInterval(restTimer); restTimer = 0;
-  $("#restNote").textContent = "всё";
+  if (бэл) { бэл.textContent = "всё"; бэл.classList.remove("out"); }
+  if (сэл) { сэл.textContent = ""; сэл.dataset.w = ""; }
+  $("#restNote").textContent = "";
   if (navigator.vibrate) navigator.vibrate([18, 90, 18]);
 }
 
@@ -8499,8 +8549,18 @@ function restWavesStart() {
     if (!g) return;
     const t = (Date.now() - restT0) / 1000;
     g.clearRect(0, 0, W, H);
+    /* Волны дышат вместе со словом: на вдохе поднимаются и растут, на выдохе
+       оседают. Само по себе это не подсказка, а фон — но глаз цепляется за
+       движение, и дышать в такт выходит само, без просьбы. */
+    const б = restBreath(t);
+    const плавно = б.вдох
+      ? 0.5 - Math.cos(б.доля * Math.PI) / 2
+      : 0.5 + Math.cos(б.доля * Math.PI) / 2;
+    const вдохК = 0.75 + плавно * 0.5;
+    const подъём = (плавно - 0.5) * H * 0.045;
     const слои = [[0.055, 26, 0.9, H * 0.58], [0.038, 34, 0.6, H * 0.64], [0.026, 20, 1.4, H * 0.7]];
-    слои.forEach(([альфа, ампл, скор, y0], i) => {
+    слои.forEach(([альфа, амплБаза, скор, y0б], i) => {
+      const ампл = амплБаза * вдохК, y0 = y0б - подъём;
       g.beginPath();
       g.moveTo(0, H);
       for (let x = 0; x <= W; x += 6) {
