@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 550";
+const APP_VERSION = "Кэйко 551";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -420,11 +420,37 @@ const book = () => data.book.books.find(b => b.id === data.book.activeBook) || d
 const pieceEntriesOf = (id) => data.piano.entries.filter(e => !e.deleted && (e.pieceId || "bwv853") === id);
 const bookEntriesOf = (id) => data.book.entries.filter(e => !e.deleted && (e.bookId || "snow-1") === id);
 
-// сколько страниц прочитано за период — считаем прирост отдельно по каждой книге
+/* Сколько страниц прочитано за период — прирост отдельно по каждой книге.
+   У книги подряд это движение курсора: докуда дошёл к концу минус докуда
+   дошёл к началу. Перечитанное не считается, и правильно: курсор не двинулся.
+   У книги вразбивку курсора нет вовсе. Поля `page` у её отметок тоже нет —
+   там куски, — и весь счёт молча давал ноль: человек читает «Петербургские
+   повести» третью неделю, в заметках страницы видны, а на «Прогрессе» пусто.
+   Считаем по страницам, накрытым впервые: те же правила, только «докуда
+   дошёл» заменено на «что покрыто».
+   У сборника статей страниц нет по устройству — он в этот счёт не входит. */
 function pagesRead(from, to) {
   let sum = 0;
   for (const b of data.book.books) {
     const list = bookEntriesOf(b.id);
+    const режим = bookMode(b);
+    if (режим === "list") continue;
+    if (режим === "parts") {
+      const накрыть = (свои) => {
+        const s = new Set();
+        for (const e of свои) for (const sp of (e.spans || [])) {
+          const a = Number(sp.from) || 0, z = Number(sp.to) || 0;
+          for (let p = a; p <= z; p++) s.add(p);
+        }
+        return s;
+      };
+      const было = накрыть(list.filter((e) => e.date < from));
+      const стало = накрыть(list.filter((e) => e.date <= to));
+      let n = 0;
+      for (const p of стало) if (!было.has(p)) n++;
+      sum += n;
+      continue;
+    }
     let before = b.startPage || 0, after = 0;
     for (const e of list) {
       if (e.date < from) before = Math.max(before, e.page || 0);
