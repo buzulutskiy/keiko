@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 552";
+const APP_VERSION = "Кэйко 553";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8428,6 +8428,95 @@ function saveDaily(st) {
   saveData();
   schedulePush();                                  // пусть отметка уедет в гист вместе с данными
   try { localStorage.removeItem(LS_DAILY()); } catch {}
+}
+
+/* ── Отдых ──
+   Читаешь, чувствуешь, что устал, — и почти всегда на этом заканчиваешь, так
+   и не проверив, осталось ли ещё. Экран делает одно: считает время назад,
+   пока ты не за книгой. Ни «молодец», ни «вернёмся к чтению»: человек сам
+   решил, что устал, и сам решит, вернётся ли. Кончилось время — короткая
+   дрожь и тишина, никаких звуков и никаких предложений.
+   Ничего не хранится: отдых не отметка и в прогресс не идёт. Считать отдых
+   достижением значило бы превратить его в ещё одно задание. */
+let restTimer = 0, restUntil = 0, restRaf = 0, restT0 = 0;
+
+const restText = (сек) =>
+  Math.floor(сек / 60) + ":" + String(Math.floor(сек % 60)).padStart(2, "0");
+
+function restOpen() {
+  const box = $("#rest");
+  if (!box) return;
+  box.hidden = false;
+  $("#restPick").hidden = false;
+  $("#restRun").hidden = true;
+  restT0 = Date.now();
+  restWavesStart();
+  keepAwake(true);
+}
+
+function restClose() {
+  const box = $("#rest");
+  if (box) box.hidden = true;
+  clearInterval(restTimer); restTimer = 0;
+  cancelAnimationFrame(restRaf); restRaf = 0;
+  restUntil = 0;
+  keepAwake(false);
+}
+
+function restStart(мин) {
+  const м = Math.max(1, Math.min(60, Number(мин) || 0));
+  restUntil = Date.now() + м * 60000;
+  $("#restPick").hidden = true;
+  $("#restRun").hidden = false;
+  $("#restNote").textContent = "нажми ✕, если хватит раньше";
+  restTick();
+  clearInterval(restTimer);
+  restTimer = setInterval(restTick, 250);
+}
+
+function restTick() {
+  const el = $("#restTime");
+  if (!el) return;
+  const сек = Math.max(0, Math.round((restUntil - Date.now()) / 1000));
+  el.textContent = restText(сек);
+  if (сек > 0) return;
+  clearInterval(restTimer); restTimer = 0;
+  $("#restNote").textContent = "всё";
+  if (navigator.vibrate) navigator.vibrate([18, 90, 18]);
+}
+
+/* Волны. Три синусоиды с разными периодами, медленные: на них смотрят, а не
+   следят за ними. Рисуем по кадрам только пока экран открыт. */
+function restWavesStart() {
+  const cv = $("#restWaves");
+  if (!cv) return;
+  const кратно = Math.min(2, window.devicePixelRatio || 1);
+  const кадр = () => {
+    if (!cv || $("#rest").hidden) { restRaf = 0; return; }
+    const W = Math.round(cv.clientWidth * кратно), H = Math.round(cv.clientHeight * кратно);
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const g = cv.getContext("2d");
+    if (!g) return;
+    const t = (Date.now() - restT0) / 1000;
+    g.clearRect(0, 0, W, H);
+    const слои = [[0.055, 26, 0.9, H * 0.58], [0.038, 34, 0.6, H * 0.64], [0.026, 20, 1.4, H * 0.7]];
+    слои.forEach(([альфа, ампл, скор, y0], i) => {
+      g.beginPath();
+      g.moveTo(0, H);
+      for (let x = 0; x <= W; x += 6) {
+        const ф = x / W * Math.PI * (2 + i);
+        const y = y0 + Math.sin(ф + t * скор * 0.35) * ампл * кратно
+                     + Math.sin(ф * 1.7 - t * скор * 0.2) * ампл * 0.4 * кратно;
+        g.lineTo(x, y);
+      }
+      g.lineTo(W, H); g.closePath();
+      g.fillStyle = `rgba(255, 201, 77, ${альфа})`;
+      g.fill();
+    });
+    restRaf = requestAnimationFrame(кадр);
+  };
+  cancelAnimationFrame(restRaf);
+  restRaf = requestAnimationFrame(кадр);
 }
 
 function maybeDailyThought() {
@@ -17783,6 +17872,10 @@ function boot() {
   window.addEventListener("offline", () => { online = false; setSyncDot("off"); renderBanner(); });
   if (!online) setSyncDot("off");
 
+  $("#restBtn").addEventListener("click", restOpen);
+  $("#restClose").addEventListener("click", restClose);
+  document.querySelectorAll("[data-rest]").forEach((b) =>
+    b.addEventListener("click", () => restStart(Number(b.dataset.rest))));
   $("#gearBtn").addEventListener("click", openSettingsSheet);
   $("#musBtn").addEventListener("click", () => {
     if (!MUS_TAB) return;

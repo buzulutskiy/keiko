@@ -3834,7 +3834,42 @@
     }
     @keyframes bootRun { 0% { left: -40%; } 100% { left: 100%; } }
     @media (prefers-reduced-motion: reduce) { #boot span::after { animation: none; left: 0; width: 100%; } }
-  </style>
+  
+    /* ── Отдых ──
+       Экран без единого обещания: ни «ты молодец», ни «продолжим». Человек
+       сам решил, что устал, и сам решит, вернётся ли. Наше дело — считать
+       время и не мешать. */
+    #rest {
+      position: fixed; inset: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+    }
+    #rest[hidden] { display: none; }
+    #restWaves { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .rs-body { position: relative; width: min(340px, 86vw); text-align: center; }
+    .rs-q { margin: 0 0 18px; font-size: 1.05rem; color: var(--muted); }
+    .rs-pick button {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      width: 100%; margin-bottom: 10px; padding: 15px 18px;
+      border: 1px solid var(--glass-line); border-radius: 15px;
+      background: var(--glass); color: var(--ink); font: inherit; text-align: left;
+    }
+    .rs-pick button b { font-size: 1rem; font-weight: 650; }
+    .rs-pick button i { font-style: normal; font-size: 0.82rem; color: var(--dim); }
+    .rs-pick button:active { border-color: rgba(255, 201, 77, 0.45); }
+    /* Время крупно и тонко: на него смотрят вполглаза, а не читают. */
+    .rs-time {
+      font-size: 4rem; font-weight: 200; letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums; color: var(--ink);
+    }
+    .rs-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--dim); }
+    .rs-close {
+      position: absolute; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px;
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 1px solid var(--glass-line); background: var(--glass);
+      color: var(--muted); font-size: 1rem;
+    }
+</style>
 </head>
 <body>
   <!-- Пока грузится и считается — не пустота, а знак приложения.
@@ -3854,11 +3889,29 @@
     <header>
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
+      <button class="gear" id="restBtn" aria-label="Отдых" title="Отдых">⏸</button>
       <button class="gear" id="musBtn" aria-label="Собрание" title="Собрание" hidden>◈</button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
-    <div id="banner"></div>
+    <div id="rest" hidden>
+    <canvas id="restWaves"></canvas>
+    <div class="rs-body">
+      <div class="rs-pick" id="restPick">
+        <p class="rs-q">Насколько устал?</p>
+        <button data-rest="3" type="button"><b>Чуть-чуть</b><i>3 минуты</i></button>
+        <button data-rest="8" type="button"><b>Прилично</b><i>8 минут</i></button>
+        <button data-rest="15" type="button"><b>Сильно</b><i>15 минут</i></button>
+      </div>
+      <div class="rs-run" id="restRun" hidden>
+        <div class="rs-time" id="restTime">0:00</div>
+        <p class="rs-note" id="restNote"></p>
+      </div>
+    </div>
+    <button class="rs-close" id="restClose" type="button">✕</button>
+  </div>
+
+  <div id="banner"></div>
     <div id="view"></div>
   </main>
 
