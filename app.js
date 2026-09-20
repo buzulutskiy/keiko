@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 560";
+const APP_VERSION = "Кэйко 561";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -16584,10 +16584,32 @@ function routeBodyHTML(b, тр) {
       </section>`).join("")}`;
 }
 
+/* Разбор спрашиваем при каждом открытии маршрута. Карта делает то же самое
+   (`mapFresh`), но у книги вроде собрания Пушкина карты нет вовсе, а разбор,
+   один раз осев на устройстве, дальше не перечитывается никогда: `artsAsk`
+   выходит сразу, если что-то уже лежит. Дописал маршрут — человек его не
+   увидит. Не чаще раза в минуту: экран открывают и закрывают часто. */
+const routeAsked = new Map();
+function routeFresh(b) {
+  const id = b.id;
+  if (now() - (routeAsked.get(id) || 0) < 60000) return;
+  routeAsked.set(id, now());
+  pullArts(id).then((новое) => {
+    if (!новое || !routeOpen || book().id !== id) return;
+    /* Перерисовка заменяет разметку целиком, а человек мог уже уехать вниз —
+       возвращаем его на то же место. */
+    const box = $("#route");
+    const где = box ? box.scrollTop : 0;
+    openRoute();
+    if (box) box.scrollTop = где;
+  }).catch(() => routeAsked.set(id, 0));
+}
+
 function openRoute() {
   const b = book(), м = routeOf(b);
   if (!м) return;
   routeOpen = true;
+  routeFresh(b);
   if (!м[routeTab]) routeTab = 0;
   const box = $("#route");
   if (!box) return;
