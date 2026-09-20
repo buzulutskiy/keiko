@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 556";
+const APP_VERSION = "Кэйко 557";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -15152,16 +15152,28 @@ function listStateNow(b) {
   });
 }
 const lsMark = (s) => s === "done" ? "✓" : s === "read" ? "▸" : "";
+/* Строка счёта: сколько вещей прочитано и сколько это страниц. Страницы
+   показываем, только если они у книги вообще есть: у «Полки» их нет. */
+function lsHeadText(b, сост) {
+  const сп = bookList(b), стр = listPages(b);
+  const n = сост.filter((x) => x === "done").length;
+  const всего = стр.reduce((a, x) => a + x, 0);
+  const слово = plural(сп.length, "вещь", "вещи", "вещей");
+  if (!всего) return `${n} из ${сп.length} ${слово}`;
+  const мои = сост.reduce((a, s, i) => a + (s === "done" ? стр[i] : 0), 0);
+  return `${n} из ${сп.length} ${слово} · ${мои} из ${всего} ${plural(всего, "страницы", "страниц", "страниц")}`;
+}
+
 function bookListUI() {
-  const b = book(), сост = listStateNow(b), сп = bookList(b);
-  const прочитано = сост.filter((x) => x === "done").length;
+  const b = book(), сост = listStateNow(b), сп = bookList(b), стр = listPages(b);
   return `
-    <div class="ls-head" id="lsHead">${прочитано} из ${сп.length} статей</div>
+    <div class="ls-head" id="lsHead">${lsHeadText(b, сост)}</div>
     <div class="ls-list">
       ${сп.map((p, i) => `
         <button class="ls-row ${сост[i]}" data-ls="${i}" type="button">
           <span class="ls-mark">${lsMark(сост[i])}</span>
           <span class="ls-name">${esc(p.name || "")}</span>
+          ${стр[i] ? `<span class="ls-pages">${стр[i]} с.</span>` : ""}
         </button>`).join("")}
     </div>`;
 }
@@ -15179,7 +15191,7 @@ function bindBookListSheet() {
     el.className = "ls-row " + стало;
     const м = el.querySelector(".ls-mark"); if (м) м.textContent = lsMark(стало);
     const ш = $("#lsHead");
-    if (ш) ш.textContent = `${listStateNow(b).filter((x) => x === "done").length} из ${bookList(b).length} статей`;
+    if (ш) ш.textContent = lsHeadText(b, listStateNow(b));
   }));
 }
 
@@ -16436,10 +16448,30 @@ function listStates(b) {
       по[имя] = (состояние === "read" || состояние === "done") ? состояние : "";
   return сп.map((c) => по[c.name] || "");
 }
+/* Сколько страниц у каждого произведения: от его начала до начала
+   следующего, у последнего — до конца книги. Нужно не для отметок (их ставят
+   не по страницам: на одной странице бывает десять стихотворений), а для
+   объёма — чтобы «прочитано 12 из 67» не врало, когда двенадцать из них по
+   странице, а непрочитанные — по сорок. */
+function listPages(b) {
+  const bk = b || book();
+  const сп = bookList(bk);
+  const конец = Number(bk.pages) || 0;
+  return сп.map((p, i) => {
+    const a = Number(p.from) || 0;
+    const z = Number((сп[i + 1] || {}).from) || конец;
+    return a && z > a ? z - a : 0;
+  });
+}
+
 function listCount(b) {
   const c = listStates(b);
+  const стр = listPages(b);
+  const всегоСтр = стр.reduce((a, x) => a + x, 0);
   return { всего: c.length, прочитано: c.filter((x) => x === "done").length,
-           читаю: c.filter((x) => x === "read").length };
+           читаю: c.filter((x) => x === "read").length,
+           страниц: всегоСтр,
+           страницПрочитано: c.reduce((a, s, i) => a + (s === "done" ? стр[i] : 0), 0) };
 }
 // какую статью читаю сейчас — последняя, помеченная «читаю»
 function listNow(b) {
@@ -16456,6 +16488,11 @@ function listNow(b) {
 function bookPct(b) {
   if (b && bookMode(b) === "list") {
     const c = listCount(b);
+    /* Если у вещей есть объём, процент считаем по страницам, а не по штукам:
+       двенадцать стихотворений по странице и двенадцать повестей по сорок —
+       это очень разные «двенадцать из шестидесяти семи». У «Полки» страниц
+       нет вовсе, там по-прежнему по штукам. */
+    if (c.страниц) return Math.round(c.страницПрочитано / c.страниц * 100);
     return c.всего ? Math.round(c.прочитано / c.всего * 100) : 0;
   }
   if (!b || !b.pages) return 0;

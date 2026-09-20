@@ -2365,6 +2365,43 @@ function ок(имя, факт, надо) {
     t.get("REST_WORDS").some((w) => /^(расслабь|закрой|дыши|сосредоточ)/i.test(w)), false);
 }
 
+/* ── Сборник вещей: отметка по произведениям, объём по страницам ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  /* Три вещи очень разного объёма: страница, сорок страниц, десять. */
+  const том={ id:"tom", kind:"book", title:"Том", pages:151, mode:"list",
+    chapters:[{name:"Стишок", from:1},{name:"Повесть", from:2},{name:"Очерк", from:142}] };
+  t.set("data", { active:"book", piano:{pieces:[],entries:[]},
+    pastel:{courses:[],entries:[]}, watch:{videos:[],entries:[]},
+    book:{ activeBook:"tom", books:[том], entries:[] } });
+
+  ок("список: объём каждой вещи — до начала следующей",
+    t.get("listPages")(том), [1, 140, 9]);
+  ок("список: всего страниц", t.get("listCount")(том).страниц, 150);
+
+  /* Прочитан один стишок из трёх вещей — но это одна страница из ста пятидесяти. */
+  t.get("data").book.entries.push({ id:"e1", date:"2026-09-20", bookId:"tom",
+    marks:{ "Стишок":"done" } });
+  ок("список: по штукам это треть", t.get("listCount")(том).прочитано, 1);
+  ок("список: но процент считается по страницам", t.get("bookPct")(том), 1);
+
+  /* Прочитана повесть — и процент сразу девяносто четыре. */
+  t.get("data").book.entries.push({ id:"e2", date:"2026-09-20", bookId:"tom",
+    marks:{ "Повесть":"done" } });
+  ок("список: большая вещь весит больше", t.get("bookPct")(том), 94);
+
+  /* У книги без страниц считаем по-прежнему по штукам. */
+  const полка={ id:"p", kind:"book", title:"Полка", mode:"list",
+    chapters:[{name:"Раз"},{name:"Два"},{name:"Три"},{name:"Четыре"}] };
+  t.get("data").book.books.push(полка);
+  t.get("data").book.activeBook="p";
+  t.get("data").book.entries.push({ id:"e3", date:"2026-09-20", bookId:"p",
+    marks:{ "Раз":"done" } });
+  ок("список: без страниц — по штукам", t.get("bookPct")(полка), 25);
+  ок("список: и объёма у них нет", t.get("listCount")(полка).страниц, 0);
+  t.set("data", было.данные);
+}
+
 /* ── У пьесы ни карты, ни собрания ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
