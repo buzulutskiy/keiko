@@ -2139,8 +2139,14 @@ function ок(имя, факт, надо) {
 
 /* ── Шапка занятия: один текст на всех, кто её пишет ── */
 {
-  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac") };
-  const сег=t.get("todayStr")();
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), prac: t.get("prac"),
+               сег0: t.get("todayStr") };
+  /* День недели закрепляем понедельником. Без этого в воскресенье «впереди»
+     равно единице, дневной план совпадает с недельной целью — и превышение
+     плана заодно закрывает неделю: проверка ломалась раз в семь дней, причём
+     именно в выходной, когда за пианино и садятся. */
+  const сег="2026-09-14";
+  t.set("todayStr", () => сег);
   const деньНедели=(t.get("fromStr")(сег).getDay()+6)%7, впереди=7-деньНедели;
   t.set("data", { active: "piano", book: { books: [], entries: [] },
     pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
@@ -2173,6 +2179,7 @@ function ок(имя, факт, надо) {
   t.get("data").piano.entries=[{ id: "p", date: сег, pieceId: "bwv853", mins: 400 }];
   ок("шапка занятия: неделя набрана — плана нет", t.get("pracWhereText")(), "408 мин");
   t.set("prac", было.prac); t.set("data", было.данные);
+  t.set("todayStr", было.сег0);
 }
 
 /* ── Страницы за период: у сборника они считаются по кускам ── */
@@ -2369,6 +2376,19 @@ function ок(имя, факт, надо) {
   ок("пьеса: кнопки карты и собрания нет", t.get("mapBtnOn")(), false);
   ок("пьеса: и места под неё не держим — «Отметить» на всю ширину",
     t.get("bookBtnState")(), { map: { on: false, keep: false } });
+
+  /* Книга с `noMap`: карты не будет никогда, место под кнопку не держим. */
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    book: { activeBook: "b1", entries: [], books: [
+      { id: "b1", title: "Том", pages: 800, mode: "parts", noMap: true,
+        chapters: [{ name: "Раз", from: 1 }] }] } });
+  ок("книга без карты: места под кнопку не держим",
+    t.get("bookBtnState")(), { map: { on: false, keep: false } });
+  /* А обычная книга место держит: разбор приезжает из каталога позже. */
+  t.get("data").book.books[0].noMap = false;
+  ок("обычная книга: место под будущую карту держим",
+    t.get("bookBtnState")(), { map: { on: false, keep: true } });
   t.set("data", было.данные); t.set("CATALOG", было.cat);
 }
 
