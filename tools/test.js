@@ -2479,6 +2479,38 @@ function ок(имя, факт, надо) {
   t.set("ARTS", было.arts); t.set("data", было.данные);
 }
 
+/* ── Счёт по настоящим произведениям ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))) };
+  const том={ id:"tom", kind:"book", title:"Том", pages:101, mode:"list", chapters:[
+    { name:"Стихи 1814", from:1, kind:"стих",
+      items:[{name:"Раз",page:1},{name:"Два",page:2},{name:"Три",page:3}] },
+    { name:"Поэма", from:41, kind:"поэма" },
+    { name:"Сказка", from:61, kind:"сказка" },
+  ]};
+  t.set("data", { active:"book", piano:{pieces:[],entries:[]},
+    pastel:{courses:[],entries:[]}, watch:{videos:[],entries:[]},
+    book:{ activeBook:"tom", books:[том], entries:[] } });
+  t.set("pickItems", {});
+
+  /* Настоящих произведений пять: три стихотворения, поэма, сказка.
+     Не три раздела — «0 из 3» у тома, где их пять, это не счёт. */
+  ок("счёт: считаем произведения, а не разделы",
+    t.get("lsHeadText")(том).startsWith("0 из 5 произведений"), true);
+
+  /* После «из» родительный: двадцать один просит единственное число. */
+  ок("счёт: из 21 произведения", t.get("вещьИз")(21), "произведения");
+  ок("счёт: из 29 произведений", t.get("вещьИз")(29), "произведений");
+  ок("счёт: из 2 произведений", t.get("вещьИз")(2), "произведений");
+  ок("счёт: из 1 произведения", t.get("вещьИз")(1), "произведения");
+
+  t.get("pickItems")[t.get("lsKey")("Стихи 1814", "Раз")] = "done";
+  t.get("pickItems")["Поэма"] = "done";
+  ок("счёт: прочитанное считается поштучно",
+    t.get("lsHeadText")(том).startsWith("2 из 5 произведений"), true);
+  t.set("pickItems", {}); t.set("data", было.данные);
+}
+
 /* ── У пьесы ни карты, ни собрания ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
