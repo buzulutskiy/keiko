@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 559";
+const APP_VERSION = "Кэйко 560";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -16525,10 +16525,20 @@ function listStates(b) {
    Отметки подтягиваются из тех же `marks`: у пункта есть `key` вида
    «раздел|вещь», и видно, что из маршрута уже прочитано. */
 const routeOf = (b) => {
-  const r = (artsOf((b || book()).id) || {}).route;
-  return Array.isArray(r) && r.length ? r : null;
+  const a = artsOf((b || book()).id) || {};
+  /* Траекторий у книги может быть несколько: по стихам — одна, по статьям —
+     другая, и это разные способы читать один том. Старая одиночная форма
+     (`route` — просто список глав) остаётся: у остальных книг маршрут один и
+     заводить ему имя незачем. */
+  if (Array.isArray(a.routes)) {
+    const сп = a.routes.filter((r) => r && Array.isArray(r.chapters) && r.chapters.length);
+    if (сп.length) return сп;
+  }
+  const r = a.route;
+  return Array.isArray(r) && r.length ? [{ name: "", chapters: r }] : null;
 };
 let routeOpen = false;
+let routeTab = 0;
 
 function routeState(b, it) {
   if (!it || !it.key) return "";
@@ -16538,41 +16548,72 @@ function routeState(b, it) {
   return сохр[it.name] || "";
 }
 
+const routeCount = (b, тр) => {
+  const главы = тр.chapters;
+  return {
+    всего: главы.reduce((a, г) => a + г.items.length, 0),
+    мои: главы.reduce((a, г) => a + г.items.filter((x) => routeState(b, x) === "done").length, 0),
+  };
+};
+
+/* Тело одной траектории. Вынесено отдельно: при переключении вкладки
+   перерисовывается только оно, шапка и ряд вкладок остаются на месте —
+   иначе список прыгал бы к началу вместе с прокруткой. */
+function routeBodyHTML(b, тр) {
+  const c = routeCount(b, тр);
+  return `
+    <p class="rt-lead">${esc(b.title || "")} · ${c.мои} из ${c.всего} пройдено</p>
+    ${тр.why ? `<p class="rt-why rt-intro">${esc(тр.why)}</p>` : ""}
+    ${тр.chapters.map((г, i) => `
+      <section class="rt-ch">
+        <div class="rt-n">${i + 1}</div>
+        <h3>${esc(г.name)}</h3>
+        ${г.why ? `<p class="rt-why">${esc(г.why)}</p>` : ""}
+        <ol class="rt-list">
+          ${г.items.map((x) => {
+            const с = routeState(b, x);
+            return `<li class="rt-it ${с}">
+              <span class="rt-mark">${lsMark(с) || "·"}</span>
+              <span class="rt-name">${esc(x.name)}${x.year ? ` <em>${x.year}</em>` : ""}${x.tag ? ` <b class="rt-tag">${esc(x.tag)}</b>` : ""}</span>
+              <span class="rt-page">${x.page || ""}</span>
+              ${x.note ? `<span class="rt-note">${esc(x.note)}</span>` : ""}
+            </li>`;
+          }).join("")}
+        </ol>
+        ${г.tail ? `<p class="rt-tail">${esc(г.tail)}</p>` : ""}
+      </section>`).join("")}`;
+}
+
 function openRoute() {
   const b = book(), м = routeOf(b);
   if (!м) return;
   routeOpen = true;
+  if (!м[routeTab]) routeTab = 0;
   const box = $("#route");
   if (!box) return;
-  const всего = м.reduce((a, г) => a + г.items.length, 0);
-  const мои = м.reduce((a, г) => a + г.items.filter((x) => routeState(b, x) === "done").length, 0);
   box.innerHTML = `
     <button class="rt-close" id="routeClose" type="button">✕</button>
     <div class="rt-body">
       <h2 class="rt-title">Траектория</h2>
-      <p class="rt-lead">${esc(b.title || "")} · ${мои} из ${всего} пройдено</p>
-      ${м.map((г, i) => `
-        <section class="rt-ch">
-          <div class="rt-n">${i + 1}</div>
-          <h3>${esc(г.name)}</h3>
-          ${г.why ? `<p class="rt-why">${esc(г.why)}</p>` : ""}
-          <ol class="rt-list">
-            ${г.items.map((x) => {
-              const с = routeState(b, x);
-              return `<li class="rt-it ${с}">
-                <span class="rt-mark">${lsMark(с) || "·"}</span>
-                <span class="rt-name">${esc(x.name)}${x.year ? ` <em>${x.year}</em>` : ""}</span>
-                <span class="rt-page">${x.page || ""}</span>
-                ${x.note ? `<span class="rt-note">${esc(x.note)}</span>` : ""}
-              </li>`;
-            }).join("")}
-          </ol>
-          ${г.tail ? `<p class="rt-tail">${esc(г.tail)}</p>` : ""}
-        </section>`).join("")}
+      ${м.length > 1 ? `<div class="rt-tabs" id="routeTabs">${м.map((т, i) => {
+        const c = routeCount(b, т);
+        return `<button type="button" class="${i === routeTab ? "on" : ""}" data-rt="${i}">`
+          + `${esc(т.name || "Маршрут " + (i + 1))}<u>${c.мои}/${c.всего}</u></button>`;
+      }).join("")}</div>` : ""}
+      <div id="routeBody">${routeBodyHTML(b, м[routeTab])}</div>
     </div>`;
   box.hidden = false;
   const з = $("#routeClose");
   if (з) з.addEventListener("click", closeRoute);
+  const ряд = $("#routeTabs");
+  if (ряд) ряд.addEventListener("click", (e) => {
+    const к = e.target.closest("[data-rt]");
+    if (!к) return;
+    routeTab = +к.dataset.rt || 0;
+    ряд.querySelectorAll("button").forEach((x) => x.classList.toggle("on", +x.dataset.rt === routeTab));
+    $("#routeBody").innerHTML = routeBodyHTML(b, м[routeTab]);
+    box.scrollTop = 0;
+  });
 }
 function closeRoute() {
   routeOpen = false;

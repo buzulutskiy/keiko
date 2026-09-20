@@ -3917,6 +3917,28 @@
     .rt-body { max-width: 560px; margin: 0 auto; }
     .rt-title { margin: 6px 0 2px; font-size: 1.5rem; font-weight: 700; }
     .rt-lead { margin: 0 0 22px; color: var(--dim); font-size: 0.84rem; }
+    /* Вкладки траекторий: у большого тома их две — по стихам и по статьям.
+       Ряд появляется только когда маршрутов правда больше одного. */
+    .rt-tabs {
+      display: flex; gap: 6px; flex-wrap: nowrap; margin: 10px 0 18px;
+      overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+    }
+    .rt-tabs::-webkit-scrollbar { display: none; }
+    .rt-tabs button {
+      flex: 0 0 auto; white-space: nowrap; min-height: 34px;
+      padding: 7px 13px; border-radius: 10px; font-size: 0.82rem; color: var(--dim);
+      background: var(--glass); border: 1px solid var(--glass-line);
+    }
+    .rt-tabs button.on {
+      color: var(--gold); border-color: rgba(255, 201, 77, 0.4);
+      background: rgba(255, 201, 77, 0.12);
+    }
+    /* Счёт пройденного прямо на вкладке — иначе, чтобы узнать его, надо
+       переключиться и вернуться. */
+    .rt-tabs u { text-decoration: none; margin-left: 7px; opacity: 0.6;
+      font-size: 0.76rem; font-variant-numeric: tabular-nums; }
+    /* Объяснение самой траектории — до глав, чуть просторнее главных. */
+    .rt-intro { margin-bottom: 22px; }
     .rt-close {
       position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px; z-index: 2;
       width: 40px; height: 40px; border-radius: 50%;
@@ -3949,6 +3971,13 @@
     .rt-it.done .rt-mark { color: var(--gold); }
     .rt-it.done .rt-name { color: var(--dim); }
     .rt-name em { font-style: normal; color: var(--dim); font-size: 0.78rem; }
+    /* Пометка у пункта: «дополнительно», «можно пропустить», «уже прочитан».
+       Это не состояние отметки, а совет автора маршрута, поэтому рядом с
+       названием и бледным, а не галочкой слева. */
+    .rt-tag {
+      font-weight: 500; font-size: 0.68rem; color: var(--dim); white-space: nowrap;
+      border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px;
+    }
     .rt-page { color: var(--dim); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
     /* Пояснение к пункту занимает всю ширину под ним. */
     .rt-note {
