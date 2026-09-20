@@ -1478,33 +1478,14 @@
     .pr-p.done .pr-p-bar i { background: #6ee7a8; }
     .pr-p.now .pr-p-bar i { background: var(--gold); }
 
-    /* ноты текущего отрезка */
-    .pr-hint {
-      margin-top: 20px; width: 100%; border-radius: 14px; padding: 14px 15px; text-align: left;
-      background: rgba(139, 124, 246, 0.09); border: 1px solid rgba(139, 124, 246, 0.24);
-      font-size: 0.88rem; line-height: 1.65;
-    }
-    .pr-hb { padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
-    .pr-hb:first-child { border-top: 0; padding-top: 0; }
-    .pr-hn { display: inline-block; min-width: 28px; font-weight: 700; color: var(--gold); font-size: 0.8rem; }
-    .pr-hh { color: var(--dim); font-size: 0.76rem; font-weight: 600; }
-    .pr-hint b { font-weight: 600; color: var(--ink); }
-    .pr-hint i { font-style: normal; color: var(--gold-2); font-size: 0.78rem; }
-    /* Три кнопки отметки: как прошёл заход. Цвета не про «хорошо-плохо»,
-       а про усилие: мятный, золотой, фиолетовый. */
-    .rep-btns { display: grid; gap: 8px; margin: 14px 0 4px; }
+    /* Отметка захода — одна кнопка на всю ширину. Трёх уровней («легко, с
+       усилием, сложно») больше нет: attic/noty-podskazki.md. */
+    .rep-btns { display: grid; margin: 16px 0 4px; }
     .rep {
-      display: grid; gap: 2px; padding: 12px 14px; border-radius: 15px; text-align: left;
-      background: var(--glass); border: 1px solid var(--glass-line);
+      padding: 16px 14px; border-radius: 15px; text-align: center;
+      font: inherit; font-size: 1.02rem; font-weight: 700; color: #1a1408;
+      border: none; background: linear-gradient(135deg, var(--gold), #f0a93c);
     }
-    .rep b { font-size: 1.02rem; font-weight: 700; }
-    .rep span { font-size: 0.78rem; color: var(--dim); }
-    .rep.l1 { background: rgba(110, 231, 168, 0.13); border-color: rgba(110, 231, 168, 0.34); }
-    .rep.l1 b { color: #8ef0bd; }
-    .rep.l2 { background: rgba(240, 187, 92, 0.13); border-color: rgba(240, 187, 92, 0.34); }
-    .rep.l2 b { color: #f3c876; }
-    .rep.l3 { background: rgba(139, 124, 246, 0.14); border-color: rgba(139, 124, 246, 0.36); }
-    .rep.l3 b { color: #b3a6ff; }
     .rep:active { transform: scale(0.99); }
     .rp-row {
       display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
@@ -1527,23 +1508,14 @@
     }
     /* Тот заход, который идёт сейчас: обводка ярче и кружок крупнее. */
     .dot.now { border-color: var(--ink); border-style: solid; transform: scale(1.35); }
-    .dot.l1 { background: #6ee7a8; border-color: #6ee7a8; }
-    .dot.l2 { background: #f0bb5c; border-color: #f0bb5c; }
-    .dot.l3 { background: var(--violet); border-color: var(--violet); }
+    /* Закрытый заход — залитый кружок. Цвет был по трудности, трудности
+       больше нет. */
+    .dot.on { background: var(--gold); border-color: var(--gold); border-style: solid; }
     .dots.big { justify-content: center; gap: 7px; margin: 14px 0 2px; }
     .dots.big .dot { width: 14px; height: 14px; }
     .dots.big .dot.now { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.10); }
     .wk-tail { margin: 12px 0 0; font-size: 0.76rem; color: var(--dim); }
     .bl-head.as-text { display: grid; gap: 3px; text-align: left; padding: 0 0 6px; }
-
-    .pr-hint .c {
-      display: inline-block; background: rgba(255, 255, 255, 0.1); border-radius: 3px;
-      padding: 0 5px; margin: 0 3px 0 5px; font-weight: 700; font-size: 0.72rem; color: var(--muted);
-    }
-    .pr-leg {
-      margin: 11px 0 0; padding-top: 9px; font-size: 0.7rem; color: var(--dim); line-height: 1.5;
-      border-top: 1px solid rgba(255, 255, 255, 0.07);
-    }
 
     /* Статья о главе: читается как страница книги, а не как интерфейс. */
     .ar { text-align: left; max-width: 34em; margin: 6px auto 0; }

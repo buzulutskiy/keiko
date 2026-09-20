@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 563";
+const APP_VERSION = "Кэйко 564";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -8931,9 +8931,10 @@ function mergePrac(mine, theirs) {
    потом сначала. Каждому такту нужно набрать десять заходов; когда набрали
    все, блок сшивается целиком.
 
-   Отметка не одна: «легко», «с усилием», «сложно». Это не оценка себе, а
-   способ увидеть, где именно тяжело, — и условие для сшивки: пока блок
-   целиком идёт «сложно», он повторяется. */
+   Отметка одна — «получилось». Уровни («легко», «с усилием», «сложно») и
+   лишние круги по блоку сняты: «вся эта история с усложнением вообще не
+   нужна». Заход либо был, либо нет; всё остальное человек и так про себя
+   знает. Что было и как вернуть — attic/noty-podskazki.md. */
 /* Три захода на шаг, а не пять. Пять было взято на глаз и оказалось долгим:
    четыре такта в блоке при пяти этапах — это сотня повторений на блок, и до
    сшивки приходилось идти неделю. Три держат тот же смысл — «сыграл несколько
@@ -8942,12 +8943,6 @@ function mergePrac(mine, theirs) {
    становятся закрытыми, и разбор сдвигается вперёд. */
 const REP_GOAL = 3;                  // сколько заходов набирает каждый шаг такта
 const BLOCK_MAX = 4;                 // максимум тактов в блоке
-const LVLS = [
-  { k: 1, name: "Легко",     hint: "пальцы сами" },
-  { k: 2, name: "С усилием", hint: "вышло, но пришлось собраться" },
-  { k: 3, name: "Сложно",    hint: "спотыкался" },
-];
-
 function pracBlocks() {
   const bars = piece().bars || 0;
   const out = [];
@@ -9032,19 +9027,8 @@ function barBox(b, make) {
 /* Блок можно попросить пройти ещё раз: тогда каждому его шагу добавляется по
    три захода, и занятие само возвращается от сшивки к тактам. Столько раз,
    сколько нужно, — пока кусок не начнёт звучать так, как хочется. */
-const EXTRA_STEP = 3;
-const extraOf = (b) => {
-  const bl = blockOfBar(b);
-  return bl ? ((repsStore().extra || {})[blockKey(bl)] || 0) : 0;
-};
-function extraAdd(bl) {
-  const st = repsStore();
-  st.extra = st.extra || {};
-  st.extra[blockKey(bl)] = (st.extra[blockKey(bl)] || 0) + EXTRA_STEP;
-  st.at = now();
-}
 const stepGoal = (b, step) =>
-  (step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL)) + extraOf(b);
+  step === barMain(b) ? REP_GOAL : (STEP_GOALS[step] || REP_GOAL);
 /* Отменённый заход не вырезаем, а гасим пометкой: вырезанный воскресал при
    слиянии с гистом — там из двух списков побеждает более длинный, и удаление
    выглядело как «на этом устройстве ещё не доехало». */
@@ -9059,12 +9043,10 @@ const barMarks = (b) => barSteps(b).reduce((n, st) => n + repsOf(b, st).length, 
 
 const finalRaw = (bl) => repsStore().final[blockKey(bl)] || [];
 const finalOf = (bl) => finalRaw(bl).filter((r) => !r.off);
-/* Сшивка засчитана, когда последний заход был не «сложно»: сложный повторяется
-   до тех пор, пока блок не пойдёт хотя бы с усилием. */
-const finalPassed = (bl) => {
-  const list = finalOf(bl);
-  return list.length > 0 && (list[list.length - 1].lvl || 3) <= 2;
-};
+/* Сшивка засчитана, когда её сыграли. Раньше тут смотрели на уровень: пока
+   блок шёл «сложно», он повторялся. Уровней больше нет — повторить блок можно
+   и без разрешения приложения. */
+const finalPassed = (bl) => finalOf(bl).length > 0;
 
 /* ── Прогон с начала ──
    Сшивка соединяет четыре такта между собой, но пьеса от этого не становится
@@ -9077,20 +9059,16 @@ const finalPassed = (bl) => {
    прогон совпадает со сшивкой («1-4»), поэтому там его нет. */
 const runOf = (bl) => finalOf({ from: 1, to: bl.to });
 const runNeeded = (bl) => bl.from > 1;
-const runPassed = (bl) => {
-  if (!runNeeded(bl)) return true;
-  const list = runOf(bl);
-  return list.length > 0 && (list[list.length - 1].lvl || 3) <= 2;
-};
+const runPassed = (bl) => !runNeeded(bl) || runOf(bl).length > 0;
 function blockReady(bl) {
   for (let b = bl.from; b <= bl.to; b++) if (!barReady(b)) return false;
   return true;
 }
 const blockDone = (bl) => blockReady(bl) && finalPassed(bl) && runPassed(bl);
 
-function repAdd(u, lvl) {
+function repAdd(u) {
   const st = repsStore();
-  const rec = { lvl, d: todayStr(), at: now() };
+  const rec = { d: todayStr(), at: now() };
   if (u.final) (st.final[blockKey(u)] = st.final[blockKey(u)] || []).push(rec);
   else {
     const box = barBox(u.from, true);
@@ -9198,7 +9176,7 @@ const dotsHTML = (list, goal, свой) => {
   const сейчас = свой === false ? -1 : list.length;
   for (let i = 0; i < goal; i++) {
     const r = list[i];
-    out += `<i class="dot${r ? " l" + r.lvl : ""}${i === сейчас ? " now" : ""}"></i>`;
+    out += `<i class="dot${r ? " on" : ""}${i === сейчас ? " now" : ""}"></i>`;
   }
   return out;
 };
@@ -9266,7 +9244,7 @@ function pracListHTML() {
           </div>`;
       }).join("")}
     </div>
-    <p class="bl-note">Кружок — один заход: мятный «легко», золотой «с усилием», фиолетовый «сложно». Группы через чёрточку — чтение, скрипичный, басовый, обе руки. Блок сшивается, когда все шаги закрыты.</p>`;
+    <p class="bl-note">Кружок — один заход. Группы через чёрточку — чтение, скрипичный, басовый, обе руки. Блок сшивается, когда все шаги закрыты.</p>`;
 }
 
 const pracMin = () => prac && prac.startedAt ? (Date.now() - prac.startedAt - prac.breakMs) / 60000 : 0;
@@ -9312,22 +9290,9 @@ function pracWatch() {
 
 const pracSpan = (u) => u.from === u.to ? "такт " + u.from : "такты " + u.from + "–" + u.to;
 
-function pracHintHTML(u) {
-  const doc = pracDoc();
-  if (!doc || !doc.hints) return "";
-  const want = u.hand === "both" ? ["r", "l"] : u.hand === "left" ? ["l"] : ["r"];
-  const rows = [];
-  for (let b = u.from; b <= u.to; b++) {
-    const h = doc.hints[b];
-    if (!h) { rows.push(`<div class="pr-hb"><span class="pr-hn">Т${b}</span><span class="pr-hh">подсказки нет</span></div>`); continue; }
-    const parts = want.filter((k) => h[k]).map((k) =>
-      `<span class="pr-hh">${k === "r" ? "пр." : "лев."}</span> ${h[k]}`);
-    rows.push(`<div class="pr-hb"><span class="pr-hn">Т${b}</span>${
-      parts.length ? parts.join("<br>") : '<span class="pr-hh">молчит</span>'}</div>`);
-  }
-  if (!rows.length) return "";
-  return `<div class="pr-hint">${rows.join("")}<p class="pr-leg">${esc(doc.legend || "")}</p></div>`;
-}
+/* Подсказки по нотам («Ноты» под кружками) сняты — attic/noty-podskazki.md.
+   Сам текст (`hints` в разборе) остаётся и дальше нужен коду: по нему
+   `barSteps` понимает, звучат у такта обе руки или одна. */
 
 let pracAudioEl = null, pracRaf = 0;
 const PRAC_LOOP_LS = "keiko-practice-loop-v1";
@@ -12248,11 +12213,6 @@ function pracRender() {
   const блоков = w.blocks.length;
   const готово = w.blocks.filter(blockDone).length;
 
-  const кнопки = LVLS.map((l) => `
-    <button class="rep l${l.k}" data-lvl="${l.k}" type="button">
-      <b>${l.name}</b><span>${l.hint}</span>
-    </button>`).join("");
-
   /* Кружки — того шага, который сейчас: у чтения свой счёт, у каждого ключа
      свой, у игры двумя руками свой. Трудность у них разная, и мешать их в
      одну кучу значит не увидеть, где именно тяжело. */
@@ -12267,18 +12227,14 @@ function pracRender() {
         <div class="wk-big">${pracSpan(u)}</div>
         <p class="wk-hand">${esc(шаг)}</p>
         <div class="dots big">${dotsHTML(свои, сколько)}</div>
-        ${u.final ? `<p class="wk-next">пока идёт «сложно» — повторяем; «с усилием» или «легко» ${
-          u.run ? "закрывают прогон" : "закрывают блок"}</p>` : ""}
-        <div class="rep-btns">${кнопки}</div>
+        <div class="rep-btns">
+          <button class="rep" data-done="1" type="button">Получилось</button>
+        </div>
         <div class="wk-row">
-          ${u.final ? `<button class="pr-ghost" data-prac="again">${
-            u.run ? "Пройти ещё раз" : "Пройти блок ещё раз"}</button>` : ""}
           <button class="pr-ghost" data-prac="list">Такты</button>
-          ${pracDoc() ? `<button class="pr-ghost" data-prac="hint">${prac.hintOpen ? "Скрыть ноты" : "Ноты"}</button>` : ""}
           ${prac.undo ? '<button class="pr-ghost" data-prac="undo">Отменить</button>' : ""}
         </div>
         <p class="wk-tail">пройдено блоков: ${готово} из ${блоков}</p>
-        ${prac.hintOpen ? pracHintHTML(u) : ""}
       </div>
     </div>
     ${prac.listOpen ? `<div class="bl-wrap" id="pracList">${pracListHTML()}</div>` : ""}`;
@@ -12308,7 +12264,7 @@ function openLesson() {
     lastBlock: null,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
-    cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, hintOpen: false, listOpen: false,
+    cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, listOpen: false,
   };
   /* Запись не заводим на открытии: нажал «Начать урок», передумал и вышел —
      занятия не было, и в истории его быть не должно. Подход засчитается
@@ -12342,7 +12298,7 @@ function openPractice() {
     screen: "work", cur: null, queue: [], closed: [], reviewed: [], pick: null, undo: null, listOpen: false,
     achBefore: achDoneSet(), factsBefore: factsOpenSet(),
     startedAt: Date.now(), counted: 0,
-    breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "", hintOpen: false,
+    breakMs: 0, restFrom: 0, restUntil: 0, askedAt: 0, back: "",
   };
   $("#prac").hidden = false;
   $("#prac").setAttribute("aria-hidden", "false");
@@ -14802,18 +14758,16 @@ function bindPractice() {
       return pracRender();
     }
 
-    /* Отметка захода: три кнопки вместо одной. Уровень — не оценка себе, а
-       то, чем меряется готовность блока к сшивке. */
-    if (b.dataset.lvl) {
+    /* Отметка захода — одна кнопка. */
+    if (b.dataset.done) {
       const u = prac.cur;
       if (!u) return;
-      const lvl = Number(b.dataset.lvl);
       prac.startedAt = prac.startedAt || Date.now();
       const sec = prac.unitAt ? Math.round((Date.now() - prac.unitAt) / 1000) : 0;
       /* Рука шага: у чтения и игры по ключу своя, у сшивки — те, что звучат. */
       const рука = STEP_HAND[u.step] || pracHands(u);
       pracNote({ from: u.from, to: u.to, size: u.to - u.from + 1, hand: рука }, sec);
-      repAdd(u, lvl);
+      repAdd(u);
       /* Прочитанное в запись дня отрезком не идёт: сыграно ничего не было.
          Время при этом считается — разбор глазами тоже занятие. */
       const чтение = u.step === "readR" || u.step === "readL";
@@ -14836,19 +14790,6 @@ function bindPractice() {
         prac.counted = 0;
         return pracNext();
       }
-      case "again": {
-        /* Сшивка не идёт — возвращаемся к тактам блока и проходим их ещё раз.
-           Ничего не сбрасывается: к цели каждого шага просто прибавляется по
-           три захода, и путь честно удлиняется. */
-        const w3 = pracWhere();
-        if (!w3.bl) return;
-        extraAdd(w3.bl);
-        saveData();
-        schedulePush();
-        toast("Ещё круг по тактам " + w3.bl.from + "–" + w3.bl.to);
-        return pracNext();
-      }
-      case "hint": prac.hintOpen = !prac.hintOpen; return pracRender();
       case "list": prac.listOpen = !prac.listOpen; return pracRender();
       case "listClose": prac.listOpen = false; return pracRender();
 
