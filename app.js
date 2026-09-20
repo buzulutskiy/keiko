@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 561";
+const APP_VERSION = "Кэйко 562";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4084,6 +4084,17 @@ function coverSrc(id, fallback) {
 const COVER_RATIO = "3 / 4.1";
 const coverRatio = (x) => esc((x && x.ratio) || COVER_RATIO);
 
+/* Обложка не повторяет то, что уже сказано в названии. У собрания Пушкина
+   название начинается с фамилии — «Пушкин. Стихи и проза», — потому что на
+   главной под кольцом видно только его, а «Стихи и проза» там не говорит
+   ничего. Верхняя строка обложки тогда лишняя: «А. С. ПУШКИН» над
+   «Пушкин. Стихи и проза» читается как опечатка. */
+const cvAuthor = (b) => {
+  const а = String(b.author || "").trim();
+  const фамилия = а.split(/[\s·,]+/).filter(Boolean).pop() || "";
+  return фамилия && String(b.title || "").startsWith(фамилия) ? "" : а;
+};
+
 // обложка любого материала — не зависит от активного трека
 function coverOf(item) {
   if (item.track === "book") {
@@ -4095,7 +4106,7 @@ function coverOf(item) {
       </div>`;
     return `
       <div class="cover book ${esc(b.tone || "sea")}" style="aspect-ratio:${coverRatio(b)}" data-covnone="${esc(b.id)}">
-        <div><div class="cv-author">${esc(b.author || "")}</div></div>
+        <div><div class="cv-author">${esc(cvAuthor(b))}</div></div>
         ${b.art === "wave" ? SEA_ART : b.art === "pine" ? PINE_ART : b.art === "quill" ? QUILL_ART : b.art === "lamp" ? LAMP_ART : `<div class="cv-mark">🦔</div>`}
         <div>
           <div class="cv-title">${esc(b.title)}</div>
@@ -4392,8 +4403,8 @@ function bookLeft(s) {
 
 function heroParts(s) {
   if (isBook() && bookMode(book()) === "list") {
-    const c = s.список || { прочитано: 0, всего: 0 };
-    return [`${c.прочитано} из ${c.всего} статей`,
+    const т = listThings(book());
+    return [`${т.мои} из ${т.всего} ${вещьИз(book(), т.всего)}`,
       s.chapter.name ? "читаю " + esc(s.chapter.name) : ""];
   }
   if (isBook() && bookMode(book()) === "parts") {
@@ -15174,13 +15185,9 @@ const lsMark = (s) => s === "done" ? "✓" : s === "read" ? "▸" : "";
    девяносто шесть произведений, — это не счёт, а недоразумение. */
 function lsHeadText(b) {
   const bk = b || book();
-  const сп = bookList(bk);
-  const всего = сп.reduce((a, p) => a + lsTotal(p), 0);
-  const мои = сп.reduce((a, p) => a + (lsItems(p).length
-    ? lsItems(p).filter((v) => lsInnerState(bk, p.name, v.name) === "done").length
-    : (lsState(bk, p) === "done" ? 1 : 0)), 0);
+  const { всего, мои } = listThings(bk);
   const c = listCount(bk);
-  const главное = `${мои} из ${всего} ${вещьИз(всего)}`;
+  const главное = `${мои} из ${всего} ${вещьИз(bk, всего)}`;
   if (!c.страниц) return главное;
   return `${главное} · ${c.страницПрочитано} из ${c.страниц} `
     + plural(c.страниц, "страницы", "страниц", "страниц");
@@ -15195,7 +15202,7 @@ function bookListUI() {
     const n = вещи.filter((v) => lsInnerState(b, p.name, v.name) === "done").length;
     return `
       <button class="back ls-back" id="lsBack" type="button">‹ Всё содержание</button>
-      <div class="ls-head">${esc(p.name)} · ${n} из ${вещи.length} ${вещьИз(вещи.length)}</div>
+      <div class="ls-head">${esc(p.name)} · ${n} из ${вещи.length} ${вещьИз(b, вещи.length)}</div>
       <div class="ls-list">
         ${вещи.map((v, i) => {
           const с = lsInnerState(b, p.name, v.name);
@@ -16649,11 +16656,20 @@ function closeRoute() {
    6 повестей · 6 записей». Снято по решению: «слишком тяжело будет». Восемь
    чисел под заголовком читаются дольше, чем одно, а отвечают на тот же
    вопрос. Поле `kind` в профиле осталось — вдруг пригодится, но интерфейс
-   его не спрашивает. Формы две: счётная («596 произведений») и родительная
-   после «из» («из 21 произведения»): двадцать один просит единственное
-   число, и без этого в шапке стояло «0 из 21 произведение». */
-const ВЕЩЬ = ["произведение", "произведения", "произведений"];
-const вещьИз = (n) => plural(n, ВЕЩЬ[1], ВЕЩЬ[2], ВЕЩЬ[2]);
+   его не спрашивает. */
+const СЛОВА = {
+  произведение: ["произведение", "произведения", "произведений"],
+  статья:       ["статья", "статьи", "статей"],
+};
+/* Своё слово у книги — одно на весь том, полем `word` в описи. «Полка»
+   и правда состоит из статей, у Пушкина это было бы враньём. Умолчание —
+   «произведение»: оно годится и стихотворению, и повести, и заметке. */
+const словоКниги = (b) => СЛОВА[((b || book()) || {}).word] || СЛОВА.произведение;
+/* Форма после «из N» — родительная: «из 21 произведения», «из 29
+   произведений». Двадцать один просит единственное число, и без этого в шапке
+   раздела стояло «0 из 21 произведение». Родительный единственного у этих слов
+   совпадает с формой «два-четыре», поэтому ряд тот же. */
+const вещьИз = (b, n) => { const в = словоКниги(b); return plural(n, в[1], в[2], в[2]); };
 
 /* Настоящее число вещей: у раздела с вложенными — сколько их внутри,
    у раздела без — он сам и есть одна вещь. */
@@ -16723,6 +16739,21 @@ function listPages(b) {
     const z = Number((сп[i + 1] || {}).from) || конец;
     return a && z > a ? z - a : 0;
   });
+}
+
+/* Сколько в томе настоящих произведений и сколько из них прочитано. Разделов
+   шестьдесят семь, произведений пятьсот девяносто шесть: раздел без вложенных
+   — сам одна вещь, раздел со вложенными — столько, сколько внутри. Счёт нужен
+   в двух местах сразу (подпись на главной и шапка содержания), и второе место
+   уже однажды отстало — оно-то и говорило «0 из 67 статей». */
+function listThings(b) {
+  const bk = b || book(), сп = bookList(bk);
+  return {
+    всего: сп.reduce((a, p) => a + lsTotal(p), 0),
+    мои: сп.reduce((a, p) => a + (lsItems(p).length
+      ? lsItems(p).filter((v) => lsInnerState(bk, p.name, v.name) === "done").length
+      : (lsState(bk, p) === "done" ? 1 : 0)), 0),
+  };
 }
 
 function listCount(b) {
