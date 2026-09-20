@@ -2019,6 +2019,56 @@ function ок(имя, факт, надо) {
   t.set("waveCache", { id: "", buf: null });
 }
 
+/* ── Разметка тактов с телефона ── */
+{
+  const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),
+               данные: JSON.parse(JSON.stringify(t.get("data"))),
+               свои: JSON.parse(JSON.stringify(t.get("marksMine") || {})) };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П" }] } });
+  /* Три такта по шесть секунд: у третьего начало есть, конца нет. */
+  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 12 },
+    hints: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } } });
+  t.set("marksMine", {});
+
+  ок("разметка: всего тактов знает разбор", t.get("plBarTotal")(), 5);
+  /* Третий такт — первый, у которого нет конца: с него и начинают. */
+  ок("разметка: начинаем с первого недоделанного", t.get("plEditFirst")(), 3);
+  /* Пустую границу предлагаем сами — от соседа на среднюю длину такта. */
+  const д = t.get("plEditGuess")(3);
+  ок("разметка: конец предложен от соседа", [д.a, Math.round(д.b)], [12, 18]);
+
+  /* Своя метка накладывается поверх разбора, а не вместо него. */
+  t.set("marksMine", { p1: { 4: 18 } });
+  ок("разметка: своя метка видна вместе с чужими",
+    Object.keys(t.get("pracMarks")()).sort(), ["1", "2", "3", "4"]);
+  ок("разметка: третий такт стало можно зациклить", t.get("plBars")(), [1, 2, 3]);
+  ок("разметка: отрезок третьего такта", t.get("barSpan")(3), { a: 12, b: 18 });
+
+  /* Из «моего» метка уходит, только когда в разборе оказалось то же число. */
+  t.get("marksSettle")();
+  ок("разметка: пока в разборе другого — своё держим",
+    Object.keys(t.get("marksMine")).length, 1);
+  t.set("PRACTICE_DATA", { p1: { beats: 3, marks: { 1: 0, 2: 6, 3: 12, 4: 18 },
+    hints: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } } });
+  t.get("marksSettle")();
+  ок("разметка: разбор догнал — своё убрано",
+    Object.keys(t.get("marksMine")).length, 0);
+  ок("разметка: метка при этом не пропала",
+    Object.keys(t.get("pracMarks")()).sort(), ["1", "2", "3", "4"]);
+
+  /* Границы не заходят друг за друга. */
+  t.set("plEdit", { n: 3, a: 12, b: 12.05 });
+  t.get("plEditFix")("a");
+  ок("разметка: слипшиеся границы разводятся",
+    Math.round((t.get("plEdit").b - t.get("plEdit").a) * 100) / 100, 0.2);
+  t.set("plEdit", null);
+
+  t.set("PRACTICE_DATA", было.pd); t.set("data", было.данные);
+  t.set("marksMine", было.свои);
+}
+
 /* ── Круг из нескольких тактов, рисунок — по одному ── */
 {
   const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),

@@ -2549,6 +2549,81 @@
       flex: 2; color: var(--ink); font-variant-numeric: tabular-nums;
       border-color: rgba(139, 124, 246, 0.3);
     }
+    /* ── Режим разметки такта ──
+       Лишнее убрано с экрана: остаются дорожка, рисунок и сам такт. Кнопки
+       крупные — по ним попадают пальцем на ходу, слушая запись. */
+    .pl-edit {
+      margin-top: 10px; padding: 12px; border-radius: 14px;
+      border: 1px solid rgba(255, 201, 77, 0.32); background: rgba(255, 201, 77, 0.07);
+      display: grid; gap: 10px;
+    }
+    .pl-edit[hidden] { display: none; }
+    #pracPlayer.editing .pl-jump,
+    #pracPlayer.editing .pl-tools,
+    #pracPlayer.editing .pl-tempo,
+    #pracPlayer.editing .pl-barsel,
+    #pracPlayer.editing .pl-markrow { display: none; }
+    .ed-top { display: flex; align-items: center; justify-content: space-between; }
+    .ed-top b { font-size: 0.92rem; }
+    .ed-x {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid var(--glass-line); background: var(--glass); color: var(--muted);
+    }
+    /* Номер такта — самое крупное на экране: по нему и понимают, где ты. */
+    .ed-bar { display: flex; align-items: center; justify-content: center; gap: 14px; }
+    .ed-bar button {
+      width: 48px; height: 48px; border-radius: 14px; font-size: 1.2rem;
+      border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink);
+    }
+    .ed-bar button:disabled { opacity: .3; }
+    .ed-bar span { font-size: 0.86rem; color: var(--dim); text-align: center; min-width: 96px; }
+    .ed-bar b { display: block; font-size: 1.7rem; color: var(--ink); line-height: 1.1;
+      font-variant-numeric: tabular-nums; }
+    .ed-bar i { font-style: normal; font-size: 0.68rem; }
+    .ed-line { display: grid; gap: 6px; }
+    .ed-name { font-size: 0.72rem; color: var(--dim); letter-spacing: .04em; }
+    .ed-name i { font-style: normal; color: var(--gold); }
+    .ed-row { display: flex; align-items: center; gap: 8px; }
+    .ed-pm {
+      width: 54px; height: 46px; flex: none; border-radius: 12px; font-size: 1.1rem;
+      border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink);
+    }
+    .ed-val {
+      flex: 1; text-align: center; font-size: 1.15rem; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .ed-here {
+      height: 46px; border-radius: 12px; font: inherit; font-size: 0.8rem;
+      border: 1px solid rgba(255, 201, 77, 0.4); background: rgba(255, 201, 77, 0.12);
+      color: var(--gold); padding: 0 14px;
+    }
+    .ed-len { font-size: 0.74rem; color: var(--dim); text-align: center;
+      font-variant-numeric: tabular-nums; }
+    .ed-steps { display: flex; align-items: center; gap: 6px; }
+    .ed-steps em {
+      font-style: normal; font-size: 0.68rem; color: var(--dim);
+      letter-spacing: .04em; width: 42px; flex: none;
+    }
+    .ed-steps button {
+      flex: 1; height: 40px; border-radius: 11px; font: inherit; font-size: 0.78rem;
+      border: 1px solid var(--glass-line); background: var(--glass); color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .ed-steps button.on {
+      color: var(--ink); border-color: rgba(139, 124, 246, 0.5);
+      background: rgba(139, 124, 246, 0.14);
+    }
+    .ed-go { display: flex; gap: 8px; }
+    .ed-go button { flex: 1; height: 50px; border-radius: 13px; font: inherit; font-size: 0.86rem; }
+    .ed-play { border: 1px solid var(--glass-line); background: var(--glass); color: var(--ink); }
+    .ed-save {
+      border: none; font-weight: 600; color: #1a1408;
+      background: linear-gradient(135deg, var(--gold), #f0a93c);
+    }
+    .ed-note { margin: 0; font-size: 0.72rem; color: var(--dim); line-height: 1.45; }
+    .pl-markrow i { font-style: normal; font-size: 0.68rem; color: var(--dim); flex: none; }
+    .pl-markrow button { flex: 0 1 auto; padding-left: 12px; padding-right: 12px; }
+
     .wt-add .btn { flex: 0 0 auto; width: auto; min-width: 0; padding-left: 18px; padding-right: 18px; }
     .wt-item.seen { opacity: .55; }
     .wt-item.seen .wt-state { opacity: .7; }

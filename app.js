@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 562";
+const APP_VERSION = "Кэйко 563";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9344,7 +9344,38 @@ const plClock = (t) => {
    В разборе может лежать marks: такт → секунда, где он начинается. Тогда плеер
    сам выделяет то место, которое сейчас разучиваешь, — не надо ловить пальцем
    границы на дорожке. Записи без разметки работают как раньше. */
-const pracMarks = () => (pracDoc() || {}).marks || null;
+/* ── Свои метки, поставленные с телефона ──
+   Разметка ставилась скриптом на компьютере: слушаешь запись, выписываешь
+   секунды, заливаешь в гист. Дошёл до тринадцатого такта — дальше не
+   размечено, и нет ни круга по такту, ни картинки, ни метронома по долям,
+   пока не сядешь за компьютер. Теперь это делается там же, где играешь.
+
+   Своё лежит ОТДЕЛЬНО от разбора и накладывается поверх: `PRACTICE_DATA`
+   целиком заменяется тем, что приехало из каталога, и метка, поставленная
+   минуту назад, пропала бы при первой же сверке. Уходит она из «своего»
+   только когда в разборе оказалось ровно то же число (`marksSettle`), а не
+   сразу после записи в гист: сырой файл гисты держат в кэше пять минут, и
+   ближайшая сверка вернула бы старую разметку. */
+const MARKS_MINE_LS = "keiko-marks-mine-v1";
+let marksMine = {};
+try { marksMine = JSON.parse(localStorage.getItem(MARKS_MINE_LS)) || {}; } catch {}
+const marksSaveMine = () => { try { localStorage.setItem(MARKS_MINE_LS, JSON.stringify(marksMine)); } catch {} };
+function marksSettle() {
+  let менялось = false;
+  for (const [id, свои] of Object.entries(marksMine)) {
+    const общ = ((PRACTICE_DATA || {})[id] || {}).marks || {};
+    for (const k of Object.keys(свои)) if (общ[k] === свои[k]) { delete свои[k]; менялось = true; }
+    if (!Object.keys(свои).length) { delete marksMine[id]; менялось = true; }
+  }
+  if (менялось) marksSaveMine();
+}
+
+const pracMarks = () => {
+  const общ = (pracDoc() || {}).marks || null;
+  const свои = marksMine[piece().id];
+  if (!свои || !Object.keys(свои).length) return общ;
+  return Object.assign({}, общ || {}, свои);
+};
 function markSpan(u) {
   const m = pracMarks();
   if (!m || !u) return null;
@@ -9377,6 +9408,213 @@ function barSpan(n) {
   const b = дальше ? m[дальше] : 0;
   return b > m[n] ? { a: m[n], b } : null;
 }
+/* ── Режим разметки такта ──
+   Отдельный режим внутри плеера: лишнее убрано, на экране только такт, его
+   границы и «слушать». Границы двигаются шагом 0,1 · ½ · 1 с — десятые нужны
+   потому, что главный способ поставить метку на телефоне это «поставить
+   здесь»: слушаешь и жмёшь в нужный миг, а рука опаздывает примерно на
+   двадцатую-пятую долю секунды, и полсекунды тут уже грубо.
+
+   Конец такта и начало следующего — ОДНА метка, а не две: разметка это
+   цепочка границ, и хранить у такта свой независимый конец значило бы
+   позволить дырку между тактами. В подписи это сказано прямо, чтобы правка
+   конца тринадцатого не выглядела потом чужой правкой четырнадцатого. */
+let plEdit = null;                       // {n, a, b} — такт и обе его границы
+const PL_ESTEPS = [0.1, 0.5, 1];
+const plEStep = (id) => PL_ESTEPS.includes(plOpt(id).estep) ? plOpt(id).estep : 0.5;
+
+/* Сколько всего тактов у вещи. Разбор знает это по подсказкам и кускам;
+   если не знает — на один дальше последней метки, чтобы шагалка не уводила
+   в пустоту, но и не запирала на уже размеченном. */
+function plBarTotal() {
+  const d = pracDoc() || {};
+  const поКускам = (d.parts || []).reduce((a, p) => Math.max(a, Number(p.to) || 0), 0);
+  const поНотам = Object.keys(d.hints || {}).reduce((a, k) => Math.max(a, Number(k) || 0), 0);
+  const m = pracMarks() || {};
+  const поМеткам = Object.keys(m).reduce((a, k) => Math.max(a, Number(k) || 0), 0);
+  return Math.max(поКускам, поНотам, поМеткам + 1, 1);
+}
+
+/* С какого такта разумно начать разметку: с первого, у которого нет конца.
+   Обычно это ровно то место, где разметка оборвалась. */
+function plEditFirst() {
+  const m = pracMarks() || {};
+  const всего = plBarTotal();
+  for (let n = 1; n <= всего; n++) if (!(m[n] >= 0) || !(m[n + 1] >= 0)) return n;
+  return всего;
+}
+
+/* Незаполненную границу предлагаем сами: от соседней метки на среднюю длину
+   такта. Пустое поле человек заполнял бы с нуля, а так остаётся проверить на
+   слух и подвинуть на десятые. */
+function plEditGuess(n) {
+  const m = pracMarks() || {};
+  const t = plTempoData();
+  const шаг = (t && t.сред) || 0;
+  let a = (m[n] >= 0) ? m[n] : null;
+  if (a == null && m[n - 1] >= 0) a = m[n - 1] + (шаг || 2);
+  if (a == null) a = (pracAudioEl && pracAudioEl.currentTime) || 0;
+  let b = (m[n + 1] >= 0) ? m[n + 1] : a + (шаг || 2);
+  return { a: Math.max(0, a), b: Math.max(a + 0.2, b) };
+}
+
+const plR = (v) => Math.round(v * 100) / 100;      // сотые: больше нечем управлять
+const plClock1 = (t) => {
+  if (!isFinite(t) || t < 0) return "0:00,0";
+  const м = Math.floor(t / 60), с = t - м * 60;
+  return м + ":" + (с < 10 ? "0" : "") + с.toFixed(1).replace(".", ",");
+};
+
+function plEditOpen(n) {
+  const всего = plBarTotal();
+  const такт = Math.min(Math.max(1, n || plEditFirst()), всего);
+  plEdit = Object.assign({ n: такт }, plEditGuess(такт));
+  plEditShow();
+}
+function plEditClose() {
+  plEdit = null;
+  plEditShow();
+}
+/* Показать или спрятать режим целиком. Плеер не пересобираем: в нём живёт
+   <audio>, и пересборка оборвала бы звук на полуслове. */
+function plEditShow() {
+  const box = $("#pracPlayer");
+  if (!box) return;
+  box.classList.toggle("editing", !!plEdit);
+  const el = $("#plEdit");
+  if (!el) return;
+  el.hidden = !plEdit;
+  if (plEdit) el.innerHTML = plEditHTML();
+}
+/* Границы не заходят друг за друга: такт короче пятой доли секунды слушать
+   нечем, а отрицательный не бывает вовсе. */
+function plEditFix(what) {
+  if (!plEdit) return;
+  const дл = (pracAudioEl && pracAudioEl.duration) || 0;
+  plEdit.a = Math.max(0, plEdit.a);
+  if (дл) { plEdit.a = Math.min(plEdit.a, дл); plEdit.b = Math.min(plEdit.b, дл); }
+  if (what === "a" && plEdit.b - plEdit.a < 0.2) plEdit.b = plR(plEdit.a + 0.2);
+  if (what === "b" && plEdit.b - plEdit.a < 0.2) plEdit.a = plR(Math.max(0, plEdit.b - 0.2));
+}
+function plEditMove(what, dir) {
+  if (!plEdit || !pracAudioEl) return;
+  plEdit[what] = plR(plEdit[what] + dir * plEStep(pracAudioEl.dataset.for));
+  plEditFix(what);
+  plEditShow();
+}
+/* Главная кнопка режима: слушаешь и жмёшь ровно там, где такт начинается. */
+function plEditHere(what) {
+  if (!plEdit || !pracAudioEl) return;
+  plEdit[what] = plR(pracAudioEl.currentTime || 0);
+  plEditFix(what);
+  plEditShow();
+}
+function plEditPlay() {
+  if (!plEdit || !pracAudioEl) return;
+  plSetSel({ a: plEdit.a, b: plEdit.b });
+  try { pracAudioEl.currentTime = plEdit.a; } catch {}
+  pracAudioEl.play().catch(() => {});
+}
+
+function plEditHTML() {
+  const n = plEdit.n, id = piece().id;
+  const m = pracMarks() || {};
+  const шаг = plEStep(id);
+  const длина = plEdit.b - plEdit.a;
+  const t = plTempoData();
+  const сек = (v) => String(Math.round(v * 10) / 10).replace(".", ",");
+  const было = (k) => (m[k] >= 0 ? plR(m[k]) : null);
+  const ново = (k, v) => было(k) === null || Math.abs(было(k) - v) > 0.004;
+  const край = (what, имя, k) => `
+    <div class="ed-line">
+      <div class="ed-name">${имя}${ново(k, plEdit[what]) ? ' <i>новое</i>' : ""}</div>
+      <div class="ed-row">
+        <button class="ed-pm" data-ed="${what}-" type="button">−</button>
+        <b class="ed-val">${plClock1(plEdit[what])}</b>
+        <button class="ed-pm" data-ed="${what}+" type="button">＋</button>
+      </div>
+      <button class="ed-here" data-ed="here${what}" type="button">Поставить здесь</button>
+    </div>`;
+  return `
+    <div class="ed-top">
+      <b>Разметка такта</b>
+      <button class="ed-x" data-ed="close" type="button">✕</button>
+    </div>
+    <div class="ed-bar">
+      <button data-ed="prev" type="button" ${n <= 1 ? "disabled" : ""}>‹</button>
+      <span>такт <b>${n}</b><i>из ${plBarTotal()}</i></span>
+      <button data-ed="next" type="button" ${n >= plBarTotal() ? "disabled" : ""}>›</button>
+    </div>
+    ${край("a", "Начало", n)}
+    ${край("b", "Конец", n + 1)}
+    <div class="ed-len">Длина ${сек(длина)} с${t ? ` · соседние в среднем ${сек(t.сред)} с` : ""}</div>
+    <div class="ed-steps">
+      <em>Шаг</em>
+      ${PL_ESTEPS.map((g) => `<button data-estep="${g}" class="${g === шаг ? "on" : ""}" type="button">${String(g).replace(".", ",")} с</button>`).join("")}
+    </div>
+    <div class="ed-go">
+      <button class="ed-play" data-ed="play" type="button">▶︎ Послушать такт</button>
+      <button class="ed-save" data-ed="save" type="button">Сохранить</button>
+    </div>
+    <p class="ed-note">Конец ${n}-го такта и начало ${n + 1}-го — это одна метка: сдвинешь конец — сдвинется и начало следующего.</p>`;
+}
+
+/* Проверка — соседи. Метки идут цепочкой, и метка, залезшая за соседнюю,
+   ломает не только свой такт: следующий становится отрицательной длины и
+   выпадает из выбора совсем. */
+async function plEditSave() {
+  if (!plEdit) return;
+  const id = piece().id, n = plEdit.n;
+  const m = pracMarks() || {};
+  const ключи = Object.keys(m).map(Number).filter((k) => isFinite(m[k]));
+  const до = ключи.filter((k) => k < n).sort((a, b) => b - a)[0];
+  const после = ключи.filter((k) => k > n + 1).sort((a, b) => a - b)[0];
+  if (до && !(plEdit.a > m[до])) { toast(`Начало должно быть позже ${до}-го такта`); return; }
+  if (после && !(plEdit.b < m[после])) { toast(`Конец должен быть раньше ${после}-го такта`); return; }
+  marksMine[id] = Object.assign({}, marksMine[id], { [n]: plR(plEdit.a), [n + 1]: plR(plEdit.b) });
+  marksSaveMine();
+  toast(`Такт ${n} размечен`);
+  /* Плеер пересобираем: размеченных тактов стало больше, а от их числа
+     зависят и выбор, и карта темпа, и подпись. */
+  pracPlayer();
+  plEditOpen(Math.min(n + 1, plBarTotal()));
+  marksPush(id);
+}
+
+/* Запись в гист: перечитываем файл прямо перед PATCH — между чтением и
+   записью проходит чужая сверка, и запись по старому снимку стирает живое.
+   Своё из `marksMine` при этом не выкидываем: сырой файл гисты отдают из
+   кэша ещё пять минут, и метка на эти минуты пропала бы с экрана. */
+async function marksPush(id) {
+  if (!cfg.token) { toast("Метка на телефоне: гист не подключён"); return false; }
+  try {
+    const gid = await ensureCatalogGist(false);
+    if (!gid) throw new Error("каталог не найден");
+    const txt = await catRaw(PRAC_FILE, 25000);
+    if (!txt) throw new Error("разбор не прочитался");
+    const пак = JSON.parse(txt);
+    /* Пустое поверх полного не пишем. Сорвалось чтение — в `пак` оказался бы
+       один этот кусок, и PATCH снёс бы разборы всех остальных вещей: файл
+       один на все. Своё при этом никуда не денется, оно уже на телефоне. */
+    if (!пак || typeof пак !== "object" || !Object.keys(пак).length)
+      throw new Error("разбор пришёл пустым");
+    const свои = Object.keys(PRACTICE_DATA || {});
+    if (свои.some((k) => !(k in пак))) throw new Error("в разборе меньше вещей, чем на телефоне");
+    const было = пак[id] || {};
+    пак[id] = Object.assign({}, было, { marks: Object.assign({}, было.marks || {}, marksMine[id] || {}) });
+    const up = await gh("/gists/" + gid, { method: "PATCH", body: JSON.stringify({
+      files: { [PRAC_FILE]: { content: JSON.stringify(пак) } } }) }, 25000);
+    if (!up.ok) throw new Error("гист ответил " + up.status);
+    PRACTICE_DATA[id] = пак[id];
+    try { localStorage.setItem(LS_PRAC, JSON.stringify(PRACTICE_DATA)); } catch {}
+    toast("Разметка ушла в гист");
+    return true;
+  } catch (e) {
+    toast("Сохранено на телефоне, в гист не ушло: " + (e.message || "не вышло"));
+    return false;
+  }
+}
+
 /* ── Рисунок звука ──
    Огибающая записи, снятая заранее скриптом: пик громкости за каждую
    пятидесятую долю секунды, байт на точку, в разборе — базой-64 (`wave`).
@@ -9928,6 +10166,13 @@ function pracPlayer() {
   }
 
   box.hidden = false;
+  /* Пересборка заменяет и <audio> — звук обрывается на полуслове. Раньше это
+     случалось редко (приехал разбор) и терялось в шуме, а с разметкой стало
+     постоянным: сохранил такт — тактов стало больше — плеер собрался заново,
+     и запись замолчала ровно тогда, когда её слушают. Запоминаем место и
+     возвращаемся туда же. */
+  const звучало = pracAudioEl && pracAudioEl.dataset.for === id
+    ? { t: pracAudioEl.currentTime, игра: !pracAudioEl.paused } : null;
   box.dataset.sig = подпись;
   box.innerHTML = `
     <button class="pl-fold" data-pl="fold" type="button">
@@ -9974,6 +10219,11 @@ function pracPlayer() {
         </select>
       </span>
     </div>` : ""}
+    <div class="pl-set pl-markrow">
+      <em>Разметка</em>
+      <button data-pl="edit">✎ Разметить такт</button>
+      ${plBars().length ? `<i>размечено ${plBars().length + 1}</i>` : `<i>тактов ещё нет</i>`}
+    </div>
     <div class="pl-tools">
       <span class="pl-set">
         <em>Скорость</em>
@@ -10006,6 +10256,7 @@ function pracPlayer() {
       <div class="met-note" id="metNote"></div>` : ""}
     </div>
     </div>
+    <div class="pl-edit" id="plEdit" hidden></div>
     <audio preload="metadata" data-for="${esc(id)}" src="${esc(url)}"></audio>`;
   const st0 = pracStore();
   if (st0.plOpen === undefined) st0.plOpen = true;   // по умолчанию открыт
@@ -10022,7 +10273,13 @@ function pracPlayer() {
     взять();
   });
   if (барДо) барДо.addEventListener("change", взять);
-  pracAudioEl.addEventListener("loadedmetadata", () => { plApplyRate(); plApplyMute(); plPaint(); });
+  pracAudioEl.addEventListener("loadedmetadata", () => {
+    if (звучало) {
+      try { pracAudioEl.currentTime = звучало.t; } catch {}
+      if (звучало.игра) pracAudioEl.play().catch(() => {});
+    }
+    plApplyRate(); plApplyMute(); plPaint();
+  });
   pracAudioEl.addEventListener("play", plTick);
   pracAudioEl.addEventListener("pause", plPaint);
   pracAudioEl.addEventListener("timeupdate", () => { plLoopCheck(); plPaint(); });
@@ -10030,6 +10287,7 @@ function pracPlayer() {
   plApplyMute();
   metSync();
   plPaint();
+  plEditShow();
 }
 
 /* Пока запись едет — видно, сколько уже приехало; если сорвалось — видно,
@@ -14264,7 +14522,28 @@ function bindPractice() {
       if (st.plOpen) plPaint();
       return;
     }
+    /* Режим разметки — до общей ветки ниже: там всякое неизвестное имя
+       считается кнопкой «Весь трек». */
+    const ред = e.target.closest("[data-ed]");
+    if (ред) {
+      const к = ред.dataset.ed;
+      if (к === "close") { plEditClose(); return; }
+      if (к === "prev") { plEditOpen(plEdit ? plEdit.n - 1 : 1); return; }
+      if (к === "next") { plEditOpen(plEdit ? plEdit.n + 1 : 1); return; }
+      if (к === "herea") { plEditHere("a"); return; }
+      if (к === "hereb") { plEditHere("b"); return; }
+      if (к === "play") { plEditPlay(); return; }
+      if (к === "save") { plEditSave(); return; }
+      if (к.length === 2) { plEditMove(к[0], к[1] === "+" ? 1 : -1); return; }
+      return;
+    }
+    const шагЕ = e.target.closest("[data-estep]");
+    if (шагЕ) {
+      plOpt(pracAudioEl.dataset.for).estep = Number(шагЕ.dataset.estep);
+      pracSaveLoops(); plEditShow(); return;
+    }
     if (b) {
+      if (b.dataset.pl === "edit") { plEdit ? plEditClose() : plEditOpen(0); return; }
       if (b.dataset.pl === "reset") { plResetSpan(); return; }
       if (b.dataset.pl === "replay") {
         /* Переслушать место заново — одно нажатие. Раньше приходилось попадать
@@ -16392,6 +16671,9 @@ async function applyPractice(files) {
     if (prac && typeof prac === "object") {
       PRACTICE_DATA = prac;
       localStorage.setItem(LS_PRAC, JSON.stringify(prac));
+      /* Своя метка уходит из «моего» ровно тогда, когда в разборе оказалось
+         то же число, — до тех пор она накладывается поверх приехавшего. */
+      marksSettle();
     }
   } catch {}
 }
