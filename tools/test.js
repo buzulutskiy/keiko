@@ -2402,6 +2402,83 @@ function ок(имя, факт, надо) {
   t.set("data", было.данные);
 }
 
+/* ── Второй уровень: вещи внутри раздела ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), open: t.get("lsOpen") };
+  const том={ id:"tom", kind:"book", title:"Том", pages:101, mode:"list", chapters:[
+    { name:"Стихи 1814", from:1, items:[{name:"Раз",page:1},{name:"Два",page:2},
+                                        {name:"Три",page:3},{name:"Четыре",page:4}] },
+    { name:"Поэма", from:21 },
+    { name:"Стихи 1815", from:81, items:[{name:"Раз",page:81},{name:"Два",page:82}] },
+  ]};
+  t.set("data", { active:"book", piano:{pieces:[],entries:[]},
+    pastel:{courses:[],entries:[]}, watch:{videos:[],entries:[]},
+    book:{ activeBook:"tom", books:[том], entries:[] } });
+  t.set("pickItems", {});
+  const гл = (i) => t.get("bookList")(том)[i];
+
+  /* Раздел без вещей отмечается сам, как было. */
+  ок("уровни: у раздела без вещей своё состояние", t.get("lsState")(том, гл(1)), "");
+  /* Раздел с вещами руками не отмечают — его состояние собирается снизу. */
+  ок("уровни: пустой раздел с вещами не начат", t.get("lsState")(том, гл(0)), "");
+  t.get("pickItems")[t.get("lsKey")("Стихи 1814", "Раз")] = "done";
+  ок("уровни: одна вещь прочитана — раздел «читаю»", t.get("lsState")(том, гл(0)), "read");
+  ок("уровни: доля раздела — четверть", t.get("lsShare")(том, гл(0)), 0.25);
+  for (const имя of ["Два","Три","Четыре"])
+    t.get("pickItems")[t.get("lsKey")("Стихи 1814", имя)] = "done";
+  ок("уровни: все вещи прочитаны — раздел прочитан", t.get("lsState")(том, гл(0)), "done");
+
+  /* Объём: двадцать страниц раздела засчитываются по доле вещей. */
+  ок("уровни: страницы раздела идут долями",
+    t.get("listCount")(том).страницПрочитано, 20);
+  ок("уровни: всего страниц", t.get("listCount")(том).страниц, 100);
+
+  /* Составной ключ: одно и то же имя в разных разделах — разные вещи. */
+  ок("уровни: «Раз» в другом разделе не отмечен",
+    t.get("lsInnerState")(том, "Стихи 1815", "Раз"), "");
+  ок("уровни: ключ составной",
+    t.get("lsKey")("Стихи 1815", "Раз"), "Стихи 1815|Раз");
+
+  /* По кругу и обратно. */
+  ок("уровни: круг состояний",
+    ["", "read", "done"].map(t.get("lsNext")), ["read", "done", ""]);
+  t.set("pickItems", {}); t.set("lsOpen", было.open); t.set("data", было.данные);
+}
+
+/* ── Траектория: маршрут по книге с отметками ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), arts: t.get("ARTS") };
+  const том={ id:"tom", kind:"book", title:"Том", pages:101, mode:"list", chapters:[
+    { name:"Стихи 1814", from:1, items:[{name:"Раз",page:1},{name:"Два",page:2}] },
+    { name:"Поэма", from:21 },
+  ]};
+  t.set("data", { active:"book", piano:{pieces:[],entries:[]},
+    pastel:{courses:[],entries:[]}, watch:{videos:[],entries:[]},
+    book:{ activeBook:"tom", books:[том], entries:[
+      { id:"e1", date:"2026-09-20", bookId:"tom", marks:{ "Стихи 1814|Раз":"done", "Поэма":"read" } }]}});
+  t.set("ARTS", { tom: { route: [
+    { name:"Первая глава", why:"почему", tail:"вывод", items:[
+      { n:1, name:"Раз", year:1814, page:1, key:"Стихи 1814|Раз" },
+      { n:2, name:"Два", year:1814, page:2, key:"Стихи 1814|Два" },
+      { n:0, name:"Поэма", year:1820, page:21, key:"Поэма" } ]} ]}});
+
+  const м = t.get("routeOf")(том);
+  ок("маршрут: берётся из разбора", м.length, 1);
+  ок("маршрут: объяснение главы сохранено", [м[0].why, м[0].tail], ["почему", "вывод"]);
+  /* Отметки подтягиваются: прочитанное видно прямо в маршруте. */
+  ок("маршрут: прочитанная вещь отмечена",
+    t.get("routeState")(том, м[0].items[0]), "done");
+  ок("маршрут: непрочитанная — пусто",
+    t.get("routeState")(том, м[0].items[1]), "");
+  /* Большая вещь ключом равна имени главы. */
+  ок("маршрут: большая вещь тянет свою отметку",
+    t.get("routeState")(том, м[0].items[2]), "read");
+  /* Без разбора маршрута нет — и кнопки тоже. */
+  t.set("ARTS", { tom: {} });
+  ок("маршрут: без разбора его нет", t.get("routeOf")(том), null);
+  t.set("ARTS", было.arts); t.set("data", было.данные);
+}
+
 /* ── У пьесы ни карты, ни собрания ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), cat: t.get("CATALOG") };
@@ -2412,7 +2489,7 @@ function ок(имя, факт, надо) {
       pieces: [{ id: "bwv853", name: "Прелюдия", bars: 40 }] } });
   ок("пьеса: кнопки карты и собрания нет", t.get("mapBtnOn")(), false);
   ок("пьеса: и места под неё не держим — «Отметить» на всю ширину",
-    t.get("bookBtnState")(), { map: { on: false, keep: false } });
+    t.get("bookBtnState")(), { map: { on: false, keep: false, route: false } });
 
   /* Книга с `noMap`: карты не будет никогда, место под кнопку не держим. */
   t.set("data", { active: "book", piano: { pieces: [], entries: [] },
@@ -2421,11 +2498,19 @@ function ок(имя, факт, надо) {
       { id: "b1", title: "Том", pages: 800, mode: "parts", noMap: true,
         chapters: [{ name: "Раз", from: 1 }] }] } });
   ок("книга без карты: места под кнопку не держим",
-    t.get("bookBtnState")(), { map: { on: false, keep: false } });
+    t.get("bookBtnState")(), { map: { on: false, keep: false, route: false } });
   /* А обычная книга место держит: разбор приезжает из каталога позже. */
   t.get("data").book.books[0].noMap = false;
   ок("обычная книга: место под будущую карту держим",
-    t.get("bookBtnState")(), { map: { on: false, keep: true } });
+    t.get("bookBtnState")(), { map: { on: false, keep: true, route: false } });
+
+  /* А если карты не будет, но есть маршрут — кнопка появляется и ведёт в него. */
+  const былиARTS = t.get("ARTS");
+  t.get("data").book.books[0].noMap = true;
+  t.set("ARTS", { b1: { route: [{ name: "Глава", items: [{ name: "Вещь", key: "Вещь" }] }] } });
+  ок("маршрут: кнопка занимает место карты",
+    t.get("bookBtnState")(), { map: { on: true, keep: true, route: true } });
+  t.set("ARTS", былиARTS);
   t.set("data", было.данные); t.set("CATALOG", было.cat);
 }
 
@@ -2510,7 +2595,7 @@ function ок(имя, факт, надо) {
     /1 из 4 статей/.test(t.get("heroSub")(ст)), true);
   ок("сборник: в кольце обычная доля, счёт — в подписи", t.get("ringSign")(ст), "");
   ок("сборник: место под кнопку карты не держим",
-    t.get("bookBtnState")(), { map: { on: false, keep: false } });
+    t.get("bookBtnState")(), { map: { on: false, keep: false, route: false } });
   /* У обычной книги место держим: разбор с картой приезжает из каталога
      позже, и кнопка не должна двигать раскладку, когда появится. */
   t.get("data").book.books[0].mode = "linear";
@@ -2533,7 +2618,11 @@ function ок(имя, факт, надо) {
     const ряд = { classList: {
       toggle: (к, в) => { в ? классы.add(к) : классы.delete(к); },
       add: (к) => классы.add(к), remove: (к) => классы.delete(к), contains: (к) => классы.has(к) } };
-    const кнопка = { parentElement: ряд, classList: { toggle() {}, add() {}, remove() {} } };
+    /* Кнопка теперь не только красится, но и переименовывается: у книги с
+       маршрутом вместо карты компас. Заглушка должна уметь то же, что узел. */
+    const кнопка = { parentElement: ряд, textContent: "🗺",
+      classList: { toggle() {}, add() {}, remove() {} },
+      setAttribute() {}, getAttribute: () => null };
     const былПоиск = t.get("document.getElementById");
     t.set("document.getElementById", (id) => (id === "bookMapBtn" ? кнопка : null));
     t.get("syncBookBtns")();

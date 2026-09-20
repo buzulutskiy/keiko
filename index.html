@@ -1197,6 +1197,13 @@
       width: 20px; flex-shrink: 0; text-align: center;
       color: var(--dim); font-size: 1rem;
     }
+    /* Стрелка у раздела, внутри которого есть вещи: нажатие открывает его,
+       а не отмечает. Без стрелки два одинаковых с виду ряда вели бы себя
+       по-разному, и понять это можно было бы только на ощупь. */
+    .ls-go { flex: none; color: var(--dim); font-size: 1rem; margin-left: -2px; }
+    .ls-row.has .ls-mark { opacity: .85; }
+    .ls-back { margin-bottom: 10px; }
+
     /* Страницы произведения — справа, мелко и серым: отмечают не по ним,
        но объём видеть надо. */
     .ls-pages {
@@ -3898,6 +3905,54 @@
       border: 1px solid var(--glass-line); background: var(--glass);
       color: var(--muted); font-size: 1rem;
     }
+
+    /* ── Траектория чтения ── */
+    #route {
+      position: fixed; inset: 0; z-index: 88; overflow-y: auto;
+      background: var(--bg);
+      padding: max(16px, env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
+    }
+    #route[hidden] { display: none; }
+    .rt-body { max-width: 560px; margin: 0 auto; }
+    .rt-title { margin: 6px 0 2px; font-size: 1.5rem; font-weight: 700; }
+    .rt-lead { margin: 0 0 22px; color: var(--dim); font-size: 0.84rem; }
+    .rt-close {
+      position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px; z-index: 2;
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 1px solid var(--glass-line); background: var(--glass); color: var(--muted);
+    }
+    .rt-ch { position: relative; margin-bottom: 30px; }
+    /* Номер главы крупно и бледно: он нужен, чтобы не терять место, а не
+       чтобы его читали. */
+    .rt-n {
+      position: absolute; right: 0; top: -6px;
+      font-size: 2.4rem; font-weight: 200; color: var(--line);
+      line-height: 1; pointer-events: none;
+    }
+    .rt-ch h3 {
+      margin: 0 44px 8px 0; font-size: 1.02rem; font-weight: 700; line-height: 1.35;
+    }
+    .rt-why { margin: 0 0 12px; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+    .rt-tail {
+      margin: 12px 0 0; padding-left: 12px; border-left: 2px solid var(--line);
+      color: var(--dim); font-size: 0.84rem; line-height: 1.55;
+    }
+    .rt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+    .rt-it {
+      display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
+      align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line);
+      font-size: 0.9rem;
+    }
+    .rt-mark { color: var(--dim); text-align: center; }
+    .rt-it.read .rt-mark { color: var(--green); }
+    .rt-it.done .rt-mark { color: var(--gold); }
+    .rt-it.done .rt-name { color: var(--dim); }
+    .rt-name em { font-style: normal; color: var(--dim); font-size: 0.78rem; }
+    .rt-page { color: var(--dim); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+    /* Пояснение к пункту занимает всю ширину под ним. */
+    .rt-note {
+      grid-column: 2 / -1; color: var(--dim); font-size: 0.78rem; line-height: 1.45;
+    }
 </style>
 </head>
 <body>
@@ -3923,7 +3978,9 @@
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
-    <div id="rest" hidden>
+    <div id="route" hidden></div>
+
+  <div id="rest" hidden>
     <canvas id="restWaves"></canvas>
     <div class="rs-body">
       <div class="rs-pick" id="restPick">

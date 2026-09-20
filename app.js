@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 557";
+const APP_VERSION = "Кэйко 558";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2107,7 +2107,7 @@ function saveEntry() {
 
   pending = [];
   pickLessons = [];
-  pickSpans = []; pickItems = {};
+  pickSpans = []; pickItems = {}; lsOpen = null;
   saveData();
   schedulePush();
   closeSheet();
@@ -4470,6 +4470,10 @@ $("#view").innerHTML = `
   artsPeek();            // на первом же показе книги проверяем, есть ли разбор
   const bm = $("#bookMapBtn");
   if (bm) bm.addEventListener("click", () => {
+    /* Одна кнопка, два назначения: где есть карта — карта, где её не будет,
+       но есть маршрут — маршрут. Второй кнопки рядом с «Отметить» не ставим:
+       там и одной-то место держится с трудом. */
+    if (bookBtnState().map.route) { openRoute(); return; }
     colView = null; colAt = null;
     openPlaceMap(mapMaterial() || book() || { id: curKey(), title: "", chapters: [] }, -1);
   });
@@ -4723,7 +4727,7 @@ function setActiveMaterial(item) {
   zenHold = 0;
   zenArm();
   paintBackdrop(item);
-  pending = []; pickLessons = []; pickSpans = []; pickItems = {};
+  pending = []; pickLessons = []; pickSpans = []; pickItems = {}; lsOpen = null;
   selectedDate = todayStr();
   syncPickers();
   saveData();
@@ -4798,8 +4802,11 @@ function bookBtnState() {
      которая не приедет, значит навсегда оставить дырку рядом с «Отметить». */
   const никогда = isPiano()
     || (isBook() && (bookMode(book()) === "list" || !!book().noMap));
-  const on = mapBtnOn();
-  return { map: { on, keep: on || !никогда } };
+  /* Место рядом с «Отметить» одно, и занимает его либо карта, либо
+     траектория: у книги, где карты не будет, оно свободно. */
+  const маршрут = isBook() && !mapBtnOn() && !!routeOf(book());
+  const on = mapBtnOn() || маршрут;
+  return { map: { on, keep: on || !никогда, route: маршрут } };
 }
 
 /* Кнопка карты появляется, когда доедет файл разбора, — и раньше при этом
@@ -4810,6 +4817,16 @@ function syncBookBtns() {
   const map = document.getElementById("bookMapBtn");
   if (!map) return;
   map.classList.toggle("away", !st.map.on);
+  /* Значок и подпись меняются вместе с назначением. */
+  if (st.map.route) {
+    map.textContent = "🧭";
+    map.setAttribute("aria-label", "Траектория чтения");
+    map.setAttribute("title", "Траектория чтения");
+  } else if (map.textContent !== "🗺") {
+    map.textContent = "🗺";
+    map.setAttribute("aria-label", "Карта мест");
+    map.setAttribute("title", "Карта мест");
+  }
   /* Ряд кнопок правим здесь же. Лента свайпается без полной перерисовки, и
      класс, поставленный при сборке строки, оставался от прошлого материала:
      перелистнул на сборник статей — карты у него нет и не будет, а дырка
@@ -14936,7 +14953,7 @@ function openLogSheet() {
     return;
   }
   sheetMode = "log";
-  pickSpans = []; partOpen = null; partUpto = {}; pickItems = {};
+  pickSpans = []; partOpen = null; partUpto = {}; pickItems = {}; lsOpen = null;
   if (isCourse() && plainDraw()) { pickDrawDone = false; drawSince = now(); }
   syncPickers();
   const existing = entryFor(selectedDate);
@@ -15154,44 +15171,89 @@ function listStateNow(b) {
 const lsMark = (s) => s === "done" ? "✓" : s === "read" ? "▸" : "";
 /* Строка счёта: сколько вещей прочитано и сколько это страниц. Страницы
    показываем, только если они у книги вообще есть: у «Полки» их нет. */
-function lsHeadText(b, сост) {
-  const сп = bookList(b), стр = listPages(b);
-  const n = сост.filter((x) => x === "done").length;
-  const всего = стр.reduce((a, x) => a + x, 0);
-  const слово = plural(сп.length, "вещь", "вещи", "вещей");
-  if (!всего) return `${n} из ${сп.length} ${слово}`;
-  const мои = сост.reduce((a, s, i) => a + (s === "done" ? стр[i] : 0), 0);
-  return `${n} из ${сп.length} ${слово} · ${мои} из ${всего} ${plural(всего, "страницы", "страниц", "страниц")}`;
+function lsHeadText(b) {
+  const c = listCount(b);
+  const слово = plural(c.всего, "вещь", "вещи", "вещей");
+  if (!c.страниц) return `${c.прочитано} из ${c.всего} ${слово}`;
+  return `${c.прочитано} из ${c.всего} ${слово} · ${c.страницПрочитано} из ${c.страниц} `
+    + plural(c.страниц, "страницы", "страниц", "страниц");
 }
 
 function bookListUI() {
-  const b = book(), сост = listStateNow(b), сп = bookList(b), стр = listPages(b);
+  const b = book(), сп = bookList(b), стр = listPages(b);
+
+  // ── второй уровень: вещи внутри раздела
+  if (lsOpen != null && сп[lsOpen] && lsItems(сп[lsOpen]).length) {
+    const p = сп[lsOpen], вещи = lsItems(p);
+    const n = вещи.filter((v) => lsInnerState(b, p.name, v.name) === "done").length;
+    return `
+      <button class="back ls-back" id="lsBack" type="button">‹ Всё содержание</button>
+      <div class="ls-head">${esc(p.name)} · ${n} из ${вещи.length}</div>
+      <div class="ls-list">
+        ${вещи.map((v, i) => {
+          const с = lsInnerState(b, p.name, v.name);
+          return `
+          <button class="ls-row ${с}" data-lsin="${i}" type="button">
+            <span class="ls-mark">${lsMark(с)}</span>
+            <span class="ls-name">${esc(v.name || "")}</span>
+            ${v.page ? `<span class="ls-pages">${v.page}</span>` : ""}
+          </button>`; }).join("")}
+      </div>`;
+  }
+
+  // ── первый уровень: разделы
   return `
-    <div class="ls-head" id="lsHead">${lsHeadText(b, сост)}</div>
+    <div class="ls-head" id="lsHead">${lsHeadText(b)}</div>
     <div class="ls-list">
-      ${сп.map((p, i) => `
-        <button class="ls-row ${сост[i]}" data-ls="${i}" type="button">
-          <span class="ls-mark">${lsMark(сост[i])}</span>
+      ${сп.map((p, i) => {
+        const с = lsState(b, p), вещи = lsItems(p);
+        const внутри = вещи.length
+          ? `${вещи.filter((v) => lsInnerState(b, p.name, v.name) === "done").length} из ${вещи.length}`
+          : (стр[i] ? стр[i] + " с." : "");
+        return `
+        <button class="ls-row ${с}${вещи.length ? " has" : ""}" data-ls="${i}" type="button">
+          <span class="ls-mark">${lsMark(с)}</span>
           <span class="ls-name">${esc(p.name || "")}</span>
-          ${стр[i] ? `<span class="ls-pages">${стр[i]} с.</span>` : ""}
-        </button>`).join("")}
+          <span class="ls-pages">${внутри}</span>
+          ${вещи.length ? `<span class="ls-go">›</span>` : ""}
+        </button>`; }).join("")}
     </div>`;
 }
+/* По кругу: не начата → читаю → прочитана → не начата. Третий нажим — это и
+   есть отмена, отдельной кнопки «снять» не нужно. */
+const lsNext = (было) => (было === "" ? "read" : было === "read" ? "done" : "");
+
 function bindBookListSheet() {
   const b = book(), корень = $("#sheetBody");
   if (!корень) return;
+  const перерисовать = () => {
+    корень.innerHTML = bookListUI();
+    bindBookListSheet();
+  };
+  const назад = корень.querySelector("#lsBack");
+  if (назад) назад.addEventListener("click", () => { lsOpen = null; перерисовать(); });
+
   корень.querySelectorAll("[data-ls]").forEach((el) => el.addEventListener("click", () => {
     const i = Number(el.dataset.ls);
-    const имя = (bookList(b)[i] || {}).name || "";
-    const было = pickItems[имя] != null ? pickItems[имя] : (listStates(b)[i] || "");
-    /* По кругу: не начата → читаю → прочитана → не начата. Третий нажим —
-       это и есть отмена, отдельной кнопки «снять» не нужно. */
-    const стало = было === "" ? "read" : было === "read" ? "done" : "";
-    pickItems[имя] = стало;
-    el.className = "ls-row " + стало;
-    const м = el.querySelector(".ls-mark"); if (м) м.textContent = lsMark(стало);
-    const ш = $("#lsHead");
-    if (ш) ш.textContent = lsHeadText(b, listStateNow(b));
+    const p = bookList(b)[i];
+    if (!p) return;
+    /* У раздела с вещами нажатие открывает его, а не отмечает: отметить
+       «Стихотворения 1814» целиком, прочитав три из двадцати одного, значило
+       бы соврать себе. Его состояние собирается из вещей. */
+    if (lsItems(p).length) { lsOpen = i; перерисовать(); return; }
+    const имя = p.name || "";
+    const было = pickItems[имя] != null ? pickItems[имя] : (lsSaved(b)[имя] || "");
+    pickItems[имя] = lsNext(было);
+    перерисовать();
+  }));
+
+  корень.querySelectorAll("[data-lsin]").forEach((el) => el.addEventListener("click", () => {
+    const p = bookList(b)[lsOpen];
+    const v = lsItems(p)[Number(el.dataset.lsin)];
+    if (!p || !v) return;
+    const ключ = lsKey(p.name, v.name);
+    pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name));
+    перерисовать();
   }));
 }
 
@@ -16448,6 +16510,119 @@ function listStates(b) {
       по[имя] = (состояние === "read" || состояние === "done") ? состояние : "";
   return сп.map((c) => по[c.name] || "");
 }
+/* ── Траектория чтения ──
+   У большого тома порядок «с первой страницы подряд» бессмыслен, а порядок
+   «как захочется» забывается через неделю. Траектория — это чужой маршрут по
+   книге: девять глав со своим объяснением, внутри пункты по порядку. Лежит в
+   разборе (`route`), а не в коде: у каждой книги он свой и пишется руками.
+   Отметки подтягиваются из тех же `marks`: у пункта есть `key` вида
+   «раздел|вещь», и видно, что из маршрута уже прочитано. */
+const routeOf = (b) => {
+  const r = (artsOf((b || book()).id) || {}).route;
+  return Array.isArray(r) && r.length ? r : null;
+};
+let routeOpen = false;
+
+function routeState(b, it) {
+  if (!it || !it.key) return "";
+  const сохр = lsSaved(b);
+  if (сохр[it.key]) return сохр[it.key];
+  /* Ключ большой вещи — имя главы целиком, у неё своя отметка. */
+  return сохр[it.name] || "";
+}
+
+function openRoute() {
+  const b = book(), м = routeOf(b);
+  if (!м) return;
+  routeOpen = true;
+  const box = $("#route");
+  if (!box) return;
+  const всего = м.reduce((a, г) => a + г.items.length, 0);
+  const мои = м.reduce((a, г) => a + г.items.filter((x) => routeState(b, x) === "done").length, 0);
+  box.innerHTML = `
+    <button class="rt-close" id="routeClose" type="button">✕</button>
+    <div class="rt-body">
+      <h2 class="rt-title">Траектория</h2>
+      <p class="rt-lead">${esc(b.title || "")} · ${мои} из ${всего} пройдено</p>
+      ${м.map((г, i) => `
+        <section class="rt-ch">
+          <div class="rt-n">${i + 1}</div>
+          <h3>${esc(г.name)}</h3>
+          ${г.why ? `<p class="rt-why">${esc(г.why)}</p>` : ""}
+          <ol class="rt-list">
+            ${г.items.map((x) => {
+              const с = routeState(b, x);
+              return `<li class="rt-it ${с}">
+                <span class="rt-mark">${lsMark(с) || "·"}</span>
+                <span class="rt-name">${esc(x.name)}${x.year ? ` <em>${x.year}</em>` : ""}</span>
+                <span class="rt-page">${x.page || ""}</span>
+                ${x.note ? `<span class="rt-note">${esc(x.note)}</span>` : ""}
+              </li>`;
+            }).join("")}
+          </ol>
+          ${г.tail ? `<p class="rt-tail">${esc(г.tail)}</p>` : ""}
+        </section>`).join("")}
+    </div>`;
+  box.hidden = false;
+  const з = $("#routeClose");
+  if (з) з.addEventListener("click", closeRoute);
+}
+function closeRoute() {
+  routeOpen = false;
+  const box = $("#route");
+  if (box) { box.hidden = true; box.innerHTML = ""; }
+}
+
+/* ── Второй уровень содержания ──
+   У раздела вроде «Стихотворения 1814» внутри двадцать одно стихотворение, и
+   отмечать их надо поштучно: прочитал три — отметил три. Первый уровень тогда
+   не отмечается руками вовсе, его состояние выводится из вещей внутри: все
+   прочитаны — прочитан, начата хоть одна — читаю.
+   Ключ отметки у вещи составной, «раздел|вещь»: имена повторяются («К ней»,
+   «Элегия», «Разлука» встречаются по нескольку раз за двадцать лет), и по
+   одному имени отметка легла бы сразу на два разных стихотворения. */
+let lsOpen = null;                    // какой раздел раскрыт; null — оглавление
+const lsItems = (p) => Array.isArray(p && p.items) ? p.items : [];
+const lsKey = (раздел, вещь) => раздел + "|" + вещь;
+
+/* Состояние вещи внутри раздела — своё, и живёт в тех же marks. */
+function lsInnerState(b, раздел, вещь) {
+  const ключ = lsKey(раздел, вещь);
+  if (pickItems[ключ] != null) return pickItems[ключ];
+  return lsSaved(b)[ключ] || "";
+}
+/* Все сохранённые отметки книги разом: разбор записей дорогой, а зовут его
+   на каждую строку списка. */
+function lsSaved(b) {
+  const bk = b || book();
+  const по = {};
+  const es = bookEntriesOf(bk.id).slice().sort((a, x) =>
+    a.date === x.date ? (a.createdAt || 0) - (x.createdAt || 0) : (a.date < x.date ? -1 : 1));
+  for (const e of es)
+    for (const [имя, сост] of Object.entries(e.marks || {}))
+      по[имя] = (сост === "read" || сост === "done") ? сост : "";
+  return по;
+}
+/* Состояние раздела: своё, если вещей внутри нет; иначе — из вещей. */
+function lsState(b, p) {
+  const вещи = lsItems(p);
+  if (!вещи.length) {
+    const ключ = p.name || "";
+    return pickItems[ключ] != null ? pickItems[ключ] : (lsSaved(b)[ключ] || "");
+  }
+  const сост = вещи.map((v) => lsInnerState(b, p.name, v.name));
+  if (сост.every((x) => x === "done")) return "done";
+  return сост.some((x) => x) ? "read" : "";
+}
+/* Какая доля раздела пройдена — для объёма в страницах. У раздела без вещей
+   это ноль или единица, у раздела с вещами — доля прочитанных. */
+function lsShare(b, p) {
+  const вещи = lsItems(p);
+  if (!вещи.length) return lsState(b, p) === "done" ? 1 : 0;
+  const n = вещи.filter((v) => lsInnerState(b, p.name, v.name) === "done").length;
+  return вещи.length ? n / вещи.length : 0;
+}
+
 /* Сколько страниц у каждого произведения: от его начала до начала
    следующего, у последнего — до конца книги. Нужно не для отметок (их ставят
    не по страницам: на одной странице бывает десять стихотворений), а для
@@ -16465,13 +16640,18 @@ function listPages(b) {
 }
 
 function listCount(b) {
-  const c = listStates(b);
-  const стр = listPages(b);
+  const bk = b || book();
+  const сп = bookList(bk), стр = listPages(bk);
+  const сост = сп.map((p) => lsState(bk, p));
   const всегоСтр = стр.reduce((a, x) => a + x, 0);
-  return { всего: c.length, прочитано: c.filter((x) => x === "done").length,
-           читаю: c.filter((x) => x === "read").length,
-           страниц: всегоСтр,
-           страницПрочитано: c.reduce((a, s, i) => a + (s === "done" ? стр[i] : 0), 0) };
+  /* Страницы раздела засчитываем по доле прочитанных вещей: у «Стихотворений
+     1814» восемнадцать страниц и двадцать одно стихотворение, и прочитать
+     треть — значит прочитать примерно шесть страниц. Точнее не скажешь: на
+     одной странице их бывает по десять, и своего объёма у стихотворения нет. */
+  const дроб = сп.reduce((a, p, i) => a + lsShare(bk, p) * стр[i], 0);
+  return { всего: сп.length, прочитано: сост.filter((x) => x === "done").length,
+           читаю: сост.filter((x) => x === "read").length,
+           страниц: всегоСтр, страницПрочитано: Math.round(дроб) };
 }
 // какую статью читаю сейчас — последняя, помеченная «читаю»
 function listNow(b) {
