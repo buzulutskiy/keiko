@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 564";
+const APP_VERSION = "Кэйко 565";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -15451,7 +15451,8 @@ function bookListUI() {
           <span class="ls-pages">${внутри}</span>
           ${вещи.length ? `<span class="ls-go">›</span>` : ""}
         </button>`; }).join("")}
-    </div>`;
+    </div>
+    <div class="quick">${finBtnHTML()}</div>`;
 }
 /* По кругу: не начата → читаю → прочитана → не начата. Третий нажим — это и
    есть отмена, отдельной кнопки «снять» не нужно. */
@@ -15464,6 +15465,7 @@ function bindBookListSheet() {
     корень.innerHTML = bookListUI();
     bindBookListSheet();
   };
+  bindFinBtn(перерисовать);
   const назад = корень.querySelector("#lsBack");
   if (назад) назад.addEventListener("click", () => { lsOpen = null; перерисовать(); });
 
@@ -15545,11 +15547,13 @@ function bookPartsUI() {
           </button>`;
       }).join("")}
     </div>
-    <div class="pt-hint">Выбери рассказ и укажи, докуда дочитал.</div>`;
+    <div class="pt-hint">Выбери рассказ и укажи, докуда дочитал.</div>
+    <div class="quick">${finBtnHTML()}</div>`;
 }
 
 function bindBookPartsSheet() {
   const parts = bookParts(book());
+  bindFinBtn(renderSheetBody);
 
   document.querySelectorAll("[data-part]").forEach(btn =>
     btn.addEventListener("click", () => { partOpen = +btn.dataset.part; renderSheetBody(); }));
@@ -15594,6 +15598,19 @@ function bindBookPartsSheet() {
     }));
 }
 
+/* «Завершить книгу» — решение, а не страница: закрыть можно хоть на половине.
+   Кнопка была только у книги подряд, и сборник повестей закрыть было нечем
+   вовсе: сама по себе такая книга считается дочитанной по покрытию страниц, а
+   последние сто страниц тома — комментарии и послесловие, которые никто не
+   читает. То же и у сборника вещей: он не закрывается сам по устройству.
+   Одна кнопка на все три вида содержания. */
+const finBtnHTML = () => pickDone
+  ? `<button class="qbtn fin on" data-fin="0" type="button">✓ Завершена — уйдёт в библиотеку</button>`
+  : `<button class="qbtn fin" data-fin="1" type="button">Завершить книгу</button>`;
+const bindFinBtn = (перерисовать) =>
+  document.querySelectorAll(".qbtn[data-fin]").forEach((b) =>
+    b.addEventListener("click", () => { pickDone = b.dataset.fin === "1"; перерисовать(); }));
+
 function bookSheetUI() {
   const cur = bookProgress();
   const delta = pickPage - cur;
@@ -15607,9 +15624,7 @@ function bookSheetUI() {
       </div>
     </div>
     <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
-      ${pickDone
-        ? `<button class="qbtn fin on" data-fin="0" type="button">✓ Завершена — уйдёт в библиотеку</button>`
-        : `<button class="qbtn fin" data-fin="1" type="button">Завершить книгу</button>`}</div>
+      ${finBtnHTML()}</div>
     <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>
 `;
 }
@@ -15625,8 +15640,7 @@ function bindBookSheet() {
   /* Завершение — решение, а не страница. Отметил, докуда дошёл, и закрыл
      книгу: хоть на половине, хоть на последней странице. Прогресс остаётся
      тем, какой есть — врать про «100%» из-за закрытия книги незачем. */
-  document.querySelectorAll(".qbtn[data-fin]").forEach(b =>
-    b.addEventListener("click", () => { pickDone = b.dataset.fin === "1"; renderSheetBody(); }));
+  bindFinBtn(renderSheetBody);
   $("#pageVal").addEventListener("click", () => {
     const v = prompt("До какой страницы дочитал?", String(pickPage));
     if (v === null) return;

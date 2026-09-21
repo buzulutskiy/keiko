@@ -2550,6 +2550,34 @@ function ок(имя, факт, надо) {
   t.set("ARTS", было.arts); t.set("data", было.данные);
 }
 
+/* ── «Завершить книгу» есть у всех трёх видов содержания ── */
+{
+  const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), done: t.get("pickDone") };
+  const мк = (id, mode, главы) => ({ id, kind: "book", title: id, pages: 200, mode, chapters: главы });
+  const книги = [
+    мк("ровная", "linear", [{ name: "Глава", from: 1 }]),
+    мк("повести", "parts", [{ name: "Нос", from: 1 }, { name: "Шинель", from: 101 }]),
+    мк("сборник", "list", [{ name: "Статья" }]),
+  ];
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    book: { activeBook: "ровная", books: книги, entries: [] } });
+  t.set("pickItems", {}); t.set("pickSpans", []); t.set("partOpen", null); t.set("lsOpen", null);
+
+  /* Кнопка жила только у книги подряд, и сборник повестей закрыть было нечем. */
+  for (const id of ["ровная", "повести", "сборник"]) {
+    t.get("data").book.activeBook = id;
+    const ui = t.get("bookMode")(t.get("book")()) === "list" ? t.get("bookListUI")()
+      : t.get("bookMode")(t.get("book")()) === "parts" ? t.get("bookPartsUI")() : t.get("bookSheetUI")();
+    ок(`завершение: кнопка есть у «${id}»`, ui.includes('data-fin="1"'), true);
+  }
+  /* Нажата — надпись меняется, и это одна и та же кнопка на всех. */
+  t.set("pickDone", true);
+  ок("завершение: нажатая кнопка снимает отметку", t.get("finBtnHTML")().includes('data-fin="0"'), true);
+
+  t.set("pickDone", было.done); t.set("data", было.данные);
+}
+
 /* ── Счёт по настоящим произведениям ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))) };
