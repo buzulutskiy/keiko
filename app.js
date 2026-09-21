@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 567";
+const APP_VERSION = "Кэйко 568";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4420,6 +4420,20 @@ function bookLeft(s) {
   return { своё, всего };
 }
 
+/* Сколько страниц осталось до конца текущей главы у книги подряд. Ноль значит
+   «считать нечего»: глав нет вовсе или курсор уже за последней — тогда зовущий
+   берёт остаток всей книги. */
+function bookLeftHere(s) {
+  const b = book();
+  const гл = b.chapters || [];
+  if (гл.length < 2) return 0;
+  const i = гл.findIndex((c) => Number(c.from) === Number((s.chapter || {}).from));
+  if (i < 0) return 0;
+  const до = i + 1 < гл.length ? Number(гл[i + 1].from) - 1 : (Number(b.pages) || 0);
+  const откуда = Math.max(Number(s.page) || 0, (Number(гл[i].from) || 1) - 1);
+  return Math.max(0, до - откуда);
+}
+
 function heroParts(s) {
   if (isBook() && bookMode(book()) === "list") {
     const т = listThings(book());
@@ -4431,7 +4445,14 @@ function heroParts(s) {
     return своё ? [esc(s.chapter.name), `осталось ${stranic(своё)}`]
                 : [`осталось ${stranic(всего)}`];
   }
-  if (isBook()) return [esc(s.chapter.name), `осталось ${stranic(bookLeft(s))}`];
+  if (isBook()) {
+    /* Сколько осталось В ЭТОЙ ГЛАВЕ, а не во всей книге. Рядом стоит её имя, и
+       число обязано говорить про неё: «Глава I · осталось 351 страница» — это
+       про том, а глава кончается на восемнадцатой. То же правило, что у
+       сборника повестей, только там куски, а тут главы подряд. */
+    const в = bookLeftHere(s);
+    return [esc(s.chapter.name), `осталось ${stranic(в || bookLeft(s))}`];
+  }
   if (isWatch()) return [esc(video().author || "видео"), s.watched ? "посмотрено" : "ещё не смотрел"];
   if (isCourse() && plainDraw()) {
     const n = s.days;

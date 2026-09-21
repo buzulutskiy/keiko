@@ -1631,11 +1631,19 @@
 
     /* Выбор карты. Появляется только у книг, где карт правда несколько:
        у «Мёртвых душ» Россия и Петербург — разные масштабы одной книги. */
-    .gm-mapsel { flex: 0 0 auto; max-width: 42%; }
-    .gm-mapsel .ts-label {
-      font-size: 0.78rem; color: var(--gold); white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis;
+    /* Ростом ровно с кнопкой главы и полем поиска: у .th-select своя высота в
+       46 точек, и рядом с ними он торчал вверх и вниз. Два класса в селекторе
+       не для красоты: .th-select описан ниже по файлу и иначе перебивает. */
+    .th-select.gm-mapsel {
+      flex: 0 0 auto; max-width: 42%;
+      min-height: 0; padding: 8px 10px; gap: 6px; border-radius: 11px;
+      box-shadow: none;
     }
+    .gm-mapsel .ts-label {
+      font-size: 0.84rem; font-weight: 600; color: var(--gold);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .gm-mapsel .ts-arrow { font-size: 0.75rem; }
     .gm-mapsel[hidden] { display: none; }
 
     /* Слои карты: география, книги, люди. Ряд под шапкой — узкий, чтобы не
