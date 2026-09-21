@@ -2578,6 +2578,8 @@ function ок(имя, факт, надо) {
   t.set("pickDone", было.done); t.set("data", было.данные);
 }
 
+const именаОпций = (html) => (html.match(/>([^<]+)</g) || []).map((x) => x.slice(1, -1));
+
 /* ── Несколько карт у одной книги ── */
 {
   const было={ arts: t.get("ARTS"), gm: t.get("gm") };
@@ -2603,6 +2605,23 @@ function ок(имя, факт, надо) {
     t.get("mapFile")("dushi", "ru"), "art-map-dushi.txt");
   ок("карты: и ключ хранения у неё тот же",
     t.get("mapKey")("dushi", "ru"), "map-dushi-v7");
+
+  /* В селекте только карты, где у этой главы точки есть. Книга знает четыре
+     карты, а в главе заняты две — две оставшиеся открывались бы пустыми. */
+  {
+    const надпись = { textContent: "" };
+    const короб = { hidden: true }, сел = { innerHTML: "" };
+    const узлы = { "#gmMapBox": короб, "#gmMapSel": сел, "#gmMapLabel": надпись };
+    const былПоиск = t.get("document.querySelector");
+    const былgm = t.get("gm");
+    t.set("document.querySelector", (s2) => узлы[s2] || null);
+    t.set("gm", { карта: "ru", карты: [{ key:"ru", name:"Россия" },
+      { key:"spb", name:"Петербург" }, { key:"eu", name:"Европа" }] });
+    t.get("gmMapRow")([{ key:"ru", name:"Россия" }, { key:"eu", name:"Европа" }], true);
+    ок("карты: в списке только занятые", (именаОпций(сел.innerHTML)), ["Россия","Европа"]);
+    t.set("gm", былgm);
+    t.set("document.querySelector", былПоиск);
+  }
 
   /* Одна карта, описанная по-старому одним mapBox, читается как и раньше. */
   t.set("ARTS", { old: { mapVer: 3, mapBox: ru } });
