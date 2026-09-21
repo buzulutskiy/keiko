@@ -2061,6 +2061,11 @@
       background: var(--glass); border: 1px solid var(--glass-line);
     }
     #gmFind[hidden] { display: none; }
+    /* Когда в ряду трое — карта, глава, поиск, — ужимается поле, а не номер
+       главы: на телефоне выходило «Глава…» вместо «Глава VIII». Имя главы
+       говорит, где стоишь; у поиска назначение понятно и по половине подсказки.
+       Когда селекта карты нет, поле остаётся прежним. */
+    #gmMapBox:not([hidden]) ~ #gmFind { flex: 0 4 120px; }
     #gmFind::placeholder { color: var(--dim); }
     #gmHits {
       position: absolute; z-index: 3; left: 14px; right: 14px;
