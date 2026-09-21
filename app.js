@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 565";
+const APP_VERSION = "Кэйко 566";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1087,14 +1087,33 @@ function mapHereChapter(b) {
   for (let n = хочу + 1; n <= главы.length; n++) if (есть(n)) return n;
   return главы.length ? 1 : 0;
 }
-const mapBox = (b) => {
-  const a = artsOf((b || book()).id);
-  return (a && a.mapBox) ? a.mapBox : null;
+/* Карт у книги может быть несколько. У «Мёртвых душ» география двухслойная:
+   пол-империи от Херсона до Сольвычегодска — и семь адресов на Невском в одной
+   главе. На карте России эти семь слипаются в одну булавку, а в петербургском
+   масштабе не помещается ни Херсон, ни Казань. Поэтому карт бывает несколько:
+   у точки стоит `m` — к какой она относится, — а в шапке появляется выбор.
+   Одна карта по-прежнему описывается просто `mapBox`: старые книги не трогаем. */
+const mapMaps = (b) => {
+  const a = artsOf((b || book()).id) || {};
+  const сп = Array.isArray(a.maps) ? a.maps.filter((m) => m && m.box) : [];
+  if (сп.length) return сп;
+  return a.mapBox ? [{ key: "", name: "", box: a.mapBox }] : [];
+};
+const mapOne = (b, key) => {
+  const сп = mapMaps(b);
+  return сп.find((m) => (m.key || "") === (key || "")) || сп[0] || null;
+};
+/* К какой карте относится точка. Пусто — к первой: так лежат все старые. */
+const картаТочки = (p) => (p && p.m) || "";
+const mapBox = (b, key) => {
+  const m = mapOne(b, key);
+  return m ? m.box : null;
 };
 /* Версия картинки карты: меняется вместе с самой картинкой, и по ней же
    строится ключ хранения — старая копия на устройстве больше не переживает
    замену. */
-const mapKey = (id) => "map-" + id + "-v" + (((artsOf(id) || {}).mapVer) || 1);
+const mapKey = (id, key) => "map-" + id + (key ? "-" + key : "")
+  + "-v" + (((artsOf(id) || {}).mapVer) || 1);
 /* Годы, за которые у места стоит искать старые снимки. Есть не у всякой книги:
    у «Одиссеи» фотографий той эпохи нет по понятным причинам, а у книги про
    стеки места разбросаны по миру, где архив пуст. */
@@ -1120,7 +1139,7 @@ const mapPartsOf = (b) => {
   const главы = (bk.chapters || []).map((c, i) => ({ n: i + 1, name: c.name || `Глава ${i + 1}` }));
   return главы.length ? главы : ((artsOf(bk.id) || {}).parts || []);
 };
-const mapFile = (id) => CAT_ART_FILE("map-" + id);
+const mapFile = (id, key) => CAT_ART_FILE("map-" + id + (key ? "-" + key : ""));
 /* Меркатор: карта нарисована им, значит и точки надо ставить по нему, иначе
    к северу всё поедет. */
 const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
@@ -12678,6 +12697,85 @@ function pracFinish() {
    обычные карты — посмотреть, как место выглядит сегодня. */
 let gm = null;      // {места, рамка, at, scale, tx, ty}
 
+/* Какую из карт открыть. Ту, где лежит больше точек выбранной главы: читаешь
+   главу про Копейкина — открывается Петербург, вернулся ко всем местам —
+   Россия. Руками переключить можно всегда, автоматика только выбирает первую. */
+function gmАвтоКарта() {
+  const сп = (gm && gm.карты) || [];
+  if (сп.length < 2) return сп.length ? (сп[0].key || "") : "";
+  const счёт = {};
+  for (const p of gmМестаГлавы()) {
+    const k = картаТочки(p);
+    счёт[k] = (счёт[k] || 0) + 1;
+  }
+  let лучшая = сп[0].key || "", было = -1;
+  for (const m of сп) {
+    const k = m.key || "", n = счёт[k] || 0;
+    if (n > было) { было = n; лучшая = k; }
+  }
+  return лучшая;
+}
+/* Точки-места выбранной главы, без деления по картам: по ним и выбирается карта. */
+function gmМестаГлавы() {
+  if (!gm) return [];
+  return gm.места.filter((p) => слойТочки(p) === "place"
+    && (!gm.часть || (gm.часть === -1 ? !частьТочки(p) : частьТочки(p) === gm.часть)));
+}
+
+/* Переключение карты: меняется рамка, картинка и набор точек. */
+function gmКартуВыбрать(key, первый) {
+  if (!gm) return;
+  const м = ((gm.карты) || []).find((x) => (x.key || "") === (key || "")) || (gm.карты || [])[0] || null;
+  gm.карта = м ? (м.key || "") : "";
+  if (м) gm.рамка = м.box;
+  if (!первый) { gm.scale = 1; gm.tx = 0; gm.ty = 0; }
+  gmПодложка();
+  gmLayersRow();
+  gmNavRow();
+  gmPins();
+  gmList();
+  gmFit();
+}
+
+/* Картинка выбранной карты: из хранилища, если уже скачана, иначе ждём. */
+function gmПодложка() {
+  const img = $("#gmImg");
+  if (!img || !gm) return;
+  const ключ = mapKey(gm.id, gm.карта), файл = mapFile(gm.id, gm.карта);
+  if (!gmМестаГлавы().length && !gm.места.some((p) => слойТочки(p) === "place")) {
+    /* Ставить некуда — значит и подложка не нужна. Без этого рисунок двадцать
+       секунд ждал карту, которой у него нет, и заканчивал ошибкой. */
+    img.removeAttribute("src");
+    gmWait(false);
+    return;
+  }
+  const src = artSrc(ключ, файл);
+  if (src) { img.src = src; gmWait(false); return; }
+  /* Картинки ещё нет на устройстве: показываем ожидание и ставим её, как
+     только приедет, — сама карта об этом не узнает, перерисовка приложения
+     её не касается. */
+  img.removeAttribute("src");
+  gmWait(true);
+  pullArt(ключ, файл);
+  /* Ждём картинку, а не одно завершение запроса: её мог тянуть кто-то другой
+     раньше нас — тогда наш вызов вернётся сразу и ни о чём не скажет. */
+  let попыток = 0;
+  const ждать = setInterval(() => {
+    if (!gm || mapKey(gm.id, gm.карта) !== ключ) { clearInterval(ждать); return; }
+    const s2 = coverCache.get("art:" + ключ);
+    if (s2) {
+      clearInterval(ждать);
+      img.src = s2;
+      gmWait(false);
+      gmFit();
+    } else if (++попыток > 40) {              // двадцать секунд — и хватит
+      clearInterval(ждать);
+      gmWait(false);
+      toast("Карта не загрузилась — попробуй ещё раз");
+    }
+  }, 500);
+}
+
 function openPlaceMap(bk, i, выбрать) {
   useMark("карта");
   const места = mapPoints(bk, i);
@@ -12697,7 +12795,7 @@ function openPlaceMap(bk, i, выбрать) {
   /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
      важнее — если пришли из разбора к месту, глава не подставляется. */
   const часть = (i < 0 && !выбрать) ? mapHereChapter(bk) : 0;
-  gm = { места, рамка, at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
+  gm = { места, рамка, карта: "", карты: mapMaps(bk), at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
          чтение: null, чтениеГл: null, метка: null, поиск: "",
          части: mapPartsOf(bk),
          /* Сам материал — ради обложки: её цветом красится весь экран, как
@@ -12716,40 +12814,7 @@ function openPlaceMap(bk, i, выбрать) {
      карты. Раньше это делал экран разбора; его сняли, и файл перестал
      обновляться совсем: на телефоне навсегда оставалась первая версия. */
   mapFresh(bk);
-  const img = $("#gmImg");
-  const ключ = mapKey(bk.id);
-  const src = artSrc(ключ, mapFile(bk.id));
-  if (!места.some((p) => слойТочки(p) === "place")) {
-    /* Ставить некуда — значит и подложка не нужна. Без этого рисунок двадцать
-       секунд ждал карту, которой у него нет, и заканчивал ошибкой. */
-    img.removeAttribute("src");
-    gmWait(false);
-  } else if (src) img.src = src;
-  else {
-    /* Картинки ещё нет на устройстве: показываем ожидание и ставим её, как
-       только приедет, — сама карта об этом не узнает, перерисовка приложения
-       её не касается. */
-    img.removeAttribute("src");
-    gmWait(true);
-    pullArt(ключ, mapFile(bk.id));
-    /* Ждём картинку, а не одно завершение запроса: её мог тянуть кто-то другой
-       раньше нас — тогда наш вызов вернётся сразу и ни о чём не скажет. */
-    let попыток = 0;
-    const ждать = setInterval(() => {
-      if (!gm) { clearInterval(ждать); return; }
-      const s2 = coverCache.get("art:" + ключ);
-      if (s2) {
-        clearInterval(ждать);
-        img.src = s2;
-        gmWait(false);
-        gmFit();
-      } else if (++попыток > 40) {              // двадцать секунд — и хватит
-        clearInterval(ждать);
-        gmWait(false);
-        toast("Карта не загрузилась — попробуй ещё раз");
-      }
-    }, 500);
-  }
+  gmКартуВыбрать(gmАвтоКарта(), true);
   box.hidden = false;
   box.setAttribute("aria-hidden", "false");
   document.body.classList.add("prac-on");
@@ -12763,7 +12828,8 @@ function openPlaceMap(bk, i, выбрать) {
   pullArts(bk.id).then((новое) => {
     if (!новое || !gm || gm.id !== bk.id) return;
     gm.места = mapPoints(bk, i);
-    gm.рамка = mapBox(bk) || gm.рамка;
+    gm.карты = mapMaps(bk);
+    gm.рамка = mapBox(bk, gm.карта) || gm.рамка;
     gm.части = mapPartsOf(bk);
     gmTocBtn();
     gmPins();
@@ -13090,7 +13156,12 @@ function gmМест(по) {
 const gmВидимые = () => {
   if (!gm) return [];
   const вкладка = gmВкладка();
-  const свои = gm.места.filter((p) => вкладкаТочки(p) === вкладка);
+  /* Карт может быть несколько, и точка принадлежит одной: на карте России
+     петербургским адресам делать нечего, и наоборот. Остальные вкладки
+     (справки, слова, собрание) делению по картам не подлежат. */
+  const многокарт = ((gm.карты) || []).length > 1;
+  const своя = (p) => !многокарт || вкладка !== "place" || картаТочки(p) === gm.карта;
+  const свои = gm.места.filter((p) => вкладкаТочки(p) === вкладка && своя(p));
   /* В списке справок записи идут секциями в порядке СЛОИ, внутри секции — как
      лежат в файле. Сортировка устойчивая: без второго ключа порядок внутри
      секции в разных браузерах разный. */
@@ -13137,7 +13208,7 @@ function mapFresh(bk) {
     if (!новое || !gm || gm.id !== id) return;
     gm.места = mapPoints(bk, gm.i);
     gm.части = mapPartsOf(bk);
-    gm.рамка = mapBox(bk) || gm.рамка;
+    gm.рамка = mapBox(bk, gm.карта) || gm.рамка;
     if (gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard();
     toast("Карта обновилась");
@@ -13536,13 +13607,31 @@ function gmГлаваИмя() {
    касается — оно пополняется по мере чтения и показывает всё сразу. Раньше
    ряд висел над собранием всегда, и над списком тем стояло «Глава 15» — то
    есть подпись к соседнему экрану. У пьесы и рисунка глав нет вовсе. */
+/* Выбор карты во втором ряду шапки — рядом с главой. Селектом, а не рядом
+   кнопок: карт бывает две-три, но имена у них длинные («Петербург Копейкина»),
+   и ряд поехал бы вбок. Разметка та же, что у выбора такта в плеере. */
+function gmMapRow(карты, своя) {
+  const короб = $("#gmMapBox"), сел = $("#gmMapSel"), подпись = $("#gmMapLabel");
+  if (!короб || !сел) return;
+  const видно = своя && карты.length > 1;
+  короб.hidden = !видно;
+  if (!видно) { сел.innerHTML = ""; return; }
+  const имя = (m) => m.name || "Карта";
+  сел.innerHTML = карты.map((m) =>
+    `<option value="${esc(m.key || "")}"${(m.key || "") === gm.карта ? " selected" : ""}>${esc(имя(m))}</option>`).join("");
+  const текущая = карты.find((m) => (m.key || "") === gm.карта) || карты[0];
+  if (подпись) подпись.textContent = имя(текущая);
+}
+
 function gmNavRow() {
   const ряд = $("#gmNav"), кн = $("#gmToc"), поле = $("#gmFind");
   if (!ряд || !gm) return;
   const главы = gmParts().length > 1;
   const искать = gm.места.length > 3;
   const своя = gmВкладка() === "place";
-  ряд.hidden = !своя || (!главы && !искать);
+  const карты = (gm.карты) || [];
+  gmMapRow(карты, своя);
+  ряд.hidden = !своя || (!главы && !искать && карты.length < 2);
   if (кн) {
     кн.hidden = !главы;
     const имя = кн.querySelector("b");
@@ -14151,6 +14240,17 @@ function bindPlaceMap() {
     поле.addEventListener("focus", искать);
   }
 
+  const селКарт = $("#gmMapSel");
+  if (селКарт) селКарт.addEventListener("change", () => {
+    if (!gm) return;
+    useMark("карта-выбор");
+    /* Выбранная точка могла остаться на прежней карте — снимаем выбор,
+       иначе карточка внизу висела бы над чужой картой. */
+    gmКартуВыбрать(селКарт.value);
+    if (gm.at && !gmВидимые().some((p) => p.name === gm.at)) { gm.at = null; gmCard(); }
+    gmNavRow();
+  });
+
   const кнТос = $("#gmToc");
   if (кнТос) кнТос.addEventListener("click", () => {
     const хиты = $("#gmHits");
@@ -14188,6 +14288,8 @@ function bindPlaceMap() {
     const ч = e.target.closest("[data-part]");
     if (ч) {
       gm.часть = Number(ч.dataset.part) || 0;
+      /* У новой главы места могут лежать на другой карте — подбираем её. */
+      gmКартуВыбрать(gmАвтоКарта());
       gm.поиск = "";
       const пф2 = $("#gmFind"); if (пф2) пф2.value = "";
       /* Выбранное место могло уйти из показа вместе с чужой главой —
@@ -14209,6 +14311,9 @@ function bindPlaceMap() {
        иначе нажатие показывало бы пустоту. */
     if (b.dataset.hitlayer) gm.слой = b.dataset.hitlayer;
     if (b.dataset.hitpart) gm.часть = Number(b.dataset.hitpart) || 0;
+    /* Найденное может лежать на другой карте — переходим и на неё. */
+    const чужая = gm.места.find((p) => p.name === gm.at);
+    if (чужая && картаТочки(чужая) !== gm.карта) gmКартуВыбрать(картаТочки(чужая));
     хиты.hidden = true;
     if (поле) { поле.value = ""; поле.blur(); }
     gmLayersRow(); gmTocBtn(); gmTitle();
