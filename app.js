@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 572";
+const APP_VERSION = "Кэйко 573";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9447,6 +9447,70 @@ let plEdit = null;                       // {n, a, b} — такт и обе е�
 const PL_ESTEPS = [0.1, 0.5, 1];
 const plEStep = (id) => PL_ESTEPS.includes(plOpt(id).estep) ? plOpt(id).estep : 0.5;
 
+/* Размечать такты приходится и у записи, и у ролика — это одни и те же числа и
+   один и тот же разговор: «поставь здесь», «подвинь на десятую», «послушай».
+   Разное только двое: кто играет и куда ложится результат. Поэтому редактор
+   один, а источника два, и новый добавляется одной записью в ED, а не копией
+   полутораста строк, которая потом разойдётся с оригиналом. */
+let edSrc = "audio";
+const edМедиана = (m) => {
+  const ключи = Object.keys(m).map(Number).filter((n) => isFinite(m[n])).sort((a, b) => a - b);
+  const длины = [];
+  for (let i = 0; i < ключи.length - 1; i++) {
+    const d = m[ключи[i + 1]] - m[ключи[i]];
+    if (d > 0) длины.push(d);
+  }
+  if (длины.length < 2) return 0;
+  длины.sort((a, b) => a - b);
+  return длины[Math.floor(длины.length / 2)];
+};
+const ED = {
+  audio: {
+    имя: "записи",
+    box: () => $("#pracPlayer"), panel: () => $("#plEdit"),
+    ready: () => !!pracAudioEl,
+    now: () => (pracAudioEl && pracAudioEl.currentTime) || 0,
+    dur: () => (pracAudioEl && pracAudioEl.duration) || 0,
+    marks: () => pracMarks() || {},
+    total: () => plBarTotal(),
+    сред: () => { const t = plTempoData(); return (t && t.сред) || 0; },
+    play: (a, b) => {
+      plSetSel({ a, b });
+      try { pracAudioEl.currentTime = a; } catch {}
+      pracAudioEl.play().catch(() => {});
+    },
+    save: (n, a, b) => {
+      const id = piece().id;
+      marksMine[id] = Object.assign({}, marksMine[id], { [n]: a, [n + 1]: b });
+      marksSaveMine();
+      /* Плеер пересобираем: размеченных тактов стало больше, а от их числа
+         зависят и выбор, и карта темпа, и подпись. */
+      pracPlayer();
+      marksPush(id);
+    }
+  },
+  video: {
+    имя: "ролику",
+    box: () => $("#pracVideo"), panel: () => $("#vdEdit"),
+    ready: () => V.ready(),
+    now: () => V.now(),
+    dur: () => V.dur(),
+    marks: () => vmAll(),
+    total: () => vidBarTotal(),
+    сред: () => edМедиана(vmAll()),
+    play: (a, b) => { vidSetSel({ a, b }); V.seek(a); V.play(); vidTick(); },
+    save: (n, a, b) => {
+      const st = pracStore();
+      st.vm = Object.assign({}, vmAll(), { [n]: a, [n + 1]: b });
+      saveData(); schedulePush();
+      /* Видео не пересобираем — оборвался бы показ. Обновляем только те два
+         ряда, что зависят от числа размеченных тактов. */
+      vidBarsRow();
+    }
+  }
+};
+const edNow = () => ED[edSrc] || ED.audio;
+
 /* Сколько всего тактов у вещи. Разбор знает это по подсказкам и кускам;
    если не знает — на один дальше последней метки, чтобы шагалка не уводила
    в пустоту, но и не запирала на уже размеченном. */
@@ -9462,8 +9526,9 @@ function plBarTotal() {
 /* С какого такта разумно начать разметку: с первого, у которого нет конца.
    Обычно это ровно то место, где разметка оборвалась. */
 function plEditFirst() {
-  const m = pracMarks() || {};
-  const всего = plBarTotal();
+  const и = edNow();
+  const m = и.marks();
+  const всего = и.total();
   for (let n = 1; n <= всего; n++) if (!(m[n] >= 0) || !(m[n + 1] >= 0)) return n;
   return всего;
 }
@@ -9472,12 +9537,12 @@ function plEditFirst() {
    такта. Пустое поле человек заполнял бы с нуля, а так остаётся проверить на
    слух и подвинуть на десятые. */
 function plEditGuess(n) {
-  const m = pracMarks() || {};
-  const t = plTempoData();
-  const шаг = (t && t.сред) || 0;
+  const и = edNow();
+  const m = и.marks();
+  const шаг = и.сред();
   let a = (m[n] >= 0) ? m[n] : null;
   if (a == null && m[n - 1] >= 0) a = m[n - 1] + (шаг || 2);
-  if (a == null) a = (pracAudioEl && pracAudioEl.currentTime) || 0;
+  if (a == null) a = и.now();
   let b = (m[n + 1] >= 0) ? m[n + 1] : a + (шаг || 2);
   return { a: Math.max(0, a), b: Math.max(a + 0.2, b) };
 }
@@ -9489,8 +9554,16 @@ const plClock1 = (t) => {
   return м + ":" + (с < 10 ? "0" : "") + с.toFixed(1).replace(".", ",");
 };
 
+/* Открыть редактор от нужного источника. Панель одна на двоих, и оставить
+   открытой чужую значило бы править ролик кнопками записи. */
+function edOpen(src, n) {
+  if (plEdit && edSrc !== src) { plEdit = null; plEditShow(); }
+  edSrc = src;
+  plEditOpen(n);
+}
+
 function plEditOpen(n) {
-  const всего = plBarTotal();
+  const всего = edNow().total();
   const такт = Math.min(Math.max(1, n || plEditFirst()), всего);
   plEdit = Object.assign({ n: такт }, plEditGuess(такт));
   plEditShow();
@@ -9502,10 +9575,11 @@ function plEditClose() {
 /* Показать или спрятать режим целиком. Плеер не пересобираем: в нём живёт
    <audio>, и пересборка оборвала бы звук на полуслове. */
 function plEditShow() {
-  const box = $("#pracPlayer");
+  const и = edNow();
+  const box = и.box();
   if (!box) return;
   box.classList.toggle("editing", !!plEdit);
-  const el = $("#plEdit");
+  const el = и.panel();
   if (!el) return;
   el.hidden = !plEdit;
   if (plEdit) el.innerHTML = plEditHTML();
@@ -9514,38 +9588,38 @@ function plEditShow() {
    нечем, а отрицательный не бывает вовсе. */
 function plEditFix(what) {
   if (!plEdit) return;
-  const дл = (pracAudioEl && pracAudioEl.duration) || 0;
+  const дл = edNow().dur();
   plEdit.a = Math.max(0, plEdit.a);
   if (дл) { plEdit.a = Math.min(plEdit.a, дл); plEdit.b = Math.min(plEdit.b, дл); }
   if (what === "a" && plEdit.b - plEdit.a < 0.2) plEdit.b = plR(plEdit.a + 0.2);
   if (what === "b" && plEdit.b - plEdit.a < 0.2) plEdit.a = plR(Math.max(0, plEdit.b - 0.2));
 }
 function plEditMove(what, dir) {
-  if (!plEdit || !pracAudioEl) return;
-  plEdit[what] = plR(plEdit[what] + dir * plEStep(pracAudioEl.dataset.for));
+  if (!plEdit) return;
+  plEdit[what] = plR(plEdit[what] + dir * plEStep(piece().id));
   plEditFix(what);
   plEditShow();
 }
 /* Главная кнопка режима: слушаешь и жмёшь ровно там, где такт начинается. */
 function plEditHere(what) {
-  if (!plEdit || !pracAudioEl) return;
-  plEdit[what] = plR(pracAudioEl.currentTime || 0);
+  if (!plEdit) return;
+  plEdit[what] = plR(edNow().now());
   plEditFix(what);
   plEditShow();
 }
 function plEditPlay() {
-  if (!plEdit || !pracAudioEl) return;
-  plSetSel({ a: plEdit.a, b: plEdit.b });
-  try { pracAudioEl.currentTime = plEdit.a; } catch {}
-  pracAudioEl.play().catch(() => {});
+  if (!plEdit) return;
+  edNow().play(plEdit.a, plEdit.b);
 }
 
 function plEditHTML() {
+  const и = edNow();
   const n = plEdit.n, id = piece().id;
-  const m = pracMarks() || {};
+  const m = и.marks();
   const шаг = plEStep(id);
   const длина = plEdit.b - plEdit.a;
-  const t = plTempoData();
+  const всего = и.total();
+  const сред = и.сред();
   const сек = (v) => String(Math.round(v * 10) / 10).replace(".", ",");
   const было = (k) => (m[k] >= 0 ? plR(m[k]) : null);
   const ново = (k, v) => было(k) === null || Math.abs(было(k) - v) > 0.004;
@@ -9561,17 +9635,17 @@ function plEditHTML() {
     </div>`;
   return `
     <div class="ed-top">
-      <b>Разметка такта</b>
+      <b>Разметка такта · по ${esc(и.имя)}</b>
       <button class="ed-x" data-ed="close" type="button">✕</button>
     </div>
     <div class="ed-bar">
       <button data-ed="prev" type="button" ${n <= 1 ? "disabled" : ""}>‹</button>
-      <span>такт <b>${n}</b><i>из ${plBarTotal()}</i></span>
-      <button data-ed="next" type="button" ${n >= plBarTotal() ? "disabled" : ""}>›</button>
+      <span>такт <b>${n}</b><i>из ${всего}</i></span>
+      <button data-ed="next" type="button" ${n >= всего ? "disabled" : ""}>›</button>
     </div>
     ${край("a", "Начало", n)}
     ${край("b", "Конец", n + 1)}
-    <div class="ed-len">Длина ${сек(длина)} с${t ? ` · соседние в среднем ${сек(t.сред)} с` : ""}</div>
+    <div class="ed-len">Длина ${сек(длина)} с${сред ? ` · соседние в среднем ${сек(сред)} с` : ""}</div>
     <div class="ed-steps">
       <em>Шаг</em>
       ${PL_ESTEPS.map((g) => `<button data-estep="${g}" class="${g === шаг ? "on" : ""}" type="button">${String(g).replace(".", ",")} с</button>`).join("")}
@@ -9588,21 +9662,17 @@ function plEditHTML() {
    выпадает из выбора совсем. */
 async function plEditSave() {
   if (!plEdit) return;
-  const id = piece().id, n = plEdit.n;
-  const m = pracMarks() || {};
+  const и = edNow();
+  const n = plEdit.n;
+  const m = и.marks();
   const ключи = Object.keys(m).map(Number).filter((k) => isFinite(m[k]));
   const до = ключи.filter((k) => k < n).sort((a, b) => b - a)[0];
   const после = ключи.filter((k) => k > n + 1).sort((a, b) => a - b)[0];
   if (до && !(plEdit.a > m[до])) { toast(`Начало должно быть позже ${до}-го такта`); return; }
   if (после && !(plEdit.b < m[после])) { toast(`Конец должен быть раньше ${после}-го такта`); return; }
-  marksMine[id] = Object.assign({}, marksMine[id], { [n]: plR(plEdit.a), [n + 1]: plR(plEdit.b) });
-  marksSaveMine();
+  и.save(n, plR(plEdit.a), plR(plEdit.b));
   toast(`Такт ${n} размечен`);
-  /* Плеер пересобираем: размеченных тактов стало больше, а от их числа
-     зависят и выбор, и карта темпа, и подпись. */
-  pracPlayer();
-  plEditOpen(Math.min(n + 1, plBarTotal()));
-  marksPush(id);
+  plEditOpen(Math.min(n + 1, и.total()));
 }
 
 /* Запись в гист: перечитываем файл прямо перед PATCH — между чтением и
@@ -10414,6 +10484,154 @@ async function videoDrop(id) {
   videoUrls.delete(id);
 }
 
+/* ── Разметка ролика по тактам ──
+   У записи и у ролика свои секунды: это разные исполнения, и общая разметка
+   врала бы. Поэтому у видео своя цепочка меток — такт → секунда в ролике, —
+   устроенная ровно как у звука: конец такта и начало следующего это одна
+   метка, а не две. Живёт она в ходе разбора, значит уезжает в гист и приезжает
+   на второй телефон: это просто числа, сам файл никуда не отправляется.
+
+   Старое `vmarks` — список кусков {from,to,a,b}, привязанных кнопкой «это
+   такты 6–7». Оно переводится в цепочку при первом чтении: начало куска
+   становится меткой первого такта, конец — меткой следующего за последним.
+   Сам список остаётся нетронутым: по нему открывают разбор версии постарше,
+   и стирать чужое, чтобы было чище, нельзя. */
+function vmAll() {
+  const st = pracStore();
+  if (st.vm) return st.vm;
+  const список = st.vmarks || [];
+  if (!список.length) return {};              // пустое в ход разбора не пишем
+  const из = {};
+  for (const m of список) {
+    if (isFinite(m.a) && m.from > 0) из[m.from] = plR(m.a);
+    if (isFinite(m.b) && m.to > 0) из[Number(m.to) + 1] = plR(m.b);
+  }
+  st.vm = из;
+  return из;
+}
+/* Какие такты ролика можно зациклить: у последней метки конца нет. */
+function vmBars() {
+  const m = vmAll();
+  const все = Object.keys(m).map(Number).filter((n) => n > 0 && isFinite(m[n]))
+    .sort((a, b) => a - b);
+  return все.filter((n, i) => i < все.length - 1);
+}
+/* Отрезок одного такта и отрезок диапазона — то же, что barSpan и markSpan
+   у звука, только по своим числам. */
+function vmBarSpan(n) {
+  const m = vmAll();
+  if (!(m[n] >= 0)) return null;
+  const дальше = Object.keys(m).map(Number).filter((k) => k > n).sort((a, b) => a - b)[0];
+  const b = дальше ? m[дальше] : 0;
+  return b > m[n] ? { a: m[n], b } : null;
+}
+function vmSpan(u) {
+  const m = vmAll();
+  if (!u || !(m[u.from] >= 0)) return null;
+  const a = m[u.from];
+  let b = m[u.to + 1];
+  if (!(b > a)) {
+    const дальше = Object.keys(m).map(Number).filter((k) => k > u.to).sort((x, y) => x - y)[0];
+    b = дальше ? m[дальше] : 0;
+  }
+  return b > a ? { a, b } : null;
+}
+/* Сколько всего тактов у вещи. То же, что у звука, плюс само число тактов,
+   записанное у пьесы: у ролика разбора может не быть вовсе, а «40 тактов»
+   человек ввёл руками, и шагалке этого хватает. */
+function vidBarTotal() {
+  const d = pracDoc() || {};
+  const поКускам = (d.parts || []).reduce((a, p) => Math.max(a, Number(p.to) || 0), 0);
+  const поНотам = Object.keys(d.hints || {}).reduce((a, k) => Math.max(a, Number(k) || 0), 0);
+  const поПьесе = Number(piece().bars) || 0;
+  const m = vmAll();
+  const поМеткам = Object.keys(m).reduce((a, k) => Math.max(a, Number(k) || 0), 0);
+  return Math.max(поКускам, поНотам, поПьесе, поМеткам + 1, 1);
+}
+/* Круг по тактам ролика — то же, что plBarPick у звука. */
+function vidBarPick(с, по) {
+  const st = pracStore();
+  if (!с) {
+    delete st.vbf; delete st.vbt;
+    const sp = prac && prac.cur ? vmSpan(prac.cur) : null;
+    if (sp) vidSetSel(sp); else { st.vloop = null; saveData(); schedulePush(); vidPaint(); }
+    return;
+  }
+  const такты = vmBars();
+  const до = такты.includes(Math.max(с, Number(по) || с)) ? Math.max(с, Number(по) || с) : с;
+  const a = vmBarSpan(с), b = vmBarSpan(до);
+  if (!a || !b) return;
+  st.vbf = с; st.vbt = до;
+  vidSetSel({ a: a.a, b: b.b });
+  V.seek(a.a);
+}
+
+/* Два ряда, зависящих от числа размеченных тактов: выбор круга и сама
+   разметка. Перерисовываются отдельно от плеера — пересборка <video> оборвала
+   бы показ ровно в тот миг, когда человек размечает. */
+function vidBarsHTML() {
+  const такты = vmBars();
+  const st = pracStore();
+  const с = Number(st.vbf) || 0;
+  const по = Math.max(с, Number(st.vbt) || с);
+  return `
+    ${такты.length ? `<div class="pl-set pl-barsel">
+      <em>Такты</em>
+      <span class="th-select">
+        <span class="ts-label">${с ? "с " + с + "-го" : "все"}</span>
+        <span class="ts-arrow">▾</span>
+        <select data-vbar="from" aria-label="С какого такта">
+          <option value="0"${с ? "" : " selected"}>все такты куска</option>
+          ${такты.map((n) => `<option value="${n}"${n === с ? " selected" : ""}>с ${n}-го</option>`).join("")}
+        </select>
+      </span>
+      <span class="th-select"${с ? "" : " hidden"}>
+        <span class="ts-label">${с ? "по " + по + "-й" : "по"}</span>
+        <span class="ts-arrow">▾</span>
+        <select data-vbar="to" aria-label="По какой такт">
+          ${такты.map((n) => `<option value="${n}"${n === по ? " selected" : ""}>по ${n}-й</option>`).join("")}
+        </select>
+      </span>
+    </div>` : ""}
+    <div class="pl-set pl-markrow">
+      <em>Разметка</em>
+      <button data-vd="edit" type="button">✎ Разметить такт</button>
+      <button data-vd="import" type="button">Из «Тактов»</button>
+      <i>${такты.length ? `размечено ${такты.length + 1}` : "тактов ещё нет"}</i>
+    </div>`;
+}
+function vidBarsRow() {
+  const el = $("#vdBars");
+  if (el) el.innerHTML = vidBarsHTML();
+}
+
+/* Разметка из «Тактов» — того же файла, которым размечают ролик на компьютере.
+   Там отметки лежат встык: у каждого такта начало и конец. В цепочку это
+   переводится напрямую, а вот конец ПОСЛЕДНЕГО такта берётся, только если он
+   похож на настоящую границу: в выгрузке последний размеченный такт тянется до
+   конца ролика, и такой «конец» сделал бы его длиной в восемь минут. */
+function vidMarksFromTakty(пак) {
+  const строки = (пак && пак.bars) || [];
+  if (!строки.length) return { m: {}, part: "", всего: 0 };
+  const части = [...new Set(строки.map((b) => b.part || ""))];
+  let part = части[0] || "";
+  if (части.length > 1) {
+    const ответ = prompt("В файле несколько частей:\n" + части.join("\n") + "\n\nКакую взять?", part);
+    if (ответ === null) return null;
+    part = части.find((c) => c.toLowerCase() === String(ответ).trim().toLowerCase()) || part;
+  }
+  const свои = строки.filter((b) => (b.part || "") === part && Number(b.n) > 0 && isFinite(b.start))
+    .sort((a, b) => a.n - b.n);
+  const m = {};
+  for (const b of свои) m[b.n] = plR(b.start);
+  const хвост = свои[свои.length - 1];
+  const длины = свои.slice(1).map((b, i) => b.start - свои[i].start).filter((d) => d > 0).sort((a, b) => a - b);
+  const сред = длины.length ? длины[Math.floor(длины.length / 2)] : 0;
+  if (хвост && isFinite(хвост.end) && хвост.end > хвост.start
+      && (!сред || хвост.end - хвост.start <= сред * 3)) m[хвост.n + 1] = plR(хвост.end);
+  return { m, part, всего: свои.length };
+}
+
 /* Разметка: какому такту какой кусок видео соответствует. Живёт рядом с ходом
    разбора, значит уезжает в гист и приезжает на второй телефон — в отличие от
    самого файла. Это просто числа. */
@@ -10528,7 +10746,10 @@ function vidWhat() {
   if (st.url) return "ссылка на файл";
   if (st.vk) return "ВК";
   if (st.yt) return "YouTube";
-  return "файл на этом телефоне";
+  /* Имя файла держим рядом с разметкой: она сделана под конкретную запись, и
+     на новом телефоне нужно знать, какой именно ролик выбирать. Хранилище
+     браузера не вечно, а имя — три десятка байт в ходе разбора. */
+  return st.vname ? st.vname : "файл на этом телефоне";
 }
 
 /* Края двигаются и числами: попасть пальцем в секунду на узкой дорожке
@@ -10646,7 +10867,8 @@ function vidApplyZoom(box) {
 function vidRates(box) {
   const row = box.querySelector(".vd-row.rates");
   if (!row) return;
-  row.innerHTML = V.rates()
+  /* Подпись ряда остаётся: без неё цифры 0,25 0,5 0,75 висят без объяснения. */
+  row.innerHTML = `<em>Скорость</em>` + V.rates()
     .map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("");
 }
 
@@ -10842,7 +11064,8 @@ function vidJump(u) {
   if (!u || !V.ready()) return;
   /* Ручные метки по одному такту склеиваются в диапазон: задание «такты 6–7»
      берёт начало шестой метки и конец седьмой. */
-  let sel = null;
+  let sel = vmSpan(u);
+  if (sel) { vidSetSel(sel); try { V.seek(sel.a); } catch {} return; }
   const m = vmarkFor(u.from, u.to);
   if (m && m.to >= u.to) sel = { a: m.a, b: m.b };
   else {
@@ -10897,6 +11120,14 @@ function vidControlsHTML(task) {
       <span class="tl-loop">кусок 0:00–0:00</span>
     </div>
 
+    ${rates.length ? `
+    <div class="vd-row rates">
+      <em>Скорость</em>
+      ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
+    </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
+
+    <div id="vdBars">${vidBarsHTML()}</div>
+
     <div class="vd-row">
       <button class="vd-btn" data-vd="play" type="button">▶︎</button>
       <button class="vd-btn" data-vd="back" type="button" aria-label="Начать кусок сначала">↺</button>
@@ -10923,15 +11154,13 @@ function vidControlsHTML(task) {
       <div class="vd-row marks">
         <button class="btn" data-vd="bind" type="button">Это ${esc(task || "текущий такт")}</button>
       </div>
-      ${rates.length ? `
-      <div class="vd-row rates">
-        ${rates.map((r) => `<button data-vrate="${r}" type="button">${String(r).replace(".", ",")}</button>`).join("")}
-      </div>` : `<p class="vd-slow">Замедлять ВК не умеет — для медленного разбора возьми файл.</p>`}
       <div class="vd-src">
         Источник: <b>${esc(vidWhat())}</b>
         <button class="th-link" data-vd="src" type="button">сменить</button>
       </div>
-    </details>`;
+    </details>
+    <input type="file" accept="application/json,.json" data-takty hidden>
+    <div class="pl-edit" id="vdEdit" hidden></div>`;
 }
 
 function pracVideo(u) {
@@ -14506,6 +14735,19 @@ function bindPractice() {
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") picClose(); });
   $("#pracPlayer").addEventListener("pointerdown", plDrag);
+  $("#pracVideo").addEventListener("change", (e) => {
+    const сел = e.target.closest("[data-vbar]");
+    if (!сел) return;
+    const box = $("#pracVideo");
+    const от = box.querySelector('[data-vbar="from"]'), до = box.querySelector('[data-vbar="to"]');
+    const с = Number(от ? от.value : 0);
+    /* Сдвинули начало за конец — конец едет следом: свернуть молча в один
+       такт значит сделать не то, что просили, и не сказать об этом. */
+    if (до && с && Number(до.value) < с) до.value = String(с);
+    vidBarPick(с, Number(до ? до.value : 0));
+    vidBarsRow();
+  });
+
   $("#pracVideo").addEventListener("pointerdown", vidDrag);
 
   $("#pracVideo").addEventListener("click", async (e) => {
@@ -14521,7 +14763,57 @@ function bindPractice() {
     if (edge) { vidEdge(edge.dataset.vedge, Number(edge.dataset.vstep)); return; }
     const setv = e.target.closest("[data-vset]");
     if (setv) { vidAsk(setv.dataset.vset); return; }
+
+    /* Режим разметки — до общей ветки: ниже всякое незнакомое имя считается
+       кнопкой. Панель та же, что у звука, только источник другой. */
+    const ред = e.target.closest("[data-ed]");
+    if (ред) {
+      const к = ред.dataset.ed;
+      if (к === "close") { plEditClose(); return; }
+      if (к === "prev") { edOpen("video", plEdit ? plEdit.n - 1 : 1); return; }
+      if (к === "next") { edOpen("video", plEdit ? plEdit.n + 1 : 1); return; }
+      if (к === "herea") { plEditHere("a"); return; }
+      if (к === "hereb") { plEditHere("b"); return; }
+      if (к === "play") { plEditPlay(); return; }
+      if (к === "save") { plEditSave(); return; }
+      if (к.length === 2) { plEditMove(к[0], к[1] === "+" ? 1 : -1); return; }
+      return;
+    }
+    const шагЕ = e.target.closest("[data-estep]");
+    if (шагЕ) {
+      plOpt(piece().id).estep = Number(шагЕ.dataset.estep);
+      pracSaveLoops(); plEditShow(); return;
+    }
     if (!b) return;
+
+    if (b.dataset.vd === "edit") {
+      plEdit && edSrc === "video" ? plEditClose() : edOpen("video", 0);
+      return;
+    }
+    if (b.dataset.vd === "import") {
+      const inp = box.querySelector('input[data-takty]');
+      if (!inp) return;
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0];
+        if (!f) return;
+        try {
+          const пак = JSON.parse(await f.text());
+          const из = vidMarksFromTakty(пак);
+          if (!из) return;                       // человек передумал выбирать часть
+          if (!Object.keys(из.m).length) { toast("В файле нет размеченных тактов"); return; }
+          const st = pracStore();
+          /* Накладываем поверх, а не вместо: разметка, сделанная с телефона,
+             могла уйти дальше файла, и стирать её молча нельзя. */
+          st.vm = Object.assign({}, vmAll(), из.m);
+          if (пак.file && !st.vname) st.vname = String(пак.file);
+          saveData(); schedulePush();
+          vidBarsRow(); vidPaint();
+          toast(`Взято тактов: ${из.всего}${из.part ? " · " + из.part : ""}`);
+        } catch { toast("Не разобрал файл разметки"); }
+      };
+      inp.click();
+      return;
+    }
 
     // приближение по кругу: 1 → 2 → 3 → снова 1
     if (b.dataset.vd === "zoom") { vidZoom(box, (pracStore().vzoom || 1) >= 3 ? -99 : 1); return; }
@@ -14556,6 +14848,14 @@ function bindPractice() {
         try {
           toast("Сохраняю видео…");
           await videoSave(piece().id, f);
+          /* Имя файла — единственное, по чему потом видно, под какую запись
+             сделана разметка. Выбрали другой файл при уже готовой разметке —
+             говорим об этом: секунды у другого исполнения свои, и круги
+             поедут. Саму разметку не трогаем, стирать чужой труд нельзя. */
+          const было = pracStore().vname;
+          if (было && было !== f.name && vmBars().length)
+            toast("Файл другой — разметка осталась от «" + было + "»");
+          pracStore().vname = f.name;
           /* Ссылку на Диск или файл НЕ стираем: она — запасной источник.
              Хранилище на телефоне не вечное (переустановка, чистка, само
              выселение) — и раньше вместе с ним пропадал и путь к ролику,
@@ -14601,10 +14901,12 @@ function bindPractice() {
       const u = prac && prac.cur;
       if (!u) { toast("Сейчас нет текущего задания"); return; }
       const sel = vidSel(V.dur());
-      const list = vmarks().filter((m) => !(m.from === u.from && m.to === u.to));
-      list.push({ from: u.from, to: u.to, a: sel.a, b: sel.b });
-      pracStore().vmarks = list.sort((x, y) => x.from - y.from);
+      /* Пишем в ту же цепочку, что и редактор: два хранилища для одних и тех
+         же границ разошлись бы на первой же правке. */
+      pracStore().vm = Object.assign({}, vmAll(),
+        { [u.from]: plR(sel.a), [u.to + 1]: plR(sel.b) });
       saveData(); schedulePush();
+      vidBarsRow();
       toast(`Кусок запомнен за тактами ${u.from}–${u.to}`);
     } else if (b.dataset.vd === "all") {
       pracStore().vloop = null;
@@ -14638,8 +14940,8 @@ function bindPractice() {
     if (ред) {
       const к = ред.dataset.ed;
       if (к === "close") { plEditClose(); return; }
-      if (к === "prev") { plEditOpen(plEdit ? plEdit.n - 1 : 1); return; }
-      if (к === "next") { plEditOpen(plEdit ? plEdit.n + 1 : 1); return; }
+      if (к === "prev") { edOpen("audio", plEdit ? plEdit.n - 1 : 1); return; }
+      if (к === "next") { edOpen("audio", plEdit ? plEdit.n + 1 : 1); return; }
       if (к === "herea") { plEditHere("a"); return; }
       if (к === "hereb") { plEditHere("b"); return; }
       if (к === "play") { plEditPlay(); return; }
@@ -14653,7 +14955,10 @@ function bindPractice() {
       pracSaveLoops(); plEditShow(); return;
     }
     if (b) {
-      if (b.dataset.pl === "edit") { plEdit ? plEditClose() : plEditOpen(0); return; }
+      if (b.dataset.pl === "edit") {
+        plEdit && edSrc === "audio" ? plEditClose() : edOpen("audio", 0);
+        return;
+      }
       if (b.dataset.pl === "reset") { plResetSpan(); return; }
       if (b.dataset.pl === "replay") {
         /* Переслушать место заново — одно нажатие. Раньше приходилось попадать

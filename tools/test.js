@@ -2069,6 +2069,57 @@ function ок(имя, факт, надо) {
   t.set("marksMine", было.свои);
 }
 
+/* ── Разметка ролика по тактам ── */
+{
+  const было = { данные: JSON.parse(JSON.stringify(t.get("data"))),
+                 pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})) };
+  t.set("data", { active: "piano", book: { books: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    piano: { activePiece: "p1", entries: [], pieces: [{ id: "p1", name: "П", bars: 40 }] },
+    practice: {} });
+  t.set("PRACTICE_DATA", {});
+
+  /* Старый список кусков переводится в цепочку меток при первом чтении. */
+  t.get("pracStore")().vmarks = [{ from: 3, to: 4, a: 10, b: 20 }];
+  ок("ролик: старые куски стали цепочкой", t.get("vmAll")(), { 3: 10, 5: 20 });
+  ок("ролик: сам старый список не тронут",
+    t.get("pracStore")().vmarks.length, 1);
+
+  /* Своя цепочка: у последней метки конца нет, зациклить её нельзя. */
+  t.get("pracStore")().vm = { 1: 0, 2: 6, 3: 12, 4: 18 };
+  ок("ролик: размеченные такты", t.get("vmBars")(), [1, 2, 3]);
+  ок("ролик: отрезок такта", t.get("vmBarSpan")(2), { a: 6, b: 12 });
+  ок("ролик: у последней метки отрезка нет", t.get("vmBarSpan")(4), null);
+  ок("ролик: отрезок диапазона", t.get("vmSpan")({ from: 1, to: 3 }), { a: 0, b: 18 });
+  ок("ролик: неразмеченный диапазон", t.get("vmSpan")({ from: 9, to: 9 }), null);
+
+  /* Всего тактов знает сама пьеса: у ролика разбора может не быть вовсе. */
+  ок("ролик: всего тактов — по пьесе", t.get("vidBarTotal")(), 40);
+
+  /* Разметка из «Тактов»: начала берём все, а конец последнего — только если
+     он похож на границу такта. В выгрузке он тянется до конца ролика. */
+  const пак = { file: "x.mp4", duration: 600, bars: [
+    { part: "Прелюдия", n: 1, start: 10, end: 16 },
+    { part: "Прелюдия", n: 2, start: 16, end: 22 },
+    { part: "Прелюдия", n: 3, start: 22, end: 600 },
+  ] };
+  const из = t.get("vidMarksFromTakty")(пак);
+  ок("такты: начала взяты все", Object.keys(из.m).sort(), ["1", "2", "3"]);
+  ок("такты: хвост до конца ролика концом не считается", из.m[4], undefined);
+  ок("такты: часть названа", [из.part, из.всего], ["Прелюдия", 3]);
+  /* А настоящий конец последнего такта берём. */
+  const из2 = t.get("vidMarksFromTakty")({ bars: [
+    { part: "П", n: 1, start: 10, end: 16 },
+    { part: "П", n: 2, start: 16, end: 22 },
+    { part: "П", n: 3, start: 22, end: 28 },
+  ] });
+  ок("такты: настоящий конец последнего взят", из2.m[4], 28);
+  ок("такты: пустой файл не роняет",
+    t.get("vidMarksFromTakty")({ bars: [] }).всего, 0);
+
+  t.set("data", было.данные); t.set("PRACTICE_DATA", было.pd);
+}
+
 /* ── Круг из нескольких тактов, рисунок — по одному ── */
 {
   const было={ pd: JSON.parse(JSON.stringify(t.get("PRACTICE_DATA") || {})),

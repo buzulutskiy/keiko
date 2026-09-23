@@ -2557,6 +2557,24 @@
     #pracPlayer.editing .pl-tempo,
     #pracPlayer.editing .pl-barsel,
     #pracPlayer.editing .pl-markrow { display: none; }
+    /* У ролика панель та же и правило то же: пока размечаешь такт, на экране
+       остаётся сам ролик и границы, всё остальное только мешает целиться. */
+    #pracVideo.editing .tl,
+    #pracVideo.editing .tl-info,
+    #pracVideo.editing .vd-row,
+    #pracVideo.editing .vd-more,
+    #pracVideo.editing #vdBars { display: none; }
+    #pracVideo .pl-edit { margin: 10px 0 2px; }
+    /* Скорость у ролика — ряд первого сорта, а не строка в «Точнее»: медленно
+       разбирают чаще, чем лезут в раскладушку. Сами кнопки уже описаны выше,
+       здесь только подпись ряда — без неё цифры висят без объяснения. */
+    .vd-row.rates em {
+      font-style: normal; font-size: 0.68rem; color: var(--dim);
+      width: 52px; flex: none;
+    }
+    /* Ряды разметки внутри ролика живут по его отступам, а не по плеерным. */
+    #vdBars .pl-set { margin-top: 8px; }
+    #vdBars .pl-markrow i { font-style: normal; }
     .ed-top { display: flex; align-items: center; justify-content: space-between; }
     .ed-top b { font-size: 0.92rem; }
     .ed-x {
