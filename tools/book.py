@@ -538,7 +538,9 @@ def build(путь_спеки):
     прежняя = next((b for b in данные["book"]["books"] if b.get("id") == key), {})
     книга = dict(прежняя)
     книга.update({k: spec[k] for k in ("id", "title", "author", "pages") if k in spec})
-    for k in ("volume", "startPage", "art", "tone", "mode"):
+    # `unit` — чем меряется книга: страницами или процентами. Книгу с читалки
+    # страницами мерить нечем, там их нет.
+    for k in ("volume", "startPage", "art", "tone", "mode", "unit"):
         if spec.get(k) is not None: книга[k] = spec[k]
     книга["ratio"] = ratio
     книга["chapters"] = spec["chapters"]

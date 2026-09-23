@@ -2069,6 +2069,36 @@ function ок(имя, факт, надо) {
   t.set("marksMine", было.свои);
 }
 
+/* ── Книга с читалки меряется процентами ── */
+{
+  const было = JSON.parse(JSON.stringify(t.get("data")));
+  const общее = { active: "book", piano: { pieces: [], entries: [] },
+    pastel: { courses: [], entries: [] }, watch: { videos: [], entries: [] },
+    thoughts: [], wishes: [] };
+  /* Бумажная книга — страницы. */
+  t.set("data", Object.assign({}, общее, { book: { activeBook: "b", entries: [],
+    books: [{ id: "b", title: "Бумажная", pages: 300,
+      chapters: [{ name: "Раз", from: 1 }, { name: "Два", from: 150 }] }] } }));
+  ок("мера: у бумажной книги страницы", t.get("bookUnit")(), "стр");
+  ок("мера: и считается страницами", t.get("stranic")(5), "5 страниц");
+  ок("мера: склонение работает", t.get("stranic")(2), "2 страницы");
+
+  /* Книга с читалки — проценты: страниц там нет, процент показывает сама. */
+  t.set("data", Object.assign({}, общее, { book: { activeBook: "e", entries: [],
+    books: [{ id: "e", title: "С читалки", pages: 100, unit: "%",
+      chapters: [{ name: "Раз", from: 1 }, { name: "Два", from: 40 }] }] } }));
+  ок("мера: у книги с читалки проценты", t.get("bookUnit")(), "%");
+  ок("мера: и число называется процентом", t.get("stranic")(5), "5 %");
+  ок("мера: без склонения — процент один на все числа", t.get("stranic")(2), "2 %");
+
+  /* Подпись под кольцом говорит на том же языке. */
+  t.get("data").book.entries = [{ id: "e1", date: "2026-09-07", bookId: "e", page: 10 }];
+  ок("мера: в подписи тоже проценты",
+    /Раз.*осталось 29 %/.test(t.get("heroSub")(t.get("curStats")())), true);
+
+  t.set("data", было);
+}
+
 /* ── Разметка ролика по тактам ── */
 {
   const было = { данные: JSON.parse(JSON.stringify(t.get("data"))),

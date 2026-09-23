@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 573";
+const APP_VERSION = "Кэйко 574";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -159,7 +159,15 @@ const takty = n => `${n} ${plural(n, "такт", "такта", "тактов")}`
    «12 из 24 шагов рисунка», а не «24 шага». */
 const shagi  = n => `${n} ${plural(n, "шаг", "шага", "шагов")} рисунка`;
 const shagov = n => `${n} ${plural(n, "шага", "шагов", "шагов")} рисунка`;
-const stranic = n => `${n} ${plural(n, "страница", "страницы", "страниц")}`;
+/* Бумажную книгу меряют страницами, книгу с читалки — процентами: страниц там
+   нет вовсе, зато процент читалка показывает сама, и переписывать его в
+   страницы человеку пришлось бы в уме. Мера живёт у книги (`unit: "%"`), и её
+   спрашивают все места, где приложение называет число. */
+const bookUnit = (b) => ((b || book() || {}).unit === "%") ? "%" : "стр";
+const впроцентах = (b) => bookUnit(b) === "%";
+const stranic = (n, b) => впроцентах(b)
+  ? `${n} %`
+  : `${n} ${plural(n, "страница", "страницы", "страниц")}`;
 const handIcon = h => h === "left" ? "𝄢" : "𝄞";
 const spanText = s => `${handIcon(s.hand)} ${s.from === s.to ? s.from + "-й" : s.from + "–" + s.to}`;
 const rnd = l => l[Math.floor(Math.random() * l.length)];
@@ -6292,7 +6300,9 @@ function openAchSheet(a, teased, words) {
                 samovar: [s.days, 10, "вечеров"] }[a.id];
     if (m) progressLine = `Сейчас: <b>${m[0]}</b> из ${m[1]} ${m[2]}`;
     else if (isBook())
-      progressLine = `Сейчас прочитано: <b>${s.page}</b> ${plural(s.page, "страница", "страницы", "страниц")} из ${s.pages} · ${Math.round(s.pct)}%`;
+      progressLine = впроцентах()
+        ? `Сейчас прочитано: <b>${s.page}</b> % книги`
+        : `Сейчас прочитано: <b>${s.page}</b> ${plural(s.page, "страница", "страницы", "страниц")} из ${s.pages} · ${Math.round(s.pct)}%`;
     else if (!isBook() && ["q1", "half", "q3", "all100"].includes(a.id))
       progressLine = `Сейчас разобрано: <b>${Math.round(s.pct)}%</b>`;
   }
@@ -16075,14 +16085,14 @@ function bookSheetUI() {
   const delta = pickPage - cur;
   return `
     <div class="page-pick">
-      <span class="pp-label">Дочитал<br><i>до страницы${delta > 0 ? ` · <b style="color:var(--green)">+${delta}</b>` : ""}</i></span>
+      <span class="pp-label">${впроцентах() ? "Прочитано" : "Дочитал"}<br><i>${впроцентах() ? "процентов" : "до страницы"}${delta > 0 ? ` · <b style="color:var(--green)">+${delta}</b>` : ""}</i></span>
       <div class="stepper">
         <button class="st-btn" data-d="-1" type="button">−</button>
         <button class="st-val" id="pageVal" type="button">${pickPage}</button>
         <button class="st-btn" data-d="1" type="button">＋</button>
       </div>
     </div>
-    <div class="quick">${[5, 10, 20, 50].map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
+    <div class="quick">${(впроцентах() ? [1, 3, 5, 10] : [5, 10, 20, 50]).map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
       ${finBtnHTML()}</div>
     <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>
 `;
