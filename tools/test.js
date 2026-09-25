@@ -27,8 +27,12 @@ const стубЭл = () => ({
   getContext: () => null,
 });
 
+// Браузерные таймеры не должны держать Node после завершения проверок.
+const testTimeouts = new Set(), testIntervals = new Set();
 const sandbox = {
-  console, setTimeout, clearTimeout, setInterval, clearInterval,
+  console, clearTimeout, clearInterval,
+  setTimeout: (...args) => { const id = setTimeout(...args); testTimeouts.add(id); return id; },
+  setInterval: (...args) => { const id = setInterval(...args); testIntervals.add(id); return id; },
   Date, Math, JSON, Intl, URL, fetch: async () => { throw new Error("сети в тестах нет"); },
   /* Браузерные, а значит и здесь: огибающая записи лежит в разборе базой-64,
      и без них проверка рисунка звука молча получала null. */
@@ -4109,8 +4113,41 @@ const сеть = (() => {
   ок("пустое поверх пустого не мешаем", !(!счёт(пусто) && счёт(пусто)), true);
 }
 
+/* ── Книга дня ── */
+{
+  const books = [{id: "a"}, {id: "b"}, {id: "c"}, {id: "done", done: true}];
+  const setting = {enabled: true, ids: ["a", "b", "c", "done", "missing"], seed: "test", startDay: "2026-09-25", updatedAt: 10};
+  const pick = sandbox.readingChoice;
+  const first = pick(books, setting, "2026-09-25");
+  ок("книга дня: стабильна после открытия", pick(books, setting, "2026-09-25"), first);
+  ок("книга дня: порядок книг на другом устройстве не влияет", pick([...books].reverse(), setting, "2026-09-25"), first);
+  ок("книга дня: выключена", pick(books, {...setting, enabled: false}, "2026-09-25"), null);
+  ок("книга дня: пустой выбор", pick(books, {...setting, ids: []}, "2026-09-25"), null);
+  ок("книга дня: одна книга", pick(books, {...setting, ids: ["a"]}, "2027-01-01"), "a");
+  ок("книга дня: завершённые и удалённые не участвуют", pick([{id:"a", deleted:true}, {id:"b", archived:true}, {id:"done", done:true}], setting, "2026-09-25"), null);
+  let prev = first;
+  for (let i = 1; i < 90; i++) {
+    const day = new Date(Date.UTC(2026, 8, 25 + i)).toISOString().slice(0,10);
+    const next = pick(books, setting, day);
+    ок("книга дня: без повтора " + day, next !== prev && ["a", "b", "c"].includes(next), true);
+    prev = next;
+  }
+  ок("книга дня: свежие настройки выключают старые", sandbox.mergeReading(setting, {enabled:false, updatedAt:11}).enabled, false);
+  ок("книга дня: старый клиент не стирает настройки", sandbox.mergeReading(setting, undefined), setting);
+  const old = t.get("data");
+  const d = sandbox.emptyData();
+  d.book.books = books; d.readingRandom = setting;
+  d.hidden = {["bk:" + pick(books, setting, t.get("todayStr()"))]: 1};
+  t.set("data", d);
+  ок("книга дня: на ленте ровно одна книга, даже ранее скрытая", sandbox.railItems().filter(i=>i.track === "book").length, 1);
+  ок("книга дня: экспорт и загрузка сохраняют настройки", sandbox.migrate(t.get("exportData()" )).readingRandom, setting);
+  t.set("data", old);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
+  testTimeouts.forEach(clearTimeout);
+  testIntervals.forEach(clearInterval);
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
   console.log(`тесты: ${всего} из ${всего} прошли`);
 }, (e) => { console.error(e); process.exit(1); });

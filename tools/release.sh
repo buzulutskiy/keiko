@@ -28,9 +28,7 @@ sed -i '' "s/keiko-v$CUR/keiko-v$NEXT/" sw.js
 node --check app.js
 
 git add -A
-git commit -q -m "$1
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -q -m "$1"
 git push origin HEAD:main
 
 echo "Кэйко $NEXT отправлен, ждём Pages…"

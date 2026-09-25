@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 574";
+const APP_VERSION = "Кэйко 575";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -296,6 +296,7 @@ function migrate(obj) {
   }
 
   if (Number(obj.weekGoal) > 0) base.weekGoal = Math.min(7, Math.round(obj.weekGoal));
+  if (obj.readingRandom && Array.isArray(obj.readingRandom.ids)) base.readingRandom = obj.readingRandom;
   if (Number(obj.goalAt) > 0) base.goalAt = Number(obj.goalAt);
   if (Number(obj.pianoWeek) > 0) base.pianoWeek = Math.round(obj.pianoWeek);
   if (Number(obj.pianoWeekAt) > 0) base.pianoWeekAt = Number(obj.pianoWeekAt);
@@ -2897,7 +2898,61 @@ const LAMP_ART = `
 
 // одна обложка (книга, композиция или курс)
 // все материалы одной лентой: пьесы, книга, курс
-function railItems() {
+/* Книга дня вычисляется одинаково на телефонах из даты и настроек профиля.
+   Шаг выбирается среди остальных книг: вчерашняя не выпадет снова. Дата
+   местная, но дни считаем через UTC, чтобы перевод часов не съедал сутки. */
+function readingChoice(books, setting, day) {
+  if (!setting || !setting.enabled) return null;
+  const ids = [...new Set(setting.ids || [])].sort();
+  const pool = ids.filter(id => books.some(b => b.id === id && !b.done && !b.archived && !b.deleted));
+  if (!pool.length) return null;
+  const hash = str => {
+    let h = 2166136261;
+    for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+    return h >>> 0;
+  };
+  const elapsed = Math.max(0, Math.floor((Date.parse(day) - Date.parse(setting.startDay || day)) / 86400000));
+  const seed = String(setting.seed || "") + "|" + pool.join("|");
+  let index = hash(seed) % pool.length;
+  for (let d = 1; d <= Math.min(elapsed, 100000) && pool.length > 1; d++)
+    index = (index + 1 + hash(seed + "|" + d) % (pool.length - 1)) % pool.length;
+  return pool[index];
+}
+function mergeReading(local, remote) {
+  return remote && (remote.updatedAt || 0) > ((local && local.updatedAt) || 0) ? remote : local;
+}
+function readingUI() {
+  const setting = data.readingRandom || {};
+  const books = data.book.books.filter(b => !b.done && !b.archived && !b.deleted);
+  return `<div class="info-note">Одна книга на весь день. Если отмечено несколько книг, завтра выберем другую. Остальные занятия останутся на главной.</div>
+    <label class="reading-option"><input id="readingEnabled" type="checkbox" ${setting.enabled ? "checked" : ""}> <span>Выбирать книгу дня</span></label>
+    <div class="info-note">Какие книги участвуют</div>
+    <div class="reading-options">${books.map(b => `<label class="reading-option"><input type="checkbox" data-reading-book="${esc(b.id)}" ${(setting.ids || []).includes(b.id) ? "checked" : ""}><span><b>${esc(b.title)}</b><small>${esc(b.author || "")}</small></span></label>`).join("") || '<div class="info-note">Нет незавершённых книг.</div>'}</div>
+    <p class="info-note" id="readingHint" role="status"></p>
+    <button class="btn gold" id="readingSave" type="button">Сохранить</button>`;
+}
+function bindReadingUI() {
+  const save = $("#readingSave");
+  if (!save) return;
+  document.querySelectorAll("[data-reading-book], #readingEnabled").forEach(el =>
+    el.addEventListener("change", () => { $("#readingHint").textContent = ""; }));
+  save.addEventListener("click", () => {
+    const enabled = $("#readingEnabled").checked;
+    const ids = [...document.querySelectorAll("[data-reading-book]:checked")].map(el => el.dataset.readingBook);
+    if (enabled && !ids.length) { $("#readingHint").textContent = "Выбери хотя бы одну книгу."; return; }
+    const old = data.readingRandom || {};
+    const unchanged = JSON.stringify([...(old.ids || [])].sort()) === JSON.stringify([...ids].sort());
+    data.readingRandom = { enabled, ids, updatedAt: now(),
+      seed: unchanged && old.seed ? old.seed : uid(),
+      startDay: unchanged && old.startDay ? old.startDay : todayStr() };
+    if (enabled) data.active = "book";
+    normalizeActive(); saveData(); schedulePush();
+    toast(enabled ? "Книга дня включена" : "Обычная лента восстановлена");
+    settingsView = null; render();
+  });
+}
+
+function railItems(allBooks = false) {
   const out = data.piano.pieces.filter(p => !p.archived)
     .map(p => ({ track: "piano", pieceId: p.id, piece: p }));
   for (const b of data.book.books.filter(b => !b.archived)) out.push({ track: "book", bookId: b.id, book: b });
@@ -2916,7 +2971,12 @@ function railItems() {
      а на ленте хочу одну. Если спрятать всё, лента опустела бы и приложению
      нечего было бы показать — тогда прячем ничего. */
   const shown = base.filter((i) => !matHidden(libKey(i)));
-  return shown.length ? shown : base;
+  const visible = shown.length ? shown : base;
+  const chosen = !allBooks && readingChoice(data.book.books, data.readingRandom, todayStr());
+  if (!chosen) return visible;
+  // Явный выбор в рандомайзере важнее прежнего «скрыть с главной».
+  const selected = out.find(i => i.bookId === chosen);
+  return [...visible.filter(i => i.track !== "book"), selected];
 }
 
 /* Ключ материала — тот же, что у строки в библиотеке: «bk:id», «pf:id»,
@@ -2943,6 +3003,8 @@ const hasMaterials = () => railItems().length > 0;
 
 // активным может остаться трек, материалов которого у профиля нет — переставляем на первый доступный
 function normalizeActive() {
+  const chosen = readingChoice(data.book.books, data.readingRandom, todayStr());
+  if (chosen && data.active === "book") data.book.activeBook = chosen;
   const items = railItems();
   if (!items.length) return;
   const ok = items.some(i => i.track === data.active
@@ -4504,6 +4566,7 @@ const heroSub = (s) => subLine(...heroParts(s), ...paceParts());
 
 
 function renderHome() {
+  normalizeActive();
   if (!hasMaterials()) { renderEmpty("Здесь появятся материалы", "Пока не добавлено ни одного: ни пьесы, ни книги, ни курса."); return; }
   const s = curStats();
   const g = goalProgress();
@@ -4527,6 +4590,7 @@ $("#view").innerHTML = `
       ${coverRailHTML()}
       ${ringHTML(shownPct(s), ringSign(s))}
       <div class="hero-title">
+        ${isBook() && readingChoice(data.book.books, data.readingRandom, todayStr()) === book().id ? '<p class="reading-day">Книга дня</p>' : ""}
         <h2>${isBook() ? esc(book().title) : isWatch() ? esc(video().title) : isCourse() ? esc(course().name) : esc(piece().name)}</h2>
         ${sub ? `<p>${sub}</p>` : ""}
       </div>
@@ -16399,6 +16463,7 @@ function restoreBackup(file) {
         !confirm(`Копия сделана в профиле «${pack.profile}», а сейчас открыт «${profileId}».\n\nВсё равно восстановить сюда?`)) return;
 
     const before = dataStamp();
+    data.readingRandom = mergeReading(data.readingRandom, d.readingRandom);
     data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
     data.book.entries = mergeLists(data.book.entries, (d.book && d.book.entries) || []);
     data.pastel.entries = mergeLists(data.pastel.entries, (d.pastel && d.pastel.entries) || []);
@@ -18318,6 +18383,7 @@ async function restoreArchive(file) {
   if (!d || !d.piano) { toast("В снимке нет этого профиля"); return; }
 
   const before = dataStamp();
+  data.readingRandom = mergeReading(data.readingRandom, d.readingRandom);
   data.piano.entries = mergeLists(data.piano.entries, d.piano.entries || []);
   data.book.entries = mergeLists(data.book.entries, d.book.entries || []);
   data.pastel.entries = mergeLists(data.pastel.entries, d.pastel.entries || []);
@@ -18373,12 +18439,13 @@ const SETTINGS_SECTIONS = [
   { id: "profile",   icon: "👤", name: "Профиль",       hint: () => profile().name },
   { id: "sync",      icon: "🔄", name: "Синхронизация", hint: () => (cfg.token && cfg.gistId) ? "подключена" : "не подключена" },
   { id: "goal",      icon: "🎯", name: "Цель на неделю", hint: () => `${data.weekGoal} ${plural(data.weekGoal, "день", "дня", "дней")}` },
+  { id: "reading", icon: "🎲", name: "Рандомайзер чтения", hint: () => data.readingRandom?.enabled ? "книга на каждый день" : "выключен" },
   { id: "look",      icon: "🎧", name: "Атмосфера",     hint: () => cfg.sound ? "звук включён" : "звук выключен" },
   /* Материалы, полка и карта знаний собраны в одном месте: раньше они были
      раскиданы по трём экранам, и «где посмотреть прочитанное» каждый раз
      приходилось вспоминать. */
   { id: "library",   icon: "📚", name: "Библиотека",   hint: () => {
-      const n = railItems().length, sh = shelfItems().length;
+      const n = railItems(true).length, sh = shelfItems().length;
       return (n ? `${n} в работе` : "пусто") + (sh ? ` · ${sh} в архиве` : ""); } },
   { id: "data",      icon: "💾", name: "Данные",        hint: () => "копия и перенос" },
   { id: "about",     icon: "稽", name: "О приложении",  hint: () => APP_VERSION }
@@ -18441,6 +18508,8 @@ function renderSettingsSection(id) {
       <div class="sheet-actions"><button class="btn gold" id="sConnect" type="button">Подключить</button></div>`;
   } else if (id === "goal") {
     body = goalUI() + pianoGoalUI();
+  } else if (id === "reading") {
+    body = readingUI();
   } else if (id === "look") {
     body = soundUI() + dailyUI();
   } else if (id === "library") {
@@ -18483,6 +18552,7 @@ function renderSettingsSection(id) {
   const conn = $("#sConnect");
   if (conn) conn.addEventListener("click", () => connectGitHub($("#sToken").value.trim()));
 
+  bindReadingUI();
   bindGoalUI();
   bindPianoGoalUI();
   bindSoundUI();
@@ -18548,7 +18618,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+const exportData = () => ({ v: 7, savedAt: now(), readingRandom: data.readingRandom, usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
   talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, pianoWeek: data.pianoWeek, pianoWeekAt: data.pianoWeekAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId,
@@ -18725,6 +18795,7 @@ async function syncNow(manual) {
         data.weekGoal = remote.weekGoal;
         data.goalAt = remote.goalAt;
       }
+      data.readingRandom = mergeReading(data.readingRandom, remote.readingRandom);
       data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
@@ -19015,6 +19086,12 @@ function boot() {
     nextOverlaySoon();
   });
 
+  let readingDay = todayStr();
+  setInterval(() => {
+    if (document.hidden || sheetMode || todayStr() === readingDay) return;
+    readingDay = todayStr();
+    if (data.readingRandom?.enabled) render();
+  }, 30000);
   window.addEventListener("resize", syncTabHeight);
   window.addEventListener("orientationchange", () => setTimeout(syncTabHeight, 200));
 
@@ -19093,5 +19170,4 @@ function boot() {
 }
 
 init();
-
 
