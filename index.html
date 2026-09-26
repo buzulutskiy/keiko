@@ -4070,6 +4070,14 @@
     .rt-note {
       grid-column: 2 / -1; color: var(--dim); font-size: 0.78rem; line-height: 1.45;
     }
+    .rt-confirm { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -4px 16px; padding: 10px 4px; background: var(--bg); color: var(--dim); font-size: 0.82rem; }
+    .rt-confirm .btn { width: auto; flex: 0 0 auto; min-height: 38px; padding: 0 16px; }
+    .rt-confirm .btn:disabled { opacity: 0.45; }
+    .rt-check { width: 20px; height: 20px; display: grid; place-items: center; cursor: pointer; }
+    .rt-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .rt-check i { width: 18px; height: 18px; border: 1px solid var(--glass-line); border-radius: 5px; }
+    .rt-check input:checked + i { background: var(--gold); border-color: var(--gold); }
+    .rt-check input:checked + i::after { content: "✓"; display: block; color: #241c0e; font-weight: 800; font-size: 13px; line-height: 17px; text-align: center; }
   .reading-options { display: grid; gap: 8px; }
   .reading-option { display: flex; align-items: center; gap: 14px; padding: 15px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; cursor: pointer; }
   .reading-option input { width: 22px; height: 22px; flex: 0 0 22px; accent-color: #e9c77b; }

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 575";
+const APP_VERSION = "Кэйко 576";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -17317,6 +17317,26 @@ const routeOf = (b) => {
 };
 let routeOpen = false;
 let routeTab = 0;
+/* В «Стихах» выбираем несколько текстов до общей отметки: не пишем каждое
+   касание сразу, чтобы случайный тап не превратился в прочитанное. */
+let routePicked = new Set();
+const routeHasPoemChecks = (тр) => (тр && тр.name === "Стихи");
+const routeItemKey = (x) => (x && (x.key || x.name)) || "";
+
+/* Подтверждение создаёт одну дневную отметку и дополняет её новыми ключами. */
+function confirmRoutePicks(b, picked, date) {
+  const keys = [...picked].filter(Boolean);
+  if (!keys.length || !b) return 0;
+  const existing = bookEntriesOf(b.id).find(e => e.date === date);
+  const marks = Object.fromEntries(keys.map(key => [key, "done"]));
+  if (existing) {
+    existing.marks = Object.assign({}, existing.marks || {}, marks);
+    existing.updatedAt = now();
+  } else {
+    data.book.entries.push({ id: uid(), date, bookId: b.id, note: "", marks, createdAt: now(), updatedAt: now() });
+  }
+  return keys.length;
+}
 
 function routeState(b, it) {
   if (!it || !it.key) return "";
@@ -17339,9 +17359,12 @@ const routeCount = (b, тр) => {
    иначе список прыгал бы к началу вместе с прокруткой. */
 function routeBodyHTML(b, тр) {
   const c = routeCount(b, тр);
+  const сГалками = routeHasPoemChecks(тр);
+  const выбрано = [...routePicked].filter(Boolean).length;
   return `
     <p class="rt-lead">${esc(b.title || "")} · ${c.мои} из ${c.всего} пройдено</p>
     ${тр.why ? `<p class="rt-why rt-intro">${esc(тр.why)}</p>` : ""}
+    ${сГалками ? `<div class="rt-confirm"><span>${выбрано ? `Выбрано: ${выбрано}` : "Отметь прочитанные стихотворения"}</span><button class="btn gold" id="routeConfirm" type="button" ${выбрано ? "" : "disabled"}>Подтвердить</button></div>` : ""}
     ${тр.chapters.map((г, i) => `
       <section class="rt-ch">
         <div class="rt-n">${i + 1}</div>
@@ -17350,8 +17373,10 @@ function routeBodyHTML(b, тр) {
         <ol class="rt-list">
           ${г.items.map((x) => {
             const с = routeState(b, x);
-            return `<li class="rt-it ${с}">
-              <span class="rt-mark">${lsMark(с) || "·"}</span>
+            const ключ = routeItemKey(x);
+            const выбрана = routePicked.has(ключ);
+            return `<li class="rt-it ${с}${сГалками ? " rt-pick" : ""}">
+              ${сГалками && с !== "done" ? `<label class="rt-check"><input type="checkbox" data-route-pick="${esc(ключ)}" ${выбрана ? "checked" : ""} aria-label="Отметить «${esc(x.name)}» прочитанным"><i></i></label>` : `<span class="rt-mark">${lsMark(с) || "·"}</span>`}
               <span class="rt-name">${esc(x.name)}${x.year ? ` <em>${x.year}</em>` : ""}${x.tag ? ` <b class="rt-tag">${esc(x.tag)}</b>` : ""}</span>
               <span class="rt-page">${x.page || ""}</span>
               ${x.note ? `<span class="rt-note">${esc(x.note)}</span>` : ""}
@@ -17405,6 +17430,27 @@ function openRoute() {
   box.hidden = false;
   const з = $("#routeClose");
   if (з) з.addEventListener("click", closeRoute);
+  const bindRouteBody = () => {
+    const body = $("#routeBody");
+    if (!body) return;
+    body.querySelectorAll("[data-route-pick]").forEach((el) => el.addEventListener("change", () => {
+      const key = el.dataset.routePick;
+      if (el.checked) routePicked.add(key); else routePicked.delete(key);
+      body.innerHTML = routeBodyHTML(b, м[routeTab]);
+      bindRouteBody();
+    }));
+    const confirm = body.querySelector("#routeConfirm");
+    if (confirm) confirm.addEventListener("click", () => {
+      if (!routePicked.size) return;
+      if (!gistReady()) { openSettingsSheet(); return; }
+      const n = confirmRoutePicks(b, routePicked, todayStr());
+      routePicked.clear(); saveData(); schedulePush();
+      body.innerHTML = routeBodyHTML(b, м[routeTab]);
+      bindRouteBody();
+      toast(`Отмечено: ${n} ${plural(n, "стихотворение", "стихотворения", "стихотворений")}`);
+    });
+  };
+  bindRouteBody();
   const ряд = $("#routeTabs");
   if (ряд) ряд.addEventListener("click", (e) => {
     const к = e.target.closest("[data-rt]");
@@ -17412,11 +17458,13 @@ function openRoute() {
     routeTab = +к.dataset.rt || 0;
     ряд.querySelectorAll("button").forEach((x) => x.classList.toggle("on", +x.dataset.rt === routeTab));
     $("#routeBody").innerHTML = routeBodyHTML(b, м[routeTab]);
+    bindRouteBody();
     box.scrollTop = 0;
   });
 }
 function closeRoute() {
   routeOpen = false;
+  routePicked.clear();
   const box = $("#route");
   if (box) { box.hidden = true; box.innerHTML = ""; }
 }
@@ -19170,4 +19218,3 @@ function boot() {
 }
 
 init();
-
