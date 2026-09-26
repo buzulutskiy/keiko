@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 576";
+const APP_VERSION = "Кэйко 577";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -17317,10 +17317,10 @@ const routeOf = (b) => {
 };
 let routeOpen = false;
 let routeTab = 0;
-/* В «Стихах» выбираем несколько текстов до общей отметки: не пишем каждое
-   касание сразу, чтобы случайный тап не превратился в прочитанное. */
+/* В каждой вкладке выбираем несколько текстов до общей отметки: не пишем
+   каждое касание сразу, чтобы случайный тап не превратился в прочитанное. */
 let routePicked = new Set();
-const routeHasPoemChecks = (тр) => (тр && тр.name === "Стихи");
+const routeHasChecks = (тр) => !!(тр && Array.isArray(тр.chapters));
 const routeItemKey = (x) => (x && (x.key || x.name)) || "";
 
 /* Подтверждение создаёт одну дневную отметку и дополняет её новыми ключами. */
@@ -17359,12 +17359,12 @@ const routeCount = (b, тр) => {
    иначе список прыгал бы к началу вместе с прокруткой. */
 function routeBodyHTML(b, тр) {
   const c = routeCount(b, тр);
-  const сГалками = routeHasPoemChecks(тр);
+  const сГалками = routeHasChecks(тр);
   const выбрано = [...routePicked].filter(Boolean).length;
   return `
     <p class="rt-lead">${esc(b.title || "")} · ${c.мои} из ${c.всего} пройдено</p>
     ${тр.why ? `<p class="rt-why rt-intro">${esc(тр.why)}</p>` : ""}
-    ${сГалками ? `<div class="rt-confirm"><span>${выбрано ? `Выбрано: ${выбрано}` : "Отметь прочитанные стихотворения"}</span><button class="btn gold" id="routeConfirm" type="button" ${выбрано ? "" : "disabled"}>Подтвердить</button></div>` : ""}
+    ${сГалками ? `<div class="rt-confirm"><span>${выбрано ? `Выбрано: ${выбрано}` : "Отметь прочитанные произведения"}</span><button class="btn gold" id="routeConfirm" type="button" ${выбрано ? "" : "disabled"}>Подтвердить</button></div>` : ""}
     ${тр.chapters.map((г, i) => `
       <section class="rt-ch">
         <div class="rt-n">${i + 1}</div>
@@ -17447,7 +17447,7 @@ function openRoute() {
       routePicked.clear(); saveData(); schedulePush();
       body.innerHTML = routeBodyHTML(b, м[routeTab]);
       bindRouteBody();
-      toast(`Отмечено: ${n} ${plural(n, "стихотворение", "стихотворения", "стихотворений")}`);
+      toast(`Отмечено: ${n} ${plural(n, "произведение", "произведения", "произведений")}`);
     });
   };
   bindRouteBody();
