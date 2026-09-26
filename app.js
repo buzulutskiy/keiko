@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 577";
+const APP_VERSION = "Кэйко 578";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -17338,6 +17338,26 @@ function confirmRoutePicks(b, picked, date) {
   return keys.length;
 }
 
+/* Отметка по траектории — это тоже чтение, а не только изменение счётчика.
+   Собираем названия до перерисовки и кладём их в «Заметки» отдельной
+   карточкой: там остаётся понятный след, какие именно произведения были
+   прочитаны. Одинаковый набор в тот же день не размножает карточки. */
+function routePickedItems(тр, picked) {
+  const keys = new Set([...picked].filter(Boolean));
+  return (тр && тр.chapters || []).flatMap((г) => г.items || [])
+    .filter((x) => keys.has(routeItemKey(x)));
+}
+
+function recordRouteSession(b, тр, picked, date) {
+  const items = routePickedItems(тр, picked);
+  if (!items.length) return null;
+  const keys = items.map(routeItemKey).sort();
+  const names = items.map((x) => x.name || routeItemKey(x));
+  return addEvent("session", b.id, "book",
+    "По траектории прочитал: " + names.join("; "),
+    { tag: "route:" + keys.join("\u001f"), date, fields: { createdAt: now() } });
+}
+
 function routeState(b, it) {
   if (!it || !it.key) return "";
   const сохр = lsSaved(b);
@@ -17443,7 +17463,9 @@ function openRoute() {
     if (confirm) confirm.addEventListener("click", () => {
       if (!routePicked.size) return;
       if (!gistReady()) { openSettingsSheet(); return; }
-      const n = confirmRoutePicks(b, routePicked, todayStr());
+      const date = todayStr();
+      const n = confirmRoutePicks(b, routePicked, date);
+      recordRouteSession(b, м[routeTab], routePicked, date);
       routePicked.clear(); saveData(); schedulePush();
       body.innerHTML = routeBodyHTML(b, м[routeTab]);
       bindRouteBody();
