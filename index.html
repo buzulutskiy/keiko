@@ -2459,6 +2459,16 @@
       color: var(--ink); font: inherit; font-size: 0.78rem;
       border-radius: 9px; padding: 8px 16px;
     }
+    .midi-practice { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; margin-top: 10px; padding: 10px; border-radius: 10px; background: rgba(139, 124, 246, 0.09); border: 1px solid rgba(139, 124, 246, 0.2); }
+    .midi-practice > div { display: grid; gap: 2px; }
+    .midi-practice b { font-size: 0.78rem; font-weight: 650; }
+    .midi-status { font-size: 0.74rem; color: var(--dim); }
+    .midi-status[data-state="on"] { color: var(--green); }
+    .midi-status[data-state="early"] { color: var(--gold); }
+    .midi-status[data-state="late"] { color: var(--coral); }
+    .midi-practice button { align-self: center; border: 1px solid rgba(139, 124, 246, 0.35); background: var(--glass); color: var(--ink); font: inherit; font-size: 0.74rem; border-radius: 9px; padding: 8px 10px; }
+    .midi-practice button:disabled { opacity: 0.5; }
+    .midi-hint { grid-column: 1 / -1; margin: 0; font-size: 0.7rem; line-height: 1.35; color: var(--dim); }
 
     /* Скорость, увеличение, шаг сетки — три коротких ряда под кнопками. */
     .pl-tools { display: grid; gap: 7px; margin-top: 9px; }

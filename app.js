@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 578";
+const APP_VERSION = "Кэйко 579";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9795,6 +9795,68 @@ async function marksPush(id) {
    а картинка от запуска к запуску одна и та же. */
 const plBeats = () => Number((pracDoc() || {}).beats) || 0;
 
+/* MIDI не проверяет ноты: запись уже размечена по тактам, а MIDI даёт точное
+   время нажатия. Сверяем эти две временные линии, не слушая комнату. */
+let midiAccess = null, midiInput = null;
+let midiFeedback = { state: "idle", text: "Подключи MIDI-пианино" };
+let midiLastAt = -Infinity;
+function midiTimingVerdict(expected, actual, beat) {
+  if (!(Number.isFinite(expected) && Number.isFinite(actual) && beat > 0)) return { state: "wait", text: "Нет временной карты" };
+  const delta = actual - expected, good = Math.min(0.09, beat * 0.18), near = Math.min(0.24, beat * 0.42);
+  if (Math.abs(delta) <= good) return { state: "on", delta, text: "В темпе" };
+  if (Math.abs(delta) <= near) return delta < 0 ? { state: "early", delta, text: "Чуть впереди" } : { state: "late", delta, text: "Чуть позади" };
+  return delta < 0 ? { state: "early", delta, text: "Сильно впереди" } : { state: "late", delta, text: "Сильно позади" };
+}
+function midiNearestBeat(t) {
+  const grid = metGrid(1); if (!grid.length) return null;
+  let best = grid[0], distance = Math.abs(t - best.t);
+  for (const point of grid) { const d = Math.abs(t - point.t); if (d < distance) { best = point; distance = d; } }
+  const next = grid.find((x) => x.t > best.t), prev = grid.slice().reverse().find((x) => x.t < best.t);
+  return { t: best.t, beat: next ? next.t - best.t : prev ? best.t - prev.t : 0 };
+}
+function midiPaint() {
+  const box = $("#midiPractice"); if (!box) return;
+  const ready = !!navigator.requestMIDIAccess, status = box.querySelector(".midi-status");
+  if (status) { status.textContent = midiFeedback.text; status.dataset.state = midiFeedback.state; }
+  const button = box.querySelector("[data-midi]");
+  if (button) { button.disabled = !ready; button.textContent = midiInput ? "MIDI подключено" : ready ? "Подключить MIDI" : "MIDI не поддерживается"; }
+  const hint = box.querySelector(".midi-hint");
+  if (hint) hint.textContent = midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий." : "Подключи цифровое пианино кабелем и нажми кнопку.";
+}
+function midiMessage(event) {
+  const msg = event.data || [];
+  if ((msg[0] & 0xf0) !== 0x90 || !msg[2]) return;
+  const el = pracAudioEl;
+  if (!el || el.paused) { midiFeedback = { state: "wait", text: "Сначала запусти запись" }; midiPaint(); return; }
+  const t = el.currentTime;
+  /* Аккорд приходит несколькими сообщениями, но остаётся одним ритмическим жестом. */
+  if (t - midiLastAt < 0.055) return;
+  midiLastAt = t;
+  const point = midiNearestBeat(t);
+  midiFeedback = midiTimingVerdict(point && point.t, t, point && point.beat);
+  midiPaint();
+}
+function midiPickInput() {
+  if (!midiAccess) return;
+  const inputs = [...midiAccess.inputs.values()];
+  const next = inputs.find((x) => midiInput && x.id === midiInput.id) || inputs[0] || null;
+  if (midiInput && midiInput !== next) midiInput.onmidimessage = null;
+  midiInput = next;
+  if (midiInput) { midiInput.onmidimessage = midiMessage; midiFeedback = { state: "idle", text: "Готово — запусти запись и играй" }; }
+  else midiFeedback = { state: "wait", text: "MIDI-пианино пока не найдено" };
+  midiPaint();
+}
+async function midiConnect() {
+  if (!navigator.requestMIDIAccess) { midiPaint(); return; }
+  try { midiAccess = midiAccess || await navigator.requestMIDIAccess(); midiAccess.onstatechange = midiPickInput; midiPickInput(); }
+  catch { midiFeedback = { state: "wait", text: "Не получилось открыть MIDI" }; midiPaint(); }
+}
+function midiPracticeHTML() {
+  if (!plBeats() || !plBars().length) return "";
+  const available = !!navigator.requestMIDIAccess;
+  return `<div class="midi-practice" id="midiPractice"><div><b>Играть в темпе записи</b><span class="midi-status" data-state="${esc(midiFeedback.state)}">${esc(midiFeedback.text)}</span></div><button data-midi="connect" type="button" ${available ? "" : "disabled"}>${midiInput ? "MIDI подключено" : available ? "Подключить MIDI" : "MIDI не поддерживается"}</button><p class="midi-hint">${midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий." : "Подключи цифровое пианино кабелем и нажми кнопку."}</p></div>`;
+}
+
 let waveCache = { id: "", buf: null };
 function plWave() {
   const id = piece().id;
@@ -10369,6 +10431,7 @@ function pracPlayer() {
         `<span class="wv-beat" style="left:${((i + 1) / plBeats() * 100).toFixed(2)}%"></span>`).join("") : ""}
     </div>` : ""}
     ${plTempoHTML()}
+    ${midiPracticeHTML()}
     ${plBars().length ? `<div class="pl-set pl-barsel">
       <em>Такты</em>
       <span class="th-select">
@@ -10455,6 +10518,7 @@ function pracPlayer() {
   plApplyMute();
   metSync();
   plPaint();
+  midiPaint();
   plEditShow();
 }
 
@@ -14989,6 +15053,7 @@ function bindPractice() {
   });
 
   $("#pracPlayer").addEventListener("click", (e) => {
+    if (e.target.closest('[data-midi="connect"]')) { midiConnect(); return; }
     const retry = e.target.closest('[data-pl="retry"]');
     if (retry) {
       const id = piece().id;

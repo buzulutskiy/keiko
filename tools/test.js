@@ -4152,6 +4152,15 @@ const сеть = (() => {
   t.set("data", было);
 }
 
+/* ── MIDI: сравниваем только время нажатия ── */
+{
+  const judge = sandbox.midiTimingVerdict;
+  ок("MIDI: точное нажатие в темпе", judge(10, 10.05, 0.5).state, "on");
+  ок("MIDI: раннее нажатие видно", judge(10, 9.86, 0.5).state, "early");
+  ок("MIDI: позднее нажатие видно", judge(10, 10.14, 0.5).state, "late");
+  ок("MIDI: без карты ждём", judge(null, 10, 0.5).state, "wait");
+}
+
 /* ── Книга дня ── */
 {
   const books = [{id: "a"}, {id: "b"}, {id: "c"}, {id: "done", done: true}];
