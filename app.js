@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 579";
+const APP_VERSION = "Кэйко 580";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -9800,6 +9800,7 @@ const plBeats = () => Number((pracDoc() || {}).beats) || 0;
 let midiAccess = null, midiInput = null;
 let midiFeedback = { state: "idle", text: "Подключи MIDI-пианино" };
 let midiLastAt = -Infinity;
+let timingMic = null;
 function midiTimingVerdict(expected, actual, beat) {
   if (!(Number.isFinite(expected) && Number.isFinite(actual) && beat > 0)) return { state: "wait", text: "Нет временной карты" };
   const delta = actual - expected, good = Math.min(0.09, beat * 0.18), near = Math.min(0.24, beat * 0.42);
@@ -9820,21 +9821,74 @@ function midiPaint() {
   if (status) { status.textContent = midiFeedback.text; status.dataset.state = midiFeedback.state; }
   const button = box.querySelector("[data-midi]");
   if (button) { button.disabled = !ready; button.textContent = midiInput ? "MIDI подключено" : ready ? "Подключить MIDI" : "MIDI не поддерживается"; }
+  const mic = box.querySelector("[data-mic]");
+  if (mic) {
+    const available = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    mic.disabled = !available;
+    mic.textContent = timingMic ? "Выключить микрофон" : available ? "Слушать пианино" : "Микрофон недоступен";
+  }
   const hint = box.querySelector(".midi-hint");
-  if (hint) hint.textContent = midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий." : "Подключи цифровое пианино кабелем и нажми кнопку.";
+  if (hint) hint.textContent = timingMic
+    ? "Микрофон ловит удары клавиш. Запись лучше слушать в наушниках, чтобы он не услышал её вместо тебя."
+    : midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий."
+    : "Можно подключить MIDI или дать доступ к микрофону — проверяем только время нажатий.";
+}
+function timingHit() {
+  const el = pracAudioEl;
+  if (!el || el.paused) { midiFeedback = { state: "wait", text: "Сначала запусти запись" }; midiPaint(); return; }
+  const point = midiNearestBeat(el.currentTime);
+  midiFeedback = midiTimingVerdict(point && point.t, el.currentTime, point && point.beat);
+  midiPaint();
 }
 function midiMessage(event) {
   const msg = event.data || [];
   if ((msg[0] & 0xf0) !== 0x90 || !msg[2]) return;
-  const el = pracAudioEl;
-  if (!el || el.paused) { midiFeedback = { state: "wait", text: "Сначала запусти запись" }; midiPaint(); return; }
-  const t = el.currentTime;
+  const el = pracAudioEl, t = el && el.currentTime;
   /* Аккорд приходит несколькими сообщениями, но остаётся одним ритмическим жестом. */
   if (t - midiLastAt < 0.055) return;
   midiLastAt = t;
-  const point = midiNearestBeat(t);
-  midiFeedback = midiTimingVerdict(point && point.t, t, point && point.beat);
+  timingHit();
+}
+function micIsAttack(level, previous, baseline) {
+  return level > Math.max(0.015, baseline * 2.4) && level > previous * 1.35;
+}
+function timingMicStop() {
+  if (!timingMic) return;
+  clearInterval(timingMic.timer);
+  try { timingMic.ctx.close(); } catch {}
+  timingMic.stream.getTracks().forEach((t) => t.stop());
+  timingMic = null;
+  midiFeedback = { state: "idle", text: "Микрофон выключен" };
   midiPaint();
+}
+async function timingMicStart() {
+  if (timingMic) { timingMicStop(); return; }
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { midiPaint(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    await ctx.resume();
+    const analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const buf = new Uint8Array(analyser.fftSize);
+    const state = { stream, ctx, analyser, buf, timer: 0, previous: 0, baseline: 0.004, lastAt: -Infinity };
+    state.timer = setInterval(() => {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      const level = Math.sqrt(sum / buf.length), at = performance.now() / 1000;
+      const attack = micIsAttack(level, state.previous, state.baseline);
+      state.baseline = state.baseline * 0.985 + level * 0.015;
+      state.previous = level;
+      if (attack && at - state.lastAt > 0.12) { state.lastAt = at; timingHit(); }
+    }, 24);
+    timingMic = state;
+    midiFeedback = { state: "idle", text: "Микрофон слушает пианино" };
+    midiPaint();
+  } catch {
+    midiFeedback = { state: "wait", text: "Доступ к микрофону не получен" };
+    midiPaint();
+  }
 }
 function midiPickInput() {
   if (!midiAccess) return;
@@ -9854,7 +9908,7 @@ async function midiConnect() {
 function midiPracticeHTML() {
   if (!plBeats() || !plBars().length) return "";
   const available = !!navigator.requestMIDIAccess;
-  return `<div class="midi-practice" id="midiPractice"><div><b>Играть в темпе записи</b><span class="midi-status" data-state="${esc(midiFeedback.state)}">${esc(midiFeedback.text)}</span></div><button data-midi="connect" type="button" ${available ? "" : "disabled"}>${midiInput ? "MIDI подключено" : available ? "Подключить MIDI" : "MIDI не поддерживается"}</button><p class="midi-hint">${midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий." : "Подключи цифровое пианино кабелем и нажми кнопку."}</p></div>`;
+  return `<div class="midi-practice" id="midiPractice"><div><b>Играть в темпе записи</b><span class="midi-status" data-state="${esc(midiFeedback.state)}">${esc(midiFeedback.text)}</span></div><span class="midi-buttons"><button data-midi="connect" type="button" ${available ? "" : "disabled"}>${midiInput ? "MIDI подключено" : available ? "Подключить MIDI" : "MIDI не поддерживается"}</button><button data-mic="toggle" type="button">${timingMic ? "Выключить микрофон" : "Слушать пианино"}</button></span><p class="midi-hint">${timingMic ? "Микрофон ловит удары клавиш. Запись лучше слушать в наушниках, чтобы он не услышал её вместо тебя." : midiInput ? "Играй вместе с записью или с заглушенной линией. Проверяем только время нажатий." : "Можно подключить MIDI или дать доступ к микрофону — проверяем только время нажатий."}</p></div>`;
 }
 
 let waveCache = { id: "", buf: null };
@@ -12776,6 +12830,7 @@ function pracClock() {
 function closePractice() {
   clearInterval(pracTimer);
   cancelAnimationFrame(pracRaf);
+  timingMicStop();
   if (pracAudioEl) { try { pracAudioEl.pause(); } catch {} }
   pracAudioEl = null;
   const pl = $("#pracPlayer");
@@ -15054,6 +15109,7 @@ function bindPractice() {
 
   $("#pracPlayer").addEventListener("click", (e) => {
     if (e.target.closest('[data-midi="connect"]')) { midiConnect(); return; }
+    if (e.target.closest('[data-mic="toggle"]')) { timingMicStart(); return; }
     const retry = e.target.closest('[data-pl="retry"]');
     if (retry) {
       const id = piece().id;
