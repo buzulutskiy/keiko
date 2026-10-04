@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 580";
+const APP_VERSION = "Кэйко 581";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -16110,7 +16110,11 @@ function bookListUI() {
 }
 /* По кругу: не начата → читаю → прочитана → не начата. Третий нажим — это и
    есть отмена, отдельной кнопки «снять» не нужно. */
-const lsNext = (было) => (было === "" ? "read" : было === "read" ? "done" : "");
+/* У обычного сборника есть промежуточное «читаю». У перечня прочитанных
+   произведений оно только мешает: там один нажим означает «прочитано»,
+   следующий — вернуть в непрочитанное. */
+const lsNext = (было, b) => b && b.binary ? (было === "done" ? "" : "done")
+  : (было === "" ? "read" : было === "read" ? "done" : "");
 
 function bindBookListSheet() {
   const b = book(), корень = $("#sheetBody");
@@ -16133,7 +16137,7 @@ function bindBookListSheet() {
     if (lsItems(p).length) { lsOpen = i; перерисовать(); return; }
     const имя = p.name || "";
     const было = pickItems[имя] != null ? pickItems[имя] : (lsSaved(b)[имя] || "");
-    pickItems[имя] = lsNext(было);
+    pickItems[имя] = lsNext(было, b);
     перерисовать();
   }));
 
@@ -16142,7 +16146,7 @@ function bindBookListSheet() {
     const v = lsItems(p)[Number(el.dataset.lsin)];
     if (!p || !v) return;
     const ключ = lsKey(p.name, v.name);
-    pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name));
+    pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name), b);
     перерисовать();
   }));
 }
