@@ -3953,58 +3953,6 @@
     @keyframes bootRun { 0% { left: -40%; } 100% { left: 100%; } }
     @media (prefers-reduced-motion: reduce) { #boot span::after { animation: none; left: 0; width: 100%; } }
   
-    /* ── Отдых ──
-       Экран без единого обещания: ни «ты молодец», ни «продолжим». Человек
-       сам решил, что устал, и сам решит, вернётся ли. Наше дело — считать
-       время и не мешать. */
-    #rest {
-      position: fixed; inset: 0; z-index: 90;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--bg);
-    }
-    #rest[hidden] { display: none; }
-    #restWaves { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .rs-body { position: relative; width: min(340px, 86vw); text-align: center; }
-    .rs-q { margin: 0 0 18px; font-size: 1.05rem; color: var(--muted); }
-    .rs-pick button {
-      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-      width: 100%; margin-bottom: 10px; padding: 15px 18px;
-      border: 1px solid var(--glass-line); border-radius: 15px;
-      background: var(--glass); color: var(--ink); font: inherit; text-align: left;
-    }
-    .rs-pick button b { font-size: 1rem; font-weight: 650; }
-    .rs-pick button i { font-style: normal; font-size: 0.82rem; color: var(--dim); }
-    .rs-pick button:active { border-color: rgba(255, 201, 77, 0.45); }
-    /* Дыхание — главное на экране, время ушло вниз и стало мелким: смотрят на
-       слово, а не на счётчик. Перетекает плавно, потому что и дыхание не
-       переключается щелчком. */
-    .rs-breath {
-      font-size: 2.6rem; font-weight: 200; letter-spacing: 0.04em;
-      color: var(--ink);
-      /* Короче фазы вдоха: иначе буквы всё ещё разъезжаются, когда слово уже
-         сменилось, и рисунок отстаёт от дыхания на полкруга. */
-      transition: opacity .8s ease, letter-spacing 1.8s ease;
-    }
-    .rs-breath.out { opacity: .45; letter-spacing: 0.16em; }
-    .rs-word {
-      margin: 14px 0 0; min-height: 1.2em;
-      font-size: 0.88rem; color: var(--muted);
-      transition: opacity 1.2s ease;
-    }
-    .rs-word.fade { opacity: 0; }
-    .rs-time {
-      margin-top: 34px;
-      font-size: 1.5rem; font-weight: 200; letter-spacing: 0.02em;
-      font-variant-numeric: tabular-nums; color: var(--dim);
-    }
-    .rs-note { margin: 8px 0 0; font-size: 0.74rem; color: var(--dim); opacity: .7; }
-    .rs-close {
-      position: absolute; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px;
-      width: 40px; height: 40px; border-radius: 50%;
-      border: 1px solid var(--glass-line); background: var(--glass);
-      color: var(--muted); font-size: 1rem;
-    }
-
     /* ── Траектория чтения ── */
     #route {
       position: fixed; inset: 0; z-index: 88; overflow-y: auto;
@@ -4115,31 +4063,11 @@
     <header>
       <div class="logo"><em>Кэйко</em><i>稽古</i></div>
       <div class="sync-dot" id="syncDot"></div>
-      <button class="gear" id="restBtn" aria-label="Отдых" title="Отдых">⏸</button>
       <button class="gear" id="musBtn" aria-label="Собрание" title="Собрание" hidden>◈</button>
       <button class="gear" id="gearBtn" aria-label="Настройки">⚙️</button>
     </header>
 
     <div id="route" hidden></div>
-
-  <div id="rest" hidden>
-    <canvas id="restWaves"></canvas>
-    <div class="rs-body">
-      <div class="rs-pick" id="restPick">
-        <p class="rs-q">Насколько устал?</p>
-        <button data-rest="10" type="button"><b>Немного</b><i>10 минут</i></button>
-        <button data-rest="20" type="button"><b>Прилично</b><i>20 минут</i></button>
-        <button data-rest="30" type="button"><b>Сильно</b><i>30 минут</i></button>
-      </div>
-      <div class="rs-run" id="restRun" hidden>
-        <div class="rs-breath" id="restBreath">вдох</div>
-        <p class="rs-word" id="restWord"></p>
-        <div class="rs-time" id="restTime">0:00</div>
-        <p class="rs-note" id="restNote"></p>
-      </div>
-    </div>
-    <button class="rs-close" id="restClose" type="button">✕</button>
-  </div>
 
   <div id="banner"></div>
     <div id="view"></div>
