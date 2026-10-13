@@ -2552,6 +2552,38 @@ function ок(имя, факт, надо) {
   t.set("pickItems", {}); t.set("lsOpen", было.open); t.set("data", было.данные);
 }
 
+/* ── Темы внутри главы: прогресс главы собирается снизу ── */
+{
+  const было = { данные: JSON.parse(JSON.stringify(t.get("data"))), picks: t.get("pickItems") };
+  const темы = (n, prefix) => Array.from({ length: n }, (_, i) => ({ name: `${prefix} ${i + 1}` }));
+  const главы = [
+    { name: "Принципы клеточной биологии", topics: [
+      { name: "Организм", items: темы(4, "Организм") },
+      { name: "Клетка", items: темы(4, "Клетка") },
+      { name: "Среда", items: темы(4, "Среда") },
+    ] },
+    { name: "Ткани и полости тела", topics: [{ name: "Ткани", items: темы(21, "Ткань") }] },
+    ...темы(15, "Глава"),
+  ];
+  const книга = { id: "anatomy", mode: "list", flatSections: true, binary: true, word: "глава",
+    chapters: [{ name: "Собака и кошка", items: главы }] };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] }, pastel: { courses: [], entries: [] },
+    watch: { videos: [], entries: [] }, book: { activeBook: "anatomy", books: [книга], entries: [] } });
+  t.set("pickItems", {});
+  ок("темы: книга считает 17 глав", t.get("listCount")(книга).всего, 17);
+  ок("темы: показано 33 темы", t.get("listTopicCount")(книга).всего, 33);
+  ок("темы: одна тема ещё не завершает главу",
+    (() => { t.get("pickItems")[t.get("lsTopicKey")("Собака и кошка", главы[0].name, "Организм 1")] = "done";
+      return t.get("lsChapterState")(книга, "Собака и кошка", главы[0]); })(), "read");
+  for (const group of главы[0].topics)
+    for (const topic of group.items)
+      t.get("pickItems")[t.get("lsTopicKey")("Собака и кошка", главы[0].name, topic.name)] = "done";
+  ок("темы: все темы завершают главу", t.get("lsChapterState")(книга, "Собака и кошка", главы[0]), "done");
+  ок("темы: общий прогресс главы, а не темы", t.get("listCount")(книга).прочитано, 1);
+  ок("темы: счёт тем видит все завершённые темы", t.get("listTopicCount")(книга).прочитано, 12);
+  t.set("data", было.данные); t.set("pickItems", было.picks);
+}
+
 /* ── Траектория: маршрут по книге с отметками ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), arts: t.get("ARTS") };

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 583";
+const APP_VERSION = "Кэйко 584";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4532,8 +4532,7 @@ function heroChapter(s) {
 
 function heroParts(s) {
   if (isBook() && bookMode(book()) === "list") {
-    const т = listThings(book());
-    return [`${т.мои} из ${т.всего} ${вещьИз(book(), т.всего)}`,
+    return [lsHeadText(book()),
       s.chapter.name ? "читаю " + esc(s.chapter.name) : ""];
   }
   if (isBook() && bookMode(book()) === "parts") {
@@ -15921,6 +15920,8 @@ function lsHeadText(b) {
   const { всего, мои } = listThings(bk);
   const c = listCount(bk);
   const главное = `${мои} из ${всего} ${вещьИз(bk, всего)}`;
+  const темы = listTopicCount(bk);
+  if (темы.всего) return `${главное} · ${темы.прочитано} из ${темы.всего} тем`;
   if (!c.страниц) return главное;
   return `${главное} · ${c.страницПрочитано} из ${c.страниц} `
     + plural(c.страниц, "страницы", "страниц", "страниц");
@@ -15933,6 +15934,38 @@ function bookListUI() {
      прячем на отдельный экран: открыл оглавление — сразу видишь всё, что
      можно отметить. */
   if (b.flatSections) {
+    if (lsFlatOpen) {
+      const [section, item] = lsFlatOpen;
+      const p = сп[section], chapter = p && lsItems(p)[item];
+      const groups = lsTopicGroups(chapter);
+      if (p && chapter && groups.length) {
+        const total = groups.reduce((n, group) => n + lsItems(group).length, 0);
+        const done = groups.reduce((n, group) => n + lsItems(group)
+          .filter((topic) => {
+            const key = lsTopicKey(p.name, chapter.name, topic.name);
+            return (pickItems[key] != null ? pickItems[key] : (lsSaved(b)[key] || "")) === "done";
+          }).length, 0);
+        return `
+          <button class="back ls-back" id="lsBack" type="button">‹ Всё содержание</button>
+          <div class="ls-head">${esc(chapter.name)} · ${done} из ${total} тем</div>
+          <div class="ls-flat">
+            ${groups.map((group, groupIndex) => `<section class="ls-section">
+              <h3>${esc(group.name || "")}</h3>
+              <div class="ls-list">
+                ${lsItems(group).map((topic, topicIndex) => {
+                  const key = lsTopicKey(p.name, chapter.name, topic.name);
+                  const с = pickItems[key] != null ? pickItems[key] : (lsSaved(b)[key] || "");
+                  return `<button class="ls-row ${с}" data-lstopic="${section}:${item}:${groupIndex}:${topicIndex}" type="button">
+                    <span class="ls-mark">${lsMark(с)}</span>
+                    <span class="ls-name">${esc(topic.name || "")}</span>
+                  </button>`;
+                }).join("")}
+              </div>
+            </section>`).join("")}
+          </div>`;
+      }
+      lsFlatOpen = null;
+    }
     return `
       <div class="ls-head" id="lsHead">${lsHeadText(b)}</div>
       <div class="ls-flat">
@@ -15942,10 +15975,20 @@ function bookListUI() {
             <h3>${esc(p.name || "")}</h3>
             <div class="ls-list">
               ${вещи.map((v, item) => {
-                const с = lsInnerState(b, p.name, v.name);
-                return `<button class="ls-row ${с}" data-lsflat="${section}:${item}" type="button">
+                const topics = lsTopicGroups(v);
+                const с = lsChapterState(b, p.name, v);
+                const meta = topics.length ? (() => {
+                  const total = topics.reduce((n, group) => n + lsItems(group).length, 0);
+                  const done = topics.reduce((n, group) => n + lsItems(group).filter((topic) => {
+                    const key = lsTopicKey(p.name, v.name, topic.name);
+                    return (pickItems[key] != null ? pickItems[key] : (lsSaved(b)[key] || "")) === "done";
+                  }).length, 0);
+                  return `${done} из ${total}`;
+                })() : "";
+                return `<button class="ls-row ${с}${topics.length ? " has" : ""}" ${topics.length ? `data-lsflatopen="${section}:${item}"` : `data-lsflat="${section}:${item}"`} type="button">
                   <span class="ls-mark">${lsMark(с)}</span>
                   <span class="ls-name">${esc(v.name || "")}</span>
+                  ${meta ? `<span class="ls-pages">${meta}</span><span class="ls-go">›</span>` : ""}
                 </button>`;
               }).join("")}
             </div>
@@ -16010,7 +16053,10 @@ function bindBookListSheet() {
   };
   bindFinBtn(перерисовать);
   const назад = корень.querySelector("#lsBack");
-  if (назад) назад.addEventListener("click", () => { lsOpen = null; перерисовать(); });
+  if (назад) назад.addEventListener("click", () => {
+    if (lsFlatOpen) lsFlatOpen = null; else lsOpen = null;
+    перерисовать();
+  });
 
   корень.querySelectorAll("[data-ls]").forEach((el) => el.addEventListener("click", () => {
     const i = Number(el.dataset.ls);
@@ -16041,6 +16087,23 @@ function bindBookListSheet() {
     if (!p || !v) return;
     const ключ = lsKey(p.name, v.name);
     pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name), b);
+    перерисовать();
+  }));
+
+  корень.querySelectorAll("[data-lsflatopen]").forEach((el) => el.addEventListener("click", () => {
+    lsFlatOpen = el.dataset.lsflatopen.split(":").map(Number);
+    перерисовать();
+  }));
+
+  корень.querySelectorAll("[data-lstopic]").forEach((el) => el.addEventListener("click", () => {
+    const [section, item, group, topic] = el.dataset.lstopic.split(":").map(Number);
+    const p = bookList(b)[section], chapter = p && lsItems(p)[item];
+    const groupItems = lsTopicGroups(chapter)[group];
+    const theme = groupItems && lsItems(groupItems)[topic];
+    if (!p || !chapter || !theme) return;
+    const key = lsTopicKey(p.name, chapter.name, theme.name);
+    const current = pickItems[key] != null ? pickItems[key] : (lsSaved(b)[key] || "");
+    pickItems[key] = lsNext(current, b);
     перерисовать();
   }));
 }
@@ -17520,6 +17583,7 @@ function closeRoute() {
 const СЛОВА = {
   произведение: ["произведение", "произведения", "произведений"],
   статья:       ["статья", "статьи", "статей"],
+  глава:        ["глава", "главы", "глав"],
 };
 /* Своё слово у книги — одно на весь том, полем `word` в описи. «Полка»
    и правда состоит из статей, у Пушкина это было бы враньём. Умолчание —
@@ -17544,10 +17608,38 @@ const lsTotal = (p) => (lsItems(p).length || 1);
    «Элегия», «Разлука» встречаются по нескольку раз за двадцать лет), и по
    одному имени отметка легла бы сразу на два разных стихотворения. */
 let lsOpen = null;                    // какой раздел раскрыт; null — оглавление
+let lsFlatOpen = null;                // [раздел, глава] для книги с плоскими разделами
 const lsItems = (p) => Array.isArray(p && p.items) ? p.items : [];
 const lsKey = (раздел, вещь) => раздел + "|" + вещь;
 const listFlatRows = (b) => bookList(b).flatMap((section, sectionIndex) =>
   lsItems(section).map((item, itemIndex) => ({ section, item, sectionIndex, itemIndex })));
+const lsTopicGroups = (chapter) => Array.isArray(chapter && chapter.topics) ? chapter.topics : [];
+const lsTopicKey = (раздел, глава, тема) => раздел + "|" + глава + "|" + тема;
+
+function lsChapterState(b, раздел, chapter) {
+  const groups = lsTopicGroups(chapter);
+  if (!groups.length) return lsInnerState(b, раздел, chapter.name);
+  const states = groups.flatMap((group) => lsItems(group)
+    .map((topic) => {
+      const key = lsTopicKey(раздел, chapter.name, topic.name);
+      return pickItems[key] != null ? pickItems[key] : (lsSaved(b)[key] || "");
+    }));
+  if (states.length && states.every((state) => state === "done")) return "done";
+  return states.some(Boolean) ? "read" : "";
+}
+
+function listTopicCount(b) {
+  const bk = b || book();
+  const rows = listFlatRows(bk);
+  const topics = rows.flatMap(({ section, item }) => lsTopicGroups(item).flatMap((group) =>
+    lsItems(group).map((topic) => ({ section: section.name, chapter: item.name, topic: topic.name }))));
+  const saved = lsSaved(bk);
+  const state = (item) => {
+    const key = lsTopicKey(item.section, item.chapter, item.topic);
+    return pickItems[key] != null ? pickItems[key] : (saved[key] || "");
+  };
+  return { всего: topics.length, прочитано: topics.filter((item) => state(item) === "done").length };
+}
 
 /* Состояние вещи внутри раздела — своё, и живёт в тех же marks. */
 function lsInnerState(b, раздел, вещь) {
@@ -17574,7 +17666,7 @@ function lsState(b, p) {
     const ключ = p.name || "";
     return pickItems[ключ] != null ? pickItems[ключ] : (lsSaved(b)[ключ] || "");
   }
-  const сост = вещи.map((v) => lsInnerState(b, p.name, v.name));
+  const сост = вещи.map((v) => lsChapterState(b, p.name, v));
   if (сост.every((x) => x === "done")) return "done";
   return сост.some((x) => x) ? "read" : "";
 }
@@ -17583,7 +17675,7 @@ function lsState(b, p) {
 function lsShare(b, p) {
   const вещи = lsItems(p);
   if (!вещи.length) return lsState(b, p) === "done" ? 1 : 0;
-  const n = вещи.filter((v) => lsInnerState(b, p.name, v.name) === "done").length;
+  const n = вещи.filter((v) => lsChapterState(b, p.name, v) === "done").length;
   return вещи.length ? n / вещи.length : 0;
 }
 
@@ -17613,13 +17705,19 @@ function listThings(b) {
   return {
     всего: сп.reduce((a, p) => a + lsTotal(p), 0),
     мои: сп.reduce((a, p) => a + (lsItems(p).length
-      ? lsItems(p).filter((v) => lsInnerState(bk, p.name, v.name) === "done").length
+      ? lsItems(p).filter((v) => lsChapterState(bk, p.name, v) === "done").length
       : (lsState(bk, p) === "done" ? 1 : 0)), 0),
   };
 }
 
 function listCount(b) {
   const bk = b || book();
+  if (bk.flatSections) {
+    const rows = listFlatRows(bk);
+    const states = rows.map(({ section, item }) => lsChapterState(bk, section.name, item));
+    return { всего: rows.length, прочитано: states.filter((state) => state === "done").length,
+      читаю: states.filter((state) => state === "read").length, страниц: 0, страницПрочитано: 0 };
+  }
   const сп = bookList(bk), стр = listPages(bk);
   const сост = сп.map((p) => lsState(bk, p));
   const всегоСтр = стр.reduce((a, x) => a + x, 0);
@@ -17634,7 +17732,16 @@ function listCount(b) {
 }
 // какую статью читаю сейчас — последняя, помеченная «читаю»
 function listNow(b) {
-  const c = listStates(b), сп = bookList(b);
+  const bk = b || book();
+  if (bk.flatSections) {
+    const rows = listFlatRows(bk);
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      if (lsChapterState(bk, row.section.name, row.item) === "read") return { i, name: row.item.name || "" };
+    }
+    return null;
+  }
+  const c = listStates(bk), сп = bookList(bk);
   for (let i = c.length - 1; i >= 0; i--) if (c[i] === "read") return { i, name: (сп[i] || {}).name || "" };
   return null;
 }
