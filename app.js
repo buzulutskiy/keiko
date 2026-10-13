@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 582";
+const APP_VERSION = "Кэйко 583";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -15929,6 +15929,32 @@ function lsHeadText(b) {
 function bookListUI() {
   const b = book(), сп = bookList(b), стр = listPages(b);
 
+  /* У некоторых книг разделы нужны только как ориентиры. Главы в них не
+     прячем на отдельный экран: открыл оглавление — сразу видишь всё, что
+     можно отметить. */
+  if (b.flatSections) {
+    return `
+      <div class="ls-head" id="lsHead">${lsHeadText(b)}</div>
+      <div class="ls-flat">
+        ${сп.map((p, section) => {
+          const вещи = lsItems(p);
+          return `<section class="ls-section">
+            <h3>${esc(p.name || "")}</h3>
+            <div class="ls-list">
+              ${вещи.map((v, item) => {
+                const с = lsInnerState(b, p.name, v.name);
+                return `<button class="ls-row ${с}" data-lsflat="${section}:${item}" type="button">
+                  <span class="ls-mark">${lsMark(с)}</span>
+                  <span class="ls-name">${esc(v.name || "")}</span>
+                </button>`;
+              }).join("")}
+            </div>
+          </section>`;
+        }).join("")}
+      </div>
+      <div class="quick">${finBtnHTML()}</div>`;
+  }
+
   // ── второй уровень: вещи внутри раздела
   if (lsOpen != null && сп[lsOpen] && lsItems(сп[lsOpen]).length) {
     const p = сп[lsOpen], вещи = lsItems(p);
@@ -16003,6 +16029,15 @@ function bindBookListSheet() {
   корень.querySelectorAll("[data-lsin]").forEach((el) => el.addEventListener("click", () => {
     const p = bookList(b)[lsOpen];
     const v = lsItems(p)[Number(el.dataset.lsin)];
+    if (!p || !v) return;
+    const ключ = lsKey(p.name, v.name);
+    pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name), b);
+    перерисовать();
+  }));
+
+  корень.querySelectorAll("[data-lsflat]").forEach((el) => el.addEventListener("click", () => {
+    const [section, item] = el.dataset.lsflat.split(":").map(Number);
+    const p = bookList(b)[section], v = lsItems(p)[item];
     if (!p || !v) return;
     const ключ = lsKey(p.name, v.name);
     pickItems[ключ] = lsNext(lsInnerState(b, p.name, v.name), b);
@@ -17511,6 +17546,8 @@ const lsTotal = (p) => (lsItems(p).length || 1);
 let lsOpen = null;                    // какой раздел раскрыт; null — оглавление
 const lsItems = (p) => Array.isArray(p && p.items) ? p.items : [];
 const lsKey = (раздел, вещь) => раздел + "|" + вещь;
+const listFlatRows = (b) => bookList(b).flatMap((section, sectionIndex) =>
+  lsItems(section).map((item, itemIndex) => ({ section, item, sectionIndex, itemIndex })));
 
 /* Состояние вещи внутри раздела — своё, и живёт в тех же marks. */
 function lsInnerState(b, раздел, вещь) {
