@@ -2584,6 +2584,33 @@ function ок(имя, факт, надо) {
   t.set("data", было.данные); t.set("pickItems", было.picks);
 }
 
+/* ── Активная часть книги: закрытые главы не двигают срок ── */
+{
+  const было = { данные: JSON.parse(JSON.stringify(t.get("data"))), picks: t.get("pickItems") };
+  const темы = (n, prefix) => Array.from({ length: n }, (_, i) => ({ name: `${prefix} ${i + 1}` }));
+  const chapters = [
+    { name: "Первая", topics: [{ name: "А", items: темы(12, "Тема") }] },
+    { name: "Вторая", topics: [{ name: "Б", items: темы(21, "Пункт") }] },
+    ...темы(15, "Позже").map((item) => ({ ...item, locked: true })),
+  ];
+  const book = { id: "active-anatomy", mode: "list", flatSections: true, binary: true, word: "глава",
+    chapters: [{ name: "Раздел", items: chapters }] };
+  t.set("data", { active: "book", piano: { pieces: [], entries: [] }, pastel: { courses: [], entries: [] },
+    watch: { videos: [], entries: [] }, book: { activeBook: "active-anatomy", books: [book], entries: [] } });
+  t.set("pickItems", {});
+  for (const topic of chapters[0].topics[0].items.slice(0, 3))
+    t.get("pickItems")[t.get("lsTopicKey")("Раздел", "Первая", topic.name)] = "done";
+  ок("активная часть: в сроке только две главы", t.get("listCount")(book).всего, 2);
+  ок("активная часть: в сроке все 33 темы", t.get("listTopicCount")(book).всего, 33);
+  ок("активная часть: три темы двигают процент", Math.round(t.get("listProgressPct")(book) * 10) / 10, 9.1);
+  t.get("data").book.entries.push({ id: "topics-1", date: "2026-10-01", bookId: "active-anatomy",
+    marks: Object.fromEntries(chapters[0].topics[0].items.slice(0, 3)
+      .map((topic) => [t.get("lsTopicKey")("Раздел", "Первая", topic.name), "done"])) });
+  const прогноз = t.get("paceForecast")();
+  ок("активная часть: прогноз измеряет оставшиеся темы", прогноз && [прогноз.unit, прогноз.left], ["topic", 30]);
+  t.set("data", было.данные); t.set("pickItems", было.picks);
+}
+
 /* ── Траектория: маршрут по книге с отметками ── */
 {
   const было={ данные: JSON.parse(JSON.stringify(t.get("data"))), arts: t.get("ARTS") };

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 584";
+const APP_VERSION = "Кэйко 585";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1240,7 +1240,7 @@ function bookStats() {
   return {
     pages: b.pages, page, covered, список,
     articles: список ? список.прочитано : 0,
-    pct: список ? (список.всего ? список.прочитано / список.всего * 100 : 0)
+    pct: список ? (b.flatSections ? listProgressPct(b) : (список.всего ? список.прочитано / список.всего * 100 : 0))
        : b.pages ? (parts ? covered / читаемых : page / b.pages) * 100 : 0,
     days: daysCount(list), streak: streak(), streakAll: streakAll(),
     maxJump, weekend, comeback, notes, reread, chapterInOne,
@@ -5152,7 +5152,23 @@ function paceForecast() {
     const b = book();
     /* У сборника статей срока нет: его можно не дочитывать вовсе, и обещать
        дату окончания тому, у кого нет обязательства дочитать, — вранье. */
-    if (bookMode(b) === "list") return null;
+    if (bookMode(b) === "list") {
+      /* У книги с темами срок считают по темам, а не по закрытым главам:
+         первая глава может идти неделями, и ожидание её последней отметки
+         оставляло полосу и прогноз мёртвыми всё это время. */
+      if (!b.flatSections) return null;
+      unit = "topic";
+      const keys = new Set(listActiveRows(b).flatMap(({ section, item }) =>
+        lsTopicGroups(item).flatMap((group) => lsItems(group)
+          .map((topic) => lsTopicKey(section.name, item.name, topic.name)))));
+      total = keys.size;
+      const states = {};
+      for (const e of list) {
+        for (const [key, state] of Object.entries(e.marks || {}))
+          if (keys.has(key)) states[key] = state === "done" ? "done" : "";
+        ряд.push({ d: e.date, n: [...keys].filter((key) => states[key] === "done").length });
+      }
+    } else {
     unit = "page";
     if (bookMode(b) === "parts") {
       /* У сборника прироста по курсору нет вовсе: поля page у отметки не
@@ -5173,6 +5189,7 @@ function paceForecast() {
       старт = b.startPage || 0;
       let page = старт;
       for (const e of list) { page = Math.max(page, e.page || 0); ряд.push({ d: e.date, n: page }); }
+    }
     }
   } else if (isWatch()) {
     return null;
@@ -15977,6 +15994,10 @@ function bookListUI() {
               ${вещи.map((v, item) => {
                 const topics = lsTopicGroups(v);
                 const с = lsChapterState(b, p.name, v);
+                if (v.locked) return `<div class="ls-row locked" aria-label="${esc(v.name || "")} пока закрыта">
+                  <span class="ls-mark">🔒</span><span class="ls-name">${esc(v.name || "")}</span>
+                  <span class="ls-pages">позже</span>
+                </div>`;
                 const meta = topics.length ? (() => {
                   const total = topics.reduce((n, group) => n + lsItems(group).length, 0);
                   const done = topics.reduce((n, group) => n + lsItems(group).filter((topic) => {
@@ -17613,6 +17634,7 @@ const lsItems = (p) => Array.isArray(p && p.items) ? p.items : [];
 const lsKey = (раздел, вещь) => раздел + "|" + вещь;
 const listFlatRows = (b) => bookList(b).flatMap((section, sectionIndex) =>
   lsItems(section).map((item, itemIndex) => ({ section, item, sectionIndex, itemIndex })));
+const listActiveRows = (b) => listFlatRows(b).filter(({ item }) => !item.locked);
 const lsTopicGroups = (chapter) => Array.isArray(chapter && chapter.topics) ? chapter.topics : [];
 const lsTopicKey = (раздел, глава, тема) => раздел + "|" + глава + "|" + тема;
 
@@ -17630,7 +17652,7 @@ function lsChapterState(b, раздел, chapter) {
 
 function listTopicCount(b) {
   const bk = b || book();
-  const rows = listFlatRows(bk);
+  const rows = listActiveRows(bk);
   const topics = rows.flatMap(({ section, item }) => lsTopicGroups(item).flatMap((group) =>
     lsItems(group).map((topic) => ({ section: section.name, chapter: item.name, topic: topic.name }))));
   const saved = lsSaved(bk);
@@ -17639,6 +17661,14 @@ function listTopicCount(b) {
     return pickItems[key] != null ? pickItems[key] : (saved[key] || "");
   };
   return { всего: topics.length, прочитано: topics.filter((item) => state(item) === "done").length };
+}
+
+function listProgressPct(b) {
+  const bk = b || book();
+  const themes = listTopicCount(bk);
+  if (themes.всего) return themes.прочитано / themes.всего * 100;
+  const chapters = listCount(bk);
+  return chapters.всего ? chapters.прочитано / chapters.всего * 100 : 0;
 }
 
 /* Состояние вещи внутри раздела — своё, и живёт в тех же marks. */
@@ -17701,7 +17731,12 @@ function listPages(b) {
    в двух местах сразу (подпись на главной и шапка содержания), и второе место
    уже однажды отстало — оно-то и говорило «0 из 67 статей». */
 function listThings(b) {
-  const bk = b || book(), сп = bookList(bk);
+  const bk = b || book(), сп = bk.flatSections ? null : bookList(bk);
+  if (bk.flatSections) {
+    const rows = listActiveRows(bk);
+    return { всего: rows.length,
+      мои: rows.filter(({ section, item }) => lsChapterState(bk, section.name, item) === "done").length };
+  }
   return {
     всего: сп.reduce((a, p) => a + lsTotal(p), 0),
     мои: сп.reduce((a, p) => a + (lsItems(p).length
@@ -17713,7 +17748,7 @@ function listThings(b) {
 function listCount(b) {
   const bk = b || book();
   if (bk.flatSections) {
-    const rows = listFlatRows(bk);
+    const rows = listActiveRows(bk);
     const states = rows.map(({ section, item }) => lsChapterState(bk, section.name, item));
     return { всего: rows.length, прочитано: states.filter((state) => state === "done").length,
       читаю: states.filter((state) => state === "read").length, страниц: 0, страницПрочитано: 0 };
@@ -17734,7 +17769,7 @@ function listCount(b) {
 function listNow(b) {
   const bk = b || book();
   if (bk.flatSections) {
-    const rows = listFlatRows(bk);
+    const rows = listActiveRows(bk);
     for (let i = rows.length - 1; i >= 0; i--) {
       const row = rows[i];
       if (lsChapterState(bk, row.section.name, row.item) === "read") return { i, name: row.item.name || "" };
@@ -17753,6 +17788,7 @@ function listNow(b) {
    расчёт. */
 function bookPct(b) {
   if (b && bookMode(b) === "list") {
+    if (b.flatSections) return Math.round(listProgressPct(b));
     const c = listCount(b);
     /* Если у вещей есть объём, процент считаем по страницам, а не по штукам:
        двенадцать стихотворений по странице и двенадцать повестей по сорок —
