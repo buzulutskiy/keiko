@@ -4049,6 +4049,35 @@
   .reading-option b { display: block; font-weight: 500; }
   .reading-option small { display: block; color: var(--dim); margin-top: 5px; }
   .hero-title .reading-day { color: var(--dim); font-size: .75rem; letter-spacing: .08em; margin-bottom: 6px; }
+    /* ── Недельные кольца ── */
+    .activity-calendar { max-width: 560px; margin: 0 auto; padding: 12px 0 24px; }
+    .ac-period { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 15px; }
+    .ac-period button { min-height: 40px; border: 0; border-radius: 11px; background: transparent; color: var(--muted); font: inherit; font-size: .82rem; cursor: pointer; }
+    .ac-period button[aria-pressed="true"] { background: var(--track); color: var(--ink); }
+    .ac-period button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+    .ac-week-nav span { text-transform: capitalize; }
+    .ac-week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 0; font-size: .84rem; color: var(--muted); }
+    .ac-week-nav .qbtn { min-width: 44px; min-height: 44px; font-size: 1.2rem; }
+    .ac-week-nav .qbtn:disabled { opacity: .25; cursor: default; }
+    .ac-fitness { display: grid; gap: 16px; }
+    .ac-rings { width: 100%; max-width: 400px; margin: 0 auto; }
+    .ac-rings svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .ac-rings > svg > circle { fill: none; stroke-width: 12; transform: rotate(-90deg); transform-origin: 80px 80px; }
+    .ac-ring-track { stroke: var(--track); }
+    .ac-rings .ac-ring-fill { stroke-linecap: round; }
+    .ac-rings .ac-ring-extra { stroke-linecap: round; }
+    .ac-ring-tip { stroke: none; }
+    .ac-ring-arrow { fill: none; stroke: var(--bg); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+    .ac-ring-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .ac-ring-value { min-width: 0; height: 114px; box-sizing: border-box; padding: 12px 6px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+    .ac-ring-label { display: flex; align-items: center; gap: 4px; font-size: .62rem; color: var(--muted); margin-bottom: 8px; white-space: nowrap; }
+    .ac-ring-label i { width: 6px; height: 6px; border-radius: 50%; background: var(--ring-color); flex: 0 0 6px; }
+    .ac-ring-value b { display: block; white-space: nowrap; font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ac-ring-value b small { font-size: .65rem; font-weight: 400; color: var(--muted); white-space: nowrap; }
+    .ac-ring-unit { display: block; font-size: .62rem; color: var(--muted); margin-top: 2px; }
+    .ac-ring-value p { margin: 10px 0 0; font-size: .6rem; line-height: 1.45; white-space: nowrap; }
+    .ac-ring-value > small { display: block; font-size: .6rem; line-height: 1.4; color: var(--muted); margin-top: 4px; }
+
 </style>
 </head>
 <body>

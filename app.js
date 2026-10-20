@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 585";
+const APP_VERSION = "Кэйко 586";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2743,8 +2743,7 @@ function renderInner() {
   try {
     if (settingsOpen) renderSettings();
     else if (tab === "home") renderHome();
-    // «Прогресс» снят с панели: старый сохранённый маршрут ведёт на главную.
-    else if (tab === "progress") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
+    else if (tab === "progress") renderWeeklyProgress();
     else if (tab === "notes") renderNotes();
     else if (tab === "mus") renderMuseum();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
@@ -2818,6 +2817,7 @@ function renderMusBtn() {
 function visibleTabs() {
   return [
     [ "home", ICON("home", "◉"), T("tabHome")],
+    ["progress", ICON("progress", "▤"), "Прогресс"],
     /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
        написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
        можно одной строкой. */
@@ -2832,7 +2832,7 @@ function visibleTabs() {
 }
 
 function normalizeTab(id) {
-  return id === "progress" ? "home" : id;
+  return id === "calendar" ? "progress" : id;
 }
 
 function renderTabbar() {
@@ -2844,6 +2844,7 @@ function renderTabbar() {
   document.querySelectorAll("#tabbar button").forEach(b =>
     b.addEventListener("click", () => {
       tab = b.dataset.tab;
+      if (tab === "progress") { weeklyProgressShift = 0; }
       useMark("вкладка-" + tab);
       settingsOpen = false; settingsView = null;
       if (tab === "notes") { notesFocus = true; shuffleThought = null; notesFilter = "all"; }
@@ -5770,6 +5771,116 @@ function allEntriesOn(ds) {
   return out;
 }
 
+
+/* ── Недельный прогресс: страницы, минуты пианино, занятия рисунком ── */
+let weeklyProgressProfile = "";
+let weeklyProgressPeriod = "week";
+
+function weeklyProgressIndex() {
+  const index = {};
+  const add = (track, entries, materials, idField, fallbackId, fallbackTitle, icon) => {
+    for (const entry of entries || []) {
+      if (entry.deleted || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date || "")) continue;
+      const id = entry[idField] || fallbackId || "";
+      const material = materials.find(m => m.id === id);
+      if (material && material.deleted) continue;
+      const title = material ? (material.title || material.name || fallbackTitle) : fallbackTitle;
+      const item = { track, id, title, icon, material: material || {}, entry };
+      (index[entry.date] ||= []).push(item);
+    }
+  };
+  add("book", data.book.entries, data.book.books || [], "bookId", "snow-1", "Книга", "📖");
+  add("piano", data.piano.entries, data.piano.pieces || [], "pieceId", "bwv853", "Пианино", "🎹");
+  const drawings = [...(data.pastel.courses || [])];
+  if (data.pastel.course && !drawings.some(c => c.id === data.pastel.course.id)) drawings.push(data.pastel.course);
+  add("pastel", data.pastel.entries, drawings, "courseId", firstCourseId(), "Рисование", "🎨");
+  add("watch", (data.watch || {}).entries, (data.watch || {}).videos || [], "videoId", "", "Видео", "🎬");
+  for (const items of Object.values(index)) items.sort((a, b) =>
+    (a.entry.createdAt || 0) - (b.entry.createdAt || 0) || String(a.entry.id || "").localeCompare(String(b.entry.id || "")));
+  return index;
+}
+
+/* Цели недели — реальные объёмы всей прошлой недели, каждый в своей мере.
+   Страницы считаются существующим pagesRead, чтобы повторное чтение и курсор
+   не превращались в новые страницы. Минуты не заменяются числом сессий. */
+let weeklyProgressShift = 0;
+function weeklyProgressWeek(weekShift, today, period = "week") {
+  const date = fromStr(today || todayStr());
+  const anchor = period === "month" ? new Date(date.getFullYear(), date.getMonth(), 1) : mondayOf(date);
+  if (period === "month") anchor.setMonth(anchor.getMonth() + Math.min(0, weekShift || 0));
+  else anchor.setDate(anchor.getDate() + Math.min(0, weekShift || 0) * 7);
+  const end = period === "month" ? new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0) : new Date(anchor);
+  if (period !== "month") end.setDate(end.getDate() + 6);
+  const prev = new Date(anchor);
+  if (period === "month") prev.setMonth(prev.getMonth() - 1); else prev.setDate(prev.getDate() - 7);
+  const prevEnd = new Date(anchor); prevEnd.setDate(prevEnd.getDate() - 1);
+  const from = dateStr(anchor), to = dateStr(end), previousFrom = dateStr(prev), previousTo = dateStr(prevEnd);
+  const index = weeklyProgressIndex();
+  const volume = (a, b) => {
+    const items = Object.entries(index).filter(([d]) => d >= a && d <= b && d <= (today || todayStr())).flatMap(([, items]) => items);
+    return {
+      pages: pagesRead(a, b < (today || todayStr()) ? b : (today || todayStr())),
+      minutes: Math.round(items.filter(i => i.track === 'piano').reduce((sum, i) => sum + Math.max(0, Number(i.entry.mins) || 0), 0)),
+      drawings: items.filter(i => i.track === 'pastel' && !(i.material.lessons || []).length).length
+    };
+  };
+  const nowVolume = volume(from, to), previous = volume(previousFrom, previousTo);
+  const metrics = [
+    { id: 'pages', title: 'Чтение', short: 'стр.', forms: ['страница', 'страницы', 'страниц'] },
+    { id: 'minutes', title: 'Пианино', short: 'мин.', forms: ['минута', 'минуты', 'минут'] },
+    { id: 'drawings', title: 'Рисование', short: 'зан.', forms: ['занятие', 'занятия', 'занятий'] }
+  ].map(m => ({ ...m, current: nowVolume[m.id], previous: previous[m.id] }));
+  return { from, to, previousFrom, previousTo, metrics, period };
+}
+
+function weeklyProgressRings(summary) {
+  const colors = ['var(--gold)', 'var(--violet)', 'var(--green)'];
+  return `<section class="ac-fitness" aria-label="Объём занятий за ${summary.period === 'month' ? 'месяц' : 'неделю'} в сравнении с предыдущим периодом">
+    <div class="ac-rings"><svg viewBox="0 0 160 160" role="img" aria-label="${esc(summary.metrics.map(m => `${m.title}: ${m.current}, в прошлом периоде ${m.previous}`).join('; '))}">
+      <defs>${colors.map((color,i) => `<linearGradient id="weekly-ring-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb, ${color}, white 38%)"/><stop offset=".45" style="stop-color:${color}"/><stop offset="1" style="stop-color:color-mix(in srgb, ${color}, black 25%)"/></linearGradient>`).join('')}<filter id="weekly-ring-depth" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-opacity=".35"/></filter><filter id="weekly-ring-tip" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="1" stdDeviation="1.6" flood-opacity=".5"/></filter></defs>
+      ${summary.metrics.map((m, i) => {
+        const radius = 65 - i * 19;
+        const ratio = m.previous > 0 ? m.current / m.previous : 0;
+        const rest = ratio > 1 ? (ratio % 1 || 1) : 0;
+        const angle = rest * 2 * Math.PI - Math.PI / 2;
+        const x = 80 + radius * Math.cos(angle), y = 80 + radius * Math.sin(angle);
+        return `<circle class="ac-ring-track" cx="80" cy="80" r="${radius}"/>
+          <circle class="ac-ring-fill" cx="80" cy="80" r="${radius}" pathLength="100" filter="url(#weekly-ring-depth)" style="stroke:url(#weekly-ring-${i});opacity:${ratio > 1 ? .55 : ratio > 0 ? 1 : 0}" stroke-dasharray="${Math.min(1, ratio) * 100} 100"/>
+          ${rest ? `<circle class="ac-ring-extra" cx="80" cy="80" r="${radius}" pathLength="100" filter="url(#weekly-ring-depth)" style="stroke:url(#weekly-ring-${i})" stroke-dasharray="${rest * 100} 100"/>
+          <g transform="translate(${x} ${y}) rotate(${rest * 360})"><circle class="ac-ring-tip" r="6" fill="${colors[i]}" filter="url(#weekly-ring-tip)"/><path d="M -2 -2 L 1 0 L -2 2" class="ac-ring-arrow"/></g>` : ''}`;
+      }).join('')}
+    </svg></div>
+    <div class="ac-ring-values">${summary.metrics.map((m, i) => {
+      const left = Math.max(0, m.previous - m.current), extra = Math.max(0, m.current - m.previous);
+      const text = !m.previous ? (m.current ? 'Ориентир' : 'Нет ориентира')
+        : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : 'План выполнен';
+      return `<div class="ac-ring-value" style="--ring-color:${colors[i]}"><span class="ac-ring-label"><i aria-hidden="true"></i>${m.title}</span>
+        <b>${m.current}${m.previous ? `<small> / ${m.previous}</small>` : ''}</b>
+        <p>${text}</p>
+        <small>${m.previous ? Math.round(m.current / m.previous * 100) : 0}%</small>
+      </div>`;
+    }).join('')}</div>
+  </section>`;
+}
+
+function renderWeeklyProgress() {
+  const view = $("#view");
+  if (weeklyProgressProfile !== profileId) {
+    weeklyProgressShift = 0; weeklyProgressProfile = profileId;
+  }
+  const today = todayStr(), week = weeklyProgressWeek(weeklyProgressShift, today, weeklyProgressPeriod);
+  const caption = weeklyProgressPeriod === "month" ? new Intl.DateTimeFormat("ru", {month:"long", year:"numeric"}).format(fromStr(week.from)).replace(" г.", "") : weekCap(fromStr(week.from));
+  const earliestDate = Object.keys(weeklyProgressIndex()).sort()[0] || today;
+  view.innerHTML = `<section class="activity-calendar">
+    <div class="ac-period" role="group" aria-label="Период прогресса"><button type="button" data-progress-period="week" aria-pressed="${weeklyProgressPeriod === 'week'}">Неделя</button><button type="button" data-progress-period="month" aria-pressed="${weeklyProgressPeriod === 'month'}">Месяц</button></div>
+    <div class="ac-week-nav"><button class="qbtn" id="acWeekPrev" type="button" aria-label="Предыдущий период" ${week.from <= earliestDate ? "disabled" : ""}>‹</button><span>${caption}</span><button class="qbtn" id="acWeekNext" type="button" aria-label="Следующий период" ${weeklyProgressShift >= 0 ? "disabled" : ""}>›</button></div>
+    ${weeklyProgressRings(week)}
+  </section>`;
+  view.querySelectorAll("[data-progress-period]").forEach(el => el.addEventListener("click", () => { weeklyProgressPeriod = el.dataset.progressPeriod; weeklyProgressShift = 0; render(); view.scrollTop = 0; }));
+  const changeWeek = delta => { weeklyProgressShift = Math.min(0, weeklyProgressShift + delta); render(); view.scrollTop = 0; };
+  $("#acWeekPrev").addEventListener("click", () => changeWeek(-1));
+  $("#acWeekNext").addEventListener("click", () => changeWeek(1));
+}
 
 function renderCalendar() {
   const first = new Date(calYear, calMonth, 1);
@@ -19221,7 +19332,7 @@ function boot() {
   load();
   normalizeActive();
   saveData();   // закрепляем данные в актуальной схеме сразу после миграции
-  if (["home", "progress", "ach", "notes", "wish", "gut"].includes(cfg.tab)) {
+  if (["home", "progress", "ach", "notes", "wish", "gut", "calendar"].includes(cfg.tab)) {
     tab = normalizeTab(cfg.tab);
     if (tab !== cfg.tab) { cfg.tab = tab; saveCfg(); }
   }

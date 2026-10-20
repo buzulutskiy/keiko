@@ -4213,12 +4213,12 @@ const сеть = (() => {
   ок("плоские разделы: глава помнит свой раздел", rows.map((x) => x.section.name), ["Собака и кошка", "Собака и кошка", "Сравнительная анатомия"]);
 }
 
-/* ── Упрощённая навигация: прогресс больше не является экраном ── */
+/* ── Возвращённый недельный прогресс ── */
 {
   const tabs = t.get("visibleTabs");
   const normalize = t.get("normalizeTab");
-  ок("навигация: вкладки прогресса нет", tabs().some((x) => x[0] === "progress"), false);
-  ок("навигация: сохранённый прогресс ведёт на главную", normalize("progress"), "home");
+  ок("навигация: прогресс доступен", tabs().some((x) => x[0] === "progress"), true);
+  ок("навигация: сохранённый прогресс доступен", normalize("progress"), "progress");
   ок("навигация: доступная вкладка остаётся", normalize("notes"), "notes");
 }
 
@@ -4251,6 +4251,78 @@ const сеть = (() => {
   ок("книга дня: на ленте ровно одна книга, даже ранее скрытая", sandbox.railItems().filter(i=>i.track === "book").length, 1);
   ок("книга дня: экспорт и загрузка сохраняют настройки", sandbox.migrate(t.get("exportData()" )).readingRandom, setting);
   t.set("data", old);
+}
+
+/* ── Календарь: сессии всех материалов и полные месяцы ── */
+{
+  const before = t.get('data');
+  const d = sandbox.emptyData();
+  d.book.books = [{ id: 'book-a', title: 'Книга А', archived: true }, { id: 'gone', title: 'Удалена', deleted: true }];
+  d.piano.pieces = [{ id: 'piece', name: 'Пьеса' }];
+  d.pastel.courses = [{ id: 'drawing', name: 'Рисунок', archived: true }];
+  d.watch.videos = [{ id: 'video', title: 'Видео' }];
+  d.book.entries = [
+    { id: 'b1', bookId: 'book-a', date: '2026-10-20', page: 10, createdAt: 1 },
+    { id: 'b2', bookId: 'book-a', date: '2026-10-20', page: 20, createdAt: 3 },
+    { id: 'deleted', bookId: 'book-a', date: '2026-10-20', deleted: true },
+    { id: 'gone-entry', bookId: 'gone', date: '2026-10-20' }
+  ];
+  d.piano.entries = [{ id: 'p1', pieceId: 'piece', date: '2026-10-20', mins: 24, createdAt: 2 }];
+  d.pastel.entries = [{ id: 'd1', courseId: 'drawing', date: '2026-10-19' }];
+  d.watch.entries = [{ id: 'v1', videoId: 'video', date: '2026-10-18' }];
+  t.set('data', d);
+  const index = t.get('weeklyProgressIndex')();
+  ок('календарь: удалённые записи и материалы исключены', index['2026-10-20'].length, 3);
+  ок('календарь: порядок занятий по времени', index['2026-10-20'].map(x => x.entry.id), ['b1', 'p1', 'b2']);
+  ок('календарь: архивный рисунок сохраняет своё имя', index['2026-10-19'][0].title, 'Рисунок');
+  ок('календарь: видео тоже видно', index['2026-10-18'][0].track, 'watch');
+  ок('календарь: вкладка доступна', t.get('visibleTabs')().some(x => x[0] === 'progress'), true);
+  t.set('data', before);
+}
+
+/* ── Прогресс недели: три независимые меры и превышение ориентира ── */
+{
+  const before = t.get('data');
+  const d = sandbox.emptyData();
+  d.book.books = [{ id: 'test-book', title: 'Книга', startPage: 0 }];
+  d.book.entries = [
+    {id:'b0',bookId:'test-book',date:'2026-10-11',page:100},
+    {id:'b1',bookId:'test-book',date:'2026-10-14',page:150},
+    {id:'b2',bookId:'test-book',date:'2026-10-20',page:210}
+  ];
+  d.piano.pieces = [{id:'piece',name:'Пьеса'}];
+  d.piano.entries = [
+    {id:'p0',pieceId:'piece',date:'2026-10-15',mins:30},
+    {id:'p1',pieceId:'piece',date:'2026-10-19',mins:20},
+    {id:'p2',pieceId:'piece',date:'2026-10-20',mins:15},
+    {id:'pd',pieceId:'piece',date:'2026-10-20',mins:999,deleted:true}
+  ];
+  d.pastel.courses=[{id:'draw',name:'Рисунок',lessons:[]}];
+  d.pastel.entries=[{id:'d0',courseId:'draw',date:'2026-10-12'}, {id:'d1',courseId:'draw',date:'2026-10-14'}, {id:'d2',courseId:'draw',date:'2026-10-19'}];
+  t.set('data', d);
+  const summary = t.get('weeklyProgressWeek')(0, '2026-10-20');
+  ок('неделя: с понедельника по воскресенье', [summary.from,summary.to], ['2026-10-19','2026-10-25']);
+  ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].previous],[60,50]);
+  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].previous],[35,30]);
+  ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].previous],[1,2]);
+  ок('неделя: превышение остаётся видимым', summary.metrics[0].current > summary.metrics[0].previous, true);
+  const monthly=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
+  ок('месяц: текущий и предыдущий полные периоды', [monthly.from,monthly.to,monthly.previousFrom,monthly.previousTo], ['2026-10-01','2026-10-31','2026-09-01','2026-09-30']);
+  const january=t.get('weeklyProgressWeek')(0,'2026-01-01','month');
+  ок('месяц: январь сравнивается с декабрём', january.previousFrom, '2025-12-01');
+  const february=t.get('weeklyProgressWeek')(-1,'2024-03-20','month');
+  ок('месяц: прошлый високосный февраль', [february.from,february.to], ['2024-02-01','2024-02-29']);
+
+  const rings=t.get('weeklyProgressRings')(summary);
+  ок('кольца: компактный остаток рисунка', rings.includes('Ещё 1 зан.'), true);
+  ок('кольца: превышение в страницах', rings.includes('Сверх 10 стр.'), true);
+  ок('кольца: следующая дуга при превышении', rings.includes('class="ac-ring-extra"'), true);
+  const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,previous:0}))});
+  ок('кольца: нулевая база без выдуманной цели', empty.includes('Нет ориентира') && !empty.includes('NaN') && !empty.includes('Infinity'), true);
+  ок('кольца: нулевой процент отображается всегда', (empty.match(/<small>0%<\/small>/g)||[]).length, 3);
+  ок('кольца: доля от плана, а не остатка', rings.includes('<small>120%</small>'), true);
+
+  t.set('data', before);
 }
 
 /* ── Итог ── */
