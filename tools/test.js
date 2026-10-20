@@ -4302,10 +4302,10 @@ const сеть = (() => {
   t.set('data', d);
   const summary = t.get('weeklyProgressWeek')(0, '2026-10-20');
   ок('неделя: с понедельника по воскресенье', [summary.from,summary.to], ['2026-10-19','2026-10-25']);
-  ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].previous],[60,50]);
-  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].previous],[35,30]);
-  ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].previous],[1,2]);
-  ок('неделя: превышение остаётся видимым', summary.metrics[0].current > summary.metrics[0].previous, true);
+  ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].target],[60,75]);
+  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].target],[35,30]);
+  ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].target],[1,2]);
+  ок('неделя: среднее страниц за два завершённых периода', summary.metrics[0].periods, 2);
   const monthly=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
   ок('месяц: текущий и предыдущий полные периоды', [monthly.from,monthly.to,monthly.previousFrom,monthly.previousTo], ['2026-10-01','2026-10-31','2026-09-01','2026-09-30']);
   const january=t.get('weeklyProgressWeek')(0,'2026-01-01','month');
@@ -4315,13 +4315,31 @@ const сеть = (() => {
 
   const rings=t.get('weeklyProgressRings')(summary);
   ок('кольца: компактный остаток рисунка', rings.includes('Ещё 1 зан.'), true);
-  ок('кольца: превышение в страницах', rings.includes('Сверх 10 стр.'), true);
+  ок('кольца: остаток до среднего', rings.includes('Ещё 15 стр.'), true);
   ок('кольца: следующая дуга при превышении', rings.includes('class="ac-ring-extra"'), true);
-  const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,previous:0}))});
+  const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,target:0,provisional:false}))});
   ок('кольца: нулевая база без выдуманной цели', empty.includes('Нет ориентира') && !empty.includes('NaN') && !empty.includes('Infinity'), true);
-  ок('кольца: нулевой процент отображается всегда', (empty.match(/<small>0%<\/small>/g)||[]).length, 3);
-  ок('кольца: доля от плана, а не остатка', rings.includes('<small>120%</small>'), true);
+  ок('кольца: нулевой процент отображается всегда', (empty.match(/>0%<\/small>/g)||[]).length, 3);
+  ок('кольца: доля от плана, а не остатка', rings.includes('>80%</small>'), true);
 
+  // Пропущенная неделя не обнуляет кольцо недели с чтением.
+  d.book.entries = [
+    {id:'a',bookId:'test-book',date:'2026-09-28',page:100},
+    {id:'b',bookId:'test-book',date:'2026-10-12',page:200}
+  ];
+  const missed = t.get('weeklyProgressWeek')(-1,'2026-10-20');
+  ок('среднее: пропущенная неделя входит в делитель', [missed.metrics[0].current,missed.metrics[0].target,missed.metrics[0].periods], [100,67,3]);
+  const older = t.get('weeklyProgressWeek')(-3,'2026-10-20');
+  ок('среднее: ориентир не меняется при пролистывании', older.metrics[0].target, missed.metrics[0].target);
+  ок('среднее: прочитанные страницы не дают пустое кольцо', t.get('weeklyProgressRings')(missed).includes('opacity:0" stroke-dasharray="0 100"'), false);
+  d.book.entries = [{id:'aug',bookId:'test-book',date:'2026-08-15',page:100},{id:'sep',bookId:'test-book',date:'2026-09-15',page:300},{id:'oct',bookId:'test-book',date:'2026-10-20',page:350}];
+  const monthAverage=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
+  ок('среднее: месяцы считаются отдельно от недель', [monthAverage.metrics[0].current,monthAverage.metrics[0].target,monthAverage.metrics[0].periods], [50,150,2]);
+  ок('среднее: первый месяц тоже заполняется', t.get('weeklyProgressWeek')(-2,'2026-10-20','month').metrics[0].target, 150);
+  d.book.entries=[{id:'first',bookId:'test-book',date:'2026-10-20',page:20}];
+  const first=t.get('weeklyProgressWeek')(0,'2026-10-20');
+  ок('среднее: первые данные видны без завершённых недель', [first.metrics[0].target,first.metrics[0].provisional], [20,true]);
+  ок('среднее: первые данные подписаны честно', t.get('weeklyProgressRings')(first).includes('Первые данные'), true);
   t.set('data', before);
 }
 

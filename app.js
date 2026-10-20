@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 587";
+const APP_VERSION = "Кэйко 588";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5800,9 +5800,8 @@ function weeklyProgressIndex() {
   return index;
 }
 
-/* Цели недели — реальные объёмы всей прошлой недели, каждый в своей мере.
-   Страницы считаются существующим pagesRead, чтобы повторное чтение и курсор
-   не превращались в новые страницы. Минуты не заменяются числом сессий. */
+/* Один средний ориентир для всей истории. Незавершённый период не снижает
+   среднее; пропуски после начала каждого занятия входят в него как нули. */
 let weeklyProgressShift = 0;
 function weeklyProgressWeek(weekShift, today, period = "week") {
   const date = fromStr(today || todayStr());
@@ -5824,23 +5823,47 @@ function weeklyProgressWeek(weekShift, today, period = "week") {
       drawings: items.filter(i => i.track === 'pastel' && !(i.material.lessons || []).length).length
     };
   };
-  const nowVolume = volume(from, to), previous = volume(previousFrom, previousTo);
+  const nowVolume = volume(from, to);
+  const currentStart = period === "month" ? new Date(date.getFullYear(), date.getMonth(), 1) : mondayOf(date);
+  const completedEnd = new Date(currentStart); completedEnd.setDate(completedEnd.getDate() - 1);
+  const completedTo = dateStr(completedEnd);
+  const allItems = Object.entries(index).filter(([d]) => d <= (today || todayStr())).flatMap(([, items]) => items);
+  const contributes = {
+    pages: i => i.track === 'book' && bookMode(i.material) !== 'list' && (Number(i.entry.page) > (Number(i.material.startPage) || 0) || (i.entry.spans || []).some(s => Number(s.to) >= Number(s.from))),
+    minutes: i => i.track === 'piano' && Number(i.entry.mins) > 0,
+    drawings: i => i.track === 'pastel' && !(i.material.lessons || []).length
+  };
   const metrics = [
     { id: 'pages', title: 'Чтение', short: 'стр.', forms: ['страница', 'страницы', 'страниц'] },
     { id: 'minutes', title: 'Пианино', short: 'мин.', forms: ['минута', 'минуты', 'минут'] },
     { id: 'drawings', title: 'Рисование', short: 'зан.', forms: ['занятие', 'занятия', 'занятий'] }
-  ].map(m => ({ ...m, current: nowVolume[m.id], previous: previous[m.id] }));
+  ].map(m => {
+    const first = allItems.filter(contributes[m.id]).map(i => i.entry.date).sort()[0];
+    let periods = 0, total = 0;
+    if (first && first <= completedTo) {
+      const start = fromStr(first);
+      periods = period === 'month'
+        ? (currentStart.getFullYear() - start.getFullYear()) * 12 + currentStart.getMonth() - start.getMonth()
+        : Math.round(daysBetween(dateStr(mondayOf(start)), dateStr(currentStart)) / 7);
+      total = volume(first, completedTo)[m.id];
+    }
+    // Первое занятие тоже рисуем, пока завершённых периодов ещё нет.
+    const provisional = !total && !!first;
+    const target = total && periods ? Math.ceil(total / periods)
+      : first ? Math.ceil(volume(first, today || todayStr())[m.id]) : 0;
+    return { ...m, current: nowVolume[m.id], target, periods, provisional };
+  });
   return { from, to, previousFrom, previousTo, metrics, period };
 }
 
 function weeklyProgressRings(summary) {
   const colors = ['var(--gold)', 'var(--violet)', 'var(--green)'];
-  return `<section class="ac-fitness" aria-label="Объём занятий за ${summary.period === 'month' ? 'месяц' : 'неделю'} в сравнении с предыдущим периодом">
-    <div class="ac-rings"><svg viewBox="0 0 160 160" role="img" aria-label="${esc(summary.metrics.map(m => `${m.title}: ${m.current}, в прошлом периоде ${m.previous}`).join('; '))}">
+  return `<section class="ac-fitness" aria-label="Объём занятий за ${summary.period === 'month' ? 'месяц' : 'неделю'} относительно среднего">
+    <div class="ac-rings"><svg viewBox="0 0 160 160" role="img" aria-label="${esc(summary.metrics.map(m => `${m.title}: ${m.current}, средний ориентир ${m.target}`).join('; '))}">
       <defs>${colors.map((color,i) => `<linearGradient id="weekly-ring-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb, ${color}, white 38%)"/><stop offset=".45" style="stop-color:${color}"/><stop offset="1" style="stop-color:color-mix(in srgb, ${color}, black 25%)"/></linearGradient>`).join('')}<filter id="weekly-ring-depth" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-opacity=".35"/></filter><filter id="weekly-ring-tip" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="1" stdDeviation="1.6" flood-opacity=".5"/></filter></defs>
       ${summary.metrics.map((m, i) => {
         const radius = 65 - i * 19;
-        const ratio = m.previous > 0 ? m.current / m.previous : 0;
+        const ratio = m.target > 0 ? m.current / m.target : 0;
         const rest = ratio > 1 ? (ratio % 1 || 1) : 0;
         const angle = rest * 2 * Math.PI - Math.PI / 2;
         const x = 80 + radius * Math.cos(angle), y = 80 + radius * Math.sin(angle);
@@ -5851,13 +5874,13 @@ function weeklyProgressRings(summary) {
       }).join('')}
     </svg></div>
     <div class="ac-ring-values">${summary.metrics.map((m, i) => {
-      const left = Math.max(0, m.previous - m.current), extra = Math.max(0, m.current - m.previous);
-      const text = !m.previous ? (m.current ? 'Ориентир' : 'Нет ориентира')
+      const left = Math.max(0, m.target - m.current), extra = Math.max(0, m.current - m.target);
+      const text = m.provisional ? 'Первые данные' : !m.target ? (m.current ? 'Ориентир' : 'Нет ориентира')
         : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : 'План выполнен';
       return `<div class="ac-ring-value" style="--ring-color:${colors[i]}"><span class="ac-ring-label"><i aria-hidden="true"></i>${m.title}</span>
-        <b>${m.current}${m.previous ? `<small> / ${m.previous}</small>` : ''}</b>
+        <b title="${m.provisional ? 'Первые данные: среднего за завершённые периоды ещё нет' : 'Средний объём за ' + m.periods + ' завершённых периодов'}">${m.current}${m.target ? `<small> / ${m.target}</small>` : ''}</b>
         <p>${text}</p>
-        <small>${m.previous ? Math.round(m.current / m.previous * 100) : 0}%</small>
+        <small aria-label="${m.provisional ? 'Первые данные' : 'Процент от среднего'}">${m.target ? Math.round(m.current / m.target * 100) : 0}%</small>
       </div>`;
     }).join('')}</div>
   </section>`;
