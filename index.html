@@ -4069,14 +4069,14 @@
     .ac-ring-tip { stroke: none; }
     .ac-ring-arrow { fill: none; stroke: var(--bg); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
     .ac-ring-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-    .ac-ring-value { min-width: 0; height: 114px; box-sizing: border-box; padding: 12px 6px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
-    .ac-ring-label { display: flex; align-items: center; gap: 4px; font-size: .62rem; color: var(--muted); margin-bottom: 8px; white-space: nowrap; }
+    .ac-ring-value { min-width: 0; height: 106px; box-sizing: border-box; padding: 12px; display: grid; grid-template-rows: 14px 24px 14px 14px; gap: 4px; align-content: center; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+    .ac-ring-label { display: flex; align-items: center; gap: 4px; font-size: .62rem; color: var(--muted); margin-bottom: 0; white-space: nowrap; }
     .ac-ring-label i { width: 6px; height: 6px; border-radius: 50%; background: var(--ring-color); flex: 0 0 6px; }
-    .ac-ring-value b { display: block; white-space: nowrap; font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ac-ring-value b { display: block; line-height: 24px; white-space: nowrap; font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
     .ac-ring-value b small { font-size: .65rem; font-weight: 400; color: var(--muted); white-space: nowrap; }
     .ac-ring-unit { display: block; font-size: .62rem; color: var(--muted); margin-top: 2px; }
-    .ac-ring-value p { margin: 10px 0 0; font-size: .6rem; line-height: 1.45; white-space: nowrap; }
-    .ac-ring-value > small { display: block; font-size: .6rem; line-height: 1.4; color: var(--muted); margin-top: 4px; }
+    .ac-ring-value p { margin: 0; font-size: .6rem; line-height: 1.45; white-space: nowrap; }
+    .ac-ring-value > small { display: block; font-size: .6rem; line-height: 14px; color: var(--muted); margin-top: 0; }
 
 </style>
 </head>
