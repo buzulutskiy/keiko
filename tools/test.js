@@ -4343,6 +4343,38 @@ const сеть = (() => {
   t.set('data', before);
 }
 
+/* ── Влияние периода на накопленную среднюю цель ── */
+{
+  const before=t.get('data'), d=sandbox.emptyData();
+  d.book.books=[{id:'trend-book',title:'Чтение',startPage:0}];
+  d.book.entries=[
+    {id:'w1',bookId:'trend-book',date:'2026-09-28',page:100},
+    {id:'w2',bookId:'trend-book',date:'2026-10-05',page:200},
+    {id:'w3',bookId:'trend-book',date:'2026-10-12',page:400},
+    {id:'w4',bookId:'trend-book',date:'2026-10-20',page:420}
+  ];
+  t.set('data',d);
+  const week=t.get('weeklyProgressWeek')(-1,'2026-10-20');
+  ок('тренд: неделя изменяет само среднее, а не свой объём', [week.metrics[0].trend.before,week.metrics[0].trend.after,week.metrics[0].trend.forecast], [100,134,false]);
+  const rising=t.get('weeklyProgressTrend')(week);
+  ок('тренд: рост средней цели показан стрелкой', rising.includes('↑ 34%'), true);
+  const current=t.get('weeklyProgressWeek')(0,'2026-10-20');
+  ок('тренд: незавершённая неделя прогнозируется по прошедшим дням', [current.metrics[0].trend.before,current.metrics[0].trend.after,current.metrics[0].trend.forecast], [134,118,true]);
+  ок('тренд: прогноз подписан', t.get('weeklyProgressTrend')(current).includes('Прогноз'), true);
+  d.book.entries.push({id:'future',bookId:'trend-book',date:'2026-10-25',page:9999});
+  ок('тренд: будущие отметки не влияют на текущий прогноз', t.get('weeklyProgressWeek')(0,'2026-10-20').metrics[0].trend.after,118);
+  d.book.entries=[{id:'jan',bookId:'trend-book',date:'2026-01-10',page:100},{id:'feb',bookId:'trend-book',date:'2026-02-15',page:200}];
+  const flat=t.get('weeklyProgressWeek')(-1,'2026-03-20','month');
+  ок('тренд: равные месячные объёмы сохраняют среднюю цель', [flat.metrics[0].trend.before,flat.metrics[0].trend.after], [100,100]);
+  ок('тренд: без изменений не окрашивается в спад', t.get('weeklyProgressTrend')(flat).includes('→ Без изменений'), true);
+  const first=t.get('weeklyProgressWeek')(-2,'2026-03-20','month');
+  ок('тренд: первый месяц не получает базу из будущих месяцев', [first.metrics[0].trend.before,first.metrics[0].trend.after],[null,100]);
+  ок('тренд: первое значение без бесконечного процента', !t.get('weeklyProgressTrend')(first).includes('Infinity') && t.get('weeklyProgressTrend')(first).includes('Начало'), true);
+  t.set('data',sandbox.emptyData());
+  ок('тренд: пустая история без выдуманного роста', t.get('weeklyProgressTrend')(t.get('weeklyProgressWeek')(0,'2026-10-20')).includes('Нет данных'),true);
+  t.set('data',before);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   testTimeouts.forEach(clearTimeout);
