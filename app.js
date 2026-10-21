@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 589";
+const APP_VERSION = "Кэйко 590";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5800,8 +5800,8 @@ function weeklyProgressIndex() {
   return index;
 }
 
-/* Один средний ориентир для всей истории. Незавершённый период не снижает
-   среднее; пропуски после начала каждого занятия входят в него как нули. */
+/* Ориентир — две последние завершённые календарные недели.
+   Для месяца тот же дневной темп умножается на число дней в месяце. */
 let weeklyProgressShift = 0;
 function weeklyProgressWeek(weekShift, today, period = "week") {
   const date = fromStr(today || todayStr());
@@ -5824,50 +5824,19 @@ function weeklyProgressWeek(weekShift, today, period = "week") {
     };
   };
   const nowVolume = volume(from, to);
-  const currentStart = period === "month" ? new Date(date.getFullYear(), date.getMonth(), 1) : mondayOf(date);
-  const completedEnd = new Date(currentStart); completedEnd.setDate(completedEnd.getDate() - 1);
-  const completedTo = dateStr(completedEnd);
-  const allItems = Object.entries(index).filter(([d]) => d <= (today || todayStr())).flatMap(([, items]) => items);
-  const contributes = {
-    pages: i => i.track === 'book' && bookMode(i.material) !== 'list' && (Number(i.entry.page) > (Number(i.material.startPage) || 0) || (i.entry.spans || []).some(s => Number(s.to) >= Number(s.from))),
-    minutes: i => i.track === 'piano' && Number(i.entry.mins) > 0,
-    drawings: i => i.track === 'pastel' && !(i.material.lessons || []).length
-  };
+  const recentEnd = mondayOf(date); recentEnd.setDate(recentEnd.getDate() - 1);
+  const recentStart = new Date(recentEnd); recentStart.setDate(recentStart.getDate() - 13);
+  const baselineFrom = dateStr(recentStart), baselineTo = dateStr(recentEnd);
+  const recent = volume(baselineFrom, baselineTo);
+  const targetDays = period === 'month' ? daysBetween(from, to) + 1 : 7;
   const metrics = [
     { id: 'pages', title: 'Чтение', short: 'стр.', forms: ['страница', 'страницы', 'страниц'] },
     { id: 'minutes', title: 'Пианино', short: 'мин.', forms: ['минута', 'минуты', 'минут'] },
     { id: 'drawings', title: 'Рисование', short: 'зан.', forms: ['занятие', 'занятия', 'занятий'] }
-  ].map(m => {
-    const first = allItems.filter(contributes[m.id]).map(i => i.entry.date).sort()[0];
-    let periods = 0, total = 0;
-    if (first && first <= completedTo) {
-      const start = fromStr(first);
-      periods = period === 'month'
-        ? (currentStart.getFullYear() - start.getFullYear()) * 12 + currentStart.getMonth() - start.getMonth()
-        : Math.round(daysBetween(dateStr(mondayOf(start)), dateStr(currentStart)) / 7);
-      total = volume(first, completedTo)[m.id];
-    }
-    // Первое занятие тоже рисуем, пока завершённых периодов ещё нет.
-    const provisional = !total && !!first;
-    const target = total && periods ? Math.ceil(total / periods)
-      : first ? Math.ceil(volume(first, today || todayStr())[m.id]) : 0;
-    const elapsedEnd = to < (today || todayStr()) ? to : (today || todayStr());
-    const fullDays = daysBetween(from, to) + 1;
-    const elapsedDays = Math.max(1, daysBetween(from, elapsedEnd) + 1);
-    let trend = { before: null, after: null, forecast: elapsedDays < fullDays };
-    if (first && first <= elapsedEnd) {
-      const start = fromStr(first);
-      const priorPeriods = first < from ? (period === 'month'
-        ? (anchor.getFullYear() - start.getFullYear()) * 12 + anchor.getMonth() - start.getMonth()
-        : Math.round(daysBetween(dateStr(mondayOf(start)), from) / 7)) : 0;
-      const priorTotal = priorPeriods ? volume(first, previousTo)[m.id] : 0;
-      const projected = nowVolume[m.id] * fullDays / elapsedDays;
-      trend = { ...trend, before: priorPeriods ? Math.ceil(priorTotal / priorPeriods) : null,
-        after: Math.ceil((priorTotal + projected) / (priorPeriods + 1)) };
-    }
-    return { ...m, current: nowVolume[m.id], target, periods, provisional, trend };
-  });
-  return { from, to, previousFrom, previousTo, metrics, period };
+  ].map(m => ({ ...m, current: nowVolume[m.id],
+    target: Math.ceil(recent[m.id] * targetDays / 14), periods: 2,
+    baselineFrom, baselineTo, provisional: false }));
+  return { from, to, previousFrom, previousTo, metrics, period, baselineFrom, baselineTo };
 }
 
 function weeklyProgressRings(summary) {
@@ -5889,33 +5858,13 @@ function weeklyProgressRings(summary) {
     </svg></div>
     <div class="ac-ring-values">${summary.metrics.map((m, i) => {
       const left = Math.max(0, m.target - m.current), extra = Math.max(0, m.current - m.target);
-      const text = m.provisional ? 'Первые данные' : !m.target ? (m.current ? 'Ориентир' : 'Нет ориентира')
+      const text = !m.target ? 'Нет ориентира'
         : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : 'План выполнен';
       return `<div class="ac-ring-value" style="--ring-color:${colors[i]}"><span class="ac-ring-label"><i aria-hidden="true"></i>${m.title}</span>
-        <b title="${m.provisional ? 'Первые данные: среднего за завершённые периоды ещё нет' : 'Средний объём за ' + m.periods + ' завершённых периодов'}">${m.current}${m.target ? `<small> / ${m.target}</small>` : ''}</b>
+        <b title="${summary.period === 'month' ? 'Темп последних двух завершённых недель, пересчитанный на месяц' : 'Средний объём за последние две завершённые недели'}">${m.current}${m.target ? `<small> / ${m.target}</small>` : ''}</b>
         <p>${text}</p>
-        <small aria-label="${m.provisional ? 'Первые данные' : 'Процент от среднего'}">${m.target ? Math.round(m.current / m.target * 100) : 0}%</small>
+        <small aria-label="Процент от среднего за последние две недели">${m.target ? Math.round(m.current / m.target * 100) : 0}%</small>
       </div>`;
-    }).join('')}</div>
-  </section>`;
-}
-
-function weeklyProgressTrend(summary) {
-  const colors = ['var(--gold)', 'var(--violet)', 'var(--green)'];
-  const forecast = summary.metrics.some(m => m.trend?.forecast);
-  const mode = summary.period === 'month' ? 'месяца' : 'недели';
-  return `<section class="ac-trend" aria-label="Влияние ${mode} на среднюю цель">
-    <div class="ac-trend-heading"><span>Средняя цель</span><small>${forecast ? 'Прогноз' : 'До → после'}</small></div>
-    <div class="ac-trend-grid">${summary.metrics.map((m, i) => {
-      const t = m.trend || { before: null, after: null };
-      const before = t.before, after = t.after;
-      const delta = before != null && after != null ? after - before : 0;
-      const percent = before > 0 ? Math.abs(delta / before * 100) : null;
-      const change = percent != null ? (percent && percent < 1 ? '<1' : Math.round(percent)) + '%' : '';
-      const text = after == null ? 'Нет данных' : before == null ? 'Начало' : !delta ? 'Без изменений' : before === 0 ? 'Рост с нуля' : change;
-      const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : before != null ? '→' : '';
-      const description = `${m.title}: ${before == null ? 'нет прежнего среднего' : before + ' ' + m.short} → ${after == null ? 'нет данных' : after + ' ' + m.short}${forecast ? ', прогноз при сохранении текущего темпа' : ''}`;
-      return `<div class="ac-trend-item" title="${esc(description)}" aria-label="${esc(description)}"><b><i style="background:${colors[i]}" aria-hidden="true"></i>${before ?? '—'} <span>→</span> ${after ?? '—'}</b><small class="${delta > 0 ? 'is-up' : ''}">${arrow} ${esc(text)}</small></div>`;
     }).join('')}</div>
   </section>`;
 }
@@ -5932,7 +5881,6 @@ function renderWeeklyProgress() {
     <div class="ac-period" role="group" aria-label="Период прогресса"><button type="button" data-progress-period="week" aria-pressed="${weeklyProgressPeriod === 'week'}">Неделя</button><button type="button" data-progress-period="month" aria-pressed="${weeklyProgressPeriod === 'month'}">Месяц</button></div>
     <div class="ac-week-nav"><button class="qbtn" id="acWeekPrev" type="button" aria-label="Предыдущий период" ${week.from <= earliestDate ? "disabled" : ""}>‹</button><span>${caption}</span><button class="qbtn" id="acWeekNext" type="button" aria-label="Следующий период" ${weeklyProgressShift >= 0 ? "disabled" : ""}>›</button></div>
     ${weeklyProgressRings(week)}
-    ${weeklyProgressTrend(week)}
   </section>`;
   view.querySelectorAll("[data-progress-period]").forEach(el => el.addEventListener("click", () => { weeklyProgressPeriod = el.dataset.progressPeriod; weeklyProgressShift = 0; render(); view.scrollTop = 0; }));
   const changeWeek = delta => { weeklyProgressShift = Math.min(0, weeklyProgressShift + delta); render(); view.scrollTop = 0; };

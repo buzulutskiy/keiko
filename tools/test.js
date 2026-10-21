@@ -4303,8 +4303,8 @@ const сеть = (() => {
   const summary = t.get('weeklyProgressWeek')(0, '2026-10-20');
   ок('неделя: с понедельника по воскресенье', [summary.from,summary.to], ['2026-10-19','2026-10-25']);
   ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].target],[60,75]);
-  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].target],[35,30]);
-  ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].target],[1,2]);
+  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].target],[35,15]);
+  ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].target],[1,1]);
   ок('неделя: среднее страниц за два завершённых периода', summary.metrics[0].periods, 2);
   const monthly=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
   ок('месяц: текущий и предыдущий полные периоды', [monthly.from,monthly.to,monthly.previousFrom,monthly.previousTo], ['2026-10-01','2026-10-31','2026-09-01','2026-09-30']);
@@ -4314,7 +4314,7 @@ const сеть = (() => {
   ок('месяц: прошлый високосный февраль', [february.from,february.to], ['2024-02-01','2024-02-29']);
 
   const rings=t.get('weeklyProgressRings')(summary);
-  ок('кольца: компактный остаток рисунка', rings.includes('Ещё 1 зан.'), true);
+  ок('кольца: план рисунка выполнен', rings.includes('План выполнен'), true);
   ок('кольца: остаток до среднего', rings.includes('Ещё 15 стр.'), true);
   ок('кольца: следующая дуга при превышении', rings.includes('class="ac-ring-extra"'), true);
   const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,target:0,provisional:false}))});
@@ -4328,51 +4328,36 @@ const сеть = (() => {
     {id:'b',bookId:'test-book',date:'2026-10-12',page:200}
   ];
   const missed = t.get('weeklyProgressWeek')(-1,'2026-10-20');
-  ок('среднее: пропущенная неделя входит в делитель', [missed.metrics[0].current,missed.metrics[0].target,missed.metrics[0].periods], [100,67,3]);
+  ок('среднее: пропущенная неделя входит в делитель', [missed.metrics[0].current,missed.metrics[0].target,missed.metrics[0].periods], [100,50,2]);
   const older = t.get('weeklyProgressWeek')(-3,'2026-10-20');
   ок('среднее: ориентир не меняется при пролистывании', older.metrics[0].target, missed.metrics[0].target);
-  ок('среднее: прочитанные страницы не дают пустое кольцо', t.get('weeklyProgressRings')(missed).includes('opacity:0" stroke-dasharray="0 100"'), false);
+  ок('среднее: прочитанные страницы заполняют внешнее кольцо', /class="ac-ring-fill"[^>]*stroke-dasharray="100 100"/.test(t.get('weeklyProgressRings')(missed)), true);
   d.book.entries = [{id:'aug',bookId:'test-book',date:'2026-08-15',page:100},{id:'sep',bookId:'test-book',date:'2026-09-15',page:300},{id:'oct',bookId:'test-book',date:'2026-10-20',page:350}];
   const monthAverage=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
-  ок('среднее: месяцы считаются отдельно от недель', [monthAverage.metrics[0].current,monthAverage.metrics[0].target,monthAverage.metrics[0].periods], [50,150,2]);
-  ок('среднее: первый месяц тоже заполняется', t.get('weeklyProgressWeek')(-2,'2026-10-20','month').metrics[0].target, 150);
+  ок('среднее: месяцы считаются отдельно от недель', [monthAverage.metrics[0].current,monthAverage.metrics[0].target,monthAverage.metrics[0].periods], [50,0,2]);
+  ок('среднее: старые месяцы не становятся базой для новой цели', t.get('weeklyProgressWeek')(-2,'2026-10-20','month').metrics[0].target, 0);
   d.book.entries=[{id:'first',bookId:'test-book',date:'2026-10-20',page:20}];
   const first=t.get('weeklyProgressWeek')(0,'2026-10-20');
-  ок('среднее: первые данные видны без завершённых недель', [first.metrics[0].target,first.metrics[0].provisional], [20,true]);
-  ок('среднее: первые данные подписаны честно', t.get('weeklyProgressRings')(first).includes('Первые данные'), true);
-  t.set('data', before);
-}
-
-/* ── Влияние периода на накопленную среднюю цель ── */
-{
-  const before=t.get('data'), d=sandbox.emptyData();
-  d.book.books=[{id:'trend-book',title:'Чтение',startPage:0}];
+  ок('среднее: текущая неделя не создаёт сама себе цель', first.metrics[0].target, 0);
+  ок('среднее: отсутствие базы подписано честно', t.get('weeklyProgressRings')(first).includes('Нет ориентира'), true);
   d.book.entries=[
-    {id:'w1',bookId:'trend-book',date:'2026-09-28',page:100},
-    {id:'w2',bookId:'trend-book',date:'2026-10-05',page:200},
-    {id:'w3',bookId:'trend-book',date:'2026-10-12',page:400},
-    {id:'w4',bookId:'trend-book',date:'2026-10-20',page:420}
+    {id:'old',bookId:'test-book',date:'2026-09-01',page:1000},
+    {id:'r1',bookId:'test-book',date:'2026-10-08',page:1100},
+    {id:'r2',bookId:'test-book',date:'2026-10-15',page:1300},
+    {id:'now',bookId:'test-book',date:'2026-10-21',page:1900}
   ];
-  t.set('data',d);
-  const week=t.get('weeklyProgressWeek')(-1,'2026-10-20');
-  ок('тренд: неделя изменяет само среднее, а не свой объём', [week.metrics[0].trend.before,week.metrics[0].trend.after,week.metrics[0].trend.forecast], [100,134,false]);
-  const rising=t.get('weeklyProgressTrend')(week);
-  ок('тренд: рост средней цели показан стрелкой', rising.includes('↑ 34%'), true);
-  const current=t.get('weeklyProgressWeek')(0,'2026-10-20');
-  ок('тренд: незавершённая неделя прогнозируется по прошедшим дням', [current.metrics[0].trend.before,current.metrics[0].trend.after,current.metrics[0].trend.forecast], [134,118,true]);
-  ок('тренд: прогноз подписан', t.get('weeklyProgressTrend')(current).includes('Прогноз'), true);
-  d.book.entries.push({id:'future',bookId:'trend-book',date:'2026-10-25',page:9999});
-  ок('тренд: будущие отметки не влияют на текущий прогноз', t.get('weeklyProgressWeek')(0,'2026-10-20').metrics[0].trend.after,118);
-  d.book.entries=[{id:'jan',bookId:'trend-book',date:'2026-01-10',page:100},{id:'feb',bookId:'trend-book',date:'2026-02-15',page:200}];
-  const flat=t.get('weeklyProgressWeek')(-1,'2026-03-20','month');
-  ок('тренд: равные месячные объёмы сохраняют среднюю цель', [flat.metrics[0].trend.before,flat.metrics[0].trend.after], [100,100]);
-  ок('тренд: без изменений не окрашивается в спад', t.get('weeklyProgressTrend')(flat).includes('→ Без изменений'), true);
-  const first=t.get('weeklyProgressWeek')(-2,'2026-03-20','month');
-  ок('тренд: первый месяц не получает базу из будущих месяцев', [first.metrics[0].trend.before,first.metrics[0].trend.after],[null,100]);
-  ок('тренд: первое значение без бесконечного процента', !t.get('weeklyProgressTrend')(first).includes('Infinity') && t.get('weeklyProgressTrend')(first).includes('Начало'), true);
-  t.set('data',sandbox.emptyData());
-  ок('тренд: пустая история без выдуманного роста', t.get('weeklyProgressTrend')(t.get('weeklyProgressWeek')(0,'2026-10-20')).includes('Нет данных'),true);
-  t.set('data',before);
+  const recent=t.get('weeklyProgressWeek')(0,'2026-10-21');
+  ок('две недели: точные границы без текущей недели', [recent.baselineFrom,recent.baselineTo], ['2026-10-05','2026-10-18']);
+  ок('две недели: только прирост 100 и 200, без старых 1000 и текущих 600', recent.metrics[0].target, 150);
+  const monthRecent=t.get('weeklyProgressWeek')(0,'2026-10-21','month');
+  ок('две недели: месячный ориентир из того же дневного темпа', monthRecent.metrics[0].target, 665);
+  d.book.entries.push({id:'future',bookId:'test-book',date:'2026-10-25',page:9999});
+  ок('две недели: будущая отметка не меняет цель', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,150);
+  d.book.entries=[{id:'dec',bookId:'test-book',date:'2025-12-22',page:100},{id:'dec2',bookId:'test-book',date:'2025-12-29',page:500}];
+  const januaryWindow=t.get('weeklyProgressWeek')(0,'2026-01-01');
+  ок('две недели: окно проходит через новый год', [januaryWindow.baselineFrom,januaryWindow.baselineTo,januaryWindow.metrics[0].target], ['2025-12-15','2025-12-28',50]);
+  ок('интерфейс: блок тренда удалён', fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8').includes('weeklyProgressTrend'),false);
+  t.set('data', before);
 }
 
 /* ── Итог ── */
