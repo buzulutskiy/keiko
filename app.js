@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 590";
+const APP_VERSION = "Кэйко 591";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5833,20 +5833,33 @@ function weeklyProgressWeek(weekShift, today, period = "week") {
     { id: 'pages', title: 'Чтение', short: 'стр.', forms: ['страница', 'страницы', 'страниц'] },
     { id: 'minutes', title: 'Пианино', short: 'мин.', forms: ['минута', 'минуты', 'минут'] },
     { id: 'drawings', title: 'Рисование', short: 'зан.', forms: ['занятие', 'занятия', 'занятий'] }
-  ].map(m => ({ ...m, current: nowVolume[m.id],
-    target: Math.ceil(recent[m.id] * targetDays / 14), periods: 2,
-    baselineFrom, baselineTo, provisional: false }));
-  return { from, to, previousFrom, previousTo, metrics, period, baselineFrom, baselineTo };
+  ].map(m => {
+    const raw = recent[m.id] * targetDays / 14;
+    const step = raw >= 10 ? 10 : 1;
+    const target = m.id === 'drawings' ? Math.ceil(raw)
+      : raw > 0 ? Math.max(1, Math.floor(raw / step) * step) : 0;
+    return { ...m, current: nowVolume[m.id], target, periods: 2,
+      baselineFrom, baselineTo };
+  });
+  const remainingDays = to < (today || todayStr()) ? 0
+    : daysBetween((today || todayStr()) > from ? (today || todayStr()) : from, to) + 1;
+  for (const m of metrics) m.dailyNeeded = m.target > 0 && remainingDays > 0
+    ? Math.ceil(Math.max(0, m.target - m.current) / remainingDays) : null;
+  return { from, to, previousFrom, previousTo, metrics, period, baselineFrom, baselineTo, remainingDays };
 }
 
 function weeklyProgressRings(summary) {
-  const colors = ['var(--gold)', 'var(--violet)', 'var(--green)'];
+  const colors = [
+    'color-mix(in srgb, var(--gold), white 10%)',
+    'color-mix(in srgb, var(--violet), white 10%)',
+    'color-mix(in srgb, var(--green), white 10%)'
+  ];
   return `<section class="ac-fitness" aria-label="Объём занятий за ${summary.period === 'month' ? 'месяц' : 'неделю'} относительно среднего">
     <div class="ac-rings"><svg viewBox="0 0 160 160" role="img" aria-label="${esc(summary.metrics.map(m => `${m.title}: ${m.current}, средний ориентир ${m.target}`).join('; '))}">
-      <defs>${colors.map((color,i) => `<linearGradient id="weekly-ring-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb, ${color}, white 38%)"/><stop offset=".45" style="stop-color:${color}"/><stop offset="1" style="stop-color:color-mix(in srgb, ${color}, black 25%)"/></linearGradient>`).join('')}<filter id="weekly-ring-depth" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-opacity=".35"/></filter><filter id="weekly-ring-tip" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="1" stdDeviation="1.6" flood-opacity=".5"/></filter></defs>
+      <defs>${colors.map((color,i) => `<linearGradient id="weekly-ring-${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:color-mix(in srgb, ${color}, white 22%)"/><stop offset=".45" style="stop-color:${color}"/><stop offset="1" style="stop-color:color-mix(in srgb, ${color}, black 10%)"/></linearGradient>`).join('')}<filter id="weekly-ring-depth" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-opacity=".35"/></filter><filter id="weekly-ring-tip" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="1" stdDeviation="1.6" flood-opacity=".5"/></filter></defs>
       ${summary.metrics.map((m, i) => {
         const radius = 65 - i * 19;
-        const ratio = m.target > 0 ? m.current / m.target : 0;
+        const ratio = m.target > 0 ? m.current / m.target : m.current > 0 ? 0.08 : 0;
         const rest = ratio > 1 ? (ratio % 1 || 1) : 0;
         const angle = rest * 2 * Math.PI - Math.PI / 2;
         const x = 80 + radius * Math.cos(angle), y = 80 + radius * Math.sin(angle);
@@ -5858,12 +5871,17 @@ function weeklyProgressRings(summary) {
     </svg></div>
     <div class="ac-ring-values">${summary.metrics.map((m, i) => {
       const left = Math.max(0, m.target - m.current), extra = Math.max(0, m.current - m.target);
-      const text = !m.target ? 'Нет ориентира'
-        : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : 'План выполнен';
+      const remainingText = !m.target ? 'Без плана'
+        : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : '✓ План выполнен';
+      const primaryText = !m.target ? (m.current > 0 ? 'Отмечено' : 'Нет ориентира')
+        : summary.remainingDays === 0 ? '✓' : `${m.dailyNeeded} ${m.short}/день`;
+      const primaryLabel = !m.target ? primaryText
+        : summary.remainingDays === 0 ? 'Период завершён' : `Необходимый темп: ${m.dailyNeeded} ${m.short} в день`;
+      const remainingLabel = m.target ? 'Осталось до цели' : 'Цель не задана';
       return `<div class="ac-ring-value" style="--ring-color:${colors[i]}"><span class="ac-ring-label"><i aria-hidden="true"></i>${m.title}</span>
         <b title="${summary.period === 'month' ? 'Темп последних двух завершённых недель, пересчитанный на месяц' : 'Средний объём за последние две завершённые недели'}">${m.current}${m.target ? `<small> / ${m.target}</small>` : ''}</b>
-        <p>${text}</p>
-        <small aria-label="Процент от среднего за последние две недели">${m.target ? Math.round(m.current / m.target * 100) : 0}%</small>
+        <p aria-label="${primaryLabel}">${primaryText}</p>
+        <small aria-label="${remainingLabel}">${remainingText}</small>
       </div>`;
     }).join('')}</div>
   </section>`;
@@ -5886,6 +5904,22 @@ function renderWeeklyProgress() {
   const changeWeek = delta => { weeklyProgressShift = Math.min(0, weeklyProgressShift + delta); render(); view.scrollTop = 0; };
   $("#acWeekPrev").addEventListener("click", () => changeWeek(-1));
   $("#acWeekNext").addEventListener("click", () => changeWeek(1));
+  const swipeArea = view.querySelector(".ac-rings");
+  swipeArea.style.touchAction = "pan-y";
+  let swipeStart = null;
+  swipeArea.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    swipeStart = { x: e.clientX, y: e.clientY };
+  });
+  swipeArea.addEventListener("pointerup", e => {
+    if (!swipeStart) return;
+    const dx = e.clientX - swipeStart.x, dy = e.clientY - swipeStart.y;
+    swipeStart = null;
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    if (dx < 0 && weeklyProgressShift < 0) changeWeek(1);
+    else if (dx > 0 && week.from > earliestDate) changeWeek(-1);
+  });
+  swipeArea.addEventListener("pointercancel", () => { swipeStart = null; });
 }
 
 function renderCalendar() {

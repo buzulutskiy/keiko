@@ -4302,8 +4302,8 @@ const сеть = (() => {
   t.set('data', d);
   const summary = t.get('weeklyProgressWeek')(0, '2026-10-20');
   ок('неделя: с понедельника по воскресенье', [summary.from,summary.to], ['2026-10-19','2026-10-25']);
-  ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].target],[60,75]);
-  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].target],[35,15]);
+  ок('неделя: новые страницы, а не курсор книги', [summary.metrics[0].current,summary.metrics[0].target],[60,70]);
+  ок('неделя: минуты вместо числа занятий', [summary.metrics[1].current,summary.metrics[1].target],[35,10]);
   ок('неделя: рисунок сессиями', [summary.metrics[2].current,summary.metrics[2].target],[1,1]);
   ок('неделя: среднее страниц за два завершённых периода', summary.metrics[0].periods, 2);
   const monthly=t.get('weeklyProgressWeek')(0,'2026-10-20','month');
@@ -4314,13 +4314,15 @@ const сеть = (() => {
   ок('месяц: прошлый високосный февраль', [february.from,february.to], ['2024-02-01','2024-02-29']);
 
   const rings=t.get('weeklyProgressRings')(summary);
-  ок('кольца: план рисунка выполнен', rings.includes('План выполнен'), true);
-  ок('кольца: остаток до среднего', rings.includes('Ещё 15 стр.'), true);
+  ок('кольца: план рисунка отмечен галочкой', rings.includes('✓ План выполнен'), true);
+  ок('кольца: исходные оттенки стали ярче без смены палитры', ['var(--gold), white 10%','var(--violet), white 10%','var(--green), white 10%'].every(c=>rings.includes(c)) && rings.includes('black 10%'), true);
+  ок('ячейка: дневной темп стоит перед общим остатком', rings.indexOf('2 стр./день') < rings.indexOf('Ещё 10 стр.'), true);
+  ок('кольца: остаток до среднего', rings.includes('Ещё 10 стр.'), true);
   ок('кольца: следующая дуга при превышении', rings.includes('class="ac-ring-extra"'), true);
   const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,target:0,provisional:false}))});
   ок('кольца: нулевая база без выдуманной цели', empty.includes('Нет ориентира') && !empty.includes('NaN') && !empty.includes('Infinity'), true);
-  ок('кольца: нулевой процент отображается всегда', (empty.match(/>0%<\/small>/g)||[]).length, 3);
-  ок('кольца: доля от плана, а не остатка', rings.includes('>80%</small>'), true);
+  ок('кольца: без базы дневной план не выдумывается', (empty.match(/>Без плана<\/small>/g)||[]).length, 3);
+  ок('кольца: вместо процента показан темп в день', rings.includes('2 стр./день') && !rings.includes('%</small>'), true);
 
   // Пропущенная неделя не обнуляет кольцо недели с чтением.
   d.book.entries = [
@@ -4339,7 +4341,7 @@ const сеть = (() => {
   d.book.entries=[{id:'first',bookId:'test-book',date:'2026-10-20',page:20}];
   const first=t.get('weeklyProgressWeek')(0,'2026-10-20');
   ок('среднее: текущая неделя не создаёт сама себе цель', first.metrics[0].target, 0);
-  ок('среднее: отсутствие базы подписано честно', t.get('weeklyProgressRings')(first).includes('Нет ориентира'), true);
+  ок('среднее: отсутствие базы подписано честно', t.get('weeklyProgressRings')(first).includes('Отмечено'), true);
   d.book.entries=[
     {id:'old',bookId:'test-book',date:'2026-09-01',page:1000},
     {id:'r1',bookId:'test-book',date:'2026-10-08',page:1100},
@@ -4350,13 +4352,34 @@ const сеть = (() => {
   ок('две недели: точные границы без текущей недели', [recent.baselineFrom,recent.baselineTo], ['2026-10-05','2026-10-18']);
   ок('две недели: только прирост 100 и 200, без старых 1000 и текущих 600', recent.metrics[0].target, 150);
   const monthRecent=t.get('weeklyProgressWeek')(0,'2026-10-21','month');
-  ок('две недели: месячный ориентир из того же дневного темпа', monthRecent.metrics[0].target, 665);
+  ок('две недели: месячный ориентир из того же дневного темпа', monthRecent.metrics[0].target, 660);
   d.book.entries.push({id:'future',bookId:'test-book',date:'2026-10-25',page:9999});
   ок('две недели: будущая отметка не меняет цель', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,150);
   d.book.entries=[{id:'dec',bookId:'test-book',date:'2025-12-22',page:100},{id:'dec2',bookId:'test-book',date:'2025-12-29',page:500}];
   const januaryWindow=t.get('weeklyProgressWeek')(0,'2026-01-01');
   ок('две недели: окно проходит через новый год', [januaryWindow.baselineFrom,januaryWindow.baselineTo,januaryWindow.metrics[0].target], ['2025-12-15','2025-12-28',50]);
   ок('интерфейс: блок тренда удалён', fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8').includes('weeklyProgressTrend'),false);
+  // Настоящие даты и данные для округления дневного остатка.
+  d.book.entries=[{id:'old-base',bookId:'test-book',date:'2026-10-08',page:100}, {id:'cur',bookId:'test-book',date:'2026-10-21',page:107}];
+  const pace=t.get('weeklyProgressWeek')(0,'2026-10-21');
+  ок('темп: среда-воскресенье — пять дней вместе с сегодняшним', pace.remainingDays,5);
+  ок('темп: остаток делится на оставшиеся дни и округляется вверх', pace.metrics[0].dailyNeeded,9);
+  const sunday=t.get('weeklyProgressWeek')(0,'2026-10-25');
+  ок('темп: в последний день делитель не ноль', [sunday.remainingDays,sunday.metrics[0].dailyNeeded], [1,43]);
+  const closed=t.get('weeklyProgressWeek')(-1,'2026-10-21');
+  const closedHTML=t.get('weeklyProgressRings')(closed);
+  ок('темп: прошлый период отмечен доступной галочкой', closed.remainingDays === 0 && closedHTML.includes('aria-label="Период завершён">✓</p>'),true);
+  const monthPace=t.get('weeklyProgressWeek')(0,'2026-10-21','month');
+  ок('темп: количество оставшихся дней месяца', monthPace.remainingDays,11);
+  d.pastel.entries=[{id:'new-draw',courseId:'draw',date:'2026-10-21'}];
+  const restarted=t.get('weeklyProgressWeek')(0,'2026-10-21');
+  const restartedHTML=t.get('weeklyProgressRings')(restarted);
+  ок('кольцо: после нулевой базы рисунок даёт небольшой видимый шаг', /class="ac-ring-fill"[^>]*stroke-dasharray="8 100"/.test(restartedHTML),true);
+  ок('кольцо: без базы не придумывается цель рисунка', [restarted.metrics[2].current,restarted.metrics[2].target,restarted.metrics[2].dailyNeeded], [1,0,null]);
+  d.book.entries=[{id:'round',bookId:'test-book',date:'2026-10-08',page:158}];
+  ок('цель: 79 страниц округляются вниз до 70', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,70);
+  d.book.entries[0].page=14;
+  ок('цель: малое ненулевое среднее не обнуляется', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,7);
   t.set('data', before);
 }
 
