@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 591";
+const APP_VERSION = "Кэйко 592";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14858,7 +14858,10 @@ function bindPlaceMap() {
   stage.addEventListener("pointerdown", (e) => {
     if (!gm) return;
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { stage.setPointerCapture(e.pointerId); } catch {}
+    // Метке оставляем обычный click; захватим указатель, только если её потянут.
+    if (!e.target.closest("[data-gm], [data-many]")) {
+      try { stage.setPointerCapture(e.pointerId); } catch {}
+    }
     if (точки.size === 1) {
       старт = { x: e.clientX, y: e.clientY, tx: gm.tx, ty: gm.ty, moved: false };
       щипок = false; тянули = false;
@@ -14875,7 +14878,10 @@ function bindPlaceMap() {
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (точки.size === 1 && старт && старт.tx !== undefined && !старт.d) {
       const dx = e.clientX - старт.x, dy = e.clientY - старт.y;
-      if (Math.abs(dx) + Math.abs(dy) > 6) { старт.moved = true; тянули = true; }
+      if (Math.abs(dx) + Math.abs(dy) > 6) {
+        старт.moved = true; тянули = true;
+        try { stage.setPointerCapture(e.pointerId); } catch {}
+      }
       gm.tx = старт.tx + dx; gm.ty = старт.ty + dy;
       gmClamp(); gmApply();
     } else if (точки.size === 2 && старт && старт.d) {
