@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 596";
+const APP_VERSION = "Кэйко 597";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -15075,7 +15075,7 @@ function gmJourneyCard() {
   const previous = state.stops[gm.journeyStep - 1];
   let distance = "";
   if (p.bookDistance) distance = `<p class="gj-location">${esc(p.bookDistance)}</p>`;
-  else if (previous && !p.locationUnresolved && !previous.locationUnresolved) {
+  else if (previous) {
     const rad = x => x * Math.PI / 180;
     const a = Math.sin(rad(p.lat - previous.lat) / 2) ** 2 + Math.cos(rad(previous.lat)) * Math.cos(rad(p.lat)) * Math.sin(rad(p.lon - previous.lon) / 2) ** 2;
     const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
