@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 592";
+const APP_VERSION = "Кэйко 593";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1061,6 +1061,46 @@ const mapOfChapter = (b, i) => bookMap(b).filter((x) => (Number(x.part) || Numbe
    не показывалась. Угадывать тут нечего — отдаём всё. */
 const mapWhole = (b) => bookMap(b);
 const mapPoints = (b, i) => i < 0 ? mapWhole(b) : mapOfChapter(b, i);
+
+/* Географические поездки — отдельно от `routes`, траекторий чтения. */
+function journeyChapterOpen(b, ch) {
+  const chapters = b.chapters || [], i = Number(ch) - 1;
+  if (!Number.isInteger(i) || i < 0 || !chapters[i]) return false;
+  const end = Number(chapters[i].to) || (chapters[i + 1] ? Number(chapters[i + 1].from) - 1 : Number(b.pages));
+  return end > 0 && bookProgressOf(b) >= end;
+}
+function journeyResolved(b, trip) {
+  const places = ((artsOf(b.id) || {}).map || []).filter(p => слойТочки(p) === "place");
+  return (trip.stops || []).map((stop, sourceIndex) => {
+    const p = places.find(p => p.name === stop.place && Number.isFinite(p.lat) && Math.abs(p.lat) <= 85
+      && Number.isFinite(p.lon) && Math.abs(p.lon) <= 180);
+    const resolved = p && {...p, ...stop, sourceIndex, name: "journey:" + trip.id + ":" + sourceIndex};
+    return resolved && Number.isFinite(resolved.lat) && Math.abs(resolved.lat) <= 85
+      && Number.isFinite(resolved.lon) && Math.abs(resolved.lon) <= 180
+      && journeyChapterOpen(b, stop.ch) ? resolved : null;
+  }).filter(Boolean);
+}
+function journeyTrips(b) {
+  return ((artsOf(b.id) || {}).journeys || []).filter(trip => trip && trip.id
+    && Array.isArray(trip.people) && Array.isArray(trip.stops) && journeyResolved(b, trip).length);
+}
+function journeyStops(b, tripId, person) {
+  const trip = journeyTrips(b).find(x => x.id === tripId);
+  if (!trip) return [];
+  return journeyResolved(b, trip).filter(p => (p.people || []).includes(person)).map((p, i, all) => ({...p,
+    connect: i > 0 && p.sourceIndex === all[i - 1].sourceIndex + 1 && !p.breakBefore
+      && !p.locationUnresolved && !all[i - 1].locationUnresolved
+      && картаТочки(p) === картаТочки(all[i - 1])}));
+}
+
+function journeyTimeline(b, person) {
+  return journeyTrips(b).flatMap(trip => journeyStops(b, trip.id, person).map((stop, i) => ({...stop,
+    tripId:trip.id, connect:i > 0 && stop.connect
+  }))).sort((a,b) => a.ch-b.ch).map((stop,i,all) => ({...stop,
+    connect:stop.connect && i > 0 && stop.tripId === all[i-1].tripId
+      && stop.sourceIndex === all[i-1].sourceIndex + 1
+  }));
+}
 
 /* Номер главы, которую читаешь сейчас, — с ней карта и открывается: в её
    содержании глава уже выбрана, показаны только её места. Вернуться ко всем
@@ -13227,6 +13267,7 @@ function gmКартуВыбрать(key, первый) {
 
 /* Картинка выбранной карты: из хранилища, если уже скачана, иначе ждём. */
 function gmПодложка() {
+  if (gmLiveWanted()) { gmLiveRender(); return; }
   const img = $("#gmImg");
   if (!img || !gm) return;
   const ключ = mapKey(gm.id, gm.карта), файл = mapFile(gm.id, gm.карта);
@@ -13264,6 +13305,23 @@ function gmПодложка() {
   }, 500);
 }
 
+function gmSaved(id) {
+  try {
+    const x = JSON.parse(localStorage.getItem("keiko-map-view:" + id) || "null");
+    return x && typeof x === "object" ? x : {};
+  } catch { return {}; }
+}
+function gmRemember() {
+  if (!gm) return;
+  try { localStorage.setItem("keiko-map-view:" + gm.id, JSON.stringify({
+    слой:gm.слой, часть:gm.часть, at:gm.at,
+    journeyTrip:gm.journeyTrip, journeyPerson:gm.journeyPerson, journeyStep:gm.journeyStep
+  })); } catch {}
+}
+const gmUnified = () => !!gm && !!gm.мат && !!mapYandexKey(gm.мат) && !gm.liveFailed;
+const gmRoutePlaces = () => new Set(!gm || !gm.мат ? [] : journeyTrips(gm.мат).flatMap(trip =>
+  journeyResolved(gm.мат,trip).filter(stop => !gm.часть || stop.ch === gm.часть).map(stop => stop.place)));
+
 function openPlaceMap(bk, i, выбрать) {
   useMark("карта");
   const места = mapPoints(bk, i);
@@ -13283,13 +13341,23 @@ function openPlaceMap(bk, i, выбрать) {
   /* Какая глава выбрана при открытии: та, которую читаешь. Выбранная точка
      важнее — если пришли из разбора к месту, глава не подставляется. */
   const часть = (i < 0 && !выбрать) ? mapHereChapter(bk) : 0;
-  gm = { места, рамка, карта: "", карты: mapMaps(bk), at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
+  if (gm && gm.yandexMap) gm.yandexMap.destroy();
+  gm = { места, рамка, placeDetail: !!выбрать, карта: "", карты: mapMaps(bk), at: выбрать || null, часть, слой: "", scale: 1, tx: 0, ty: 0, id: bk.id, i,
          чтение: null, чтениеГл: null, метка: null, поиск: "",
          части: mapPartsOf(bk),
          /* Сам материал — ради обложки: её цветом красится весь экран, как
             главная. Вид нужен на случай, если обложка ещё не приехала. */
          подложка, мат: bk, вид: isCourseBook(bk.id) ? "pastel" : (data.piano.pieces || []).some((p) => p.id === bk.id) ? "piano" : "book",
          name: i >= 0 && (bk.chapters || [])[i] ? (bk.chapters[i].name || "") : (bk.title || "") };
+  if (i < 0 && !выбрать) {
+    const saved = gmSaved(bk.id);
+    if (typeof saved.слой === "string") gm.слой = saved.слой;
+    if (Number.isInteger(saved.часть) && (saved.часть === -1 || saved.часть === 0
+      || gm.части.some(c => Number(c.n) === saved.часть))) gm.часть = saved.часть;
+    if (typeof saved.at === "string") gm.at = saved.at;
+    for (const key of ["journeyTrip","journeyPerson"]) if (typeof saved[key] === "string") gm[key] = saved[key];
+    if (Number.isInteger(saved.journeyStep)) gm.journeyStep = saved.journeyStep;
+  }
   gmPaint();
   gmTocBtn();
   gmTitle();
@@ -13310,6 +13378,7 @@ function openPlaceMap(bk, i, выбрать) {
   gmList();
   gmFit();
   gmCard();
+  if (gmВкладка() === "journey") gmJourneySelect(gm.journeyStep);
   keepAwake(true);
   /* Точки и запросы для поиска живут в том же файле, что разбор: спрашиваем
      свежий — на устройстве мог лежать старый, ещё с русскими запросами. */
@@ -13548,6 +13617,9 @@ function renderMuseum() {
 }
 
 function closePlaceMap() {
+  gmRemember();
+  if (gm && gm.yandexMap) gm.yandexMap.destroy();
+  gmLiveView(false); gmLiveMessage("");
   closeShots();
   const сб = $("#gmCol"); if (сб) { сб.hidden = true; сб.innerHTML = ""; }
   colView = null; colAt = null;
@@ -13600,7 +13672,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    Второй двери у них нет и не было: слова набирают на самом экране, так что
    это не «вход потеряли», а «затею отложили». Либо ей находят своё место,
    либо она уезжает в attic целиком — но не остаётся вот так. */
-const ВКЛАДКИ = [["place", "Места"], ["col", "Собрание"]];
+const ВКЛАДКИ = [["journey", "Маршруты"], ["place", "Места"], ["col", "Собрание"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -13617,6 +13689,7 @@ function gmLayersOf() {
      открывается одной кнопкой. Отдельный ромбик в шапке был второй дверью в то
      же место. */
   if (colMat() && colItems().length) есть.add("col");
+  if (gm.подложка !== false && ((artsOf(gm.id) || {}).journeys || []).length) есть.add("journey");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Сколько всего в главе — по всем слоям сразу, с разбивкой. В содержании
@@ -13644,12 +13717,17 @@ function gmМест(по) {
 const gmВидимые = () => {
   if (!gm) return [];
   const вкладка = gmВкладка();
+  if (вкладка === "journey") {
+    const state = gmJourneyState();
+    return state.stops.filter(p => state.stop && (p.ch === state.stop.ch || p === state.stops[gm.journeyStep - 1]) && (gmUnified() || картаТочки(p) === gm.карта));
+  }
   /* Карт может быть несколько, и точка принадлежит одной: на карте России
      петербургским адресам делать нечего, и наоборот. Остальные вкладки
      (справки, слова, собрание) делению по картам не подлежат. */
   const многокарт = ((gm.карты) || []).length > 1;
-  const своя = (p) => !многокарт || вкладка !== "place" || картаТочки(p) === gm.карта;
+  const своя = (p) => gmUnified() || !многокарт || вкладка !== "place" || картаТочки(p) === gm.карта;
   const свои = gm.места.filter((p) => вкладкаТочки(p) === вкладка && своя(p));
+  if (вкладка === "place" && свои.some(p => Number.isFinite(p.mentionOrder))) свои.sort((a,b) => (a.mentionOrder ?? Infinity) - (b.mentionOrder ?? Infinity));
   /* В списке справок записи идут секциями в порядке СЛОИ, внутри секции — как
      лежат в файле. Сортировка устойчивая: без второго ключа порядок внутри
      секции в разных браузерах разный. */
@@ -13697,7 +13775,7 @@ function mapFresh(bk) {
     gm.места = mapPoints(bk, gm.i);
     gm.части = mapPartsOf(bk);
     gm.рамка = mapBox(bk, gm.карта) || gm.рамка;
-    if (gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
+    if (gmВкладка() !== "journey" && gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard();
     toast("Карта обновилась");
   }).catch(() => mapAsked.set(id, 0));
@@ -13785,9 +13863,12 @@ function gmList() {
   const собр = $("#gmCol");
   if (!box || !gm) return;
   const вкладка = gmВкладка();
-  const списком = вкладка === "all";
+  const местаСписком = вкладка === "place" && !gm.placeDetail;
+  const списком = вкладка === "all" || местаСписком;
   box.hidden = !списком;
-  if (сцена) сцена.hidden = вкладка !== "place";
+  if (сцена) сцена.hidden = местаСписком || (вкладка !== "place" && вкладка !== "journey");
+  const back = $("#gmPlaceBack");
+  if (back) back.hidden = вкладка !== "place" || !gm.placeDetail;
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
@@ -13796,6 +13877,10 @@ function gmList() {
   const список = gmВидимые();
   if (!список.length) {
     box.innerHTML = `<div class="gl-none">В этой главе ничего нет — выбери другую или «Все».</div>`;
+    return;
+  }
+  if (местаСписком) {
+    box.innerHTML = список.map(p => `<div class="gl-it"><button class="gl-head" data-gm-place="${esc(p.name)}" type="button"><span class="gl-ic" aria-hidden="true">${esc(p.icon || gmIcon(p))}</span><span class="gl-txt"><b>${esc(p.name)}</b><i>${esc(p.context || p.t || "")}</i></span><span aria-hidden="true">›</span></button></div>`).join("");
     return;
   }
   /* Строка — не кнопка целиком: внутри ссылки, а ссылка в кнопке не работает.
@@ -14112,6 +14197,7 @@ function gmMapRow(карты, своя) {
 }
 
 function gmNavRow() {
+  gmJourneyUI();
   const ряд = $("#gmNav"), кн = $("#gmToc"), поле = $("#gmFind");
   if (!ряд || !gm) return;
   const главы = gmParts().length > 1;
@@ -14127,7 +14213,7 @@ function gmNavRow() {
   const ключи = new Set(gmМестаГлавы().map(картаТочки));
   const свои = карты.filter((m) => ключи.has(m.key || ""));
   const разные = свои.length > 1;
-  gmMapRow(свои, своя && разные);
+  gmMapRow(свои, своя && разные && !gmUnified());
   ряд.hidden = !своя || (!главы && !искать && !разные);
   if (кн) {
     кн.hidden = !главы;
@@ -14173,7 +14259,7 @@ function gmLayersRow() {
      этой оговорки «Слова» не показывались никогда. */
   /* Вкладки без точек на карте: «Текст», «Слова», «Собрание». Забыть внести
      сюда новую значит потерять её молча — так уже случилось дважды. */
-  const свои = new Set(["place", "read", "ask", "col"]);
+  const свои = new Set(["place", "read", "ask", "col", "journey"]);
   const вкладки = gmLayersOf().map(([k, имя]) => [k, имя, счёт(k)])
     .filter(([k, , n]) => n || свои.has(k));
   /* Вкладка могла опустеть при переходе в другую главу — тогда возвращаемся на
@@ -14218,6 +14304,10 @@ function gmToc() {
 function gmPins() {
   const box = $("#gmPins");
   if (!box || !gm) return;
+  if (gmLiveWanted()) { gmLiveRender(); return; }
+  const routeLines = $("#gmJourneyLines");
+  if (routeLines) routeLines.innerHTML = "";
+  if (gmВкладка() === "journey") { gmJourneyPins(); return; }
   box.innerHTML = gmВидимые().map((p) => {
     const { x, y } = mapXY(gm.рамка, p);
     /* Часть координат выверена по объектам OpenStreetMap, часть поставлена
@@ -14245,6 +14335,7 @@ function gmPins() {
    растягивании картинки. */
 function gmScalePins() {
   if (!gm || !gm.base) return;
+  if (gmВкладка() === "journey") { gmJourneyPins(); return; }
   const w = gm.base.w * gm.scale, h = gm.base.h * gm.scale;
   const видимые = [];
   document.querySelectorAll(".gm-pin").forEach((el) => {
@@ -14327,6 +14418,7 @@ function gmApply() {
    карта подъезжает к её местам, и они расходятся. */
 
 function gmFit() {
+  if (gmLiveWanted()) { gmLiveRender(true); return; }
   const stage = $("#gmStage"), wrap = $("#gmWrap"), img = $("#gmImg");
   if (!stage || !wrap || !img || !gm) return;
   const прим = () => {
@@ -14352,7 +14444,8 @@ function gmFit() {
 
 // подвести выбранную точку к центру экрана
 function gmFocus(name, scale) {
-  const p = gm && gm.места.find((x) => x.name === name);
+  if (gmLiveWanted()) { const p = gmВидимые().find(x => x.name === name); if (p) gmLiveFocus([p]); return; }
+  const p = gm && (gmВкладка() === "journey" ? gmВидимые() : gm.места).find((x) => x.name === name);
   if (!p || !gm.base) return;
   const { x, y } = mapXY(gm.рамка, p);
   gm.scale = Math.min(GM_MAX, Math.max(1, scale || gm.scale));
@@ -14374,12 +14467,14 @@ function gmClamp() {
 }
 
 function gmCard() {
+  gmRemember();
   const card = $("#gmCard");
   if (!card || !gm) return;
+  if (gmВкладка() === "journey") { gmJourneyCard(); return; }
   /* Карточка снизу — принадлежность карты: она объясняет метку, на которую
      ткнули пальцем. В списке справок текст раскрывается прямо в строке, и
      всплывающий экран поверх него дублирует то же самое вторым способом. */
-  if (gmВкладка() !== "place") { card.hidden = true; card.innerHTML = ""; return; }
+  if (gmВкладка() !== "place" || !gm.placeDetail) { card.hidden = true; card.innerHTML = ""; return; }
   /* Ищем среди показанных, а не среди всех: у Огигии своё описание в каждой
      песни, и в песни V должно стоять её, а не первое попавшееся. */
   /* Запасной поиск — только внутри своего слоя: у стека и у человека, чьим
@@ -14450,7 +14545,7 @@ function gmCard() {
     + `Пиши конкретно, без общих фраз и перечней дат. `
     + `Сюжет книги${кн ? ` «${кн.title}»` : ""} не пересказывай и ничем не выдавай, чем она кончается `
     + `и что случится с героями дальше.`);
-  const история = `https://chatgpt.com/?q=${вопрос}`;
+  const история = `https://chatgpt.com/?q=${p.context ? encodeURIComponent(gmPlaceQuestion(p)) : вопрос}`;
   const мимо = (navigator.standalone === true) ? "" : ` target="_blank" rel="noopener"`;
   card.hidden = false;
   /* PastVu — архив старых снимков, привязанных к карте. Открываем его на этой
@@ -14463,8 +14558,10 @@ function gmCard() {
   const главы = gm.часть ? [] : gmГлавы(p.name);
   card.innerHTML = `
     <b>${esc(p.name)}</b>
-    <p>${esc(p.t || "")}</p>
-    ${p.about ? `<p class="gm-about">${esc(p.about)}</p>` : ""}
+    ${p.context ? `<p class="gm-context">${esc(p.context)}</p>` : `<p>${esc(p.t || "")}</p>`}
+    ${p.contextQuote ? `<details class="gj-excerpt"><summary>В тексте главы</summary><blockquote>${esc(p.contextQuote)}</blockquote></details>` : ""}
+    ${p.approximate ? '<p class="gj-location">Место указано приблизительно.</p>' : ""}
+    ${!p.context && p.about ? `<p class="gm-about">${esc(p.about)}</p>` : ""}
     ${главы.length > 1 ? `<p class="gm-in">${esc(главы.join(" · "))}</p>` : ""}
     <div class="gm-links">
       <a href="${esc(история)}"${мимо}>ChatGPT</a>
@@ -14725,10 +14822,289 @@ function shZoom(рамка, макс) {
   }, { passive: false });
 }
 
+const mapYandexKey = b => {
+  const config = (artsOf(b.id) || {}).yandex;
+  return config && typeof config.key === "string" ? config.key.trim() : "";
+};
+const gmLiveWanted = () => !!gm && !!mapYandexKey(gm.мат) && !gm.liveFailed
+  && ["place", "journey"].includes(gmВкладка());
+let yandexLoad = null;
+function loadYandex(key) {
+  if (window.ymaps && window.ymaps.Map) return Promise.resolve(window.ymaps);
+  if (yandexLoad) return yandexLoad;
+  yandexLoad = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    let finished = false;
+    const timer = setTimeout(() => done(new Error("Не удалось загрузить Яндекс.Карты")), 20000);
+    const done = error => {
+      if (finished) return; finished = true; clearTimeout(timer);
+      if (error) { script.remove(); yandexLoad = null; reject(error); }
+      else resolve(window.ymaps);
+    };
+    script.async = true;
+    script.src = "https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=" + encodeURIComponent(key);
+    script.onerror = () => done(new Error("Яндекс.Карты не ответили"));
+    script.onload = () => {
+      if (!window.ymaps) { done(new Error("Яндекс.Карты недоступны")); return; }
+      window.ymaps.ready(() => done(), error => done(error));
+    };
+    document.body.appendChild(script);
+  });
+  return yandexLoad;
+}
+function gmLiveModel() {
+  if (!gm) return {points: [], segments: [], focus: []};
+  const journey = gmВкладка() === "journey";
+  const state = journey ? gmJourneyState() : null;
+  const points = gmВидимые().filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon) && (journey || !gm.placeDetail || p.name === gm.at));
+  const segments = [];
+  if (state) state.stops.forEach((p, i) => {
+    if (i > 0 && (p.connect || (i === gm.journeyStep && !p.locationUnresolved && !state.stops[i-1].locationUnresolved && (p.tripId !== state.stops[i-1].tripId || p.sourceIndex === state.stops[i-1].sourceIndex + 1))) && points.some(x => x.name === p.name)
+      && points.some(x => x.name === state.stops[i-1].name))
+      segments.push({from: state.stops[i - 1], to: p, active: i === gm.journeyStep});
+  });
+  const selected = points.find(p => p.name === gm.at);
+  const active = segments.find(s => s.active);
+  return {points, segments, journey, selected,
+    focus: active ? [active.from, active.to] : selected ? [selected] : points};
+}
+function gmLiveView(on) {
+  const stage = $("#gmStage"), live = $("#gmLive");
+  if (live) live.hidden = !on;
+  if (stage) stage.classList.toggle("gm-live", on);
+}
+function gmLiveMessage(text) {
+  const box = $("#gmLiveStatus");
+  if (!box) return;
+  box.hidden = !text;
+  box.innerHTML = text ? `<span>${esc(text)}</span>${gm && gm.liveFailed ? '<button type="button" data-gm-live-retry>Повторить</button>' : ''}` : "";
+}
+function gmLiveRender(focus) {
+  if (!gmLiveWanted()) { gmLiveView(false); return; }
+  gmLiveView(true);
+  if (gm.yandexMap) { gmLiveDraw(); if (focus) gmLiveFocus(); return; }
+  if (gm.liveLoading) return;
+  const context = gm;
+  context.liveLoading = true;
+  gmWait(false); gmLiveMessage("Загружаем Яндекс.Карты…");
+  loadYandex(mapYandexKey(context.мат)).then(api => {
+    context.liveLoading = false;
+    if (gm !== context || !gmLiveWanted()) return;
+    const box = $("#gmLive");
+    if (!box) return;
+    const frame = gm.рамка;
+    context.yandexMap = new api.Map(box, {
+      center: [(frame.north + frame.south) / 2, (frame.east + frame.west) / 2], zoom: 7,
+      controls: ["zoomControl"], behaviors: ["drag", "dblClickZoom", "multiTouch", "scrollZoom"]
+    }, {zoomControlSize: "small", suppressMapOpenBlock: true});
+    gmLiveMessage(""); gmLiveDraw(); gmLiveFocus();
+  }).catch(() => {
+    context.liveLoading = false;
+    if (gm !== context) return;
+    context.liveFailed = true;
+    if (context.yandexMap) { context.yandexMap.destroy(); context.yandexMap = null; }
+    gmLiveView(false);
+    gmLiveMessage("Яндекс.Карты не загрузились. Пока показана сохранённая схема.");
+    gmПодложка(); gmPins(); gmFit();
+  });
+}
+function gmLiveDraw() {
+  if (!gm || !gm.yandexMap || !gmLiveWanted()) return;
+  const api = window.ymaps, map = gm.yandexMap, model = gmLiveModel();
+  const context = gm;
+  map.container.fitToViewport();
+  map.geoObjects.removeAll();
+  const gold = model.journey ? "#a68aff" : getComputedStyle($("#gmap")).getPropertyValue("--gold").trim() || "#ffce45";
+  for (const segment of model.segments) {
+    const coords = [segment.from, segment.to].map(p => [p.lat, p.lon]);
+    const line = new api.Polyline(coords, {}, {strokeColor: gold, strokeWidth: segment.active ? 4 : 2,
+      strokeOpacity: segment.active ? 1 : .35, strokeStyle: "shortdash", interactivityModel: "default#transparent"});
+    map.geoObjects.add(line);
+    if (segment.active && coords[0].some((v,i) => Math.abs(v - coords[1][i]) > .0001)) {
+      const [a,b] = coords;
+      const angle = Math.atan2(-(mercY(b[0]) - mercY(a[0])), (b[1]-a[1]) * Math.PI / 180) * 180 / Math.PI;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4 3 L22 12 L4 21 L9 12Z" fill="${esc(gold)}" stroke="#352d15" stroke-width="1" transform="rotate(${angle},12,12)"/></svg>`;
+      map.geoObjects.add(new api.Placemark([(a[0]+b[0])/2,(a[1]+b[1])/2], {}, {
+        iconLayout:"default#image",iconImageHref:"data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg),
+        iconImageSize:[24,24],iconImageOffset:[-12,-12],zIndex:300,interactivityModel:"default#transparent"}));
+    }
+  }
+  if (model.selected && model.selected.accuracyMeters) {
+    map.geoObjects.add(new api.Circle([[model.selected.lat,model.selected.lon], model.selected.accuracyMeters], {}, {
+      fillColor:gold,fillOpacity:.12,strokeColor:gold,strokeOpacity:.5,strokeWidth:1,interactivityModel:"default#transparent"}));
+  }
+  const cluster = model.journey ? null : new api.Clusterer({preset: "islands#yellowClusterIcons", groupByCoordinates: false});
+  const routePlaces = model.journey ? new Set() : gmRoutePlaces();
+  const points = model.points.slice().sort((a,b) => Number(a.name === gm.at)-Number(b.name === gm.at));
+  for (const p of points) {
+    const selected = p.name === gm.at;
+    const index = model.journey ? gmJourneyState().stops.findIndex(s => s.name === p.name) : -1;
+    const marker = new api.Placemark([p.lat,p.lon], {hintContent:esc(p.place || p.name),
+      iconContent:model.journey ? String(index+1) : ""}, {
+      preset: model.journey ? "islands#circleIcon" : p.approximate ? "islands#circleIcon" : "islands#dotIcon",
+      iconColor:model.journey ? (selected ? gold : "#8870c5") : routePlaces.has(p.name) ? "#a68aff" : gold,
+      zIndex:selected ? 1000 : 400, openBalloonOnClick:false});
+    marker.events.add("click", () => {
+      if (gm !== context || !gmLiveWanted()) return;
+      if (model.journey) gmJourneySelect(index);
+      else { gm.at = p.name; gmCard(); gmLiveDraw(); gmLiveFocus([p]); }
+    });
+    if (cluster && !selected) cluster.add(marker); else map.geoObjects.add(marker);
+  }
+  if (cluster) map.geoObjects.add(cluster);
+}
+function gmLiveFocus(given) {
+  if (!gm || !gm.yandexMap || !gmLiveWanted()) return;
+  const map = gm.yandexMap, points = given || gmLiveModel().focus;
+  if (!points.length) return;
+  map.container.fitToViewport();
+  const area = points.flatMap(p => {
+    const dy = Math.max(0, Number(p.accuracyMeters) || 0) / 111320;
+    const dx = dy / Math.max(.1, Math.cos(p.lat * Math.PI / 180));
+    return [{lat:p.lat-dy,lon:p.lon-dx},{lat:p.lat+dy,lon:p.lon+dx}];
+  });
+  const lats = area.map(p=>p.lat), lons = area.map(p=>p.lon);
+  const south = Math.min(...lats), north = Math.max(...lats), west = Math.min(...lons), east = Math.max(...lons);
+  const move = north - south < .001 && east - west < .001
+    ? map.setCenter([south,west], points[0].approximate ? 10 : 12)
+    : map.setBounds([[south,west],[north,east]], {zoomMargin:44,checkZoomRange:true});
+  if (move && move.then) move.then(()=>{},()=>{});
+}
+
+function gmJourneyState() {
+  if (!gm) return {trips: [], people: [], stops: [], trip: null};
+  const b = gm.мат, trips = journeyTrips(b);
+  const byId = new Map(trips.flatMap(t => t.people).map(p => [p.id,p]));
+  const people = [...byId.values()].filter(p => journeyTimeline(b,p.id).length);
+  const trip = trips.length ? {id:"timeline",people:[...byId.values()]} : null;
+  const person = people.find(p => p.id === gm.journeyPerson) || people[0];
+  const stops = person ? journeyTimeline(b,person.id) : [];
+  gm.journeyTrip = "timeline";
+  gm.journeyPerson = person ? person.id : "";
+  gm.journeyStep = Math.max(0, Math.min(stops.length - 1, Number.isInteger(gm.journeyStep) ? gm.journeyStep : stops.length - 1));
+  return {trips, trip, people, person, stops, stop: stops[gm.journeyStep]};
+}
+function gmJourneyUI() {
+  const controls = $("#gmJourneyControls"), steps = $("#gmJourneySteps");
+  if (!controls || !steps) return;
+  const on = !!gm && gmВкладка() === "journey";
+  if (!gmLiveWanted()) gmLiveView(false);
+  controls.hidden = steps.hidden = !on;
+  if (!on) { controls.innerHTML = steps.innerHTML = ""; return; }
+  const state = gmJourneyState();
+  if (!state.trip) {
+    controls.innerHTML = '<p class="gj-empty">Маршрут откроется после первой прочитанной главы с поездкой.</p>';
+    steps.hidden = true; steps.innerHTML = ""; return;
+  }
+  const select = (id, label, rows, value) => `<label class="gj-select"><span>${label}</span><select id="${id}" aria-label="${label}">${rows.map(row =>
+    `<option value="${esc(row.id)}"${row.id === value ? " selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>`;
+  const chapters = [...new Set(state.stops.map(p => p.ch))].map(ch => ({id:String(ch),name:(gm.мат.chapters[ch-1] || {}).name || "Глава " + ch}));
+  controls.innerHTML = select("gmJourneyPerson", "Участник", state.people, gm.journeyPerson)
+    + select("gmJourneyChapter", "Глава", chapters, String(state.stop.ch));
+  steps.innerHTML = `<button data-journey-move="-1" type="button" aria-label="Предыдущая остановка"${gm.journeyStep === 0 ? " disabled" : ""}>‹</button>
+    <div class="gj-numbers" aria-label="Остановки маршрута">${state.stops.map((p, i) => `<button type="button" data-journey-step="${i}"${i === gm.journeyStep ? ' aria-current="step"' : ""} aria-label="Остановка ${i + 1}: ${esc(p.place)}">${i + 1}</button>`).join("")}</div>
+    <button data-journey-move="1" type="button" aria-label="Следующая остановка"${gm.journeyStep >= state.stops.length - 1 ? " disabled" : ""}>›</button>`;
+  const active = steps.querySelector('[aria-current="step"]');
+  if (active && active.scrollIntoView) active.scrollIntoView({block: "nearest", inline: "center"});
+}
+function gmJourneySelect(index) {
+  if (!gm || gmВкладка() !== "journey") return;
+  gm.journeyStep = index;
+  const state = gmJourneyState(), p = state.stop;
+  gm.at = p ? p.name : null;
+  if (p && !gmUnified() && картаТочки(p) !== gm.карта) gmКартуВыбрать(картаТочки(p));
+  gmRemember(); gmJourneyUI(); gmJourneyCard();
+  if (gmLiveWanted()) { gmLiveRender(true); return; }
+  gmJourneyPins();
+  if (p) {
+    gmFit();
+    // Вписать текущий переход целиком, а не только его конечную точку.
+    const prev = state.stops[gm.journeyStep - 1];
+    if (gm.base && prev && p.connect) {
+      const a = mapXY(gm.рамка, prev), b = mapXY(gm.рамка, p);
+      const dx = Math.abs(a.x - b.x) / 100 * gm.base.w, dy = Math.abs(a.y - b.y) / 100 * gm.base.h;
+      gm.scale = Math.max(1, Math.min(GM_MAX, 8, (gm.base.sw - 86) / Math.max(1, dx), (gm.base.sh - 100) / Math.max(1, dy)));
+      gm.tx = gm.base.sw / 2 - (a.x + b.x) / 200 * gm.base.w * gm.scale;
+      gm.ty = gm.base.sh / 2 - (a.y + b.y) / 200 * gm.base.h * gm.scale;
+      gmClamp(); gmApply();
+    } else gmFocus(p.name, 5);
+  }
+}
+function gmJourneyPins() {
+  const box = $("#gmPins"), svg = $("#gmJourneyLines");
+  if (!box || !svg || !gm) return;
+  const state = gmJourneyState();
+  if (!gm.base || !state.stop) { box.innerHTML = svg.innerHTML = ""; return; }
+  const xy = p => {
+    const v = mapXY(gm.рамка, p);
+    return {x: gm.tx + gm.base.w * gm.scale * v.x / 100, y: gm.ty + gm.base.h * gm.scale * v.y / 100};
+  };
+  svg.setAttribute("viewBox", `0 0 ${gm.base.sw} ${gm.base.sh}`);
+  const edges = [];
+  state.stops.forEach((p, i) => {
+    if (!i || (!p.connect && (i !== gm.journeyStep || p.locationUnresolved || state.stops[i-1].locationUnresolved || (p.tripId === state.stops[i-1].tripId && p.sourceIndex !== state.stops[i-1].sourceIndex + 1))) || !state.stop || (i !== gm.journeyStep && (p.ch !== state.stop.ch || state.stops[i-1].ch !== state.stop.ch)) || картаТочки(p) !== gm.карта || картаТочки(state.stops[i-1]) !== gm.карта) return;
+    const a = xy(state.stops[i - 1]), b = xy(p);
+    if (Math.hypot(a.x - b.x, a.y - b.y) < 3) return;
+    const active = i === gm.journeyStep;
+    edges.push(`<path class="gj-line${active ? " active" : ""}" d="M${a.x.toFixed(2)},${a.y.toFixed(2)} L${b.x.toFixed(2)},${b.y.toFixed(2)}"${active ? ' marker-end="url(#gjArrow)"' : ""}/>`);
+  });
+  svg.innerHTML = '<defs><marker id="gjArrow" markerWidth="8" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="currentColor"/></marker></defs>' + edges.join("");
+  const points = state.stops.map((p,i) => ({p,i,...xy(p)})).filter(v => state.stop && (v.p.ch === state.stop.ch || v.i === gm.journeyStep - 1) && картаТочки(v.p) === gm.карта);
+  // Повторные посещения остаются в ленте; на одном месте сверху выбранное.
+  points.sort((a,b) => Number(a.i === gm.journeyStep) - Number(b.i === gm.journeyStep));
+  box.innerHTML = points.map(({p,i,x,y}) => `<button type="button" class="gm-pin gj-pin${i === gm.journeyStep ? " on" : ""}" data-gm="${esc(p.name)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="Остановка ${i + 1}: ${esc(p.place)}"><i>${i + 1}</i>${i === gm.journeyStep ? `<span>${esc(p.place)}</span>` : ""}</button>`).join("");
+}
+function gmPlaceQuestion(p) {
+  const book = gm && gm.мат;
+  return `Расскажи кратко о месте «${p.place || p.name}»${p.q ? ` (${p.q})` : ""} из книги «${book ? book.title : "Совы во льдах"}». Контекст: ${p.context || p.text || "географическое место из книги"}. ${[p.period,p.timeOfDay,p.weather].filter(Boolean).join(" · ")}. Где оно находится, как выглядит, что в нём важно и интересно? До 5 коротких пунктов, со ссылками и фотографиями, если доступны. Не выдумывай детали эпизода и не раскрывай дальнейший сюжет.`;
+}
+function gmJourneyCard() {
+  const card = $("#gmCard");
+  if (!card || !gm) return;
+  const state = gmJourneyState(), p = state.stop;
+  card.hidden = !p;
+  if (!p) { card.innerHTML = ""; return; }
+  const chapter = (gm.мат.chapters || [])[p.ch - 1];
+  const names = state.trip.people.filter(person => (p.people || []).includes(person.id)).map(person => person.name);
+  const previous = state.stops[gm.journeyStep - 1];
+  let distance = "";
+  if (previous) {
+    const rad = x => x * Math.PI / 180;
+    const a = Math.sin(rad(p.lat - previous.lat) / 2) ** 2 + Math.cos(rad(previous.lat)) * Math.cos(rad(p.lat)) * Math.sin(rad(p.lon - previous.lon) / 2) ** 2;
+    const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+    distance = `<p class="gj-location">От ${esc(previous.place)} · ≈ ${Math.max(1, Math.round(km))} км по прямой</p>`;
+  }
+  const query = encodeURIComponent(p.q || p.place);
+  card.innerHTML = `<div class="gj-meta">${esc(names.join(" · "))}</div><b>${esc(p.place)}</b>
+    <p class="gj-chapter">${esc(chapter ? chapter.name : "")}</p><div class="gj-context">${[p.period ? `📅 ${p.period}${p.periodScope === "сезон поездки" ? " · сезон поездки" : ""}` : "",p.timeOfDay ? `◷ ${p.timeOfDay}` : "",p.weather ? `☁ ${p.weather}` : ""].filter(Boolean).map(v=>`<span>${esc(v)}</span>`).join("")}</div><p class="gj-story">${esc(p.text || "")}</p>${distance}
+    ${p.quote ? `<details class="gj-excerpt"><summary>Фрагмент из главы</summary><blockquote>${esc(p.quote)}</blockquote></details>` : ""}
+    <div class="gm-links"><a href="https://chatgpt.com/?q=${encodeURIComponent(gmPlaceQuestion(p))}" target="_blank" rel="noopener">ChatGPT</a><a href="https://yandex.ru/maps/?ll=${p.lon},${p.lat}&amp;z=12&amp;pt=${p.lon},${p.lat},pm2rdm" target="_blank" rel="noopener">Я.Карты</a>
+    <a href="https://earth.google.com/web/@${p.lat},${p.lon},0a,12000d,35y,0h,0t,0r" target="_blank" rel="noopener">Earth</a>
+    <a href="https://www.google.com/search?tbm=isch&amp;q=${query}" target="_blank" rel="noopener">Фото</a></div>
+`;
+}
+
 function bindPlaceMap() {
   const box = $("#gmap"), stage = $("#gmStage");
   if (!box || !stage) return;
   $("#gmClose").addEventListener("click", closePlaceMap);
+
+  box.addEventListener("change", e => {
+    if (!gm) return;
+    if (e.target.id === "gmJourneyPerson") {
+      gm.journeyPerson = e.target.value; gm.journeyStep = 0; gmJourneySelect(0);
+    } else if (e.target.id === "gmJourneyChapter") {
+      const index = gmJourneyState().stops.findIndex(p => p.ch === Number(e.target.value));
+      if (index >= 0) gmJourneySelect(index);
+    }
+  });
+  box.addEventListener("click", e => {
+    if (e.target.closest("[data-gm-live-retry]") && gm) { gm.liveFailed = false; gmLiveRender(true); return; }
+    const step = e.target.closest("[data-journey-step]");
+    if (step) { gmJourneySelect(Number(step.dataset.journeyStep)); return; }
+    const move = e.target.closest("[data-journey-move]");
+    if (move && gm) gmJourneySelect((gm.journeyStep || 0) + Number(move.dataset.journeyMove));
+  });
 
   const поле = $("#gmFind");
   if (поле) {
@@ -14763,6 +15139,7 @@ function bindPlaceMap() {
     const b = e.target.closest("[data-layer]");
     if (!b || !gm) return;
     gm.слой = b.dataset.layer;
+    if (b.dataset.layer === "place") gm.placeDetail = false;
     /* Главу держим: человек читает главу и смотрит, что в ней есть по разным
        слоям. Снимаем только выбранную точку — она была из прошлого слоя. */
     gm.at = null;
@@ -14773,6 +15150,7 @@ function bindPlaceMap() {
     if (пф) { пф.value = ""; пф.placeholder = b.dataset.layer === "read" ? "Найти в тексте" : "Найти в книге"; }
     const хиты = $("#gmHits"); if (хиты) { хиты.hidden = true; хиты.innerHTML = ""; }
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard(); gmFit();
+    if (b.dataset.layer === "journey") gmJourneySelect(gm.journeyStep);
     /* На «Текст» приходят за конкретным местом, а не листать: ставим курсор в
        поиск сразу. Фокус только здесь и только в этом жесте — иначе айфон
        клавиатуру не покажет. */
@@ -14807,6 +15185,7 @@ function bindPlaceMap() {
     /* Найденное могло лежать в другом слое и другой главе — переходим туда,
        иначе нажатие показывало бы пустоту. */
     if (b.dataset.hitlayer) gm.слой = b.dataset.hitlayer;
+    if (gmВкладка() === "place") gm.placeDetail = true;
     if (b.dataset.hitpart) gm.часть = Number(b.dataset.hitpart) || 0;
     /* Найденное может лежать на другой карте — переходим и на неё. */
     const чужая = gm.места.find((p) => p.name === gm.at);
@@ -14821,6 +15200,7 @@ function bindPlaceMap() {
   });
 
   box.addEventListener("click", (e) => {
+    if (e.target.closest("#gmLive")) return;
     const shot = e.target.closest("[data-shots]");
     if (shot) {
       e.preventDefault();
@@ -14829,10 +15209,19 @@ function bindPlaceMap() {
       return;
     }
     if (!gm) return;
+    const place = e.target.closest("[data-gm-place]");
+    if (place) { gm.at = place.dataset.gmPlace; gm.placeDetail = true; gmList(); gmPins(); gmCard(); gmFit(); return; }
+    if (e.target.closest("[data-gm-back]")) { gm.placeDetail = false; gmList(); gmCard(); return; }
     const куча = e.target.closest("[data-many]");
     if (куча) { gmCluster(gm.кучки && gm.кучки[куча.dataset.many]); return; }
     const pin = e.target.closest("[data-gm]");
     if (pin) {
+      if (gmВкладка() === "journey") {
+        const state = gmJourneyState();
+        const index = state.stops.findIndex(p => p.name === pin.dataset.gm);
+        if (index >= 0) gmJourneySelect(index);
+        return;
+      }
       gm.at = gm.at === pin.dataset.gm ? null : pin.dataset.gm;
       /* В списке карточка раскрывается прямо в строке, и нижняя не нужна:
          иначе один и тот же текст стоял бы дважды. */
@@ -14845,7 +15234,7 @@ function bindPlaceMap() {
     /* Нажал мимо точки — выбор снимается и карточка уходит: закрывать её
        отдельной кнопкой неудобно, а пустое место рядом всегда под рукой.
        После перетаскивания карты выбор не трогаем: это был не тычок. */
-    if (!e.target.closest("#gmStage") || тянули || !gm.at) return;
+    if (!e.target.closest("#gmStage") || тянули || !gm.at || gmВкладка() === "journey") return;
     gm.at = null;
     gmPins();
     gmCard();
@@ -14856,7 +15245,7 @@ function bindPlaceMap() {
   const точки = new Map();
   let старт = null, щипок = false, тянули = false;
   stage.addEventListener("pointerdown", (e) => {
-    if (!gm) return;
+    if (!gm || gmLiveWanted()) return;
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
     // Метке оставляем обычный click; захватим указатель, только если её потянут.
     if (!e.target.closest("[data-gm], [data-many]")) {
@@ -14874,7 +15263,7 @@ function bindPlaceMap() {
     }
   });
   stage.addEventListener("pointermove", (e) => {
-    if (!gm || !точки.has(e.pointerId)) return;
+    if (gmLiveWanted() || !gm || !точки.has(e.pointerId)) return;
     точки.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (точки.size === 1 && старт && старт.tx !== undefined && !старт.d) {
       const dx = e.clientX - старт.x, dy = e.clientY - старт.y;
@@ -14909,7 +15298,7 @@ function bindPlaceMap() {
   stage.addEventListener("pointercancel", конец);
 
   stage.addEventListener("wheel", (e) => {
-    if (!gm) return;
+    if (!gm || gmLiveWanted()) return;
     e.preventDefault();
     const r = stage.getBoundingClientRect();
     const cx = e.clientX - r.left, cy = e.clientY - r.top;
@@ -14926,6 +15315,7 @@ function bindPlaceMap() {
      Поэтому считаем двойным касанием только одиночные тапы без движения. */
   let last = 0, lastXY = null;
   stage.addEventListener("pointerup", (e) => {
+    if (gmLiveWanted()) return;
     const t = Date.now();
     const одиночный = !щипок && !тянули;      // ни второго пальца, ни перетаскивания
     const рядом = lastXY && Math.hypot(e.clientX - lastXY.x, e.clientY - lastXY.y) < 30;

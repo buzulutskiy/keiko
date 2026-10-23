@@ -1593,7 +1593,10 @@
        «Что прочитал?». Сдвиг вверх равняет её середину с серединой заголовка. */
     /* Книги и люди — не точки на глобусе: их читают, а не ищут глазами.
        Поэтому у этих слоёв вместо карты список, который листается. */
-    #gmList[hidden] { display: none; }
+    #gmList[hidden], #gmPlaceBack[hidden] { display: none; }
+    .gj-context { display:flex; flex-wrap:wrap; gap:6px 12px; margin:8px 0; font-size:12px; line-height:1.5; color:var(--muted); }
+    #gmPlaceBack { margin: 8px 16px; padding: 12px; color: inherit; background: transparent; border: 0; text-align: left; }
+    #gmList .gl-txt i { white-space: normal; line-height: 1.5; }
     #gmList {
       flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
       padding: 0 14px calc(env(safe-area-inset-bottom) + 20px); display: grid;
@@ -2093,6 +2096,41 @@
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
       background: var(--glass); border: 1px solid var(--glass-line); font-size: 1.1rem;
     }
+    #gmLive { position: absolute; inset: 0; background: var(--card); }
+    #gmLive[hidden], #gmLiveStatus[hidden] { display: none; }
+    #gmStage.gm-live > #gmWrap, #gmStage.gm-live > #gmPins, #gmStage.gm-live > #gmJourneyLines { display: none; }
+    #gmLiveStatus { position: absolute; top: 10px; left: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--card); color: var(--ink); border: 1px solid var(--line); font-size: .8rem; }
+    #gmLiveStatus button { flex-shrink: 0; min-height: 44px; border-radius: 9px; background: var(--glass); color: var(--gold); border: 1px solid var(--line); }
+    #gmJourneyControls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; padding: 0 14px 12px; flex-shrink: 0; }
+    #gmJourneyControls[hidden], #gmJourneySteps[hidden] { display: none; }
+    .gj-select { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: .72rem; }
+    .gj-select select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 24px 10px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: inherit; font-size: .86rem; text-overflow: ellipsis; }
+    .gj-select select:focus-visible, #gmJourneySteps button:focus-visible, .gj-pin:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    #gmJourneyControls .gj-empty { grid-column: 1 / -1; color: var(--muted); font-size: .86rem; line-height: 1.5; margin: 4px 0; }
+    #gmJourneyLines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: var(--gold); }
+    .gj-line { fill: none; stroke: var(--gold); stroke-width: 2; stroke-dasharray: 4 6; opacity: .38; stroke-linecap: round; }
+    .gj-line.active { stroke-width: 3; stroke-dasharray: none; opacity: 1; filter: drop-shadow(0 1px 2px #0009); }
+    #gmPins .gj-pin { width: 44px; height: 44px; }
+    #gmPins .gj-pin i { display: grid; place-items: center; width: 25px; height: 25px; font: 750 .72rem / 1 system-ui; font-style: normal; background: var(--card); color: var(--ink); border: 1.5px solid var(--gold); box-shadow: 0 2px 5px #0006; }
+    #gmPins .gj-pin.on { z-index: 1; }
+    #gmPins .gj-pin.on i { width: 31px; height: 31px; background: var(--gold); color: var(--bg); box-shadow: 0 0 0 5px color-mix(in srgb, var(--gold) 24%, transparent); }
+    #gmPins .gj-pin span { opacity: 1; bottom: 42px; max-width: 220px; white-space: normal; text-align: center; padding: 5px 9px; border-radius: 9px; background: var(--card); color: var(--ink); text-shadow: none; border: 1px solid var(--line); }
+    #gmJourneySteps { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 8px 12px; border-top: 1px solid var(--line); }
+    #gmJourneySteps button { width: 44px; height: 44px; flex: 0 0 44px; border: 1px solid var(--line); border-radius: 13px; background: var(--glass); font-size: .92rem; color: var(--muted); }
+    #gmJourneySteps button:disabled { opacity: .3; }
+    #gmJourneySteps button[aria-current] { color: var(--bg); background: var(--gold); border-color: var(--gold); font-weight: 750; }
+    .gj-numbers { display: flex; flex: 1; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    .gj-numbers::-webkit-scrollbar { display: none; }
+    #gmCard .gj-meta, #gmCard .gj-chapter, .gj-note { font-size: .72rem; line-height: 1.4; color: var(--muted); }
+    #gmCard .gj-meta { margin-bottom: 6px; }
+    #gmCard .gj-chapter { margin: 0 0 10px; }
+    #gmCard .gj-story { font-size: .88rem; line-height: 1.5; color: var(--ink); margin-bottom: 10px; }
+    .gj-excerpt { font-size: .83rem; line-height: 1.5; margin: 0 0 12px; }
+    .gj-excerpt summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+    .gj-excerpt blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--gold); }
+    #gmCard .gj-location { font-size: .75rem; color: var(--muted); line-height: 1.45; margin: 10px 0 0; }
+    .gj-note { margin-top: 10px; opacity: .8; }
+    @media (prefers-reduced-motion: reduce) { #gmCard { animation: none; } }
     #gmStage {
       flex: 1 1 auto; position: relative; overflow: hidden; touch-action: none;
     }
@@ -4145,11 +4183,17 @@
       <button id="gmToc" type="button" aria-label="Выбрать главу"><b></b><i>▾</i></button>
       <input id="gmFind" type="search" placeholder="Найти в книге" autocomplete="off" enterkeyhint="search">
     </div>
+    <div id="gmJourneyControls" hidden></div>
     <div id="gmHits" hidden></div>
+    <button id="gmPlaceBack" class="gm-back" data-gm-back type="button" hidden>← К списку мест</button>
     <div id="gmStage">
+      <div id="gmLive" hidden aria-label="Интерактивная Яндекс.Карта"></div>
+      <div id="gmLiveStatus" hidden role="status"></div>
       <div id="gmWrap"><img id="gmImg" alt="" draggable="false"></div>
+      <svg id="gmJourneyLines" aria-hidden="true"></svg>
       <div id="gmPins"></div>
     </div>
+    <div id="gmJourneySteps" hidden></div>
     <div id="gmList" hidden></div>
     <div id="gmWords" hidden></div>
     <div id="gmCol" hidden></div>

@@ -4383,6 +4383,99 @@ const сеть = (() => {
   t.set('data', before);
 }
 
+/* ── Географические маршруты: не путать с траекториями чтения ── */
+{
+  const trips = t.get('typeof journeyTrips === "function" ? journeyTrips : null');
+  ок('маршруты: есть безопасный отбор остановок', typeof trips, 'function');
+  if (trips) {
+    const before = t.get('data');
+    const b = {id:'journey-test',pages:50,startPage:1,chapters:[
+      {name:'Начало',from:1},{name:'В пути',from:10},{name:'Дальше',from:30}]};
+    const article = {map:[{name:'А',lat:45,lon:136,m:'local'},{name:'Б',lat:46,lon:137,m:'local'}],
+      journeys:[{id:'trip',name:'Поездка',people:[{id:'j',name:'Джонатан'},{id:'t',name:'Толя'}],stops:[
+        {place:'А',ch:1,people:['j','t'],text:'Начало'},
+        {place:'Б',ch:2,people:['j'],text:'Поездка'},
+        {place:'А',ch:2,people:['j','t'],text:'Возвращение'},
+        {place:'Неизвестно',ch:2,people:['j']},
+        {place:'Б',ch:3,people:['j'],text:'Секрет'}]},
+        {id:'future',name:'Будущая поездка',people:[{id:'x',name:'Неизвестный'}],stops:[{place:'Б',ch:3,people:['x']}]}]};
+    t.set('data',{...before,book:{...before.book,books:[b],entries:[]}});
+    t.get('ARTS')[b.id]=article;
+    ок('маршруты: до завершения главы ничего не раскрыто', trips(b).length,0);
+    t.get('data').book.entries=[{bookId:b.id,page:9}];
+    ок('маршруты: на последней странице глава открыта', trips(b).map(x=>x.id),['trip']);
+    const stops=t.get('journeyStops');
+    ок('маршруты: будущая глава скрыта',stops(b,'trip','j').map(x=>x.place),['А']);
+    t.get('data').book.entries[0].page=29;
+    const js=stops(b,'trip','j'),ts=stops(b,'trip','t');
+    ок('маршруты: повторный визит не схлопнулся',js.map(x=>x.place),['А','Б','А']);
+    ок('маршруты: отдельные пути участников',ts.map(x=>x.place),['А','А']);
+    ок('маршруты: нет линии через неизвестное движение участника',ts.map(x=>x.connect),[false,false]);
+    ок('маршруты: смежные остановки соединены',js.map(x=>x.connect),[false,true,true]);
+    ок('маршруты: неизвестные координаты не выдумываются',js.length,3);
+    ок('маршруты: участник не получает чужие эпизоды',stops(b,'trip','x').length,0);
+    t.get('data').book.entries.push({bookId:b.id,page:50,deleted:true});
+    ок('маршруты: удалённая отметка не открывает будущее',trips(b).length,1);
+    ок('маршруты: у старой книги нет новой вкладки',trips({id:'legacy'}).length,0);
+    article.journeys[0].stops[1].lat=45.5;
+    article.journeys[0].stops[1].lon=136.5;
+    ок('маршруты: геопривязка эпизода уточняет общую точку',stops(b,'trip','j')[1].lat,45.5);
+    article.journeys[0].stops[1].locationUnresolved=true;
+    ок('маршруты: нет линий к неподтверждённому месту и от него',stops(b,'trip','j').map(x=>x.connect),[false,false,false]);
+    article.journeys[0].stops[1].lat=999;
+    ок('маршруты: некорректная поправка координат отбрасывается',stops(b,'trip','j').map(x=>x.place),['А','А']);
+    article.journeys.push({id:'later',name:'Позже',people:[{id:'j',name:'Джонатан'}],stops:[{place:'Б',ch:2,people:['j']}]});
+    const timeline=t.get('journeyTimeline')(b,'j');
+    ок('маршруты: поездки объединены в порядок глав',timeline.map(p=>p.ch),[1,2,2]);
+    ок('маршруты: граница поездок не выдаётся за известный переезд',timeline[timeline.length-1].connect,false);
+    t.get('data').book.entries[0].page=50;
+    article.journeys=[{id:'a',people:[{id:'j',name:'Джонатан'}],stops:[
+      {place:'А',ch:1,people:['j']},{place:'Б',ch:3,people:['j']}]},
+      {id:'b',people:[{id:'j',name:'Джонатан'}],stops:[{place:'А',ch:2,people:['j']}]}];
+    ок('маршруты: сортировка глав не соединяет разные поездки',t.get('journeyTimeline')(b,'j').map(p=>p.connect),[false,false,false]);
+    const gmBefore=t.get('gm');
+    article.yandex={key:'test'};
+    t.set('gm',{id:b.id,мат:b,слой:'journey',карта:'local',journeyPerson:'j',journeyStep:1});
+    const model=t.get('gmLiveModel')();
+    ок('маршруты: предыдущая точка видна на границе глав',model.points.map(p=>p.ch),[1,2]);
+    ок('маршруты: направляющая соединяет выбранный переход между главами',model.segments.length,1);
+    article.journeys[1].stops[0].locationUnresolved=true;
+    ок('маршруты: направляющая не притворяется известной для неустановленного места',t.get('gmLiveModel')().segments.length,0);
+    t.set('gm',gmBefore);
+    delete t.get('ARTS')[b.id]; t.set('data',before);
+  }
+}
+
+/* ── Живая карта: конфигурация и ограничения маршрута ── */
+{
+  const config=t.get('typeof mapYandexKey === "function" ? mapYandexKey : null');
+  ок('Яндекс: ключ читается из материала, не из кода',typeof config,'function');
+  if(config) {
+    t.get('ARTS')['live-test']={yandex:{key:' test-key '}};
+    ок('Яндекс: ключ без пробелов',config({id:'live-test'}),'test-key');
+    ок('Яндекс: старый материал не подключает внешний сервис',config({id:'legacy'}),'');
+    delete t.get('ARTS')['live-test'];
+    const previous=t.get('gm');
+    t.set('gm',{id:'live-test',мат:{id:'live-test'},карта:'a',слой:'place',часть:0,
+      места:[{name:'Safe',lat:45,lon:136,m:'a'},{name:'Other',lat:40,lon:30,m:'b'}],карты:[{key:'a'},{key:'b'}]});
+    ок('Яндекс: модель не смешивает карты',t.get('gmLiveModel')().points.map(p=>p.name),['Safe']);
+    ок('Яндекс: обычные места не соединяются линиями',t.get('gmLiveModel')().segments.length,0);
+    t.get('ARTS')['live-test']={yandex:{key:'test-key'}};
+    ок('Яндекс: единая карта показывает точки разных регионов',t.get('gmLiveModel')().points.map(p=>p.name),['Safe','Other']);
+    t.get('gm').placeDetail=true; t.get('gm').at='Other';
+    ок('Места: на карте только выбранное место',t.get('gmLiveModel')().points.map(p=>p.name),['Other']);
+    t.get('gm').placeDetail=false;
+    t.get('gm').слой='place'; t.get('gm').часть=7; t.get('gm').journeyTrip='trip';
+    t.get('gm').journeyPerson='j'; t.get('gm').journeyStep=4; t.get('gmRemember')();
+    const saved=t.get('gmSaved')('live-test');
+    ок('карта: запомнились вкладка, глава и остановка', [saved.слой,saved.часть,saved.journeyTrip,saved.journeyPerson,saved.journeyStep],['place',7,'trip','j',4]);
+    ок('карта: состояние разделено по книгам',t.get('gmSaved')('other-book'),{});
+    delete t.get('ARTS')['live-test'];
+
+    t.set('gm',previous);
+  }
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   testTimeouts.forEach(clearTimeout);
