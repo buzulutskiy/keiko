@@ -4440,7 +4440,7 @@ const сеть = (() => {
     ок('маршруты: предыдущая точка видна на границе глав',model.points.map(p=>p.ch),[1,2]);
     ок('маршруты: направляющая соединяет выбранный переход между главами',model.segments.length,1);
     article.journeys[1].stops[0].locationUnresolved=true;
-    ок('маршруты: направляющая не притворяется известной для неустановленного места',t.get('gmLiveModel')().segments.length,0);
+    ок('маршруты: схематическая связь выбранных эпизодов видна и для приблизительной области',t.get('gmLiveModel')().segments.length,1);
     t.set('gm',gmBefore);
     delete t.get('ARTS')[b.id]; t.set('data',before);
   }
