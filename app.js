@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 597";
+const APP_VERSION = "Кэйко 598";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14564,6 +14564,7 @@ function gmCard() {
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     ${p.context ? `<p class="gm-context">${esc(p.context)}</p>` : `<p>${esc(p.t || "")}</p>`}
+    ${p.temperatureNote ? `<details class="gj-excerpt"><summary>О температуре</summary><p>${esc(p.temperatureNote)}</p><a href="${esc(p.temperatureSource)}" target="_blank" rel="noopener">Климатическая норма · JMA</a></details>` : ""}
     ${p.locationBasis ? `<details class="gj-excerpt"><summary>Почему здесь</summary><p>${esc(p.locationBasis)}</p></details>` : ""}
     ${p.contextQuote ? `<details class="gj-excerpt"><summary>В тексте главы</summary><blockquote>${esc(p.contextQuote)}</blockquote></details>` : ""}
     ${p.approximate ? '<p class="gj-location">Место указано приблизительно.</p>' : ""}
@@ -15083,7 +15084,7 @@ function gmJourneyCard() {
   }
   const query = encodeURIComponent(p.q || p.place);
   card.innerHTML = `<div class="gj-meta">${esc(names.join(" · "))}</div><b>${esc(p.place)}</b>
-    <p class="gj-chapter">${esc(chapter ? chapter.name : "")}</p><div class="gj-context">${[p.period ? `📅 ${p.period}${p.periodScope === "сезон поездки" ? " · сезон поездки" : ""}` : "",p.timeOfDay ? `◷ ${p.timeOfDay}` : "",p.weather ? `☁ ${p.weather}` : "",p.transport || ""].filter(Boolean).map(v=>`<span>${esc(v)}</span>`).join("")}</div><p class="gj-story">${esc(p.text || "")}</p>${distance}
+    <p class="gj-chapter">${esc(chapter ? chapter.name : "")}</p><div class="gj-context">${[p.period ? `📅 ${p.period}${p.periodScope === "сезон поездки" ? " · сезон поездки" : ""}` : "",p.timeOfDay ? `◷ ${p.timeOfDay}` : "",p.weather ? `☁ ${p.weather}` : "",p.transport || "",p.temperature ? `${p.temperature} · климатический ориентир` : ""].filter(Boolean).map(v=>`<span>${esc(v)}</span>`).join("")}</div><p class="gj-story">${esc(p.text || "")}</p>${distance}
     ${p.locationBasis ? `<details class="gj-excerpt"><summary>Почему здесь</summary><p>${esc(p.locationBasis)}</p>${(p.locationSources || []).map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join(" · ")}</details>` : ""}
     ${p.quote ? `<details class="gj-excerpt"><summary>Фрагмент из главы</summary><blockquote>${esc(p.quote)}</blockquote></details>` : ""}
     <div class="gm-links"><a href="https://chatgpt.com/?q=${encodeURIComponent(gmPlaceQuestion(p))}" target="_blank" rel="noopener">ChatGPT</a><a href="https://yandex.ru/maps/?ll=${p.lon},${p.lat}&amp;z=12&amp;pt=${p.lon},${p.lat},pm2rdm" target="_blank" rel="noopener">Я.Карты</a>
