@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 602";
+const APP_VERSION = "Кэйко 603";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13873,7 +13873,7 @@ function gmList() {
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "heroes") {
-    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).map(h => `<article class="gl-it gm-hero"><div class="gl-head"><span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span><span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Для этой книги пока нет описаний героев.</div>';
+    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).map(h => `<article class="gl-it gm-hero"><div class="gl-head">${heroPhotoOf(h) ? `<button class="hp-thumb" type="button" data-hero-photo="${esc(h.id)}" aria-label="Открыть фотографию: ${esc(h.name)}"><img src="${esc(heroPhotoOf(h).data || heroPhotoOf(h).url)}" alt="${esc(heroPhotoOf(h).caption || h.name)}" loading="lazy"><span aria-hidden="true">⤢</span></button>` : `<span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span>`}<span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Для этой книги пока нет описаний героев.</div>';
     return;
   }
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
@@ -15094,6 +15094,38 @@ function gmJourneyCard() {
 `;
 }
 
+function heroPhotoOf(h) { return h && ((artsOf(gm.id) || {}).heroPhotos || {})[h.photoId]; }
+function openHeroPhoto(id) {
+  const h = ((artsOf(gm.id) || {}).heroes || []).find(x => x.id === id), photo = heroPhotoOf(h);
+  if (!photo) return;
+  let dialog = $("#heroPhotoViewer");
+  if (!dialog) {
+    dialog = document.createElement("dialog"); dialog.id = "heroPhotoViewer";
+    dialog.setAttribute("aria-label", "Просмотр фотографии героя");
+    dialog.innerHTML = `<div class="hp-top"><b id="hpName"></b><button type="button" data-hp="close" aria-label="Закрыть фотографию">✕</button></div><div class="hp-stage" tabindex="0" aria-label="Фотография. Стрелки перемещают увеличенный снимок"><img draggable="false" alt=""></div><div class="hp-tools"><button type="button" data-hp="minus" aria-label="Уменьшить">−</button><button type="button" data-hp="reset">100%</button><button type="button" data-hp="plus" aria-label="Приблизить">+</button></div><div class="hp-caption"><p></p><a target="_blank" rel="noopener">Источник фотографии ↗</a></div>`;
+    document.body.appendChild(dialog);
+    const stage = dialog.querySelector('.hp-stage'), img = stage.querySelector('img'), pts = new Map();
+    let zoom = 1, x = 0, y = 0, start = null;
+    const apply = () => { img.style.transform = `translate(${x}px,${y}px) scale(${zoom})`; dialog.querySelector('[data-hp="reset"]').textContent = Math.round(zoom*100)+'%'; };
+    const setZoom = value => { zoom = Math.max(1,Math.min(6,value)); if (zoom === 1) x=y=0; apply(); };
+    dialog.resetPhoto = () => { pts.clear(); start=null; zoom=1; x=y=0; apply(); };
+    dialog.addEventListener('click',e=> { const b=e.target.closest('[data-hp]'); if(!b)return; if(b.dataset.hp==='close')dialog.close(); else if(b.dataset.hp==='reset')setZoom(1); else setZoom(zoom+(b.dataset.hp==='plus'?.5:-.5)); });
+    const distance = () => { const a=[...pts.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); };
+    stage.addEventListener('pointerdown',e=> { stage.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); start=pts.size===2?{d:distance(),z:zoom}: {mx:e.clientX,my:e.clientY,x,y}; });
+    stage.addEventListener('pointermove',e=> {if(!pts.has(e.pointerId))return; e.preventDefault();pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pts.size===2&&start.d)setZoom(start.z*distance()/Math.max(1,start.d));else if(pts.size===1&&zoom>1&&start.mx!=null){x=start.x+e.clientX-start.mx;y=start.y+e.clientY-start.my;apply();} });
+    stage.addEventListener('keydown',e=> { const moves={ArrowLeft:[40,0],ArrowRight:[-40,0],ArrowUp:[0,40],ArrowDown:[0,-40]}; if(zoom>1 && moves[e.key]) {e.preventDefault();x+=moves[e.key][0];y+=moves[e.key][1];apply();} });
+    const drop = e=> {pts.delete(e.pointerId);const v=[...pts.values()][0];start=v?{mx:v.x,my:v.y,x,y}:null;};
+    stage.addEventListener('pointerup',drop);stage.addEventListener('pointercancel',drop);
+    stage.addEventListener('wheel',e=> {e.preventDefault();setZoom(zoom*(e.deltaY<0?1.15:1/1.15));},{passive:false});
+    stage.addEventListener('dblclick',()=>setZoom(zoom===1?2.5:1));
+  }
+  dialog.querySelector('#hpName').textContent=h.name;
+  const img=dialog.querySelector('.hp-stage img');img.src=photo.data || photo.url;img.alt=photo.caption || h.name;
+  dialog.querySelector('.hp-caption p').textContent=photo.caption+(photo.credit?' · '+photo.credit:'');
+  dialog.querySelector('.hp-caption a').href=photo.source;
+  dialog.resetPhoto(); if(!dialog.open)dialog.showModal();
+}
+
 function bindPlaceMap() {
   const box = $("#gmap"), stage = $("#gmStage");
   if (!box || !stage) return;
@@ -15210,6 +15242,8 @@ function bindPlaceMap() {
   });
 
   box.addEventListener("click", (e) => {
+    const portrait = e.target.closest("[data-hero-photo]");
+    if (portrait) { openHeroPhoto(portrait.dataset.heroPhoto); return; }
     if (e.target.closest("#gmLive")) return;
     const shot = e.target.closest("[data-shots]");
     if (shot) {

@@ -1594,6 +1594,21 @@
     /* Книги и люди — не точки на глобусе: их читают, а не ищут глазами.
        Поэтому у этих слоёв вместо карты список, который листается. */
     #gmList[hidden], #gmPlaceBack[hidden] { display: none; }
+    .hp-thumb { width:96px; height:96px; flex-shrink:0; position:relative; padding:0; border:0; border-radius:12px; overflow:hidden; background:#24242c; cursor:zoom-in; }
+    .hp-thumb img { width:100%; height:100%; object-fit:contain; }
+    .hp-thumb span { position:absolute; right:4px; bottom:2px; color:white; text-shadow:0 1px 4px black; }
+    #heroPhotoViewer { padding:0; width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; margin:0; border:0; color:#f5f4fa; background:#0d0d14; }
+    #heroPhotoViewer[open] { display:flex; flex-direction:column; }
+    #heroPhotoViewer::backdrop { background:#000c; }
+    .hp-top { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; gap:12px; }
+    #heroPhotoViewer button { color:inherit; background:#252530; border:1px solid #41414f; border-radius:12px; min-width:44px; min-height:44px; cursor:pointer; }
+    #heroPhotoViewer button:focus-visible { outline:2px solid #ffcf4a; outline-offset:3px; }
+    .hp-stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:none; cursor:grab; }
+    .hp-stage img { width:100%; height:100%; object-fit:contain; user-select:none; }
+    .hp-tools { display:flex; justify-content:center; gap:12px; padding:12px; }
+    .hp-caption { padding:0 16px max(16px,env(safe-area-inset-bottom)); font-size:13px; line-height:1.5; }
+    .hp-caption p { margin:0 0 8px; }
+    .hp-caption a { color:#b9abff; }
     .gm-hero > p { margin:0; padding:0 16px 16px; font-size:14px; line-height:1.55; }
     .gm-hero .gl-head { cursor:default; }
     .gj-context { display:flex; flex-wrap:wrap; gap:6px 12px; margin:8px 0; font-size:12px; line-height:1.5; color:var(--muted); }
