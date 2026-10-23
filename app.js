@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 594";
+const APP_VERSION = "Кэйко 595";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -14564,6 +14564,7 @@ function gmCard() {
   card.innerHTML = `
     <b>${esc(p.name)}</b>
     ${p.context ? `<p class="gm-context">${esc(p.context)}</p>` : `<p>${esc(p.t || "")}</p>`}
+    ${p.locationBasis ? `<details class="gj-excerpt"><summary>Почему здесь</summary><p>${esc(p.locationBasis)}</p></details>` : ""}
     ${p.contextQuote ? `<details class="gj-excerpt"><summary>В тексте главы</summary><blockquote>${esc(p.contextQuote)}</blockquote></details>` : ""}
     ${p.approximate ? '<p class="gj-location">Место указано приблизительно.</p>' : ""}
     ${!p.context && p.about ? `<p class="gm-about">${esc(p.about)}</p>` : ""}
@@ -15074,11 +15075,11 @@ function gmJourneyCard() {
   const previous = state.stops[gm.journeyStep - 1];
   let distance = "";
   if (p.bookDistance) distance = `<p class="gj-location">${esc(p.bookDistance)}</p>`;
-  else if (previous) {
+  else if (previous && !p.locationUnresolved && !previous.locationUnresolved) {
     const rad = x => x * Math.PI / 180;
     const a = Math.sin(rad(p.lat - previous.lat) / 2) ** 2 + Math.cos(rad(previous.lat)) * Math.cos(rad(p.lat)) * Math.sin(rad(p.lon - previous.lon) / 2) ** 2;
     const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
-    distance = `<p class="gj-location">От ${esc(previous.place)} · ≈ ${Math.max(1, Math.round(km))} км по прямой</p>`;
+    distance = `<p class="gj-location">От ${esc(previous.place)} · ≈ ${Math.max(1, Math.round(km))} км между метками по прямой</p>`;
   }
   const query = encodeURIComponent(p.q || p.place);
   card.innerHTML = `<div class="gj-meta">${esc(names.join(" · "))}</div><b>${esc(p.place)}</b>
