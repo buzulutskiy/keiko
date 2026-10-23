@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 593";
+const APP_VERSION = "Кэйко 594";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13672,7 +13672,7 @@ const gmIcon = (p) => (p && p.icon) || GM_ICONS[слойТочки(p)] || "•";
    Второй двери у них нет и не было: слова набирают на самом экране, так что
    это не «вход потеряли», а «затею отложили». Либо ей находят своё место,
    либо она уезжает в attic целиком — но не остаётся вот так. */
-const ВКЛАДКИ = [["journey", "Маршруты"], ["place", "Места"], ["col", "Собрание"]];
+const ВКЛАДКИ = [["journey", "Маршруты"], ["place", "Места"], ["heroes", "Герои"], ["col", "Собрание"]];
 /* Какая вкладка открыта. По умолчанию — первая из имеющихся, а не «Места»:
    у книги без географии («Письма Баламута», «Снег на траве») мест нет вовсе,
    и открываться она должна сразу списком, а не пустой картой. */
@@ -13690,6 +13690,7 @@ function gmLayersOf() {
      же место. */
   if (colMat() && colItems().length) есть.add("col");
   if (gm.подложка !== false && ((artsOf(gm.id) || {}).journeys || []).length) есть.add("journey");
+  if (((artsOf(gm.id) || {}).heroes || []).length) есть.add("heroes");
   return ВКЛАДКИ.filter(([k]) => есть.has(k));
 }
 /* Сколько всего в главе — по всем слоям сразу, с разбивкой. В содержании
@@ -13864,13 +13865,17 @@ function gmList() {
   if (!box || !gm) return;
   const вкладка = gmВкладка();
   const местаСписком = вкладка === "place" && !gm.placeDetail;
-  const списком = вкладка === "all" || местаСписком;
+  const списком = вкладка === "all" || вкладка === "heroes" || местаСписком;
   box.hidden = !списком;
   if (сцена) сцена.hidden = местаСписком || (вкладка !== "place" && вкладка !== "journey");
   const back = $("#gmPlaceBack");
   if (back) back.hidden = вкладка !== "place" || !gm.placeDetail;
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
+  if (вкладка === "heroes") {
+    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).filter(h => journeyChapterOpen(gm.мат,h.ch)).map(h => `<article class="gl-it gm-hero"><div class="gl-head"><span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span><span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Герои появятся после прочитанных глав.</div>';
+    return;
+  }
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
   if (вкладка === "col") { box.innerHTML = ""; colRender(); return; }
   if (!списком) { box.innerHTML = ""; return; }
@@ -14259,7 +14264,7 @@ function gmLayersRow() {
      этой оговорки «Слова» не показывались никогда. */
   /* Вкладки без точек на карте: «Текст», «Слова», «Собрание». Забыть внести
      сюда новую значит потерять её молча — так уже случилось дважды. */
-  const свои = new Set(["place", "read", "ask", "col", "journey"]);
+  const свои = new Set(["place", "read", "ask", "col", "journey", "heroes"]);
   const вкладки = gmLayersOf().map(([k, имя]) => [k, имя, счёт(k)])
     .filter(([k, , n]) => n || свои.has(k));
   /* Вкладка могла опустеть при переходе в другую главу — тогда возвращаемся на
@@ -15068,7 +15073,8 @@ function gmJourneyCard() {
   const names = state.trip.people.filter(person => (p.people || []).includes(person.id)).map(person => person.name);
   const previous = state.stops[gm.journeyStep - 1];
   let distance = "";
-  if (previous) {
+  if (p.bookDistance) distance = `<p class="gj-location">${esc(p.bookDistance)}</p>`;
+  else if (previous) {
     const rad = x => x * Math.PI / 180;
     const a = Math.sin(rad(p.lat - previous.lat) / 2) ** 2 + Math.cos(rad(previous.lat)) * Math.cos(rad(p.lat)) * Math.sin(rad(p.lon - previous.lon) / 2) ** 2;
     const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
@@ -15077,6 +15083,7 @@ function gmJourneyCard() {
   const query = encodeURIComponent(p.q || p.place);
   card.innerHTML = `<div class="gj-meta">${esc(names.join(" · "))}</div><b>${esc(p.place)}</b>
     <p class="gj-chapter">${esc(chapter ? chapter.name : "")}</p><div class="gj-context">${[p.period ? `📅 ${p.period}${p.periodScope === "сезон поездки" ? " · сезон поездки" : ""}` : "",p.timeOfDay ? `◷ ${p.timeOfDay}` : "",p.weather ? `☁ ${p.weather}` : ""].filter(Boolean).map(v=>`<span>${esc(v)}</span>`).join("")}</div><p class="gj-story">${esc(p.text || "")}</p>${distance}
+    ${p.locationBasis ? `<details class="gj-excerpt"><summary>Почему здесь</summary><p>${esc(p.locationBasis)}</p>${(p.locationSources || []).map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join(" · ")}</details>` : ""}
     ${p.quote ? `<details class="gj-excerpt"><summary>Фрагмент из главы</summary><blockquote>${esc(p.quote)}</blockquote></details>` : ""}
     <div class="gm-links"><a href="https://chatgpt.com/?q=${encodeURIComponent(gmPlaceQuestion(p))}" target="_blank" rel="noopener">ChatGPT</a><a href="https://yandex.ru/maps/?ll=${p.lon},${p.lat}&amp;z=12&amp;pt=${p.lon},${p.lat},pm2rdm" target="_blank" rel="noopener">Я.Карты</a>
     <a href="https://earth.google.com/web/@${p.lat},${p.lon},0a,12000d,35y,0h,0t,0r" target="_blank" rel="noopener">Earth</a>
