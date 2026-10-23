@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 601";
+const APP_VERSION = "Кэйко 602";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -13873,7 +13873,7 @@ function gmList() {
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "heroes") {
-    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).filter(h => journeyChapterOpen(gm.мат,h.ch)).map(h => `<article class="gl-it gm-hero"><div class="gl-head"><span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span><span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Герои появятся после прочитанных глав.</div>';
+    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).map(h => `<article class="gl-it gm-hero"><div class="gl-head"><span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span><span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Для этой книги пока нет описаний героев.</div>';
     return;
   }
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
