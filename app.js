@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 600";
+const APP_VERSION = "Кэйко 601";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1077,7 +1077,7 @@ function journeyResolved(b, trip) {
     const resolved = p && {...p, ...stop, sourceIndex, name: "journey:" + trip.id + ":" + sourceIndex};
     return resolved && Number.isFinite(resolved.lat) && Math.abs(resolved.lat) <= 85
       && Number.isFinite(resolved.lon) && Math.abs(resolved.lon) <= 180
-      && journeyChapterOpen(b, stop.ch) ? resolved : null;
+      && Number.isInteger(Number(stop.ch)) && Number(stop.ch) > 0 && (b.chapters || [])[Number(stop.ch) - 1] ? resolved : null;
   }).filter(Boolean);
 }
 function journeyTrips(b) {
@@ -15000,7 +15000,7 @@ function gmJourneyUI() {
   if (!on) { controls.innerHTML = steps.innerHTML = ""; return; }
   const state = gmJourneyState();
   if (!state.trip) {
-    controls.innerHTML = '<p class="gj-empty">Маршрут откроется после первой прочитанной главы с поездкой.</p>';
+    controls.innerHTML = '<p class="gj-empty">Для этой книги пока нет остановок маршрута.</p>';
     steps.hidden = true; steps.innerHTML = ""; return;
   }
   const select = (id, label, rows, value) => `<label class="gj-select"><span>${label}</span><select id="${id}" aria-label="${label}">${rows.map(row =>

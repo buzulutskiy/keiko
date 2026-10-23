@@ -4397,15 +4397,15 @@ const сеть = (() => {
         {place:'Б',ch:2,people:['j'],text:'Поездка'},
         {place:'А',ch:2,people:['j','t'],text:'Возвращение'},
         {place:'Неизвестно',ch:2,people:['j']},
-        {place:'Б',ch:3,people:['j'],text:'Секрет'}]},
-        {id:'future',name:'Будущая поездка',people:[{id:'x',name:'Неизвестный'}],stops:[{place:'Б',ch:3,people:['x']}]}]};
+        {place:'Б',ch:4,people:['j'],text:'Некорректная глава'}]},
+        {id:'future',name:'Будущая поездка',people:[{id:'x',name:'Неизвестный'}],stops:[{place:'Б',ch:4,people:['x']}]}]};
     t.set('data',{...before,book:{...before.book,books:[b],entries:[]}});
     t.get('ARTS')[b.id]=article;
-    ок('маршруты: до завершения главы ничего не раскрыто', trips(b).length,0);
+    ок('маршруты: все доступные остановки открыты до чтения книги', trips(b).length,1);
     t.get('data').book.entries=[{bookId:b.id,page:9}];
     ок('маршруты: на последней странице глава открыта', trips(b).map(x=>x.id),['trip']);
     const stops=t.get('journeyStops');
-    ок('маршруты: будущая глава скрыта',stops(b,'trip','j').map(x=>x.place),['А']);
+    ок('маршруты: главы открыты независимо от прочитанных страниц',stops(b,'trip','j').map(x=>x.place),['А','Б','А']);
     t.get('data').book.entries[0].page=29;
     const js=stops(b,'trip','j'),ts=stops(b,'trip','t');
     ок('маршруты: повторный визит не схлопнулся',js.map(x=>x.place),['А','Б','А']);
@@ -4415,7 +4415,7 @@ const сеть = (() => {
     ок('маршруты: неизвестные координаты не выдумываются',js.length,3);
     ок('маршруты: участник не получает чужие эпизоды',stops(b,'trip','x').length,0);
     t.get('data').book.entries.push({bookId:b.id,page:50,deleted:true});
-    ок('маршруты: удалённая отметка не открывает будущее',trips(b).length,1);
+    ок('маршруты: удалённая отметка не влияет на доступность',trips(b).length,1);
     ок('маршруты: у старой книги нет новой вкладки',trips({id:'legacy'}).length,0);
     article.journeys[0].stops[1].lat=45.5;
     article.journeys[0].stops[1].lon=136.5;
