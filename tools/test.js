@@ -4380,6 +4380,27 @@ const сеть = (() => {
   ок('цель: 79 страниц округляются вниз до 70', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,70);
   d.book.entries[0].page=14;
   ок('цель: малое ненулевое среднее не обнуляется', t.get('weeklyProgressWeek')(0,'2026-10-21').metrics[0].target,7);
+  d.weeklyTargets = {pages:140,minutes:150,drawings:1};
+  d.weeklyTargetsAt = 123;
+  const fixed=t.get('weeklyProgressWeek')(0,'2026-10-21');
+  ок('фиксированный план: три независимые недельные цели', fixed.metrics.map(m=>m.target),[140,150,1]);
+  ок('фиксированный план: не меняется при пролистывании',t.get('weeklyProgressWeek')(-3,'2026-10-21').metrics.map(m=>m.target),[140,150,1]);
+  ок('фиксированный план: месяц пропорционален числу дней',t.get('weeklyProgressWeek')(0,'2026-10-21','month').metrics.map(m=>m.target),[620,660,5]);
+  const migrated=t.get('migrate')(d);
+  ок('фиксированный план: переживает загрузку профиля',migrated.weeklyTargets,{pages:140,minutes:150,drawings:1});
+  ок('фиксированный план: входит в экспорт',t.get('exportData')().weeklyTargets,{pages:140,minutes:150,drawings:1});
+  const months=t.get('weeklyCalendarMonths')(2026,'2026-10-24');
+  const weeks=months.flatMap(m=>m.weeks);
+  ок('календарь недель: все месяцы года',months.length,12);
+  ок('календарь недель: без дубликатов на стыке месяцев',new Set(weeks.map(w=>w.from)).size,weeks.length);
+  ок('календарь недель: неделя относится к месяцу воскресенья',months.every(m=>m.weeks.every(w=>Number(w.to.slice(5,7))===m.month+1)),true);
+  const currentWeek=weeks.find(w=>w.from==='2026-10-19');
+  ок('календарь недель: текущая неделя доступна', [currentWeek.shift,currentWeek.future,currentWeek.to],[0,false,'2026-10-25']);
+  ок('календарь недель: прошлая неделя открывает прошлую, не текущую',weeks.find(w=>w.from==='2026-10-12').shift,-1);
+  ок('календарь недель: будущая неделя не открывается',weeks.find(w=>w.from==='2026-10-26').future,true);
+  const mini=t.get('weeklyCalendarRing')({...fixed,metrics:fixed.metrics.map(m=>({...m,current:m.target}))});
+  ок('мини-кольца: галочка только при трёх выполненных целях',mini.includes('✓'),true);
+  ок('мини-кольца: неполный план без галочки',t.get('weeklyCalendarRing')(fixed).includes('✓'),false);
   t.set('data', before);
 }
 

@@ -1,0 +1,4 @@
+# Weekly goals and calendar
+Approved in conversation: Anton's fixed weekly goals are 140 pages, 150 piano minutes and one drawing session. Add a calendar toggle beside Week/Month. The year is grouped by month with one compact nested-ring button per week, Monday–Sunday. A week belongs to its Sunday's month, preventing duplicate weeks. Completed three-ring plans show a check in the centre. Current week is marked; future weeks are disabled and muted. Open near the selected/current month. Clicking a week returns to its large rings. Year navigation permits earlier years. Preserve existing colours and cards.
+
+Use profile settings and timestamp merge rather than hardcoded personal defaults; other profiles retain the existing two-week average. Monthly goals scale by calendar days, rounding pages/minutes down to tens and drawings up. Historical weeks use the same fixed goals for visual comparison. No activity entries are modified.
