@@ -4104,6 +4104,58 @@
   .reading-option b { display: block; font-weight: 500; }
   .reading-option small { display: block; color: var(--dim); margin-top: 5px; }
   .hero-title .reading-day { color: var(--dim); font-size: .75rem; letter-spacing: .08em; margin-bottom: 6px; }
+    .material-path { max-width:560px; margin:0 auto; padding:14px 0 26px; }
+    .path-heading { margin:0 0 16px; }
+    .path-heading h1 { margin:0 0 5px; font-size:1.4rem; font-weight:600; letter-spacing:-.02em; }
+    .path-heading p { margin:0; color:var(--muted); font-size:.75rem; }
+    .path-modes { display:grid; grid-template-columns:1fr 1fr; gap:4px; border:1px solid var(--line); padding:4px; border-radius:15px; background:var(--bg); position:sticky; top:0; z-index:3; margin:0 auto 16px; max-width:560px; }
+    .path-modes button { font:inherit; font-size:.82rem; color:var(--muted); background:transparent; border:0; border-radius:11px; min-height:40px; cursor:pointer; }
+    .path-modes button[aria-pressed="true"] { color:var(--ink); background:var(--track); }
+    .path-modes button:focus-visible,.path-card button:focus-visible,.outward-sheet a:focus-visible,.outward-sheet button:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
+    .path-modes + .activity-calendar .ac-progress-toolbar { top:57px; }
+    .path-list { display:grid; gap:12px; }
+    .path-card { min-width:0; padding:16px; border:1px solid var(--line); border-radius:20px; background:var(--card); }
+    .path-material { display:flex; gap:13px; align-items:flex-start; }
+    .path-cover { flex:0 0 52px; width:52px; height:76px; border-radius:8px; overflow:hidden; display:grid; place-items:center; background:color-mix(in srgb,var(--path-color),transparent 91%); }
+    .path-cover img { display:block; width:100%; height:100%; object-fit:contain; }
+    .path-cover span { font-size:25px; }
+    .path-copy { min-width:0; flex:1; }
+    .path-type { font-size:.62rem; color:var(--muted); margin:0 0 5px; }
+    .path-copy h2 { font-size:.88rem; line-height:1.4; font-weight:600; margin:0; overflow-wrap:anywhere; }
+    .path-author { font-size:.68rem; color:var(--muted); margin:4px 0 0; }
+    .path-date { font-size:.65rem; color:var(--muted); margin:7px 0 0; }
+    .path-volume { display:flex; justify-content:space-between; gap:12px; align-items:center; font-size:.69rem; color:var(--muted); margin:15px 0 7px; }
+    .path-volume b { font-size:.69rem; color:var(--ink); font-weight:500; white-space:nowrap; }
+    .path-progress { height:5px; background:var(--track); border-radius:5px; overflow:hidden; }
+    .path-progress i { display:block; height:100%; border-radius:inherit; background:var(--path-color); }
+    .path-progress.unknown { background:repeating-linear-gradient(135deg,var(--track) 0 5px,transparent 5px 9px); }
+    .path-progress.unknown i { display:none; }
+    .path-next { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:9px 12px; align-items:center; justify-content:space-between; }
+    .path-next>div { flex:1 1 150px; }
+    .path-next small { color:var(--muted); font-size:.61rem; }
+    .path-next p { margin:3px 0 0; color:var(--ink); font-size:.74rem; line-height:1.45; }
+    .path-next button { border:1px solid color-mix(in srgb,var(--gold),transparent 72%); border-radius:11px; background:color-mix(in srgb,var(--gold),transparent 94%); color:var(--gold); font:inherit; font-size:.72rem; min-height:44px; padding:9px 13px; cursor:pointer; }
+    .path-preview,.path-missing { color:var(--muted); font-size:.66rem; line-height:1.55; margin:12px 0 0; }
+    .path-helped { display:flex; justify-content:space-between; align-items:center; gap:8px; border-top:1px solid var(--line); padding-top:9px; margin-top:14px; color:var(--green); font-size:.69rem; }
+    .path-helped button { color:var(--muted); background:none; border:0; min-height:44px; font:inherit; font-size:.65rem; cursor:pointer; padding:4px; }
+    .path-empty { color:var(--muted); font-size:.8rem; line-height:1.6; }
+    .outward-sheet { max-width:520px; margin:auto; }
+    .outward-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; color:var(--muted); font-size:.75rem; }
+    .outward-heading button { border:1px solid var(--line); border-radius:50%; background:var(--card); color:var(--ink); font-size:24px; line-height:1; width:44px; height:44px; cursor:pointer; }
+    .outward-material { color:var(--muted); font-size:.75rem; line-height:1.5; margin:14px 0 7px; }
+    .outward-sheet h2 { font-size:1.3rem; line-height:1.3; font-weight:600; letter-spacing:-.02em; margin:0 0 14px; }
+    .outward-why { font-size:.85rem; line-height:1.7; color:var(--ink); margin:0 0 17px; }
+    .outward-general { color:var(--muted); font-size:.7rem; margin:0 0 14px; }
+    .outward-link { display:block; border:1px solid var(--line); border-radius:14px; padding:14px; color:var(--gold); text-decoration:none; font-size:.84rem; min-height:44px; margin-bottom:24px; }
+    .outward-link small { display:block; color:var(--muted); margin-top:5px; font-size:.7rem; }
+    .outward-label { display:block; font-size:.77rem; color:var(--ink); line-height:1.6; margin:0 0 8px; }
+    .outward-label small { color:var(--muted); font-size:.67rem; }
+    #outwardNote { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); font:inherit; font-size:16px; line-height:1.6; padding:12px; resize:vertical; margin:0 0 14px; }
+    #outwardMark { width:100%; min-height:46px; }
+    .outward-caption { font-size:.65rem; color:var(--muted); line-height:1.65; margin:12px 0 0; }
+    .outward-record { color:var(--green); font-size:.8rem; margin:0 0 18px; }
+    .outward-undo { background:none; border:0; color:var(--muted); text-decoration:underline; text-underline-offset:3px; font:inherit; font-size:.7rem; min-height:44px; cursor:pointer; margin-top:10px; padding:4px 0; }
+
     /* ── Недельные кольца ── */
     .activity-calendar { max-width: 560px; margin: 0 auto; padding: 12px 0 24px; }
     .ac-progress-toolbar { display:flex; gap:10px; align-items:center; position:sticky; top:0; z-index:2; background:var(--bg); padding:8px 0; }

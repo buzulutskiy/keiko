@@ -4509,6 +4509,43 @@ const сеть = (() => {
   }
 }
 
+/* ── Мой путь: материалы и действие после завершения ── */
+{
+  const previous=t.get('data'), catalog=t.get('CATALOG');
+  const d=t.get('migrate')({book:{books:[{id:'a',title:'Книга А',pages:100},{id:'b',title:'Книга Б',pages:100,done:true,doneAt:'2026-10-20'},{id:'unused',title:'Не начата',pages:100},{id:'deleted',title:'Удалена',deleted:true,pages:10}],entries:[{id:'a1',bookId:'a',date:'2026-10-10',page:25},{id:'b1',bookId:'b',date:'2026-10-20',page:100},{id:'a2',bookId:'a',date:'2026-10-23',page:90,deleted:true}]},pastel:{courses:[{id:'draw',name:'Рисунок',plain:true,lessons:[]}],entries:[{id:'draw1',courseId:'draw',date:'2026-10-12'}]},archive:[{id:'snapshot',srcId:'b',track:'book',title:'Книга Б',pct:100,finishedAt:'2026-10-20'},{id:'legacy',srcId:'legacy',track:'pastel',title:'Старый курс',pct:0,finishedAt:'2026-09-01'}]});
+  t.set('data',d);
+  t.set('CATALOG',{'__path__':{outward:{'book:b':{id:'help',title:'Помочь природе',why:'Связь по теме',organization:'Фонд',url:'https://example.org/help'}},outwardDefaults:{book:{id:'general',title:'Поддержать образование',why:'Общий вариант',organization:'Фонд',url:'https://example.org/help'}}}});
+  const list=t.get('materialPathItems')('2026-10-24');
+  ок('путь: свежие занятия выше старых',list[0].id,'b');
+  ок('путь: архив не дублирует живую книгу',list.filter(m=>m.id==='b').length,1);
+  ок('путь: удалённый материал исключён',list.some(m=>m.id==='deleted'),false);
+  ок('путь: удалённая отметка не продвигает книгу',list.find(m=>m.id==='a').pct,25);
+  ок('путь: не начатые материалы внизу',list[list.length-1].id,'unused');
+  ок('путь: архивирование с нулём не равно завершению',list.find(m=>m.id==='legacy').completed,false);
+  ок('путь: незавершённому рисунку не придуман процент',list.find(m=>m.id==='draw').pct,null);
+  ок('путь: просмотр не меняет активную книгу',d.book.activeBook,'a');
+  const item=list.find(m=>m.id==='b'),plan=t.get('outwardPlan')(item);
+  ок('помощь: индивидуальный контекст из каталога',plan.title,'Помочь природе');
+  ок('помощь: общая рекомендация помечена',t.get('outwardPlan')(list.find(m=>m.id==='a')).general,true);
+  ок('помощь: опасная ссылка отбрасывается',t.get('normalizeOutwardPlan')({title:'x',url:'javascript:alert(1)'}),null);
+  const first=t.get('recordOutwardAction')(item.key,'Помог',1000);
+  t.get('recordOutwardAction')(item.key,'Заметка',2000);
+  ок('помощь: повторная отметка не создаёт дубль',d.outwardActions.length,1);
+  ок('помощь: записана заметка',d.outwardActions[0].note,'Заметка');
+  ок('помощь: первоначальная дата сохраняется',d.outwardActions[0].createdAt,first.createdAt);
+  ок('помощь: открытие плана само не отмечает помощь',t.get('outwardAction')('book:a'),null);
+  ок('помощь: незавершённый материал нельзя отметить',t.get('recordOutwardAction')('book:a','',3000),null);
+  ок('помощь: экспорт сохраняет отметку',t.get('exportData')().outwardActions.length,1);
+  ок('помощь: миграция сохраняет отметку',t.get('migrate')(d).outwardActions.length,1);
+  const beforeUndo={...d.outwardActions[0]};
+  t.get('undoOutwardAction')(item.key,4000);
+  ок('помощь: отмена оставляет tombstone',d.outwardActions[0].deleted,true);
+  ок('помощь: отмена не воскресает после слияния',sandbox.mergeLists(d.outwardActions,[beforeUndo])[0].deleted,true);
+  t.get('recordOutwardAction')(item.key,'Снова помог',5000);
+  ок('помощь: повтор после отмены восстанавливает одну запись',[d.outwardActions.length,d.outwardActions[0].deleted],[1,false]);
+  t.set('data',previous);t.set('CATALOG',catalog);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   testTimeouts.forEach(clearTimeout);

@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 605";
+const APP_VERSION = "Кэйко 606";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -200,6 +200,7 @@ function emptyData() {
     hidden: {},     // материалы, убранные с главной: { «bk:id»: 1 }
     shop: { theme: "dusk" },   // только оформление: покупать давно нечего
     thoughts: [],  // мысли по ходу материала — отдельно от отметок занятий
+    outwardActions: [],
     wishes: [],    // «захотелось»: куда съездить, что прочитать, купить, сделать
     gut: [],       // отметки самочувствия — только в том профиле, где включено
     gutAt: {},     // когда открылась наградка Какули: нужно для порядка выдачи
@@ -311,6 +312,7 @@ function migrate(obj) {
      что лежит в телефоне, и то, что приезжает из гиста. Иначе достаточно
      одной синхронизации со старым устройством, чтобы они вернулись. */
   if (Array.isArray(obj.thoughts)) base.thoughts = obj.thoughts.filter((t) => !EV_GONE.has(t && t.event));
+  if (Array.isArray(obj.outwardActions)) base.outwardActions = obj.outwardActions.filter(a => a && typeof a.id === "string" && typeof a.materialKey === "string");
   if (Array.isArray(obj.wishes)) base.wishes = obj.wishes;
   if (Array.isArray(obj.gut)) base.gut = obj.gut;
   if (obj.gutAt && typeof obj.gutAt === "object") base.gutAt = obj.gutAt;
@@ -2714,7 +2716,7 @@ function crashScreen(e) {
 // снимок данных: если синхронизация ничего не изменила, перерисовывать нечего
 const dataStamp = () => [
   data.piano.entries, data.book.entries, data.pastel.entries, watchEntries(),
-  data.thoughts || [], data.archive || [], data.takes || [],
+  data.thoughts || [], data.archive || [], data.takes || [], data.outwardActions || [],
   data.wishes || [], data.gut || []
 ].map(list => list.length + ":" + list.reduce((m, e) => Math.max(m, e.updatedAt || 0), 0)).join("|")
   + "|";
@@ -2789,7 +2791,7 @@ function renderInner() {
   try {
     if (settingsOpen) renderSettings();
     else if (tab === "home") renderHome();
-    else if (tab === "progress") renderWeeklyProgress();
+    else if (tab === "progress") renderMaterialPath();
     else if (tab === "notes") renderNotes();
     else if (tab === "mus") renderMuseum();
     else if (tab === "diary") { tab = "home"; cfg.tab = "home"; saveCfg(); renderTabbar(); renderHome(); }
@@ -2863,7 +2865,7 @@ function renderMusBtn() {
 function visibleTabs() {
   return [
     [ "home", ICON("home", "◉"), T("tabHome")],
-    ["progress", ICON("progress", "▤"), "Прогресс"],
+    ["progress", ICON("progress", "▤"), "Мой путь"],
     /* Дневник спрятан: раздел не прижился. Код и записи остаются — уже
        написанные дни по-прежнему всплывают в «мысли дня», а вернуть вкладку
        можно одной строкой. */
@@ -5821,6 +5823,115 @@ function allEntriesOn(ds) {
 /* ── Недельный прогресс: страницы, минуты пианино, занятия рисунком ── */
 let weeklyProgressProfile = "";
 let weeklyProgressPeriod = "week";
+
+/* Материал → осмысленное действие. Контекст хранится в приватном каталоге. */
+function pathDate(value) {
+  if (!value) return '';
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? dateStr(new Date(value)) : '';
+  const s=String(value).slice(0,10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+function materialPathItems(today=todayStr()) {
+  const specs=[['book',data.book.books,'bookId'],['piano',data.piano.pieces,'pieceId'],['pastel',data.pastel.courses?.length?data.pastel.courses:[data.pastel.course].filter(Boolean),'courseId'],['watch',data.watch.videos,'videoId']];
+  const out=new Map();
+  for(const [track,materials,idField] of specs) for(const m of materials||[]) {
+    if(m.deleted) continue;
+    const fallback=(materials[0]||{}).id || '';
+    const entries=(data[track].entries||[]).filter(e=>!e.deleted && (e[idField]||fallback)===m.id && pathDate(e.date) && e.date<=today);
+    const dates=entries.map(e=>e.date).sort();
+    const view={track,[idField]:m.id};
+    const stats=withMaterial(view,()=>curStats());
+    const plain=track==='pastel' && !(m.lessons||[]).length;
+    let pct=Number(stats.pct)||0;
+    const completed=!!m.done || (!plain && pct>=100);
+    if(completed) pct=100; else if(plain) pct=null;
+    let volume='';
+    if(track==='book') volume=bookMode(m)==='list' ? `${stats.articles||0} из ${(stats.список||{}).всего||0} разделов` : `${bookMode(m)==='parts'?(stats.covered||0):(stats.page||0)} / ${m.pages||0} стр.`;
+    if(track==='piano') volume=`${Math.round(entries.reduce((n,e)=>n+Math.max(0,Number(e.mins)||0),0))} мин. занятий`;
+    if(track==='pastel') volume=plain?`${entries.length} ${plural(entries.length,'занятие','занятия','занятий')}`:`${stats.done||0} / ${stats.lessons||0} уроков`;
+    if(track==='watch') volume=completed?'Просмотрено':entries.length?'Начат просмотр':'Нет отметок просмотра';
+    const completedAt=completed?pathDate(m.doneAt):'';
+    out.set(`${track}:${m.id}`,{key:`${track}:${m.id}`,id:m.id,track,title:m.title||m.name||'Материал',author:m.author||'',material:m,view,entries,pct:pct===null?null:Math.max(0,Math.min(100,pct)),completed,completedAt,lastDate:dates[dates.length-1]||'',activityDate:[dates[dates.length-1]||'',completedAt].sort().pop(),volume,archived:!!m.archived});
+  }
+  for(const a of data.archive||[]) {
+    if(a.deleted || !['book','piano','pastel','watch'].includes(a.track)) continue;
+    let id=a.srcId||a.id,key=`${a.track}:${id}`,existing=out.get(key);
+    if(!existing) existing=[...out.values()].find(m=>m.track===a.track && m.archived && m.title===a.title);
+    if(existing) {
+      existing.activityDate=[existing.activityDate,pathDate(a.finishedAt)].sort().pop();
+      if(Number(a.pct)>=100 && (existing.archived || existing.completed)){existing.completed=true;existing.pct=100;existing.completedAt=existing.completedAt||pathDate(a.finishedAt);}
+      continue;
+    }
+    const completed=Number(a.pct)>=100,finished=pathDate(a.finishedAt);
+    out.set(key,{key,id,track:a.track,title:a.title||'Материал',author:a.sub||'',material:a,view:null,entries:[],pct:completed?100:Math.max(0,Math.min(100,Number(a.pct)||0)),completed,completedAt:completed?finished:'',lastDate:'',activityDate:finished,volume:completed?'Завершено':'В архиве',archived:true});
+  }
+  return [...out.values()].sort((a,b)=>String(b.activityDate||'').localeCompare(a.activityDate||'') || (Number(b.material.createdAt||b.material.addedAt)||0)-(Number(a.material.createdAt||a.material.addedAt)||0) || a.title.localeCompare(b.title,'ru'));
+}
+function normalizeOutwardPlan(raw) {
+  if(!raw || typeof raw!=='object' || !String(raw.title||'').trim()) return null;
+  let url;try{url=new URL(raw.url);if(url.protocol!=='https:' || url.username || url.password)return null;}catch{return null;}
+  return {id:String(raw.id||url.hostname),title:String(raw.title),why:String(raw.why||''),organization:String(raw.organization||url.hostname),url:url.href,linkLabel:String(raw.linkLabel||'Как помочь на сайте организации')};
+}
+function outwardPlan(item) {
+  const path=catOf('__path__')||{};
+  const individual=normalizeOutwardPlan((path.outward||{})[item.key]);
+  if(individual)return {...individual,general:false};
+  const general=normalizeOutwardPlan((path.outwardDefaults||{})[item.track]);
+  return general?{...general,general:true}:null;
+}
+function outwardAction(key) {return (data.outwardActions||[]).find(a=>a.materialKey===key && !a.deleted)||null;}
+function recordOutwardAction(key,note='',stamp=now()) {
+  const item=materialPathItems().find(m=>m.key===key);
+  if(!item?.completed)return null;
+  const plan=outwardPlan(item);if(!plan)return null;
+  const old=(data.outwardActions||[]).find(a=>a.id==='outward:'+key),live=old&&!old.deleted;
+  const record={id:'outward:'+key,materialKey:key,proposalId:plan.id,proposalTitle:live?old.proposalTitle:plan.title,organization:live?old.organization:plan.organization,url:live?old.url:plan.url,note:String(note).trim().slice(0,500),date:live?old.date:todayStr(),createdAt:live?old.createdAt:stamp,updatedAt:stamp,deleted:false};
+  data.outwardActions=mergeLists(data.outwardActions||[],[record]);return record;
+}
+function undoOutwardAction(key,stamp=now()) {
+  const old=outwardAction(key);if(!old)return;
+  data.outwardActions=mergeLists(data.outwardActions||[],[{...old,deleted:true,updatedAt:stamp}]);
+}
+function materialPathModeHTML() {
+  const activity=cfg.pathView==='activity';
+  return `<div class="path-modes" role="group" aria-label="Мой путь"><button type="button" data-path-mode="materials" aria-pressed="${!activity}">Материалы</button><button type="button" data-path-mode="activity" aria-pressed="${activity}">Занятия</button></div>`;
+}
+function renderMaterialPath() {
+  const view=$('#view');
+  if(cfg.pathView==='activity') {renderWeeklyProgress();view.insertAdjacentHTML('afterbegin',materialPathModeHTML());bindMaterialPathMode();return;}
+  const items=materialPathItems(),helped=items.filter(m=>outwardAction(m.key)).length;
+  view.innerHTML=`<section class="material-path"><header class="path-heading"><h1>Мой путь</h1><p>${items.length} ${plural(items.length,'материал','материала','материалов')}${helped?` · ${helped} ${plural(helped,'действие','действия','действий')} вовне`:''}</p></header>${materialPathModeHTML()}<div class="path-list">${items.length?items.map(item=>{
+    const plan=outwardPlan(item),action=outwardAction(item.key),color={book:'gold',piano:'violet',pastel:'green',watch:'violet'}[item.track];
+    const cover=coverCache.get(item.id)||((catOf(item.id)||{}).cover?coverSrc(item.id,item.material.cover||''):(coverOk(item.material.cover)?item.material.cover:''));
+    const type={book:'Чтение',piano:'Пианино',pastel:'Рисование',watch:'Просмотр'}[item.track];
+    const status=item.completed?'Завершено':item.archived?'В архиве':item.entries.length?'В работе':'Нет отметок';
+    const when=item.lastDate?`Последний раз · ${fmtDay(item.lastDate)}`:item.completedAt?`Завершено · ${fmtDay(item.completedAt)}`:'Нет записей занятий';
+    const progress=item.pct===null?'В работе':`${Math.round(item.pct)}%`;
+    return `<article class="path-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h2>${esc(item.title)}</h2>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}<p class="path-date">${esc(when)}</p></div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${progress}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`: 'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?100:item.pct}%"></i></div>${action?`<div class="path-helped"><span>✓ Помощь отмечена · ${esc(fmtDay(action.date))}</span><button type="button" data-outward="${esc(item.key)}">Подробнее</button></div>`:item.completed?`<div class="path-next">${plan?`<div><small>После завершения</small><p>${esc(plan.title)}</p></div><button type="button" data-outward="${esc(item.key)}">Как помочь ↗</button>`:'<p class="path-missing">Предложение помощи пока не подобрано</p>'}</div>`:plan?`<p class="path-preview">После завершения — ${esc(plan.title.charAt(0).toLowerCase()+plan.title.slice(1))}</p>`:''}</article>`;
+  }).join(''):'<p class="path-empty">Добавь материал в библиотеке — здесь появятся его прогресс и история.</p>'}</div></section>`;
+  bindMaterialPathMode();
+  view.querySelectorAll('[data-outward]').forEach(b=>b.addEventListener('click',()=>openOutwardSheet(b.dataset.outward)));
+}
+function bindMaterialPathMode() {
+  $('#view').querySelectorAll('[data-path-mode]').forEach(b=>b.addEventListener('click',()=>{cfg.pathView=b.dataset.pathMode;saveCfg();render();$('#view').scrollTop=0;}));
+}
+function openOutwardSheet(key) {
+  const item=materialPathItems().find(m=>m.key===key);if(!item)return;
+  const plan=outwardPlan(item),action=outwardAction(key);if(!plan || (!item.completed&&!action))return;
+  openSheet(`<div class="outward-sheet"><div class="outward-heading"><span>Действие после завершения</span><button type="button" id="outwardClose" aria-label="Закрыть">×</button></div><p class="outward-material">${esc(item.title)}</p><h2>${esc(plan.title)}</h2><p class="outward-why">${esc(plan.why)}</p>${plan.general?'<p class="outward-general">Общий вариант по направлению занятия.</p>':''}<a class="outward-link" href="${esc(plan.url)}" target="_blank" rel="noopener noreferrer">${esc(plan.linkLabel)} ↗<small>${esc(plan.organization)}</small></a>${action?`<p class="outward-record">✓ Ты отметил помощь ${esc(fmtDay(action.date))}</p>`:''}<label class="outward-label" for="outwardNote">${action?'Что ты сделал':'После действия можно оставить заметку'} <small>необязательно</small></label><textarea id="outwardNote" maxlength="500" rows="3" placeholder="Например, передал материалы в мастерскую">${esc(action?.note||'')}</textarea><button class="btn gold" id="outwardMark" type="button">${action?'Сохранить заметку':'Я помог'}</button><p class="outward-caption">Открытие ссылки ничего не отмечает. Нажми «Я помог», когда сделаешь действие.</p>${action?'<button class="outward-undo" id="outwardUndo" type="button">Убрать ошибочную отметку</button>':''}</div>`);
+  $('#outwardClose').addEventListener('click',closeSheet);
+  $('#outwardMark').addEventListener('click',()=>{
+    const snapshot=data.outwardActions;
+    if(!recordOutwardAction(key,$('#outwardNote').value))return;
+    if(!saveData()){data.outwardActions=snapshot;return;}
+    schedulePush();closeSheet();render();toast(action?'Заметка сохранена':'Действие отмечено');
+  });
+  $('#outwardUndo')?.addEventListener('click',()=>{
+    const snapshot=data.outwardActions;undoOutwardAction(key);
+    if(!saveData()){data.outwardActions=snapshot;return;}
+    schedulePush();closeSheet();render();toast('Отметка убрана');
+  });
+}
 
 function weeklyProgressIndex() {
   const index = {};
@@ -16048,7 +16159,7 @@ function bindPractice() {
 
 /* Словарь интерфейса: тема-мир может переписать формулировки под себя */
 const WORDS_BASE = {
-  tabHome: "Главная", tabProgress: "Прогресс", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
+  tabHome: "Главная", tabProgress: "Мой путь", tabAch: "Достижения", tabNotes: "Заметки", tabDiary: "Дневник", tabWish: "Захотелось",
   tabMus: "Артефакты",
   ctaPiano: "🎹 Начать занятие", ctaBook: "📖 Отметить чтение", ctaPastel: "🎨 Отметить урок", ctaDraw: "🎨 Отметить рисование",
   ctaWatch: "🎬 Отметить просмотр", ctaLesson: "🎨 Посмотреть занятие",
@@ -17268,6 +17379,7 @@ function restoreBackup(file) {
     data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
     data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
     data.wishes = mergeLists(data.wishes || [], d.wishes || []);
+    data.outwardActions = mergeLists(data.outwardActions || [], d.outwardActions || []);
     data.gut = mergeLists(data.gut || [], d.gut || []);
     data.archive = mergeLists(data.archive || [], d.archive || []);
       data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
@@ -19319,6 +19431,7 @@ async function restoreArchive(file) {
   data.watch.entries = mergeLists(data.watch.entries, (d.watch && d.watch.entries) || []);
   data.thoughts = mergeLists(data.thoughts || [], d.thoughts || []);
   data.wishes = mergeLists(data.wishes || [], d.wishes || []);
+    data.outwardActions = mergeLists(data.outwardActions || [], d.outwardActions || []);
   data.gut = mergeLists(data.gut || [], d.gut || []);
   data.archive = mergeLists(data.archive || [], d.archive || []);
   data.practice = mergePrac(data.practice, d.practice); pracStamp(false);
@@ -19546,7 +19659,7 @@ async function connectGitHub(token) {
   }
 }
 
-const exportData = () => ({ v: 7, savedAt: now(), readingRandom: data.readingRandom, usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, gut: data.gut,
+const exportData = () => ({ v: 7, savedAt: now(), readingRandom: data.readingRandom, usage: data.usage, active: data.active, weekGoal: data.weekGoal, shop: data.shop, thoughts: data.thoughts, wishes: data.wishes, outwardActions: data.outwardActions, gut: data.gut,
   /* Раздел таблеток убран, но старые отметки Дианы по-прежнему возим с собой:
      код удалить можно, чужие записи молча стирать — нет. */
   talks: data.talks, talksAt: data.talksAt, kanyeAt: data.kanyeAt, piano: data.piano, book: data.book, pastel: data.pastel, watch: data.watch, practice: data.practice, hidden: data.hidden, achAt: data.achAt, factAt: data.factAt, musAt: data.musAt, musLike: data.musLike, goalAt: data.goalAt, pianoWeek: data.pianoWeek, pianoWeekAt: data.pianoWeekAt, weeklyTargets: data.weeklyTargets, weeklyTargetsAt: data.weeklyTargetsAt, eventsV: data.eventsV, pracTrimV: data.pracTrimV, archive: data.archive, daily: data.daily, takes: data.takes, takesId: data.takesId,
@@ -19730,6 +19843,7 @@ async function syncNow(manual) {
       data.readingRandom = mergeReading(data.readingRandom, remote.readingRandom);
       data.thoughts = mergeLists(data.thoughts, remote.thoughts || []);
       data.wishes = mergeLists(data.wishes || [], remote.wishes || []);
+      data.outwardActions = mergeLists(data.outwardActions || [], remote.outwardActions || []);
       data.gut = mergeLists(data.gut || [], remote.gut || []);
       // выбранные версии — свод, а не список: берём свежий целиком
       if (remote.talks && (remote.talksAt || 0) > (data.talksAt || 0)) {
