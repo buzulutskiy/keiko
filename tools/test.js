@@ -4314,14 +4314,14 @@ const сеть = (() => {
   ок('месяц: прошлый високосный февраль', [february.from,february.to], ['2024-02-01','2024-02-29']);
 
   const rings=t.get('weeklyProgressRings')(summary);
-  ок('кольца: план рисунка отмечен галочкой', rings.includes('✓ План выполнен'), true);
+  ок('кольца: план рисунка отмечен галочкой', rings.includes('✓ Готово'), true);
   ок('кольца: исходные оттенки стали ярче без смены палитры', ['var(--gold), white 10%','var(--violet), white 10%','var(--green), white 10%'].every(c=>rings.includes(c)) && rings.includes('black 10%'), true);
-  ок('ячейка: дневной темп стоит перед общим остатком', rings.indexOf('2 стр./день') < rings.indexOf('Ещё 10 стр.'), true);
-  ок('кольца: остаток до среднего', rings.includes('Ещё 10 стр.'), true);
+  ок('ячейка: дневной темп сохранён', rings.includes('2 стр./день'), true);
+  ок('кольца: общий остаток убран из компактных ячеек', rings.includes('Ещё '), false);
   ок('кольца: следующая дуга при превышении', rings.includes('class="ac-ring-extra"'), true);
   const empty=t.get('weeklyProgressRings')({metrics:summary.metrics.map(m=>({...m,current:0,target:0,provisional:false}))});
   ок('кольца: нулевая база без выдуманной цели', empty.includes('Нет ориентира') && !empty.includes('NaN') && !empty.includes('Infinity'), true);
-  ок('кольца: без базы дневной план не выдумывается', (empty.match(/>Без плана<\/small>/g)||[]).length, 3);
+  ок('кольца: без базы дневной план не выдумывается', empty.includes('/день'), false);
   ок('кольца: вместо процента показан темп в день', rings.includes('2 стр./день') && !rings.includes('%</small>'), true);
 
   // Пропущенная неделя не обнуляет кольцо недели с чтением.
@@ -4368,7 +4368,7 @@ const сеть = (() => {
   ок('темп: в последний день делитель не ноль', [sunday.remainingDays,sunday.metrics[0].dailyNeeded], [1,43]);
   const closed=t.get('weeklyProgressWeek')(-1,'2026-10-21');
   const closedHTML=t.get('weeklyProgressRings')(closed);
-  ок('темп: прошлый период отмечен доступной галочкой', closed.remainingDays === 0 && closedHTML.includes('aria-label="Период завершён">✓</p>'),true);
+  ок('темп: прошлый период не выдаёт невыполненную цель за успех', closed.remainingDays === 0 && !closedHTML.includes('aria-label="Период завершён">✓</p>'),true);
   const monthPace=t.get('weeklyProgressWeek')(0,'2026-10-21','month');
   ок('темп: количество оставшихся дней месяца', monthPace.remainingDays,11);
   d.pastel.entries=[{id:'new-draw',courseId:'draw',date:'2026-10-21'}];
@@ -4401,6 +4401,18 @@ const сеть = (() => {
   const mini=t.get('weeklyCalendarRing')({...fixed,metrics:fixed.metrics.map(m=>({...m,current:m.target}))});
   ок('мини-кольца: галочка только при трёх выполненных целях',mini.includes('✓'),true);
   ок('мини-кольца: неполный план без галочки',t.get('weeklyCalendarRing')(fixed).includes('✓'),false);
+  d.book.books=[{id:'finished',title:'Законченная книга',done:true,doneAt:'2026-10-20'},{id:'old',title:'Старая книга',done:true,doneAt:'2026-09-01'}];
+  d.book.entries=[{id:'x',bookId:'finished',date:'2026-10-19',page:10},{id:'y',bookId:'finished',date:'2026-10-20',page:20},{id:'z',bookId:'old',date:'2026-10-21',page:5}];
+  d.piano.entries=[{id:'music',pieceId:'piece',date:'2026-10-20',mins:20},{id:'deleted',pieceId:'piece',date:'2026-10-19',deleted:true}];
+  d.pastel.entries=[];d.archive=[];
+  const materials=t.get('weeklyProgressMaterials')('2026-10-19','2026-10-25','2026-10-21');
+  ок('материалы недели: повторные занятия объединяются',materials.filter(m=>m.id==='finished').length,1);
+  ок('материалы недели: завершение относится к нужной неделе',materials.find(m=>m.id==='finished').completed,true);
+  ок('материалы недели: старая дата завершения не считается новой',materials.find(m=>m.id==='old').completed,false);
+  ок('материалы недели: пианино учитывается по занятиям',materials.some(m=>m.track==='piano'),true);
+  ок('материалы недели: не показывают другую неделю',t.get('weeklyProgressMaterials')('2026-10-05','2026-10-11','2026-10-21').length,0);
+  d.archive=[{id:'archived',srcId:'gone',track:'pastel',title:'Готовый рисунок',finishedAt:'2026-10-20'}];
+  ок('материалы недели: архивное завершение без сессии тоже видно',t.get('weeklyProgressMaterials')('2026-10-19','2026-10-25','2026-10-21').find(m=>m.id==='gone').completed,true);
   t.set('data', before);
 }
 

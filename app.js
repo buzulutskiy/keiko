@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 604";
+const APP_VERSION = "Кэйко 605";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5895,6 +5895,46 @@ function weeklyProgressWeek(weekShift, today, period = "week") {
   return { from, to, previousFrom, previousTo, metrics, period, baselineFrom, baselineTo, remainingDays };
 }
 
+function weeklyProgressMaterials(from, to, today = todayStr()) {
+  const items = new Map();
+  const inPeriod = value => {
+    const d = typeof value === 'number' ? dateStr(new Date(value)) : String(value || '').slice(0,10);
+    return d >= from && d <= to && d <= today;
+  };
+  const add = (track, id, material, completed = false) => {
+    if (!['book','piano','pastel'].includes(track) || material.deleted) return;
+    const archived = (data.archive || []).find(m => !m.deleted && m.track === track && (m.srcId || m.id) === id);
+    material = { ...archived, ...material };
+    const key = `${track}:${id}`;
+    const previous = items.get(key);
+    items.set(key,{track,id,material,title:material.title || material.name || previous?.title || 'Материал',completed:!!(completed || previous?.completed)});
+  };
+  for (const [date, entries] of Object.entries(weeklyProgressIndex())) {
+    if (!inPeriod(date)) continue;
+    for (const item of entries) add(item.track,item.id,item.material,item.entry.drawDone);
+  }
+  for (const [track, materials] of [['book',data.book.books],['piano',data.piano.pieces],['pastel',data.pastel.courses || [data.pastel.course].filter(Boolean)]]) {
+    for (const material of materials || []) if(material.done && inPeriod(material.doneAt)) add(track,material.id,material,true);
+  }
+  for (const material of data.archive || []) if (!material.deleted && inPeriod(material.finishedAt)) {
+    const id=material.srcId || material.id, existing=items.get(`${material.track}:${id}`);
+    add(material.track,id,existing?.material || material,true);
+  }
+  return [...items.values()].sort((a,b)=>['book','piano','pastel'].indexOf(a.track)-['book','piano','pastel'].indexOf(b.track));
+}
+
+function weeklyProgressMaterialsHTML(summary) {
+  const materials=weeklyProgressMaterials(summary.from,summary.to);
+  if(!materials.length) return '';
+  return `<div class="ac-materials" aria-label="Материалы ${summary.period==='month'?'месяца':'недели'}">${materials.map(m=>{
+    const cover=coverSrc(m.id,m.material.cover || '');
+    const color={book:'gold',piano:'violet',pastel:'green'}[m.track];
+    const icon={book:'📖',piano:'🎹',pastel:'🎨'}[m.track];
+    const status=m.completed ? (m.track==='book'?'✓ Прочитано':'✓ Завершено') : {book:'Читал',piano:'Играл',pastel:'Рисовал'}[m.track];
+    return `<article class="ac-material" style="--material-color:var(--${color})"><div class="ac-material-cover">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span aria-hidden="true">${icon}</span>`}</div><div class="ac-material-copy"><b title="${esc(m.title)}">${esc(m.title)}</b><small${m.completed?' class="is-complete"':''}>${status}</small></div></article>`;
+  }).join('')}</div>`;
+}
+
 function weeklyProgressRings(summary) {
   const colors = [
     'color-mix(in srgb, var(--gold), white 10%)',
@@ -5917,18 +5957,14 @@ function weeklyProgressRings(summary) {
       }).join('')}
     </svg></div>
     <div class="ac-ring-values">${summary.metrics.map((m, i) => {
-      const left = Math.max(0, m.target - m.current), extra = Math.max(0, m.current - m.target);
-      const remainingText = !m.target ? 'Без плана'
-        : extra ? `Сверх ${extra} ${m.short}` : left ? `Ещё ${left} ${m.short}` : '✓ План выполнен';
+      const complete = m.target > 0 && m.current >= m.target;
       const primaryText = !m.target ? (m.current > 0 ? 'Отмечено' : 'Нет ориентира')
-        : summary.remainingDays === 0 ? '✓' : `${m.dailyNeeded} ${m.short}/день`;
+        : complete ? '✓ Готово' : summary.remainingDays === 0 ? (summary.period === 'month' ? 'Итог месяца' : 'Итог недели') : `${m.dailyNeeded} ${m.short}/день`;
       const primaryLabel = !m.target ? primaryText
-        : summary.remainingDays === 0 ? 'Период завершён' : `Необходимый темп: ${m.dailyNeeded} ${m.short} в день`;
-      const remainingLabel = m.target ? 'Осталось до цели' : 'Цель не задана';
+        : complete ? 'План выполнен' : summary.remainingDays === 0 ? 'Период завершён' : `Необходимый темп: ${m.dailyNeeded} ${m.short} в день`;
       return `<div class="ac-ring-value" style="--ring-color:${colors[i]}"><span class="ac-ring-label"><i aria-hidden="true"></i>${m.title}</span>
         <b title="${m.fixed ? (summary.period === 'month' ? 'Недельная цель, пересчитанная на месяц' : 'Недельная цель') : (summary.period === 'month' ? 'Темп последних двух завершённых недель, пересчитанный на месяц' : 'Средний объём за последние две завершённые недели')}">${m.current}${m.target ? `<small> / ${m.target}</small>` : ''}</b>
         <p aria-label="${primaryLabel}">${primaryText}</p>
-        <small aria-label="${remainingLabel}">${remainingText}</small>
       </div>`;
     }).join('')}</div>
   </section>`;
@@ -5997,7 +6033,7 @@ function renderWeeklyProgress() {
   view.innerHTML = `<section class="activity-calendar">
     <div class="ac-progress-toolbar"><div class="ac-period" role="group" aria-label="Период прогресса"><button type="button" data-progress-period="week" aria-pressed="${weeklyProgressPeriod === 'week'}">Неделя</button><button type="button" data-progress-period="month" aria-pressed="${weeklyProgressPeriod === 'month'}">Месяц</button></div><button class="qbtn ac-calendar-toggle" id="acCalendarToggle" type="button" aria-label="Календарь недель" aria-pressed="${weeklyCalendarOpen}" title="Календарь недель"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18M7 14h3m4 0h3m-10 3h3"/></svg></button></div>
     <div class="ac-week-content"><div class="ac-week-nav"><button class="qbtn" id="acWeekPrev" type="button" aria-label="Предыдущий период" ${week.from <= earliestDate ? "disabled" : ""}>‹</button><span>${caption}</span><button class="qbtn" id="acWeekNext" type="button" aria-label="Следующий период" ${weeklyProgressShift >= 0 ? "disabled" : ""}>›</button></div>
-    ${weeklyProgressRings(week)}</div>
+    ${weeklyProgressRings(week)}${weeklyProgressMaterialsHTML(week)}</div>
   </section>`;
   view.querySelectorAll("[data-progress-period]").forEach(el => el.addEventListener("click", () => { weeklyProgressPeriod = el.dataset.progressPeriod; weeklyProgressShift = 0; weeklyCalendarOpen = false; render(); view.scrollTop = 0; }));
   $('#acCalendarToggle').addEventListener('click',()=>{
