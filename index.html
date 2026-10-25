@@ -4131,11 +4131,13 @@
     .path-week-track i { display:block; height:100%; border-radius:inherit; background:var(--week-color); }
     .path-week-metric>span { display:block; font-size:.66rem; color:var(--muted); }
     .path-week-metric>small { display:block; font-size:.67rem; margin-top:4px; color:var(--ink); }
-    .path-history { padding-left:16px; border-left:1px solid var(--line); margin-left:4px; }
+    .path-history { padding-left:16px; border-left:1px solid var(--line); margin-left:14px; }
     .path-month { margin:24px 0 13px; font-size:.83rem; font-weight:500; color:var(--muted); text-transform:capitalize; }
     .path-month:first-child { margin-top:0; }
     .path-history-card { position:relative; margin-bottom:12px; }
-    .path-history-card:before { content:''; position:absolute; width:7px; height:7px; border-radius:50%; background:var(--path-color); top:23px; left:-21px; box-shadow:0 0 0 4px var(--bg); }
+    .path-state-icon { position:absolute; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; background:var(--path-state); color:var(--bg); top:19px; left:-27px; box-shadow:0 0 0 4px var(--bg); font:700 10px/1 system-ui; }
+    .path-history-card.is-complete .path-state-icon { font-size:12px; }
+    .path-status { color:var(--path-state); }
     .path-dates { display:flex; flex-wrap:wrap; gap:10px 20px; margin:14px 0 0; }
     .path-dates dt { font-size:.62rem; color:var(--muted); margin-bottom:3px; }
     .path-dates dd { margin:0; font-size:.68rem; color:var(--ink); }

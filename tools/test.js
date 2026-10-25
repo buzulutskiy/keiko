@@ -4521,6 +4521,12 @@ const сеть = (() => {
   ок('история: начало берётся из первого не удалённого занятия',list.find(m=>m.id==='a').firstDate,'2026-10-10');
   ок('история: не начатый материал не попадает в ленту',t.get('materialHistoryItems')('2026-10-24').some(m=>m.id==='unused'),false);
   ок('история: даты завершения сохраняются',t.get('pathHistoryDates')(list[0]).find(d=>d.label==='Завершено').date,'2026-10-20');
+  const prof=t.get('profileId');t.set('profileId','history-test');t.get('CATALOG')['__path__'].historyHidden={'history-test':['book:b']};
+  ок('история: выбранный материал скрыт только в ленте',t.get('materialHistoryItems')('2026-10-24').some(m=>m.id==='b'),false);
+  ок('история: скрытие сохраняет сам материал',t.get('materialPathItems')('2026-10-24').some(m=>m.id==='b'),true);
+  t.set('profileId','other-profile');
+  ок('история: скрытие не влияет на другой профиль',t.get('materialHistoryItems')('2026-10-24').some(m=>m.id==='b'),true);
+  t.set('profileId',prof);delete t.get('CATALOG')['__path__'].historyHidden;
   ок('путь: архив не дублирует живую книгу',list.filter(m=>m.id==='b').length,1);
   ок('путь: удалённый материал исключён',list.some(m=>m.id==='deleted'),false);
   ок('путь: удалённая отметка не продвигает книгу',list.find(m=>m.id==='a').pct,25);

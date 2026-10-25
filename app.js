@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 609";
+const APP_VERSION = "Кэйко 610";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5895,7 +5895,8 @@ function undoOutwardAction(key,stamp=now()) {
   data.outwardActions=mergeLists(data.outwardActions||[],[{...old,deleted:true,updatedAt:stamp}]);
 }
 function materialHistoryItems(today=todayStr()) {
-  return materialPathItems(today).filter(m=>m.lastDate || m.firstDate || m.completed || m.pct>0 || m.archived);
+  const hidden=new Set((((catOf('__path__')||{}).historyHidden||{})[profileId])||[]);
+  return materialPathItems(today).filter(m=>!hidden.has(m.key) && (m.lastDate || m.firstDate || m.completed || m.pct>0 || m.archived));
 }
 function pathHistoryDates(item) {
   const rows=[];
@@ -5933,7 +5934,7 @@ function renderMaterialPath() {
     const heading=month!==group?`<h2 class="path-month">${month?esc(new Intl.DateTimeFormat('ru',{month:'long',year:'numeric'}).format(fromStr(month+'-01')).replace(' г.','')):'Без даты'}</h2>`:'';group=month;
     const when=item.lastDate&&(!item.completedAt||item.lastDate!==item.completedAt)?`Последний раз · ${fmtDay(item.lastDate)}`:'';
     const dates=pathHistoryDates(item),duration=materialDuration(item);
-    return `${heading}<article class="path-card path-history-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover"${cover?'':` data-path-cover="${esc(item.id)}"`}>${cover?`<img src="${esc(cover)}" data-cov="${esc(item.id)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h3>${esc(item.title)}</h3>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}${when?`<p class="path-date">${esc(when)}</p>`:''}</div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${item.pct===null?'В работе':`${Math.round(item.pct)}%`}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`:'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?0:item.pct}%"></i></div>${dates.length?`<dl class="path-dates">${dates.map(d=>`<div><dt>${d.label}</dt><dd><time datetime="${d.date}">${esc(fmtDay(d.date))}</time></dd></div>`).join('')}${duration?`<div><dt>Длительность</dt><dd>${esc(duration)}</dd></div>`:''}</dl>`:''}</article>`;
+    return `${heading}<article class="path-card path-history-card${item.completed?' is-complete':' is-active'}" style="--path-color:var(--${item.completed?'green':color});--path-state:var(--${item.completed?'green':'gold'})"><span class="path-state-icon" aria-hidden="true">${item.completed?'✓':item.archived?'Ⅱ':'▶'}</span><div class="path-material"><div class="path-cover"${cover?'':` data-path-cover="${esc(item.id)}"`}>${cover?`<img src="${esc(cover)}" data-cov="${esc(item.id)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · <span class="path-status">${status}</span></div><h3>${esc(item.title)}</h3>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}${when?`<p class="path-date">${esc(when)}</p>`:''}</div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${item.pct===null?'В работе':`${Math.round(item.pct)}%`}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`:'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?0:item.pct}%"></i></div>${dates.length?`<dl class="path-dates">${dates.map(d=>`<div><dt>${d.label}</dt><dd><time datetime="${d.date}">${esc(fmtDay(d.date))}</time></dd></div>`).join('')}${duration?`<div><dt>Длительность</dt><dd>${esc(duration)}</dd></div>`:''}</dl>`:''}</article>`;
   }).join(''):'<p class="path-empty">Здесь появится история после первого занятия с материалом.</p>'}</div></section>`;
 }
 function openOutwardSheet(key) {
