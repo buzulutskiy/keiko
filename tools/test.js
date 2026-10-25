@@ -33,7 +33,7 @@ const sandbox = {
   console, clearTimeout, clearInterval,
   setTimeout: (...args) => { const id = setTimeout(...args); testTimeouts.add(id); return id; },
   setInterval: (...args) => { const id = setInterval(...args); testIntervals.add(id); return id; },
-  Date, Math, JSON, Intl, URL, fetch: async () => { throw new Error("сети в тестах нет"); },
+  Date, Math, JSON, Intl, URL, URLSearchParams, fetch: async () => { throw new Error("сети в тестах нет"); },
   /* Браузерные, а значит и здесь: огибающая записи лежит в разборе базой-64,
      и без них проверка рисунка звука молча получала null. */
   atob, btoa, TextEncoder, TextDecoder,
@@ -4544,6 +4544,25 @@ const сеть = (() => {
   t.get('recordOutwardAction')(item.key,'Снова помог',5000);
   ок('помощь: повтор после отмены восстанавливает одну запись',[d.outwardActions.length,d.outwardActions[0].deleted],[1,false]);
   t.set('data',previous);t.set('CATALOG',catalog);
+}
+
+/* ── Именованные маршруты и близкие панорамы ── */
+{
+  const b={id:'route-clean',chapters:[{name:'Первая'}]},arts=t.get('ARTS');
+  arts[b.id]={map:[{name:'А',lat:45,lon:136},{name:'Б',lat:46,lon:137}],journeys:[{id:'t',people:[{id:'j',name:'Джонатан'}],stops:[{place:'А',ch:1,people:['j']},{place:'Б',ch:1,people:['j'],routeHidden:true},{place:'Б',ch:1,people:['j'],routeLabel:'База'}]}]};
+  ок('маршрут: сомнительная остановка скрыта, исходные индексы стабильны',t.get('journeyTimeline')(b,'j').map(p=>p.sourceIndex),[0,2]);
+  ок('маршрут: ясное имя берётся из материала',t.get('journeyTimeline')(b,'j')[1].routeLabel,'База');
+  const prior=t.get('gm');t.set('gm',{id:b.id,мат:b,journeyPerson:'j',journeyStep:0,restoreJourneyStop:'journey:t:2'});
+  ок('маршрут: сохранённая остановка восстанавливается по id после сокращения',t.get('gmJourneyState')().stop.sourceIndex,2);
+  t.get('gm').restoreJourneyStop='journey:t:1';
+  ок('маршрут: скрытая сохранённая остановка возвращает к началу',t.get('gmJourneyState')().stop.sourceIndex,0);t.set('gm',prior);delete arts[b.id];
+  const nearby=t.get('nearbyPanorama'), row=p=>({getPosition:()=>p});
+  ок('панорамы: далёкая фотография не считается близкой',nearby([row([46,137])],[45,136],'yandex#panorama'),null);
+  ок('панорамы: выбрана ближайшая из найденных',nearby([row([45.01,136]),row([45.001,136])],[45,136],'yandex#airPanorama').lat,45.001);
+  ок('панорамы: слой воздушной съёмки сохраняется',nearby([row([45,136])],[45,136],'yandex#airPanorama').air,true);
+  const u=new URL(t.get('panoramaURL')({lat:45,lon:136},{lat:45.001,lon:136.002}));
+  ок('панорамы: ссылка ведёт к съёмке, а не к метке маршрута',u.searchParams.get('panorama[point]'),'136.002,45.001');
+  ок('маршрут: краткий контекст не добавляет второй раз дату',t.get('journeyContext')({routeContext:'2006. Приехал.',period:'2006',text:'Приехал.'}),'2006. Приехал.');
 }
 
 /* ── Итог ── */

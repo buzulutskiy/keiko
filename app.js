@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 606";
+const APP_VERSION = "Кэйко 607";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1082,8 +1082,8 @@ function journeyResolved(b, trip) {
   return (trip.stops || []).map((stop, sourceIndex) => {
     const p = places.find(p => p.name === stop.place && Number.isFinite(p.lat) && Math.abs(p.lat) <= 85
       && Number.isFinite(p.lon) && Math.abs(p.lon) <= 180);
-    const resolved = p && {...p, ...stop, sourceIndex, name: "journey:" + trip.id + ":" + sourceIndex};
-    return resolved && Number.isFinite(resolved.lat) && Math.abs(resolved.lat) <= 85
+    const resolved = p && {...p, ...stop, people:stop.routePeople || stop.people, sourceIndex, name: "journey:" + trip.id + ":" + sourceIndex};
+    return resolved && !stop.routeHidden && Number.isFinite(resolved.lat) && Math.abs(resolved.lat) <= 85
       && Number.isFinite(resolved.lon) && Math.abs(resolved.lon) <= 180
       && Number.isInteger(Number(stop.ch)) && Number(stop.ch) > 0 && (b.chapters || [])[Number(stop.ch) - 1] ? resolved : null;
   }).filter(Boolean);
@@ -13529,7 +13529,7 @@ function gmRemember() {
   if (!gm) return;
   try { localStorage.setItem("keiko-map-view:" + gm.id, JSON.stringify({
     слой:gm.слой, часть:gm.часть, at:gm.at,
-    journeyTrip:gm.journeyTrip, journeyPerson:gm.journeyPerson, journeyStep:gm.journeyStep
+    journeyTrip:gm.journeyTrip, journeyPerson:gm.journeyPerson, journeyStep:gm.journeyStep, journeyStop:gm.at
   })); } catch {}
 }
 const gmUnified = () => !!gm && !!gm.мат && !!mapYandexKey(gm.мат) && !gm.liveFailed;
@@ -13571,6 +13571,8 @@ function openPlaceMap(bk, i, выбрать) {
     if (typeof saved.at === "string") gm.at = saved.at;
     for (const key of ["journeyTrip","journeyPerson"]) if (typeof saved[key] === "string") gm[key] = saved[key];
     if (Number.isInteger(saved.journeyStep)) gm.journeyStep = saved.journeyStep;
+    if (typeof saved.journeyStop === "string") gm.restoreJourneyStop = saved.journeyStop;
+    else if (typeof saved.at === "string" && saved.at.startsWith("journey:")) gm.restoreJourneyStop = saved.at;
   }
   gmPaint();
   gmTocBtn();
@@ -13991,6 +13993,7 @@ function mapFresh(bk) {
     gm.части = mapPartsOf(bk);
     gm.рамка = mapBox(bk, gm.карта) || gm.рамка;
     if (gmВкладка() !== "journey" && gm.at && !gm.места.some((p) => p.name === gm.at)) gm.at = null;
+    if (gmВкладка() === "journey") { gm.restoreJourneyStop = gm.at; const state = gmJourneyState(); gm.at = state.stop ? state.stop.name : null; gmRemember(); }
     gmLayersRow(); gmTocBtn(); gmTitle(); gmPins(); gmList(); gmCard();
     toast("Карта обновилась");
   }).catch(() => mapAsked.set(id, 0));
@@ -15161,8 +15164,8 @@ function gmLiveDraw() {
     const selected = p.name === gm.at;
     const index = model.journey ? gmJourneyState().stops.findIndex(s => s.name === p.name) : -1;
     const marker = new api.Placemark([p.lat,p.lon], {hintContent:esc(p.place || p.name),
-      iconContent:model.journey ? String(index+1) : ""}, {
-      preset: model.journey ? "islands#circleIcon" : p.approximate ? "islands#circleIcon" : "islands#dotIcon",
+      iconContent:model.journey ? esc(p.routeLabel || p.place) : ""}, {
+      preset: model.journey ? "islands#violetStretchyIcon" : p.approximate ? "islands#circleIcon" : "islands#dotIcon",
       iconColor:model.journey ? (selected ? gold : "#8870c5") : routePlaces.has(p.name) ? "#a68aff" : gold,
       zIndex:selected ? 1000 : 400, openBalloonOnClick:false});
     marker.events.add("click", () => {
@@ -15198,11 +15201,15 @@ function gmJourneyState() {
   const byId = new Map(trips.flatMap(t => t.people).map(p => [p.id,p]));
   const people = [...byId.values()].filter(p => journeyTimeline(b,p.id).length);
   const trip = trips.length ? {id:"timeline",people:[...byId.values()]} : null;
-  const person = people.find(p => p.id === gm.journeyPerson) || people[0];
+  const person = people.find(p => p.id === "j") || people[0];
   const stops = person ? journeyTimeline(b,person.id) : [];
   gm.journeyTrip = "timeline";
   gm.journeyPerson = person ? person.id : "";
-  gm.journeyStep = Math.max(0, Math.min(stops.length - 1, Number.isInteger(gm.journeyStep) ? gm.journeyStep : stops.length - 1));
+  if (gm.restoreJourneyStop) {
+    const restored = stops.findIndex(p => p.name === gm.restoreJourneyStop);
+    gm.journeyStep = restored >= 0 ? restored : 0; delete gm.restoreJourneyStop;
+  }
+  gm.journeyStep = Math.max(0, Math.min(stops.length - 1, Number.isInteger(gm.journeyStep) ? gm.journeyStep : 0));
   return {trips, trip, people, person, stops, stop: stops[gm.journeyStep]};
 }
 function gmJourneyUI() {
@@ -15220,11 +15227,8 @@ function gmJourneyUI() {
   const select = (id, label, rows, value) => `<label class="gj-select"><span>${label}</span><select id="${id}" aria-label="${label}">${rows.map(row =>
     `<option value="${esc(row.id)}"${row.id === value ? " selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>`;
   const chapters = [...new Set(state.stops.map(p => p.ch))].map(ch => ({id:String(ch),name:(gm.мат.chapters[ch-1] || {}).name || "Глава " + ch}));
-  controls.innerHTML = select("gmJourneyPerson", "Участник", state.people, gm.journeyPerson)
-    + select("gmJourneyChapter", "Глава", chapters, String(state.stop.ch));
-  steps.innerHTML = `<button data-journey-move="-1" type="button" aria-label="Предыдущая остановка"${gm.journeyStep === 0 ? " disabled" : ""}>‹</button>
-    <div class="gj-numbers" aria-label="Остановки маршрута">${state.stops.map((p, i) => `<button type="button" data-journey-step="${i}"${i === gm.journeyStep ? ' aria-current="step"' : ""} aria-label="Остановка ${i + 1}: ${esc(p.place)}">${i + 1}</button>`).join("")}</div>
-    <button data-journey-move="1" type="button" aria-label="Следующая остановка"${gm.journeyStep >= state.stops.length - 1 ? " disabled" : ""}>›</button>`;
+  controls.innerHTML = select("gmJourneyChapter", "Глава", chapters, String(state.stop.ch));
+  steps.innerHTML = `<div class="gj-numbers" aria-label="Остановки маршрута">${state.stops.map((p, i) => `<button type="button" data-journey-step="${i}"${i === gm.journeyStep ? ' aria-current="step"' : ""} aria-label="Остановка ${i + 1}: ${esc(p.place)}">${esc(p.routeLabel || p.place)}</button>`).join("")}</div>`;
   const active = steps.querySelector('[aria-current="step"]');
   if (active && active.scrollIntoView) active.scrollIntoView({block: "nearest", inline: "center"});
 }
@@ -15273,11 +15277,14 @@ function gmJourneyPins() {
   const points = state.stops.map((p,i) => ({p,i,...xy(p)})).filter(v => state.stop && (v.p.ch === state.stop.ch || v.i === gm.journeyStep - 1) && картаТочки(v.p) === gm.карта);
   // Повторные посещения остаются в ленте; на одном месте сверху выбранное.
   points.sort((a,b) => Number(a.i === gm.journeyStep) - Number(b.i === gm.journeyStep));
-  box.innerHTML = points.map(({p,i,x,y}) => `<button type="button" class="gm-pin gj-pin${i === gm.journeyStep ? " on" : ""}" data-gm="${esc(p.name)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="Остановка ${i + 1}: ${esc(p.place)}"><i>${i + 1}</i>${i === gm.journeyStep ? `<span>${esc(p.place)}</span>` : ""}</button>`).join("");
+  box.innerHTML = points.map(({p,i,x,y}) => `<button type="button" class="gm-pin gj-pin${i === gm.journeyStep ? " on" : ""}" data-gm="${esc(p.name)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="Остановка ${i + 1}: ${esc(p.place)}"><i aria-hidden="true"></i><span>${esc(p.routeLabel || p.place)}</span></button>`).join("");
 }
 function gmPlaceQuestion(p) {
   const book = gm && gm.мат;
   return `Расскажи кратко о месте «${p.place || p.name}»${p.q ? ` (${p.q})` : ""} из книги «${book ? book.title : "Совы во льдах"}». Контекст: ${p.context || p.text || "географическое место из книги"}. ${[p.period,p.timeOfDay,p.weather].filter(Boolean).join(" · ")}. Где оно находится, как выглядит, что в нём важно и интересно? До 5 коротких пунктов, со ссылками и фотографиями, если доступны. Не выдумывай детали эпизода и не раскрывай дальнейший сюжет.`;
+}
+function journeyContext(p) {
+  return p.routeContext || [p.period, p.text].filter(Boolean).join(". ");
 }
 function gmJourneyCard() {
   const card = $("#gmCard");
@@ -15285,27 +15292,57 @@ function gmJourneyCard() {
   const state = gmJourneyState(), p = state.stop;
   card.hidden = !p;
   if (!p) { card.innerHTML = ""; return; }
-  const chapter = (gm.мат.chapters || [])[p.ch - 1];
-  const names = state.trip.people.filter(person => (p.people || []).includes(person.id)).map(person => person.name);
-  const previous = state.stops[gm.journeyStep - 1];
-  let distance = "";
-  if (p.bookDistance) distance = `<p class="gj-location">${esc(p.bookDistance)}</p>`;
-  else if (previous) {
-    const rad = x => x * Math.PI / 180;
-    const a = Math.sin(rad(p.lat - previous.lat) / 2) ** 2 + Math.cos(rad(previous.lat)) * Math.cos(rad(p.lat)) * Math.sin(rad(p.lon - previous.lon) / 2) ** 2;
-    const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
-    distance = `<p class="gj-location">От ${esc(previous.place)} · ≈ ${Math.max(1, Math.round(km))} км между метками по прямой</p>`;
-  }
   const query = encodeURIComponent(p.q || p.place);
-  card.innerHTML = `<div class="gj-meta">${esc(names.join(" · "))}</div><b>${esc(p.place)}</b>
-    <p class="gj-chapter">${esc(chapter ? chapter.name : "")}</p><div class="gj-context">${[p.period ? `📅 ${p.period}${p.periodScope === "сезон поездки" ? " · сезон поездки" : ""}` : "",p.timeOfDay ? `◷ ${p.timeOfDay}` : "",p.weather ? `☁ ${p.weather}` : "",p.transport || "",p.temperature || ""].filter(Boolean).map(v=>`<span>${esc(v)}</span>`).join("")}</div><p class="gj-story">${esc(p.text || "")}</p>${distance}
-    ${p.temperatureNote ? `<details class="gj-excerpt"><summary>О температуре</summary><p>${esc(p.temperatureNote)}</p><a href="${esc(p.temperatureSource)}" target="_blank" rel="noopener">Климатическая норма · JMA</a></details>` : ""}
-    ${p.locationBasis ? `<details class="gj-excerpt"><summary>Почему здесь</summary><p>${esc(p.locationBasis)}</p>${(p.locationSources || []).map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join(" · ")}</details>` : ""}
-    ${p.quote ? `<details class="gj-excerpt"><summary>Фрагмент из главы</summary><blockquote>${esc(p.quote)}</blockquote></details>` : ""}
+  card.innerHTML = `<b>${esc(p.routeLabel || p.place)}</b><p class="gj-story">${esc(journeyContext(p))}</p>
     <div class="gm-links"><a href="https://chatgpt.com/?q=${encodeURIComponent(gmPlaceQuestion(p))}" target="_blank" rel="noopener">ChatGPT</a><a href="https://yandex.ru/maps/?ll=${p.lon},${p.lat}&amp;z=12&amp;pt=${p.lon},${p.lat},pm2rdm" target="_blank" rel="noopener">Я.Карты</a>
     <a href="https://earth.google.com/web/@${p.lat},${p.lon},0a,12000d,35y,0h,0t,0r" target="_blank" rel="noopener">Earth</a>
-    <a href="https://www.google.com/search?tbm=isch&amp;q=${query}" target="_blank" rel="noopener">Фото</a></div>
-`;
+    <a href="https://www.google.com/search?tbm=isch&amp;q=${query}" target="_blank" rel="noopener">Фото</a><a href="${esc(panoramaURL(p))}" target="_blank" rel="noopener">Панорамы</a></div><div id="gmPanorama" class="gj-panorama" aria-live="polite"></div>`;
+  gmPanoramaCheck(p);
+}
+const panoramaCache = new Map();
+function panoramaDistance(a, b) {
+  const rad = x => x * Math.PI / 180;
+  const v = Math.sin(rad(b[0]-a[0])/2)**2 + Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(rad(b[1]-a[1])/2)**2;
+  return 6371000 * 2 * Math.asin(Math.min(1,Math.sqrt(v)));
+}
+function nearbyPanorama(rows, point, layer) {
+  return (rows || []).map(p => {
+    const position = p.getPosition();
+    if (!Array.isArray(position) || !Number.isFinite(position[0]) || !Number.isFinite(position[1])) return null;
+    const distance = panoramaDistance(point, position);
+    return distance <= 5000 ? {lat:position[0],lon:position[1],distance,air:layer==='yandex#airPanorama'} : null;
+  }).filter(Boolean).sort((a,b)=>a.distance-b.distance)[0] || null;
+}
+function panoramaURL(p, found) {
+  const lat = found ? found.lat : p.lat, lon = found ? found.lon : p.lon;
+  return 'https://yandex.ru/maps/?' + new URLSearchParams({ll:`${lon},${lat}`,z:'14',l:'stv,sta',...(found?{'panorama[point]':`${lon},${lat}`,'panorama[full]':'true'}:{})}).toString();
+}
+function gmPanoramaCheck(p) {
+  const context = gm, box = $("#gmPanorama");
+  if (!box || !context || !mapYandexKey(context.мат)) return;
+  const key = `${p.lat},${p.lon}`;
+  const paint = result => {
+    if (gm !== context || gm.at !== p.name || $("#gmPanorama") !== box) return;
+    if (result?.error) {
+      box.innerHTML = "";
+    } else if (result) {
+      const d = result.distance < 1000 ? `${Math.round(result.distance/50)*50} м` : `${(result.distance/1000).toFixed(1).replace('.',',')} км`;
+      box.innerHTML = `<a href="${esc(panoramaURL(p,result))}" target="_blank" rel="noopener">${result.air?'Аэропанорама':'Панорама'} рядом · ${result.distance<50?'менее 50 м':d} ↗</a>`;
+    } else box.innerHTML = '';
+  };
+  if (!panoramaCache.has(key)) {
+    const request = loadYandex(mapYandexKey(context.мат)).then(async api => {
+      const results = await Promise.all(['yandex#panorama','yandex#airPanorama'].map(async layer => {
+        try { return {found:nearbyPanorama(await withTimeout(Promise.resolve(api.panorama.locate([p.lat,p.lon],{layer})),10000),[p.lat,p.lon],layer)}; }
+        catch { return {error:true}; }
+      }));
+      const found = results.map(r=>r.found).filter(Boolean).sort((a,b)=>a.distance-b.distance)[0];
+      return found || (results.some(r=>r.error)?{error:true}:null);
+    }).catch(()=>({error:true}));
+    panoramaCache.set(key, request);
+    request.then(result=>{if(result?.error)panoramaCache.delete(key);});
+  }
+  panoramaCache.get(key).then(paint);
 }
 
 function heroPhotoOf(h) { return h && ((artsOf(gm.id) || {}).heroPhotos || {})[h.photoId]; }
@@ -15347,9 +15384,7 @@ function bindPlaceMap() {
 
   box.addEventListener("change", e => {
     if (!gm) return;
-    if (e.target.id === "gmJourneyPerson") {
-      gm.journeyPerson = e.target.value; gm.journeyStep = 0; gmJourneySelect(0);
-    } else if (e.target.id === "gmJourneyChapter") {
+    if (e.target.id === "gmJourneyChapter") {
       const index = gmJourneyState().stops.findIndex(p => p.ch === Number(e.target.value));
       if (index >= 0) gmJourneySelect(index);
     }
@@ -15358,8 +15393,6 @@ function bindPlaceMap() {
     if (e.target.closest("[data-gm-live-retry]") && gm) { gm.liveFailed = false; gmLiveRender(true); return; }
     const step = e.target.closest("[data-journey-step]");
     if (step) { gmJourneySelect(Number(step.dataset.journeyStep)); return; }
-    const move = e.target.closest("[data-journey-move]");
-    if (move && gm) gmJourneySelect((gm.journeyStep || 0) + Number(move.dataset.journeyMove));
   });
 
   const поле = $("#gmFind");
