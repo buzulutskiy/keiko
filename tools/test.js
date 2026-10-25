@@ -825,7 +825,8 @@ function ок(имя, факт, надо) {
   const имя = (/data-ev-ach="[^"]*"[^>]*>\s*<i>[^<]*<\/i><span>([^<]*)</.exec(узел.innerHTML) || [])[1] || "";
   ок("лента: артефактов в карточке дня больше нет", /data-ev-art=/.test(узел.innerHTML), false);
   ок("лента: длинное имя обрезано", имя.length <= 29, true);
-  ок("лента: обрезка помечена многоточием", имя.endsWith("…"), true);
+  ок("заметки: автоматические карточки занятий скрыты", /data-ev-ach=/.test(узел.innerHTML), false);
+  ок("заметки: исходные события сохранены в данных", t.get("data").thoughts.length, 1);
 
   /* Набор наград переписали — вечер не должен остаться с теми, которых нет. */
   t.set("CATALOG", { kn: { facts: [], noDays: true, ach: [
@@ -4566,6 +4567,21 @@ const сеть = (() => {
   const u=new URL(t.get('panoramaURL')({lat:45,lon:136},{lat:45.001,lon:136.002}));
   ок('панорамы: ссылка ведёт к съёмке, а не к метке маршрута',u.searchParams.get('panorama[point]'),'136.002,45.001');
   ок('маршрут: краткий контекст не добавляет второй раз дату',t.get('journeyContext')({routeContext:'2006. Приехал.',period:'2006',text:'Приехал.'}),'2006. Приехал.');
+}
+
+/* ── Личные заметки и длительность материала ── */
+{
+  const before=t.get('data');
+  const d=t.get('migrate')({thoughts:[{id:'note',text:'Моя заметка'},{id:'ev:session:old',text:'Старое событие'},{id:'session',event:'session'},{id:'done',event:'done'},{id:'diary',diary:true},{id:'gone',deleted:true}]});
+  t.set('data',d);
+  ок('заметки: остаются только личные записи',t.get('personalNotes')().map(x=>x.id),['note']);
+  ок('заметки: фильтрация не удаляет исходные события',d.thoughts.length,6);
+  const duration=t.get('materialDuration');
+  ок('история: месяц от начала до завершения',duration({firstDate:'2026-09-22',completedAt:'2026-10-21'}),'≈ месяц');
+  ок('история: две недели округлены',duration({firstDate:'2026-10-01',completedAt:'2026-10-14'}),'≈ 2 недели');
+  ок('история: без начала длительность не придумана',duration({completedAt:'2026-10-21'}),'');
+  ок('история: незавершённой работе нет срока завершения',duration({firstDate:'2026-10-01'}),'');
+  t.set('data',before);
 }
 
 /* ── Итог ── */

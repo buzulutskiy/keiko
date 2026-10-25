@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 608";
+const APP_VERSION = "Кэйко 609";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5903,6 +5903,14 @@ function pathHistoryDates(item) {
   if(item.completedAt) rows.push({label:'Завершено',date:item.completedAt});
   return rows;
 }
+function materialDuration(item) {
+  if(!item.completedAt || !item.firstDate || item.completedAt<item.firstDate) return '';
+  const days=daysBetween(item.firstDate,item.completedAt)+1;
+  if(days<7)return `${days} ${plural(days,'день','дня','дней')}`;
+  if(days<28){const n=Math.round(days/7);return `≈ ${n===1?'неделя':n+' '+plural(n,'неделя','недели','недель')}`;}
+  if(days<330){const n=Math.round(days/30);return `≈ ${n===1?'месяц':n+' '+plural(n,'месяц','месяца','месяцев')}`;}
+  const n=Math.max(1,Math.round(days/365));return `≈ ${n===1?'год':n+' '+plural(n,'год','года','лет')}`;
+}
 function materialWeekSummaryHTML(today=todayStr()) {
   const summary=weeklyProgressWeek(0,today,'week'),metrics=summary.metrics;
   const done=metrics.filter(m=>m.target>0&&m.current>=m.target).length;
@@ -5916,7 +5924,7 @@ function materialWeekSummaryHTML(today=todayStr()) {
 function renderMaterialPath() {
   const view=$('#view'),items=materialHistoryItems();
   let group=null;
-  view.innerHTML=`<section class="material-path"><header class="path-heading"><h1>Мой путь</h1></header>${materialWeekSummaryHTML()}<div class="path-history">${items.length?items.map(item=>{
+  view.innerHTML=`<section class="material-path">${materialWeekSummaryHTML()}<div class="path-history">${items.length?items.map(item=>{
     const color={book:'gold',piano:'violet',pastel:'green',watch:'violet'}[item.track];
     const cover=coverCache.get(item.id)||((catOf(item.id)||{}).cover?coverSrc(item.id,item.material.cover||''):(coverOk(item.material.cover)?item.material.cover:''));
     const type={book:'Чтение',piano:'Пианино',pastel:'Рисование',watch:'Просмотр'}[item.track];
@@ -5924,8 +5932,8 @@ function renderMaterialPath() {
     const month=(item.activityDate||item.firstDate||'').slice(0,7);
     const heading=month!==group?`<h2 class="path-month">${month?esc(new Intl.DateTimeFormat('ru',{month:'long',year:'numeric'}).format(fromStr(month+'-01')).replace(' г.','')):'Без даты'}</h2>`:'';group=month;
     const when=item.lastDate&&(!item.completedAt||item.lastDate!==item.completedAt)?`Последний раз · ${fmtDay(item.lastDate)}`:'';
-    const dates=pathHistoryDates(item);
-    return `${heading}<article class="path-card path-history-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h3>${esc(item.title)}</h3>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}${when?`<p class="path-date">${esc(when)}</p>`:''}</div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${item.pct===null?'В работе':`${Math.round(item.pct)}%`}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`:'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?0:item.pct}%"></i></div>${dates.length?`<dl class="path-dates">${dates.map(d=>`<div><dt>${d.label}</dt><dd><time datetime="${d.date}">${esc(fmtDay(d.date))}</time></dd></div>`).join('')}</dl>`:''}</article>`;
+    const dates=pathHistoryDates(item),duration=materialDuration(item);
+    return `${heading}<article class="path-card path-history-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover"${cover?'':` data-path-cover="${esc(item.id)}"`}>${cover?`<img src="${esc(cover)}" data-cov="${esc(item.id)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h3>${esc(item.title)}</h3>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}${when?`<p class="path-date">${esc(when)}</p>`:''}</div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${item.pct===null?'В работе':`${Math.round(item.pct)}%`}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`:'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?0:item.pct}%"></i></div>${dates.length?`<dl class="path-dates">${dates.map(d=>`<div><dt>${d.label}</dt><dd><time datetime="${d.date}">${esc(fmtDay(d.date))}</time></dd></div>`).join('')}${duration?`<div><dt>Длительность</dt><dd>${esc(duration)}</dd></div>`:''}</dl>`:''}</article>`;
   }).join(''):'<p class="path-empty">Здесь появится история после первого занятия с материалом.</p>'}</div></section>`;
 }
 function openOutwardSheet(key) {
@@ -6936,6 +6944,7 @@ function switchProfile() {
    это читательский дневник, привязанный к месту в материале. */
 
 const thoughts = () => (data.thoughts || []).filter(t => !t.deleted);
+const personalNotes = () => thoughts().filter(t => !t.diary && !t.event && !String(t.id || "").startsWith("ev:"));
 const thoughtsOf = (key) => thoughts().filter(t => t.key === key)
   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -6960,7 +6969,7 @@ function thoughtHintHTML() {
 
 // вытянуть случайную мысль: ту же дважды подряд не показываем
 function shuffleRandomThought() {
-  const pool = thoughts()
+  const pool = personalNotes()
     .filter(t => !t.event)                       // события — не мысли, их не тянем наугад
     .filter(t => notesFilter !== "liked" || t.liked)
     .filter(t => t.id !== shuffleThought);
@@ -8663,7 +8672,7 @@ function renderNotes() {
     : (mats.some(m => keyOf(m) === currentKey()) ? currentKey() : NO_MAT);
   const cur = key === NO_MAT ? NO_MAT_ITEM : (mats.find(m => keyOf(m) === key) || mats[0] || NO_MAT_ITEM);
 
-  const all = thoughts().filter((t) => !t.diary).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const all = personalNotes().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const liked = all.filter(t => t.liked);
   if (notesFilter === "liked" && !liked.length) notesFilter = "all";
   let list = notesFilter === "liked" ? liked : all;
@@ -9189,8 +9198,8 @@ function syncNotesFabs() {
   const like = $("#likeFab"), dice = $("#diceFab"), srt = $("#sortFab");
   if (!like || !dice) return;
   const here = tab === "notes" && !settingsOpen && data && data.thoughts;
-  const total = here ? thoughts().length : 0;
-  const n = here ? thoughts().filter(t => t.liked).length : 0;
+  const total = here ? personalNotes().length : 0;
+  const n = here ? personalNotes().filter(t => t.liked).length : 0;
   like.classList.toggle("show", n > 0);
   like.classList.toggle("on", notesFilter === "liked");
   like.innerHTML = `<i>${notesFilter === "liked" ? "♥" : "♡"}</i><b>${n}</b>`;
@@ -18179,6 +18188,12 @@ let coversTimer = 0;
    экран не трогаем вовсе. */
 function coverPaint() {
   let осталось = 0;
+  for (const el of document.querySelectorAll('[data-path-cover]')) {
+    const id=el.dataset.pathCover,src=coverCache.get(id);
+    if(!src) continue;
+    const img=document.createElement('img');img.src=src;img.alt='';img.loading='lazy';img.dataset.cov=id;
+    el.replaceChildren(img);delete el.dataset.pathCover;
+  }
   for (const el of document.querySelectorAll("img[data-cov]")) {
     const src = coverCache.get(el.dataset.cov);
     if (src && el.getAttribute("src") !== src) el.src = src;
