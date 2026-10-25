@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 607";
+const APP_VERSION = "Кэйко 608";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -5824,7 +5824,7 @@ function allEntriesOn(ds) {
 let weeklyProgressProfile = "";
 let weeklyProgressPeriod = "week";
 
-/* Материал → осмысленное действие. Контекст хранится в приватном каталоге. */
+/* История материалов по реальным занятиям и датам завершения. */
 function pathDate(value) {
   if (!value) return '';
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? dateStr(new Date(value)) : '';
@@ -5851,7 +5851,8 @@ function materialPathItems(today=todayStr()) {
     if(track==='pastel') volume=plain?`${entries.length} ${plural(entries.length,'занятие','занятия','занятий')}`:`${stats.done||0} / ${stats.lessons||0} уроков`;
     if(track==='watch') volume=completed?'Просмотрено':entries.length?'Начат просмотр':'Нет отметок просмотра';
     const completedAt=completed?pathDate(m.doneAt):'';
-    out.set(`${track}:${m.id}`,{key:`${track}:${m.id}`,id:m.id,track,title:m.title||m.name||'Материал',author:m.author||'',material:m,view,entries,pct:pct===null?null:Math.max(0,Math.min(100,pct)),completed,completedAt,lastDate:dates[dates.length-1]||'',activityDate:[dates[dates.length-1]||'',completedAt].sort().pop(),volume,archived:!!m.archived});
+    const firstDate=[pathDate(m.startedAt),dates[0]||''].filter(d=>d&&d<=today).sort()[0]||'';
+    out.set(`${track}:${m.id}`,{key:`${track}:${m.id}`,id:m.id,track,title:m.title||m.name||'Материал',author:m.author||'',material:m,view,entries,pct:pct===null?null:Math.max(0,Math.min(100,pct)),completed,completedAt,firstDate,lastDate:dates[dates.length-1]||'',activityDate:[dates[dates.length-1]||'',completedAt,firstDate].sort().pop(),volume,archived:!!m.archived});
   }
   for(const a of data.archive||[]) {
     if(a.deleted || !['book','piano','pastel','watch'].includes(a.track)) continue;
@@ -5859,11 +5860,12 @@ function materialPathItems(today=todayStr()) {
     if(!existing) existing=[...out.values()].find(m=>m.track===a.track && m.archived && m.title===a.title);
     if(existing) {
       existing.activityDate=[existing.activityDate,pathDate(a.finishedAt)].sort().pop();
+      existing.firstDate=[existing.firstDate,pathDate(a.startedAt)].filter(d=>d&&d<=today).sort()[0]||'';
       if(Number(a.pct)>=100 && (existing.archived || existing.completed)){existing.completed=true;existing.pct=100;existing.completedAt=existing.completedAt||pathDate(a.finishedAt);}
       continue;
     }
     const completed=Number(a.pct)>=100,finished=pathDate(a.finishedAt);
-    out.set(key,{key,id,track:a.track,title:a.title||'Материал',author:a.sub||'',material:a,view:null,entries:[],pct:completed?100:Math.max(0,Math.min(100,Number(a.pct)||0)),completed,completedAt:completed?finished:'',lastDate:'',activityDate:finished,volume:completed?'Завершено':'В архиве',archived:true});
+    out.set(key,{key,id,track:a.track,title:a.title||'Материал',author:a.sub||'',material:a,view:null,entries:[],pct:completed?100:Math.max(0,Math.min(100,Number(a.pct)||0)),completed,completedAt:completed?finished:'',firstDate:pathDate(a.startedAt),lastDate:'',activityDate:finished,volume:completed?'Завершено':'В архиве',archived:true});
   }
   return [...out.values()].sort((a,b)=>String(b.activityDate||'').localeCompare(a.activityDate||'') || (Number(b.material.createdAt||b.material.addedAt)||0)-(Number(a.material.createdAt||a.material.addedAt)||0) || a.title.localeCompare(b.title,'ru'));
 }
@@ -5892,28 +5894,39 @@ function undoOutwardAction(key,stamp=now()) {
   const old=outwardAction(key);if(!old)return;
   data.outwardActions=mergeLists(data.outwardActions||[],[{...old,deleted:true,updatedAt:stamp}]);
 }
-function materialPathModeHTML() {
-  const activity=cfg.pathView==='activity';
-  return `<div class="path-modes" role="group" aria-label="Мой путь"><button type="button" data-path-mode="materials" aria-pressed="${!activity}">Материалы</button><button type="button" data-path-mode="activity" aria-pressed="${activity}">Занятия</button></div>`;
+function materialHistoryItems(today=todayStr()) {
+  return materialPathItems(today).filter(m=>m.lastDate || m.firstDate || m.completed || m.pct>0 || m.archived);
+}
+function pathHistoryDates(item) {
+  const rows=[];
+  if(item.firstDate) rows.push({label:'Начато',date:item.firstDate});
+  if(item.completedAt) rows.push({label:'Завершено',date:item.completedAt});
+  return rows;
+}
+function materialWeekSummaryHTML(today=todayStr()) {
+  const summary=weeklyProgressWeek(0,today,'week'),metrics=summary.metrics;
+  const done=metrics.filter(m=>m.target>0&&m.current>=m.target).length;
+  const planned=metrics.filter(m=>m.target>0).length;
+  const status=planned===3&&done===3?'Все цели выполнены ✓':planned?`${done} из ${planned} целей`:'Цели не заданы';
+  return `<section class="path-week" aria-label="Цели текущей недели"><div class="path-week-title"><span>Эта неделя</span><b>${status}</b></div><div class="path-week-bars">${metrics.map((m,i)=>{
+    const pct=m.target>0?Math.min(100,m.current/m.target*100):0;
+    return `<div class="path-week-metric" style="--week-color:var(--${['gold','violet','green'][i]})"><div class="path-week-track" role="progressbar" aria-label="${m.title}: ${m.current}${m.target?` из ${m.target}`:''} ${m.short}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}"><i style="width:${pct}%"></i></div><span>${m.title}${m.target>0&&m.current>=m.target?' ✓':''}</span><small>${m.current}${m.target?` / ${m.target}`:''} ${m.short}</small></div>`;
+  }).join('')}</div></section>`;
 }
 function renderMaterialPath() {
-  const view=$('#view');
-  if(cfg.pathView==='activity') {renderWeeklyProgress();view.insertAdjacentHTML('afterbegin',materialPathModeHTML());bindMaterialPathMode();return;}
-  const items=materialPathItems(),helped=items.filter(m=>outwardAction(m.key)).length;
-  view.innerHTML=`<section class="material-path"><header class="path-heading"><h1>Мой путь</h1><p>${items.length} ${plural(items.length,'материал','материала','материалов')}${helped?` · ${helped} ${plural(helped,'действие','действия','действий')} вовне`:''}</p></header>${materialPathModeHTML()}<div class="path-list">${items.length?items.map(item=>{
-    const plan=outwardPlan(item),action=outwardAction(item.key),color={book:'gold',piano:'violet',pastel:'green',watch:'violet'}[item.track];
+  const view=$('#view'),items=materialHistoryItems();
+  let group=null;
+  view.innerHTML=`<section class="material-path"><header class="path-heading"><h1>Мой путь</h1></header>${materialWeekSummaryHTML()}<div class="path-history">${items.length?items.map(item=>{
+    const color={book:'gold',piano:'violet',pastel:'green',watch:'violet'}[item.track];
     const cover=coverCache.get(item.id)||((catOf(item.id)||{}).cover?coverSrc(item.id,item.material.cover||''):(coverOk(item.material.cover)?item.material.cover:''));
     const type={book:'Чтение',piano:'Пианино',pastel:'Рисование',watch:'Просмотр'}[item.track];
-    const status=item.completed?'Завершено':item.archived?'В архиве':item.entries.length?'В работе':'Нет отметок';
-    const when=item.lastDate?`Последний раз · ${fmtDay(item.lastDate)}`:item.completedAt?`Завершено · ${fmtDay(item.completedAt)}`:'Нет записей занятий';
-    const progress=item.pct===null?'В работе':`${Math.round(item.pct)}%`;
-    return `<article class="path-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h2>${esc(item.title)}</h2>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}<p class="path-date">${esc(when)}</p></div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${progress}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`: 'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?100:item.pct}%"></i></div>${action?`<div class="path-helped"><span>✓ Помощь отмечена · ${esc(fmtDay(action.date))}</span><button type="button" data-outward="${esc(item.key)}">Подробнее</button></div>`:item.completed?`<div class="path-next">${plan?`<div><small>После завершения</small><p>${esc(plan.title)}</p></div><button type="button" data-outward="${esc(item.key)}">Как помочь ↗</button>`:'<p class="path-missing">Предложение помощи пока не подобрано</p>'}</div>`:plan?`<p class="path-preview">После завершения — ${esc(plan.title.charAt(0).toLowerCase()+plan.title.slice(1))}</p>`:''}</article>`;
-  }).join(''):'<p class="path-empty">Добавь материал в библиотеке — здесь появятся его прогресс и история.</p>'}</div></section>`;
-  bindMaterialPathMode();
-  view.querySelectorAll('[data-outward]').forEach(b=>b.addEventListener('click',()=>openOutwardSheet(b.dataset.outward)));
-}
-function bindMaterialPathMode() {
-  $('#view').querySelectorAll('[data-path-mode]').forEach(b=>b.addEventListener('click',()=>{cfg.pathView=b.dataset.pathMode;saveCfg();render();$('#view').scrollTop=0;}));
+    const status=item.completed?'Завершено':item.archived?'В архиве':'В работе';
+    const month=(item.activityDate||item.firstDate||'').slice(0,7);
+    const heading=month!==group?`<h2 class="path-month">${month?esc(new Intl.DateTimeFormat('ru',{month:'long',year:'numeric'}).format(fromStr(month+'-01')).replace(' г.','')):'Без даты'}</h2>`:'';group=month;
+    const when=item.lastDate&&(!item.completedAt||item.lastDate!==item.completedAt)?`Последний раз · ${fmtDay(item.lastDate)}`:'';
+    const dates=pathHistoryDates(item);
+    return `${heading}<article class="path-card path-history-card" style="--path-color:var(--${color})"><div class="path-material"><div class="path-cover">${cover?`<img src="${esc(cover)}" alt="" loading="lazy">`:`<span aria-hidden="true">${{book:'📖',piano:'🎹',pastel:'🎨',watch:'🎬'}[item.track]}</span>`}</div><div class="path-copy"><div class="path-type">${type} · ${status}</div><h3>${esc(item.title)}</h3>${item.author?`<p class="path-author">${esc(item.author)}</p>`:''}${when?`<p class="path-date">${esc(when)}</p>`:''}</div></div><div class="path-volume"><span>${esc(item.volume)}</span><b>${item.pct===null?'В работе':`${Math.round(item.pct)}%`}</b></div><div class="path-progress${item.pct===null?' unknown':''}" ${item.pct!==null?`role="progressbar" aria-label="Прогресс: ${esc(item.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(item.pct)}"`:'aria-label="У рисунка нет числовой шкалы завершения"'}><i style="width:${item.pct===null?0:item.pct}%"></i></div>${dates.length?`<dl class="path-dates">${dates.map(d=>`<div><dt>${d.label}</dt><dd><time datetime="${d.date}">${esc(fmtDay(d.date))}</time></dd></div>`).join('')}</dl>`:''}</article>`;
+  }).join(''):'<p class="path-empty">Здесь появится история после первого занятия с материалом.</p>'}</div></section>`;
 }
 function openOutwardSheet(key) {
   const item=materialPathItems().find(m=>m.key===key);if(!item)return;

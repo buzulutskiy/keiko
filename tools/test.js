@@ -4517,6 +4517,9 @@ const сеть = (() => {
   t.set('CATALOG',{'__path__':{outward:{'book:b':{id:'help',title:'Помочь природе',why:'Связь по теме',organization:'Фонд',url:'https://example.org/help'}},outwardDefaults:{book:{id:'general',title:'Поддержать образование',why:'Общий вариант',organization:'Фонд',url:'https://example.org/help'}}}});
   const list=t.get('materialPathItems')('2026-10-24');
   ок('путь: свежие занятия выше старых',list[0].id,'b');
+  ок('история: начало берётся из первого не удалённого занятия',list.find(m=>m.id==='a').firstDate,'2026-10-10');
+  ок('история: не начатый материал не попадает в ленту',t.get('materialHistoryItems')('2026-10-24').some(m=>m.id==='unused'),false);
+  ок('история: даты завершения сохраняются',t.get('pathHistoryDates')(list[0]).find(d=>d.label==='Завершено').date,'2026-10-20');
   ок('путь: архив не дублирует живую книгу',list.filter(m=>m.id==='b').length,1);
   ок('путь: удалённый материал исключён',list.some(m=>m.id==='deleted'),false);
   ок('путь: удалённая отметка не продвигает книгу',list.find(m=>m.id==='a').pct,25);
