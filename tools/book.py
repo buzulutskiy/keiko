@@ -130,19 +130,31 @@ def глава_текстом(путь, номер):
 
 
 def конвертировать(epub):
-    md = subprocess.run([sys.executable, EPUB2MD, epub], capture_output=True, text=True)
-    for s2 in (md.stdout + md.stderr).splitlines():
-        if s2.strip().endswith(".md"): return open(s2.strip(), encoding="utf-8").read()
-    sys.exit("epub не сконвертировался:\n" + md.stderr[:400])
+    if os.path.exists(EPUB2MD):
+        md = subprocess.run([sys.executable, EPUB2MD, epub], capture_output=True, text=True)
+        for line in (md.stdout + md.stderr).splitlines():
+            if line.strip().endswith(".md"): return open(line.strip(), encoding="utf-8").read()
+    # The personal converter is not installed on every machine; the EPUB spine
+    # remains the source of order. No page numbers are inferred here.
+    import zipfile, posixpath, xml.etree.ElementTree as ET
+    with zipfile.ZipFile(epub) as z:
+        container=ET.fromstring(z.read("META-INF/container.xml"))
+        opf=container.find(".//{*}rootfile").attrib["full-path"]
+        package=ET.fromstring(z.read(opf));base=posixpath.dirname(opf)
+        items={e.attrib['id']:e.attrib for e in package.findall('.//{*}manifest/{*}item')}
+        chunks=[]
+        for ref in package.findall('.//{*}spine/{*}itemref'):
+            item=items[ref.attrib['idref']]
+            node=ET.fromstring(z.read(posixpath.normpath(posixpath.join(base,item['href']))))
+            rows=[''.join(e.itertext()).strip() for e in node.iter() if e.tag.rsplit('}',1)[-1] in ('p','h1','h2','h3')]
+            rows=[line for line in rows if line]
+            if rows: chunks.append('## '+rows[0]+'\n\n'+'\n\n'.join(rows[1:]))
+        return '\n\n'.join(chunks)
 
 
 def разведка(epub, key=None):
-    md = subprocess.run([sys.executable, EPUB2MD, epub], capture_output=True, text=True)
-    путь = ""
-    for s in (md.stdout + md.stderr).splitlines():
-        if s.strip().endswith(".md"): путь = s.strip()
-    if not путь or not os.path.exists(путь): sys.exit("epub не сконвертировался:\n" + md.stderr[:400])
-    текст = open(путь, encoding="utf-8").read()
+    путь = epub
+    текст = конвертировать(epub)
     главы = главы_файла(текст)
 
     print(f"файл: {путь}  ({len(текст)//1000}к знаков)")
@@ -431,11 +443,7 @@ def build(путь_спеки):
     print(f"══ {spec.get('title') or key} ══")
 
     # 1. текст
-    md = subprocess.run([sys.executable, EPUB2MD, spec["epub"]], capture_output=True, text=True)
-    путь_md = ""
-    for s in (md.stdout + md.stderr).splitlines():
-        if s.strip().endswith(".md"): путь_md = s.strip()
-    текст = open(путь_md, encoding="utf-8").read()
+    текст = конвертировать(spec["epub"])
     главы = главы_файла(текст)
     print(f"  текст: {len(текст)//1024} КБ, глав в файле {len(главы)}")
     оглавление = [c["from"] for c in spec["chapters"]]
@@ -512,6 +520,8 @@ def build(путь_спеки):
         статья["mapBox"] = рамка
         файлы_каталога[f"art-map-{key}.txt"] = ("data:image/jpeg;base64," +
             base64.b64encode(open(картинка, "rb").read()).decode())
+    for field in ("parts", "journeys", "heroes", "heroPhotos", "source", "yandex"):
+        if field in spec.get("article", {}): статья[field]=spec["article"][field]
     файлы_каталога[f"article-{key}.json"] = json.dumps(статья, ensure_ascii=False, separators=(",", ":"))
 
     # 4. опись
@@ -527,6 +537,9 @@ def build(путь_спеки):
         "flavor": spec.get("flavor", {}), "ask": spec.get("ask", ""),
         "themes": spec.get("themes", []),
     })
+    for field in ("noAch", "noDays", "off"):
+        if field in spec: было[field]=spec[field]
+    было["arts"] = True
     опись["materials"][key] = было
     опись["savedAt"] = int(time.time() * 1000)
     файлы_каталога["keiko-catalog.json"] = json.dumps(опись, ensure_ascii=False, separators=(",", ":"))
@@ -540,7 +553,7 @@ def build(путь_спеки):
     книга.update({k: spec[k] for k in ("id", "title", "author", "pages") if k in spec})
     # `unit` — чем меряется книга: страницами или процентами. Книгу с читалки
     # страницами мерить нечем, там их нет.
-    for k in ("volume", "startPage", "art", "tone", "mode", "unit"):
+    for k in ("volume", "startPage", "art", "tone", "mode", "unit", "noContents"):
         if spec.get(k) is not None: книга[k] = spec[k]
     книга["ratio"] = ratio
     книга["chapters"] = spec["chapters"]

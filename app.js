@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 610";
+const APP_VERSION = "Кэйко 611";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -1085,7 +1085,7 @@ function journeyResolved(b, trip) {
     const resolved = p && {...p, ...stop, people:stop.routePeople || stop.people, sourceIndex, name: "journey:" + trip.id + ":" + sourceIndex};
     return resolved && !stop.routeHidden && Number.isFinite(resolved.lat) && Math.abs(resolved.lat) <= 85
       && Number.isFinite(resolved.lon) && Math.abs(resolved.lon) <= 180
-      && Number.isInteger(Number(stop.ch)) && Number(stop.ch) > 0 && (b.chapters || [])[Number(stop.ch) - 1] ? resolved : null;
+      && Number.isInteger(Number(stop.ch)) && Number(stop.ch) > 0 && mapPartsOf(b).some(c=>Number(c.n)===Number(stop.ch)) ? resolved : null;
   }).filter(Boolean);
 }
 function journeyTrips(b) {
@@ -13597,6 +13597,7 @@ function openPlaceMap(bk, i, выбрать) {
     if (typeof saved.journeyStop === "string") gm.restoreJourneyStop = saved.journeyStop;
     else if (typeof saved.at === "string" && saved.at.startsWith("journey:")) gm.restoreJourneyStop = saved.at;
   }
+  if (bk.noContents) gm.часть = 0;
   gmPaint();
   gmTocBtn();
   gmTitle();
@@ -13857,6 +13858,7 @@ function renderMuseum() {
 
 function closePlaceMap() {
   gmRemember();
+  if (gm) clearTimeout(gm.tileTimer);
   if (gm && gm.yandexMap) gm.yandexMap.destroy();
   gmLiveView(false); gmLiveMessage("");
   closeShots();
@@ -14113,7 +14115,7 @@ function gmList() {
   if (слова) слова.hidden = вкладка !== "ask";
   if (собр) собр.hidden = вкладка !== "col";
   if (вкладка === "heroes") {
-    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).map(h => `<article class="gl-it gm-hero"><div class="gl-head">${heroPhotoOf(h) ? `<button class="hp-thumb" type="button" data-hero-photo="${esc(h.id)}" aria-label="Открыть фотографию: ${esc(h.name)}"><img src="${esc(heroPhotoOf(h).data || heroPhotoOf(h).url)}" alt="${esc(heroPhotoOf(h).caption || h.name)}" loading="lazy"><span aria-hidden="true">⤢</span></button>` : `<span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span>`}<span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div><p>${esc(h.appearance)}</p></article>`).join("") || '<div class="gl-none">Для этой книги пока нет описаний героев.</div>';
+    box.innerHTML = ((artsOf(gm.id) || {}).heroes || []).map(h => `<article class="gl-it gm-hero"><div class="gl-head">${heroPhotoOf(h) ? `<button class="hp-thumb" type="button" data-hero-photo="${esc(h.id)}" aria-label="Открыть фотографию: ${esc(h.name)}"><img src="${esc(heroPhotoOf(h).data || heroPhotoOf(h).url)}" alt="${esc(heroPhotoOf(h).caption || h.name)}" loading="lazy"><span aria-hidden="true">⤢</span></button>` : `<span class="gl-ic" aria-hidden="true">${esc(h.icon)}</span>`}<span class="gl-txt"><b>${esc(h.name)}</b><i>${esc(h.role)}</i></span></div>${h.appearance?`<p>${esc(h.appearance)}</p>`:""}${h.photoNote?`<p class="hero-photo-note">${esc(h.photoNote)}</p>`:""}</article>`).join("") || '<div class="gl-none">Для этой книги пока нет описаний героев.</div>';
     return;
   }
   if (вкладка === "ask") { box.innerHTML = ""; askPane(); return; }
@@ -14445,7 +14447,7 @@ function gmNavRow() {
   gmJourneyUI();
   const ряд = $("#gmNav"), кн = $("#gmToc"), поле = $("#gmFind");
   if (!ряд || !gm) return;
-  const главы = gmParts().length > 1;
+  const главы = !gm.мат?.noContents && gmParts().length > 1;
   const искать = gm.места.length > 3;
   const своя = gmВкладка() === "place";
   const карты = (gm.карты) || [];
@@ -15124,7 +15126,27 @@ function gmLiveMessage(text) {
   const box = $("#gmLiveStatus");
   if (!box) return;
   box.hidden = !text;
+  box.classList.remove("gm-tiles-loading");
   box.innerHTML = text ? `<span>${esc(text)}</span>${gm && gm.liveFailed ? '<button type="button" data-gm-live-retry>Повторить</button>' : ''}` : "";
+}
+function gmTilesReady(status) {
+  return !!status && Number(status.totalTileNumber)>0
+    && Number(status.readyTileNumber)>=Number(status.totalTileNumber);
+}
+function gmWatchTiles(context) {
+  clearTimeout(context.tileTimer);
+  const map=context.yandexMap, started=now();
+  const check=()=>{
+    if(gm!==context || context.yandexMap!==map || !gmLiveWanted())return;
+    const group=map.layers.get(0);
+    const layer=typeof group?.getTileStatus === "function" ? group : group?.get?.(0);
+    const status=layer?.getTileStatus?.();
+    if(gmTilesReady(status)) { gmLiveMessage(""); return; }
+    gmLiveMessage(now()-started>12000 ? "Подложка карты ещё загружается…" : "Загружаем карту…");
+    $("#gmLiveStatus")?.classList.add("gm-tiles-loading");
+    context.tileTimer=setTimeout(check,400);
+  };
+  check();
 }
 function gmLiveRender(focus) {
   if (!gmLiveWanted()) { gmLiveView(false); return; }
@@ -15144,7 +15166,7 @@ function gmLiveRender(focus) {
       center: [(frame.north + frame.south) / 2, (frame.east + frame.west) / 2], zoom: 7,
       controls: ["zoomControl"], behaviors: ["drag", "dblClickZoom", "multiTouch", "scrollZoom"]
     }, {zoomControlSize: "small", suppressMapOpenBlock: true});
-    gmLiveMessage(""); gmLiveDraw(); gmLiveFocus();
+    gmLiveDraw(); gmLiveFocus(); gmWatchTiles(context);
   }).catch(() => {
     context.liveLoading = false;
     if (gm !== context) return;
@@ -15249,8 +15271,9 @@ function gmJourneyUI() {
   }
   const select = (id, label, rows, value) => `<label class="gj-select"><span>${label}</span><select id="${id}" aria-label="${label}">${rows.map(row =>
     `<option value="${esc(row.id)}"${row.id === value ? " selected" : ""}>${esc(row.name)}</option>`).join("")}</select></label>`;
-  const chapters = [...new Set(state.stops.map(p => p.ch))].map(ch => ({id:String(ch),name:(gm.мат.chapters[ch-1] || {}).name || "Глава " + ch}));
-  controls.innerHTML = select("gmJourneyChapter", "Глава", chapters, String(state.stop.ch));
+  const chapters = [...new Set(state.stops.map(p => p.ch))].map(ch => ({id:String(ch),name:(mapPartsOf(gm.мат).find(c=>Number(c.n)===Number(ch)) || {}).name || "Глава " + ch}));
+  controls.hidden = !!gm.мат.noContents;
+  controls.innerHTML = controls.hidden ? "" : select("gmJourneyChapter", "Глава", chapters, String(state.stop.ch));
   steps.innerHTML = `<div class="gj-numbers" aria-label="Остановки маршрута">${state.stops.map((p, i) => `<button type="button" data-journey-step="${i}"${i === gm.journeyStep ? ' aria-current="step"' : ""} aria-label="Остановка ${i + 1}: ${esc(p.place)}">${esc(p.routeLabel || p.place)}</button>`).join("")}</div>`;
   const active = steps.querySelector('[aria-current="step"]');
   if (active && active.scrollIntoView) active.scrollIntoView({block: "nearest", inline: "center"});
@@ -15396,7 +15419,8 @@ function openHeroPhoto(id) {
   dialog.querySelector('#hpName').textContent=h.name;
   const img=dialog.querySelector('.hp-stage img');img.src=photo.data || photo.url;img.alt=photo.caption || h.name;
   dialog.querySelector('.hp-caption p').textContent=photo.caption+(photo.credit?' · '+photo.credit:'');
-  dialog.querySelector('.hp-caption a').href=photo.source;
+  const sourceLink=dialog.querySelector('.hp-caption a');
+  sourceLink.hidden=!photo.source; if(photo.source)sourceLink.href=photo.source;else sourceLink.removeAttribute('href');
   dialog.resetPhoto(); if(!dialog.open)dialog.showModal();
 }
 

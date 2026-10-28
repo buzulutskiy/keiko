@@ -4590,6 +4590,26 @@ const сеть = (() => {
   t.set('data',before);
 }
 
+/* Map chapter numbers do not invent a paginated table of contents. */
+{
+  const b={id:'unpaginated-map',pages:280,chapters:[]},arts=t.get('ARTS');
+  arts[b.id]={parts:[{n:10,name:'Глава 10'},{n:11,name:'Глава 11'}],map:[{name:'Вокзал',lat:45.76,lon:4.86}],
+    journeys:[{id:'trip',people:[{id:'s',name:'Софи'}],stops:[{place:'Вокзал',ch:10,people:['s']},{place:'Вокзал',ch:11,people:['s']},{place:'Вокзал',ch:99,people:['s']}]}]};
+  ок('карта без содержания: главы взяты из материала',t.get('mapPartsOf')(b).length,2);
+  ок('карта без содержания: маршрут доступен до чтения',t.get('journeyTimeline')(b,'s').length,2);
+  ок('карта без содержания: страницы глав не выдуманы',b.chapters.length,0);
+  delete arts[b.id];
+}
+
+/* A ready map object is not proof that its geographic background loaded. */
+{
+  const ready=t.get('gmTilesReady');
+  ок('подложка: API без тайлов ещё загружается',ready(undefined),false);
+  ок('подложка: ноль тайлов не означает готовность',ready({readyTileNumber:0,totalTileNumber:0}),false);
+  ок('подложка: частичная загрузка не скрывает ожидание',ready({readyTileNumber:2,totalTileNumber:6}),false);
+  ок('подложка: готова после загрузки видимых тайлов',ready({readyTileNumber:6,totalTileNumber:6}),true);
+}
+
 /* ── Итог ── */
 Promise.resolve(сеть).then(() => {
   testTimeouts.forEach(clearTimeout);
