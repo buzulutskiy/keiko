@@ -3169,6 +3169,10 @@
     }
     .sheet.show { transform: translateX(-50%) translateY(0); }
     .sheet.reading-entry { bottom:var(--reading-keyboard,0px); max-height:min(92vh,var(--reading-viewport,92vh)); transition:none; }
+    .reading-keyboard-tight .reading-page-label { display:none; }
+    .reading-keyboard-tight .reading-page { margin-top:10px; }
+    .reading-keyboard-tight .reading-page-current { margin-top:7px; font-size:.76rem; }
+    .sheet.reading-keyboard-tight .sheet-actions { margin-top:12px; }
     .sheet.book-log-sheet .sheet-body { display:flex; flex-direction:column; overflow:hidden; }
     .sheet.book-log-sheet #sheetBody { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
     .sheet.book-log-sheet .sheet-actions { flex-shrink:0; }

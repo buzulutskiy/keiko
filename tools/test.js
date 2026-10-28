@@ -4663,6 +4663,20 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   URL.revokeObjectURL(url);t.get('coverCache').delete('cover-storage-test');
 });
 
+/* The reading action stays above the keyboard's accessory row. */
+{
+  const fit=t.get('typeof readingKeyboardGeometry === "function" ? readingKeyboardGeometry : null');
+  ок('клавиатура: есть расчёт свободной области',typeof fit,'function');
+  if(fit){
+    ок('клавиатура: закрыта — лишнего отступа нет',fit(844,844,0,844,true),{bottom:0,height:844});
+    ок('клавиатура: запас для системной панели 44 px',fit(844,500,0,844,true),{bottom:388,height:456});
+    ок('клавиатура: прокрутка Safari учитывается',fit(844,400,84,844,true),{bottom:404,height:356});
+    ок('клавиатура: уменьшившийся layout viewport тоже поддержан',fit(500,500,0,844,true),{bottom:44,height:456});
+    ок('клавиатура: изменение настольного окна без лишнего зазора',fit(600,600,0,844,false),{bottom:0,height:600});
+    ок('клавиатура: после закрытия запас снят',fit(844,844,0,844,true),{bottom:0,height:844});
+  }
+}
+
 /* ── Итог ── */
 Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);

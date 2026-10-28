@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 613";
+const APP_VERSION = "Кэйко 614";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -17226,21 +17226,36 @@ function updateReadingPageInput() {
   $("#readingCurrent").textContent = `Сейчас: ${bookProgress()} из ${book().pages}${впроцентах() ? "%" : " стр."}${pickDone ? " · ✓ Завершена" : ""}`;
 }
 
+function readingKeyboardGeometry(layoutHeight, visibleHeight, offsetTop, baselineHeight, touch) {
+  const inset = Math.max(0, layoutHeight - visibleHeight - offsetTop);
+  const keyboard = inset > 100 || (touch && baselineHeight - visibleHeight > 100);
+  // Safari's input accessory row can overlap the edge reported by VisualViewport.
+  const clearance = keyboard ? 44 : 0;
+  return {bottom:inset + clearance, height:Math.max(0, visibleHeight - clearance)};
+}
+
 function focusReadingPage() {
   const input = $("#readingPageInput"), sheet = $("#sheet");
   if (!input || !sheet) return;
   const viewport = window.visualViewport;
+  const touch = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches;
+  let baselineHeight = viewport ? viewport.height : window.innerHeight;
+  let layoutWidth = window.innerWidth;
   const fit = () => {
     const height = viewport ? viewport.height : window.innerHeight;
-    const inset = viewport ? Math.max(0, window.innerHeight - height - viewport.offsetTop) : 0;
-    sheet.style.setProperty("--reading-keyboard", inset + "px");
-    sheet.style.setProperty("--reading-viewport", height + "px");
+    if (window.innerWidth !== layoutWidth) {
+      baselineHeight = window.innerHeight; layoutWidth = window.innerWidth;
+    }
+    const frame = readingKeyboardGeometry(window.innerHeight, height, viewport?.offsetTop || 0, baselineHeight, touch);
+    sheet.classList.toggle("reading-keyboard-tight", frame.bottom > 0 && frame.height < 300);
+    sheet.style.setProperty("--reading-keyboard", frame.bottom + "px");
+    sheet.style.setProperty("--reading-viewport", frame.height + "px");
   };
   sheet.classList.add("reading-entry"); fit();
   viewport?.addEventListener("resize", fit); viewport?.addEventListener("scroll", fit);
   readingKeyboardCleanup = () => {
     viewport?.removeEventListener("resize", fit); viewport?.removeEventListener("scroll", fit);
-    input.blur(); sheet.classList.remove("reading-entry");
+    input.blur(); sheet.classList.remove("reading-entry", "reading-keyboard-tight");
     sheet.style.removeProperty("--reading-keyboard"); sheet.style.removeProperty("--reading-viewport");
     readingKeyboardCleanup = null;
   };
