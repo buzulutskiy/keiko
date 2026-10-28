@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 611";
+const APP_VERSION = "Кэйко 612";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -15151,7 +15151,7 @@ function gmWatchTiles(context) {
 function gmLiveRender(focus) {
   if (!gmLiveWanted()) { gmLiveView(false); return; }
   gmLiveView(true);
-  if (gm.yandexMap) { gmLiveDraw(); if (focus) gmLiveFocus(); return; }
+  if (gm.yandexMap) { gmLiveDraw(); if (focus) gmLiveFocus(); gmWatchTiles(gm); return; }
   if (gm.liveLoading) return;
   const context = gm;
   context.liveLoading = true;
@@ -15237,7 +15237,7 @@ function gmLiveFocus(given) {
   const move = north - south < .001 && east - west < .001
     ? map.setCenter([south,west], points[0].approximate ? 10 : 12)
     : map.setBounds([[south,west],[north,east]], {zoomMargin:44,checkZoomRange:true});
-  if (move && move.then) move.then(()=>{},()=>{});
+  if (move && move.then) move.then(()=>{ if(gm?.yandexMap===map)gmWatchTiles(gm); },()=>{});
 }
 
 function gmJourneyState() {
