@@ -520,7 +520,7 @@ def build(путь_спеки):
         статья["mapBox"] = рамка
         файлы_каталога[f"art-map-{key}.txt"] = ("data:image/jpeg;base64," +
             base64.b64encode(open(картинка, "rb").read()).decode())
-    for field in ("parts", "journeys", "heroes", "heroPhotos", "source", "yandex"):
+    for field in ("parts", "journeys", "heroes", "heroPhotos", "placePhotos", "source", "yandex"):
         if field in spec.get("article", {}): статья[field]=spec["article"][field]
     файлы_каталога[f"article-{key}.json"] = json.dumps(статья, ensure_ascii=False, separators=(",", ":"))
 

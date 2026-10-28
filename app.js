@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 612";
+const APP_VERSION = "Кэйко 613";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -64,6 +64,8 @@ let calYear, calMonth;
 let selectedDate = todayStr();
 let pickHand = "right", pickFrom = 1, pickTo = 1, pending = [];
 let pickPage = 0;
+let readingPageDraft = "";
+let readingKeyboardCleanup = null;
 let pickDone = false;    // нажата ли «Прочитана» в открытой шторке
 let pickLessons = [];
 let pickDrawDone = false;                   // «рисунок завершён» в простой отметке
@@ -2102,6 +2104,14 @@ function diagLine() {
 }
 
 function saveEntry() {
+  const readingInput = sheetMode === "log" && isBook() && $("#readingPageInput");
+  if (readingInput) {
+    const page = readingPageNumber(readingInput.value, book().pages);
+    if (page === null && !(pickDone && !readingInput.value.trim())) {
+      updateReadingPageInput(); readingInput.focus({preventScroll:true}); return;
+    }
+    pickPage = page === null ? bookProgress() : page;
+  }
   if (!gistReady()) { closeSheet(); openSettingsSheet(); return; }
   /* У рисунка каждая отметка — своя сессия, а не дописка к дню: за день
      можно сесть за лист дважды, и это два разных подхода со своим снимком.
@@ -4173,15 +4183,16 @@ async function coversBox() { return await caches.open(COVER_CACHE); }
 
 async function coverSave(id, dataUri) {
   const blob = await (await fetch(dataUri)).blob();
-  const box = await coversBox();
-  await box.put(coverKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
-  coverCache.set(id, URL.createObjectURL(blob));
+  await coverSaveBlob(id, blob);
 }
 
 async function coverSaveBlob(id, blob) {
-  const box = await coversBox();
-  await box.put(coverKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
   coverCache.set(id, URL.createObjectURL(blob));
+  // The picture remains usable even when the device denies persistent storage.
+  try {
+    const box = await coversBox();
+    await box.put(coverKey(id), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
+  } catch {}
 }
 
 async function coverLoadAll() {
@@ -4225,7 +4236,7 @@ function coverSrc(id, fallback) {
      каталоге появляется раньше записи о нём, а промах стоит одного запроса.
      Раньше здесь стоял ранний выход, и новый материал оставался без картинки,
      пока опись не обновят руками. */
-  if (!coverCache.has(id) && (!c || c.cover)) { coverCache.set(id, ""); coverAsk(id); }
+  if ((!c || c.cover) && now() >= (coverRetryAt.get(id) || 0)) coverAsk(id);
   return fallback;
 }
 
@@ -13959,6 +13970,7 @@ function gmМест(по) {
 const gmВидимые = () => {
   if (!gm) return [];
   const вкладка = gmВкладка();
+  if (вкладка === "place" && gm.allPlaces) return allPlacePoints(gm.мат);
   if (вкладка === "journey") {
     const state = gmJourneyState();
     return state.stops.filter(p => state.stop && (p.ch === state.stop.ch || p === state.stops[gm.journeyStep - 1]) && (gmUnified() || картаТочки(p) === gm.карта));
@@ -14127,7 +14139,10 @@ function gmList() {
     return;
   }
   if (местаСписком) {
-    box.innerHTML = список.map(p => `<div class="gl-it"><button class="gl-head" data-gm-place="${esc(p.name)}" type="button"><span class="gl-ic" aria-hidden="true">${esc(p.icon || gmIcon(p))}</span><span class="gl-txt"><b>${esc(p.name)}</b><i>${esc(p.context || p.t || "")}</i></span><span aria-hidden="true">›</span></button></div>`).join("");
+    box.innerHTML = `<button class="gm-all-places" type="button" data-gm-all-places>Все места на карте <span aria-hidden="true">↗</span></button>` + список.map(p => {
+      const photo = placePhotoOf(p);
+      return `<article class="gl-it gm-place"><div class="gl-head">${photo ? `<button class="hp-thumb" type="button" data-place-photo="${esc(p.name)}" aria-label="Открыть фотографию: ${esc(p.name)}"><img src="${esc(photo.data || photo.url)}" alt="${esc(photo.caption || p.name)}" loading="lazy"><span aria-hidden="true">⤢</span></button>` : `<span class="gl-ic" aria-hidden="true">${esc(p.icon || gmIcon(p))}</span>`}<button class="gl-txt gl-place-open" data-gm-place="${esc(p.name)}" type="button"><b>${esc(p.name)}</b><i>${esc(p.context || p.t || "")}</i><span class="gl-place-link">На карте ›</span></button></div></article>`;
+    }).join("");
     return;
   }
   /* Строка — не кнопка целиком: внутри ссылки, а ссылка в кнопке не работает.
@@ -15105,7 +15120,7 @@ function gmLiveModel() {
   if (!gm) return {points: [], segments: [], focus: []};
   const journey = gmВкладка() === "journey";
   const state = journey ? gmJourneyState() : null;
-  const points = gmВидимые().filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon) && (journey || !gm.placeDetail || p.name === gm.at));
+  const points = gmВидимые().filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon) && (journey || gm.allPlaces || !gm.placeDetail || p.name === gm.at));
   const segments = [];
   if (state) state.stops.forEach((p, i) => {
     if (i > 0 && points.some(x => x.name === p.name)
@@ -15202,15 +15217,16 @@ function gmLiveDraw() {
     map.geoObjects.add(new api.Circle([[model.selected.lat,model.selected.lon], model.selected.accuracyMeters], {}, {
       fillColor:gold,fillOpacity:.12,strokeColor:gold,strokeOpacity:.5,strokeWidth:1,interactivityModel:"default#transparent"}));
   }
-  const cluster = model.journey ? null : new api.Clusterer({preset: "islands#yellowClusterIcons", groupByCoordinates: false});
+  const namedPlaces = !!gm.allPlaces && !model.journey;
+  const cluster = model.journey || namedPlaces ? null : new api.Clusterer({preset: "islands#yellowClusterIcons", groupByCoordinates: false});
   const routePlaces = model.journey ? new Set() : gmRoutePlaces();
   const points = model.points.slice().sort((a,b) => Number(a.name === gm.at)-Number(b.name === gm.at));
   for (const p of points) {
     const selected = p.name === gm.at;
     const index = model.journey ? gmJourneyState().stops.findIndex(s => s.name === p.name) : -1;
     const marker = new api.Placemark([p.lat,p.lon], {hintContent:esc(p.place || p.name),
-      iconContent:model.journey ? esc(p.routeLabel || p.place) : ""}, {
-      preset: model.journey ? "islands#violetStretchyIcon" : p.approximate ? "islands#circleIcon" : "islands#dotIcon",
+      iconContent:model.journey ? esc(p.routeLabel || p.place) : namedPlaces ? esc(p.name) : ""}, {
+      preset: model.journey || namedPlaces ? "islands#violetStretchyIcon" : p.approximate ? "islands#circleIcon" : "islands#dotIcon",
       iconColor:model.journey ? (selected ? gold : "#8870c5") : routePlaces.has(p.name) ? "#a68aff" : gold,
       zIndex:selected ? 1000 : 400, openBalloonOnClick:false});
     marker.events.add("click", () => {
@@ -15222,6 +15238,7 @@ function gmLiveDraw() {
   }
   if (cluster) map.geoObjects.add(cluster);
 }
+
 function gmLiveFocus(given) {
   if (!gm || !gm.yandexMap || !gmLiveWanted()) return;
   const map = gm.yandexMap, points = given || gmLiveModel().focus;
@@ -15392,13 +15409,34 @@ function gmPanoramaCheck(p) {
 }
 
 function heroPhotoOf(h) { return h && ((artsOf(gm.id) || {}).heroPhotos || {})[h.photoId]; }
+function placePhotoOf(p) { return p && gm && ((artsOf(gm.id) || {}).placePhotos || {})[p.photoId]; }
+function allPlacePoints(b) {
+  const seen = new Set();
+  return mapWhole(b).filter(p => слойТочки(p) === "place" && Number.isFinite(p.lat) && Math.abs(p.lat)<=85 && Number.isFinite(p.lon) && Math.abs(p.lon)<=180)
+    .map((p,i)=>({p,i})).sort((a,b)=>(a.p.mentionOrder ?? Number.MAX_SAFE_INTEGER)-(b.p.mentionOrder ?? Number.MAX_SAFE_INTEGER) || a.i-b.i)
+    .map(x=>x.p).filter(p=>{if(seen.has(p.name))return false;seen.add(p.name);return true;});
+}
+function gmOpenAllPlaces() {
+  if (!gm) return;
+  gm.места = mapWhole(gm.мат); gm.часть = 0; gm.слой = "place";
+  gm.allPlaces = true; gm.placeDetail = true; gm.at = null;
+  gmList(); gmLayersRow(); gmPins(); gmCard(); gmFit(); gmRemember();
+  if (gmLiveWanted()) gmLiveRender(true);
+}
+function openPlacePhoto(name) {
+  const p = gm && mapWhole(gm.мат).find(p=>p.name===name), photo = placePhotoOf(p);
+  if(photo)openPhotoViewer(photo,p.name);
+}
 function openHeroPhoto(id) {
   const h = ((artsOf(gm.id) || {}).heroes || []).find(x => x.id === id), photo = heroPhotoOf(h);
   if (!photo) return;
+  openPhotoViewer(photo,h.name);
+}
+function openPhotoViewer(photo, name) {
   let dialog = $("#heroPhotoViewer");
   if (!dialog) {
     dialog = document.createElement("dialog"); dialog.id = "heroPhotoViewer";
-    dialog.setAttribute("aria-label", "Просмотр фотографии героя");
+    dialog.setAttribute("aria-label", "Просмотр фотографии");
     dialog.innerHTML = `<div class="hp-top"><b id="hpName"></b><button type="button" data-hp="close" aria-label="Закрыть фотографию">✕</button></div><div class="hp-stage" tabindex="0" aria-label="Фотография. Стрелки перемещают увеличенный снимок"><img draggable="false" alt=""></div><div class="hp-tools"><button type="button" data-hp="minus" aria-label="Уменьшить">−</button><button type="button" data-hp="reset">100%</button><button type="button" data-hp="plus" aria-label="Приблизить">+</button></div><div class="hp-caption"><p></p><a target="_blank" rel="noopener">Источник фотографии ↗</a></div>`;
     document.body.appendChild(dialog);
     const stage = dialog.querySelector('.hp-stage'), img = stage.querySelector('img'), pts = new Map();
@@ -15416,8 +15454,8 @@ function openHeroPhoto(id) {
     stage.addEventListener('wheel',e=> {e.preventDefault();setZoom(zoom*(e.deltaY<0?1.15:1/1.15));},{passive:false});
     stage.addEventListener('dblclick',()=>setZoom(zoom===1?2.5:1));
   }
-  dialog.querySelector('#hpName').textContent=h.name;
-  const img=dialog.querySelector('.hp-stage img');img.src=photo.data || photo.url;img.alt=photo.caption || h.name;
+  dialog.querySelector('#hpName').textContent=name;
+  const img=dialog.querySelector('.hp-stage img');img.src=photo.data || photo.url;img.alt=photo.caption || name;
   dialog.querySelector('.hp-caption p').textContent=photo.caption+(photo.credit?' · '+photo.credit:'');
   const sourceLink=dialog.querySelector('.hp-caption a');
   sourceLink.hidden=!photo.source; if(photo.source)sourceLink.href=photo.source;else sourceLink.removeAttribute('href');
@@ -15475,7 +15513,7 @@ function bindPlaceMap() {
     const b = e.target.closest("[data-layer]");
     if (!b || !gm) return;
     gm.слой = b.dataset.layer;
-    if (b.dataset.layer === "place") gm.placeDetail = false;
+    if (b.dataset.layer === "place") { gm.placeDetail = false; gm.allPlaces = false; }
     /* Главу держим: человек читает главу и смотрит, что в ней есть по разным
        слоям. Снимаем только выбранную точку — она была из прошлого слоя. */
     gm.at = null;
@@ -15536,6 +15574,9 @@ function bindPlaceMap() {
   });
 
   box.addEventListener("click", (e) => {
+    const photo = e.target.closest("[data-place-photo]");
+    if (photo) { openPlacePhoto(photo.dataset.placePhoto); return; }
+    if (e.target.closest("[data-gm-all-places]")) { gmOpenAllPlaces(); return; }
     const portrait = e.target.closest("[data-hero-photo]");
     if (portrait) { openHeroPhoto(portrait.dataset.heroPhoto); return; }
     if (e.target.closest("#gmLive")) return;
@@ -15548,8 +15589,8 @@ function bindPlaceMap() {
     }
     if (!gm) return;
     const place = e.target.closest("[data-gm-place]");
-    if (place) { gm.at = place.dataset.gmPlace; gm.placeDetail = true; gmList(); gmPins(); gmCard(); gmFit(); return; }
-    if (e.target.closest("[data-gm-back]")) { gm.placeDetail = false; gmList(); gmCard(); return; }
+    if (place) { gm.at = place.dataset.gmPlace; gm.allPlaces = false; gm.placeDetail = true; gmList(); gmPins(); gmCard(); gmFit(); return; }
+    if (e.target.closest("[data-gm-back]")) { gm.placeDetail = false; gm.allPlaces = false; gmList(); gmCard(); return; }
     const куча = e.target.closest("[data-many]");
     if (куча) { gmCluster(gm.кучки && gm.кучки[куча.dataset.many]); return; }
     const pin = e.target.closest("[data-gm]");
@@ -16444,11 +16485,13 @@ function openShelfSheet(id) {
 /* ══════════ Шторка ══════════ */
 
 function openSheet(html, full) {
+  if (readingKeyboardCleanup) readingKeyboardCleanup();
   const sheet = $("#sheet");
   /* Обычная шторка живёт снизу и не закрывает экран. Но там, где сидишь
      подолгу — комментарии к главе, — половина экрана только мешает: текст
      идёт узкой лентой и всё время прокручивается. Такую разворачиваем во
      весь рост. */
+  sheet.classList.remove("book-log-sheet");
   sheet.classList.toggle("full", !!full);
   sheet.innerHTML = `<div class="grab-zone"><div class="grabber"></div></div>` +
     `<div class="sheet-body">${html}</div>`;
@@ -16507,6 +16550,7 @@ function setupSheetDrag(sheet) {
   sheet.addEventListener("pointerleave", onUp);
 }
 function closeSheet() {
+  if (readingKeyboardCleanup) readingKeyboardCleanup();
   const sheet = $("#sheet");
   sheet.style.transition = "";
   sheet.style.transform = "";
@@ -16598,20 +16642,23 @@ function openLogSheet() {
     return;
   }
   sheetMode = "log";
+  readingPageDraft = "";
   pickSpans = []; partOpen = null; partUpto = {}; pickItems = {}; lsOpen = null;
   if (isCourse() && plainDraw()) { pickDrawDone = false; drawSince = now(); }
   syncPickers();
   const existing = entryFor(selectedDate);
-  const title = existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : "Какие уроки прошёл?") : "Что разбирал?");
+  const directReading = isBook() && !["parts", "list"].includes(bookMode(book()));
+  const title = directReading ? (впроцентах() ? "Сколько процентов прочитал?" : "До какой страницы дочитал?") : existing ? "Дополнить запись" : (isBook() ? "Что прочитал?" : isWatch() ? (video().done ? "Пересмотрел?" : "Отметить просмотр") : isCourse() ? (plainDraw() ? "Рисовал сегодня" : "Какие уроки прошёл?") : "Что разбирал?");
   /* «Сегодня» подписывать незачем: отмечают почти всегда сегодняшний день, и
      строка только отодвигала главное. Дата остаётся, когда она другая, и
      остаётся предупреждение, что запись за этот день уже есть. */
   const день = selectedDate === todayStr() ? "" : fmtDay(selectedDate);
   const sub = [день, existing ? "запись уже есть" : ""].filter(Boolean).join(" · ");
 
-  /* Две кнопки для нейросети живут не в теле шторки, а под точками в углу:
-     в теле они спорили с главным делом — отметить страницу. */
-  const меню = isBook() && (book().chapters || []).length > 0;
+  /* Завершение книги и запрос по главе остаются в меню, чтобы главное
+     действие было коротким: ввести страницу и подтвердить. */
+  const hasChapters = isBook() && (book().chapters || []).length > 0;
+  const меню = hasChapters || directReading;
   openSheet(`
     <h3>${title}</h3>
     ${sub ? `<p class="sub">${sub}</p>` : ""}
@@ -16622,16 +16669,19 @@ function openLogSheet() {
       <div class="mini-menu">
         <button class="btn mm-btn" id="aiMenu" type="button" aria-label="Ещё" aria-expanded="false"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="16" cy="10" r="1.7"/></svg></button>
         <div class="mm-pop" id="aiPop" hidden>
-          <button class="mm-item" id="askCopy" type="button">Промт для ИИ</button>
+          ${directReading ? `<button class="mm-item" id="readingFinish" type="button">${pickDone ? "✓ Книга завершена" : "Завершить книгу"}</button>` : ""}
+          ${hasChapters ? `<button class="mm-item" id="askCopy" type="button">Промт для ИИ</button>` : ""}
         </div>
       </div>` : ""}
     </div>`);
 
+  if (isBook()) $("#sheet").classList.add("book-log-sheet");
   renderSheetBody();
   /* Отмену убрали: шторку закрывают протяжкой вниз или касанием мимо неё,
      а место в ряду отдано точкам. */
   $("#sheetSave").addEventListener("click", saveEntry);
   if (меню) bindAiMenu();
+  if (directReading) focusReadingPage();
 }
 
 /* Меню живёт в шапке, а не в теле: тело перерисовывается на каждое нажатие
@@ -16656,11 +16706,18 @@ function bindAiMenu() {
     const i = Math.max(0, главы.indexOf(chapterAt(pickPage)));
     copyRaw(askText(book(), i)).then((ok) => btnSay(ac, ok ? "✓ Скопировано" : "Не вышло"));
   });
+  const finish = $("#readingFinish");
+  if (finish) finish.addEventListener("click", () => {
+    pickDone = !pickDone;
+    finish.textContent = pickDone ? "✓ Книга завершена" : "Завершить книгу";
+    закрыть(); updateReadingPageInput();
+  });
 }
 
 function renderSheetBody() {
   const parts = isBook() && bookMode(book()) === "parts";
   const список = isBook() && bookMode(book()) === "list";
+  $("#sheetBody").classList.toggle("book-log", isBook());
   $("#sheetBody").innerHTML = список ? bookListUI() : parts ? bookPartsUI()
     : isBook() ? bookSheetUI() : isWatch() ? watchSheetUI() : isCourse() ? pastelSheetUI() : pianoSheetUI();
   if (список) bindBookListSheet();
@@ -17134,40 +17191,72 @@ const bindFinBtn = (перерисовать) =>
 
 function bookSheetUI() {
   const cur = bookProgress();
-  const delta = pickPage - cur;
   return `
-    <div class="page-pick">
-      <span class="pp-label">${впроцентах() ? "Прочитано" : "Дочитал"}<br><i>${впроцентах() ? "процентов" : "до страницы"}${delta > 0 ? ` · <b style="color:var(--green)">+${delta}</b>` : ""}</i></span>
-      <div class="stepper">
-        <button class="st-btn" data-d="-1" type="button">−</button>
-        <button class="st-val" id="pageVal" type="button">${pickPage}</button>
-        <button class="st-btn" data-d="1" type="button">＋</button>
+    <div class="reading-page">
+      <label class="reading-page-label" for="readingPageInput">${впроцентах() ? "Процент" : "Страница"}</label>
+      <div class="reading-page-field">
+        <input id="readingPageInput" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done"
+          autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(readingPageDraft)}"
+          placeholder="${впроцентах() ? "Новый процент" : "Новая страница"}" aria-describedby="readingCurrent readingPageError">
+        <span aria-hidden="true">${впроцентах() ? "%" : "стр."}</span>
       </div>
+      <p id="readingCurrent" class="reading-page-current">Сейчас: ${cur} из ${book().pages}${впроцентах() ? "%" : " стр."}</p>
+      <p id="readingPageError" class="reading-page-error" aria-live="polite"></p>
     </div>
-    <div class="quick">${(впроцентах() ? [1, 3, 5, 10] : [5, 10, 20, 50]).map(n => `<button class="qbtn" data-add="${n}" type="button">+${n}</button>`).join("")}
-      ${finBtnHTML()}</div>
-    <div style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Это глава: <b style="color:var(--ink)">${esc(chapterAt(pickPage).name)}</b></div>
 `;
 }
 
+function readingPageNumber(raw, pages) {
+  const value = String(raw).trim();
+  if (!/^\d+$/.test(value)) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 && number <= Number(pages) ? number : null;
+}
+
+function updateReadingPageInput() {
+  const input = $("#readingPageInput"), save = $("#sheetSave");
+  if (!input || !save) return;
+  readingPageDraft = input.value;
+  const page = readingPageNumber(readingPageDraft, book().pages);
+  const empty = !readingPageDraft.trim(), invalid = !empty && page === null;
+  pickPage = page === null ? bookProgress() : page;
+  save.disabled = page === null && !(empty && pickDone);
+  input.setAttribute("aria-invalid", String(invalid));
+  $("#readingPageError").textContent = invalid ? `Введите целое число от 0 до ${book().pages}` : "";
+  $("#readingCurrent").textContent = `Сейчас: ${bookProgress()} из ${book().pages}${впроцентах() ? "%" : " стр."}${pickDone ? " · ✓ Завершена" : ""}`;
+}
+
+function focusReadingPage() {
+  const input = $("#readingPageInput"), sheet = $("#sheet");
+  if (!input || !sheet) return;
+  const viewport = window.visualViewport;
+  const fit = () => {
+    const height = viewport ? viewport.height : window.innerHeight;
+    const inset = viewport ? Math.max(0, window.innerHeight - height - viewport.offsetTop) : 0;
+    sheet.style.setProperty("--reading-keyboard", inset + "px");
+    sheet.style.setProperty("--reading-viewport", height + "px");
+  };
+  sheet.classList.add("reading-entry"); fit();
+  viewport?.addEventListener("resize", fit); viewport?.addEventListener("scroll", fit);
+  readingKeyboardCleanup = () => {
+    viewport?.removeEventListener("resize", fit); viewport?.removeEventListener("scroll", fit);
+    input.blur(); sheet.classList.remove("reading-entry");
+    sheet.style.removeProperty("--reading-keyboard"); sheet.style.removeProperty("--reading-viewport");
+    readingKeyboardCleanup = null;
+  };
+  // Keep focus synchronous with the opening tap so iOS can show its keyboard.
+  input.focus({preventScroll:true});
+}
+
 function bindBookSheet() {
-  const pages = book().pages;
-  /* Отматывать назад можно свободно: перечитывать, возвращаться к месту,
-     поправлять промах — дело обычное. Ограничение здесь было лишним. */
-  document.querySelectorAll(".st-btn").forEach(b =>
-    b.addEventListener("click", () => { pickPage = Math.min(pages, Math.max(0, pickPage + Number(b.dataset.d))); renderSheetBody(); }));
-  document.querySelectorAll(".qbtn[data-add]").forEach(b =>
-    b.addEventListener("click", () => { pickPage = Math.min(pages, pickPage + Number(b.dataset.add)); renderSheetBody(); }));
-  /* Завершение — решение, а не страница. Отметил, докуда дошёл, и закрыл
-     книгу: хоть на половине, хоть на последней странице. Прогресс остаётся
-     тем, какой есть — врать про «100%» из-за закрытия книги незачем. */
-  bindFinBtn(renderSheetBody);
-  $("#pageVal").addEventListener("click", () => {
-    const v = prompt("До какой страницы дочитал?", String(pickPage));
-    if (v === null) return;
-    const n = Math.round(Number(v.replace(",", ".")));
-    if (isNaN(n) || n < 0 || n > pages) { toast(`Страница от 0 до ${pages}`); return; }
-    pickPage = n; renderSheetBody();
+  const input = $("#readingPageInput");
+  updateReadingPageInput();
+  input.addEventListener("input", updateReadingPageInput);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      if (!$("#sheetSave").disabled) saveEntry();
+    }
   });
 }
 
@@ -18158,6 +18247,7 @@ async function applyPractice(files) {
 
 // обложки качаем по одной и только когда материал реально показан
 const coverPulling = new Set();
+const coverRetryAt = new Map(), coverRetryCounts = new Map();
 /* Очередь по одной: обложки идут не толпой, а по порядку, и первой — та,
    что сейчас на главной. Раньше порядок задавался разметкой, то есть
    случайностью: активная книга стоит в середине ленты и ждала своей
@@ -18166,7 +18256,7 @@ const coverQueue = [];
 let coverBusy = false;
 
 function coverAsk(id) {
-  if (!id || coverPulling.has(id) || coverQueue.includes(id)) return;
+  if (!id || coverCache.get(id) || now() < (coverRetryAt.get(id) || 0) || coverPulling.has(id) || coverQueue.includes(id)) return;
   if (id === curKey()) coverQueue.unshift(id); else coverQueue.push(id);
   coverPump();
 }
@@ -18200,8 +18290,22 @@ async function pullCover(id) {
     txt = txt.trim();
     if (!txt.startsWith("data:")) return;
     await coverSave(id, txt);
+    coverRetryAt.delete(id); coverRetryCounts.delete(id);
     coversArrived();
-  } catch {} finally { coverPulling.delete(id); }
+  } catch {} finally {
+    coverPulling.delete(id);
+    if (!coverCache.get(id)) {
+      coverCache.delete(id);
+      const count = (coverRetryCounts.get(id) || 0) + 1;
+      const delay = Math.min(60000, 1500 * 2 ** Math.min(count - 1, 6));
+      coverRetryCounts.set(id, count); coverRetryAt.set(id, now() + delay);
+      if (count <= 3) setTimeout(() => {
+        const shown = [...document.querySelectorAll('[data-covnone], [data-cov], [data-path-cover]')]
+          .some(el => (el.dataset.covnone || el.dataset.cov || el.dataset.pathCover) === id);
+        if (shown && !coverCache.get(id)) coverAsk(id);
+      }, delay);
+    }
+  }
 }
 
 /* Обложки приезжают по одной. Раньше каждая дёргала полную громкую перерисовку —

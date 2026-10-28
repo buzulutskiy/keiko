@@ -2682,7 +2682,7 @@ function ок(имя, факт, надо) {
   t.set("pickItems", {}); t.set("pickSpans", []); t.set("partOpen", null); t.set("lsOpen", null);
 
   /* Кнопка жила только у книги подряд, и сборник повестей закрыть было нечем. */
-  for (const id of ["ровная", "повести", "сборник"]) {
+  for (const id of ["повести", "сборник"]) {
     t.get("data").book.activeBook = id;
     const ui = t.get("bookMode")(t.get("book")()) === "list" ? t.get("bookListUI")()
       : t.get("bookMode")(t.get("book")()) === "parts" ? t.get("bookPartsUI")() : t.get("bookSheetUI")();
@@ -3732,7 +3732,7 @@ const именаОпций = (html) => (html.match(/>([^<]+)</g) || []).map((x) 
   ок("обложка: чужой адрес годится", годен("https://example.com/a.jpg"), true);
 
   const кэш = t.get("coverCache");
-  кэш.set("проба", "");     // уже спрашивали, обложки нет — второй раз не пойдём
+  кэш.set("проба", "");     // прежний запрос завершился без картинки
   ок("обложка: мёртвый путь не доходит до разметки",
     t.get("coverSrc")("проба", "covers/проба.jpg"), "");
   кэш.set("проба", "blob:готовая");
@@ -4610,8 +4610,61 @@ const сеть = (() => {
   ок('подложка: готова после загрузки видимых тайлов',ready({readyTileNumber:6,totalTileNumber:6}),true);
 }
 
+/* A new reading endpoint is typed directly; a blank field is not page zero. */
+{
+  const parse=t.get('typeof readingPageNumber === "function" ? readingPageNumber : null');
+  ок('чтение: есть проверка введённой страницы',typeof parse,'function');
+  if(parse){
+    ок('чтение: пустое поле не превращается в ноль',parse('',280),null);
+    ок('чтение: пробелы не подтверждают чтение',parse('   ',280),null);
+    ок('чтение: новая страница вводится целиком',parse('146',280),146);
+    ок('чтение: вернуться к предыдущей странице можно',parse('12',280),12);
+    ок('чтение: последняя страница допустима',parse('280',280),280);
+    ок('чтение: за пределами книги не сохраняем',parse('456',280),null);
+    ок('чтение: десятичная страница недопустима',parse('12.5',280),null);
+    ок('чтение: отрицательная страница недопустима',parse('-1',280),null);
+    ок('чтение: экспонента не номер страницы',parse('1e2',280),null);
+    ок('чтение: процент ограничен ста',parse('101',100),null);
+    ок('чтение: нулевая страница задана явно',parse('0',280),0);
+  }
+}
+
+/* The overview ignores the current chapter and retains named real locations. */
+{
+  const b={id:'all-places-test',pages:20,chapters:[{name:'Первая',from:1},{name:'Вторая',from:10}]};
+  const arts=t.get('ARTS'),before=t.get('gm');
+  const a={map:[{name:'Позже',lat:48,lon:7,part:2,mentionOrder:20},{name:'Раньше',lat:45,lon:4,part:1,mentionOrder:10},{name:'Раньше',lat:45,lon:4,part:2,mentionOrder:30},{name:'Справка',kind:'person',lat:46,lon:5,mentionOrder:1},{name:'Неверная',lat:999,lon:5}],placePhotos:{station:{caption:'Вокзал',source:'https://example.org/photo'}}};
+  arts[b.id]=a;
+  ок('все места: порядок первого упоминания и без дублей',t.get('allPlacePoints')(b).map(p=>p.name),['Раньше','Позже']);
+  t.set('gm',{id:b.id,мат:b,слой:'place',часть:1,места:a.map,allPlaces:true,placeDetail:true,at:null});
+  const overview=t.get('gmLiveModel')();
+  ок('все места: выбранная глава не скрывает остальные',overview.points.map(p=>p.name),['Раньше','Позже']);
+  ок('все места: камера охватывает весь набор',overview.focus.length,2);
+  ок('все места: упоминания не соединяются ложным маршрутом',overview.segments,[]);
+  ок('фото места: сохранён источник для просмотра',t.get('placePhotoOf')({photoId:'station'}).source,'https://example.org/photo');
+  t.set('gm',before);delete arts[b.id];
+}
+
+/* A failed download must not leave a permanent empty cover sentinel. */
+{
+  const cache=t.get('coverCache'),retry=t.get('coverRetryAt'),ask=t.get('coverAsk'),calls=[];
+  t.set('coverAsk',id=>calls.push(id));cache.set('cover-retry-test','');
+  t.get('coverSrc')('cover-retry-test','');
+  ок('обложка: пустой результат допускает повторный запрос',calls,['cover-retry-test']);
+  retry.set('cover-retry-test',Date.now()+60000);t.get('coverSrc')('cover-retry-test','');
+  ок('обложка: временная пауза не создаёт очередь повторов',calls.length,1);
+  cache.set('cover-retry-test','blob:ready');t.get('coverSrc')('cover-retry-test','');
+  ок('обложка: готовая картинка повторно не скачивается',calls.length,1);
+  retry.delete('cover-retry-test');cache.delete('cover-retry-test');t.set('coverAsk',ask);
+}
+const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['image-bytes'],{type:'image/jpeg'})).then(()=>{
+  const url=t.get('coverCache').get('cover-storage-test');
+  ок('обложка: недоступный Cache Storage не мешает показать картинку',url.startsWith('blob:'),true);
+  URL.revokeObjectURL(url);t.get('coverCache').delete('cover-storage-test');
+});
+
 /* ── Итог ── */
-Promise.resolve(сеть).then(() => {
+Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);
   testIntervals.forEach(clearInterval);
   if (упало) { console.error(`\n${упало} из ${всего} тестов упало`); process.exit(1); }
