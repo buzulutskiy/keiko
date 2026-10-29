@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 614";
+const APP_VERSION = "Кэйко 615";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2789,6 +2789,8 @@ function render(quiet) {
 function renderInner() {
   const box = $("#view");
   const keepScroll = box ? box.scrollTop : 0;
+  if (railApi && railApi.dispose) railApi.dispose();
+  railApi = null;
   clearTimeout(railBusyTimer); railBusy = false; pendingRender = null;   // лента пересобирается заново
 
   renderSeg();
@@ -4738,6 +4740,7 @@ function bindRingTaps() {
 let railApi = null;   // доступ к прокрутке ленты извне (сегмент, кубик)
 
 function setupRail() {
+  if (railApi && railApi.dispose) railApi.dispose();
   const rail = $("#rail");
   if (!rail) return;
   const slots = [...rail.querySelectorAll(".slot")];
@@ -4747,14 +4750,14 @@ function setupRail() {
   const n = items.length;
   const loop = n > 2;   // цикл с копиями — только от трёх материалов
 
-  const pad = Math.max(0, (rail.clientWidth - slots[0].offsetWidth) / 2);
-  rail.style.paddingLeft = pad + "px";
-  rail.style.paddingRight = pad + "px";
-
-  const centerOfSlot = (el) => {
-    const r = el.getBoundingClientRect(), rr = rail.getBoundingClientRect();
-    return r.left - rr.left + rail.scrollLeft + r.width / 2;
-  };
+  let disposed = false;
+  const alive = () => !disposed && rail.isConnected;
+  let activePos = activeRailIndex(items) + (loop ? RAIL_MID * n : 0);
+  /* Координаты раскладки не меняются от анимации появления и масштаба
+     соседних книг. getBoundingClientRect во время scale родителя давал
+     неверное расстояние до далёкой копии ленты. */
+  const centerOfSlot = (el) => el.offsetLeft - slots[0].offsetLeft
+    + (parseFloat(rail.style.paddingLeft) || 0) + el.offsetWidth / 2;
   const targetFor = (pos) => centerOfSlot(slots[pos]) - rail.clientWidth / 2;
 
   const nearestPos = () => {
@@ -4785,10 +4788,47 @@ function setupRail() {
 
   let spinning = false;
   let touching = false;   // палец на ленте — доводку не начинаем
+  let layoutFrame = 0, layoutPending = false;
+  const fitLayout = () => {
+    layoutFrame = 0;
+    if (!alive()) return;
+    if (touching || spinning) { layoutPending = true; return; }
+    layoutPending = false;
+    const css = getComputedStyle(rail);
+    const height = rail.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+    if (!(height > 0) || !rail.clientWidth) return;
+    const snap = rail.style.scrollSnapType;
+    rail.style.scrollSnapType = "none";
+    /* Safari может сначала взять исходную ширину img, а уже потом высоту
+       flex-ленты. Задаём размер слота из пропорции до декодирования фото:
+       появление обложки больше не меняет ширину всей карусели. */
+    slots.forEach(el => {
+      const cover = el.querySelector('.cover');
+      if (!cover) return;
+      const style = getComputedStyle(cover);
+      const parts = style.aspectRatio.split('/').map(Number);
+      const ratio = parts[0] / (parts[1] || 1);
+      const width = cover.classList.contains('clip') ? parseFloat(style.width)
+        : height * (ratio > 0 && Number.isFinite(ratio) ? ratio : 3 / 4.1);
+      el.style.height = height + 'px';
+      el.style.width = width + 'px';
+    });
+    /* У двух крайних книг могут быть разные пропорции. Правый отступ по
+       первой обложке не позволял узкой последней книге дойти до центра. */
+    rail.style.paddingLeft = (n === 1 ? 0 : Math.max(0, (rail.clientWidth - slots[0].offsetWidth) / 2)) + 'px';
+    rail.style.paddingRight = (n === 1 ? 0 : Math.max(0, (rail.clientWidth - slots[slots.length - 1].offsetWidth) / 2)) + 'px';
+    rail.scrollLeft = n === 1 ? 0 : targetFor(activePos);
+    rail.style.scrollSnapType = snap;
+  };
+  const requestLayout = () => {
+    if (alive() && !layoutFrame) layoutFrame = requestAnimationFrame(fitLayout);
+  };
 
   const settle = () => {
-    if (spinning || touching) return;
+    if (!alive() || spinning || touching) return;
+    if (layoutPending) fitLayout();
     const pos = normalize(nearestPos());
+    activePos = pos;
     slots.forEach((el, i) => el.classList.toggle("on", i === pos));
     paintBackdrop(items[pos % n]);
     setActiveMaterial(items[pos % n]);
@@ -4800,10 +4840,10 @@ function setupRail() {
   const settleWhenIdle = () => {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (spinning) return;
+      if (!alive() || spinning) return;
       const before = rail.scrollLeft;
       setTimeout(() => {
-        if (spinning) return;
+        if (!alive() || spinning) return;
         if (touching || Math.abs(rail.scrollLeft - before) > 0.5) { settleWhenIdle(); return; }
         settle();
       }, 90);
@@ -4812,7 +4852,8 @@ function setupRail() {
 
   // программная центровка сразу применяет материал — не ждём событий скролла
   const centerOn = (pos, smooth) => {
-    if (!slots[pos]) return;
+    if (!alive() || !slots[pos]) return;
+    activePos = pos;
     clearTimeout(idleTimer);
     rail.scrollTo({ left: targetFor(pos), behavior: smooth ? "smooth" : "auto" });
     slots.forEach((el, i) => el.classList.toggle("on", i === pos));
@@ -4841,7 +4882,7 @@ function setupRail() {
 
     let finished = false;
     const finish = () => {
-      if (finished) return;
+      if (finished || !alive()) return;
       finished = true;
       clearTimeout(guard);
       rail.scrollLeft = to;                    // точная доводка без рывка
@@ -4849,6 +4890,8 @@ function setupRail() {
       rail.style.scrollBehavior = "";
       spinning = false;
       const fixed = normalize(pos);
+      activePos = fixed;
+      if (layoutPending) fitLayout();
       slots.forEach((el, i) => el.classList.toggle("on", i === fixed));
       setActiveMaterial(items[fixed % n]);
       releaseRail();
@@ -4861,7 +4904,7 @@ function setupRail() {
     const t0 = performance.now(), dur = 2600;
     const ease = k => 1 - Math.pow(1 - k, 5);   // долгий разгон и мягкое торможение
     const step = (now) => {
-      if (finished) return;
+      if (finished || !alive()) return;
       const k = Math.min(1, (now - t0) / dur);
       rail.scrollLeft = from + (to - from) * ease(k);
       if (k < 1) requestAnimationFrame(step); else finish();
@@ -4869,7 +4912,23 @@ function setupRail() {
     requestAnimationFrame(step);
   };
 
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(requestLayout) : null;
+  observer?.observe(rail);
+  rail.addEventListener('load', requestLayout, true);
+  window.addEventListener('resize', requestLayout);
+  const resumeLayout = () => { if (!document.hidden) requestLayout(); };
+  document.addEventListener('visibilitychange', resumeLayout);
+  window.addEventListener('pageshow', requestLayout);
   railApi = {
+    dispose: () => {
+      disposed = true;
+      clearTimeout(idleTimer);
+      cancelAnimationFrame(layoutFrame);
+      observer?.disconnect();
+      window.removeEventListener('resize', requestLayout);
+      document.removeEventListener('visibilitychange', resumeLayout);
+      window.removeEventListener('pageshow', requestLayout);
+    },
     centerOn: (baseIdx, smooth) => centerOn(baseIdx + (loop ? RAIL_MID * n : 0), smooth),
     spinTo,
     indexOfTrack: (track) => items.findIndex(it => it.track === track),
@@ -4877,7 +4936,9 @@ function setupRail() {
       it.track === track && (!id || it.pieceId === id || it.bookId === id))
   };
 
-  centerOn(activeRailIndex(items) + (loop ? RAIL_MID * n : 0), false);
+  fitLayout();
+  centerOn(activePos, false);
+  requestLayout();
   if (n < 2) return;
 
   // фон догоняет обложку прямо в движении, но не чаще кадра и только при смене обложки —
@@ -4890,6 +4951,7 @@ function setupRail() {
       if (!bgTick) return;
       bgTick = false;
       clearTimeout(bgFallback);
+      if (!alive()) return;
       const i = nearestPos() % n;
       if (i === bgIdx) return;
       bgIdx = i;
@@ -4899,11 +4961,12 @@ function setupRail() {
     bgFallback = setTimeout(run, 140);   // если кадры не идут (вкладка в фоне) — не залипаем
   };
 
-  rail.addEventListener("touchstart", () => { touching = true; markRailBusy(); }, { passive: true });
+  rail.addEventListener("touchstart", () => { if (!alive()) return; touching = true; markRailBusy(); }, { passive: true });
   ["touchend", "touchcancel"].forEach(ev =>
-    rail.addEventListener(ev, () => { touching = false; settleWhenIdle(); }, { passive: true }));
+    rail.addEventListener(ev, () => { if (!alive()) return; touching = false; settleWhenIdle(); }, { passive: true }));
 
   rail.addEventListener("scroll", () => {
+    if (!alive()) return;
     if (!spinning) markRailBusy();
     followBackdrop();
     settleWhenIdle();
@@ -4911,6 +4974,7 @@ function setupRail() {
   if ("onscrollend" in rail) rail.addEventListener("scrollend", () => { if (!spinning) settle(); });
 
   slots.forEach((el, i) => el.addEventListener("click", () => {
+    if (!alive()) return;
     if (!el.classList.contains("on")) centerOn(i, true);
   }));
 }
