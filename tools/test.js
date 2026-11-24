@@ -4677,6 +4677,16 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   }
 }
 
+/* Минимализм — настройка устройства, другие вкладки остаются в обычном режиме. */
+{
+  const old = t.get('cfg.minimal');
+  t.set('cfg.minimal', true);
+  ок('минимализм: две вкладки', t.get('visibleTabs().map(x => x[0])'), ['home', 'notes']);
+  t.set('cfg.minimal', false);
+  ок('обычный режим: путь возвращается', t.get('visibleTabs().some(x => x[0] === "progress")'), true);
+  t.set('cfg.minimal', old);
+}
+
 /* ── Итог ── */
 Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);

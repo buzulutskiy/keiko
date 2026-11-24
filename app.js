@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 615";
+const APP_VERSION = "Кэйко 616";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -2793,16 +2793,18 @@ function renderInner() {
   railApi = null;
   clearTimeout(railBusyTimer); railBusy = false; pendingRender = null;   // лента пересобирается заново
 
+  if (cfg.minimal === true && !["home", "notes"].includes(tab)) { tab = "home"; cfg.tab = tab; saveCfg(); }
+  document.body.classList.toggle("minimal-mode", cfg.minimal === true);
   renderSeg();
   renderBanner();
   renderTabbar();
   // главная всегда влезает в экран, остальные вкладки скроллятся внутри себя
-  $("#view").className = (tab === "home" && !settingsOpen ? "fixed" : "scrolls") + (quietRender ? " quiet" : "");
+  $("#view").className = (tab === "home" && !settingsOpen && cfg.minimal !== true ? "fixed" : "scrolls") + (quietRender ? " quiet" : "");
   /* Сбой внутри одной вкладки не должен убивать приложение: сбрасываем то, что
      чаще всего протухает при смене профиля, и показываем главную. */
   try {
     if (settingsOpen) renderSettings();
-    else if (tab === "home") renderHome();
+    else if (tab === "home") cfg.minimal === true ? renderSimpleHome() : renderHome();
     else if (tab === "progress") renderMaterialPath();
     else if (tab === "notes") renderNotes();
     else if (tab === "mus") renderMuseum();
@@ -2875,6 +2877,7 @@ function renderMusBtn() {
 }
 
 function visibleTabs() {
+  if (cfg.minimal === true) return [["home", ICON("home", "◉"), T("tabHome")], ["notes", ICON("notes", "✎"), T("tabNotes")]];
   return [
     [ "home", ICON("home", "◉"), T("tabHome")],
     ["progress", ICON("progress", "▤"), "Мой путь"],
@@ -4632,6 +4635,70 @@ function heroParts(s) {
    на два ряда («осталось 150 страниц» и ниже «3 дня · ещё неделя»), хотя
    вместе помещаются в одну. Склеиваем теми же точками-разделителями. */
 const heroSub = (s) => subLine(...heroParts(s), ...paceParts());
+
+
+function simpleMaterials() {
+  return [
+    ...(data.book.books || []).filter(b => !b.archived && !b.done).map(b => ({track:"book", bookId:b.id, book:b})),
+    ...(data.piano.pieces || []).filter(p => !p.archived).map(p => ({track:"piano", pieceId:p.id, piece:p})),
+    ...courses().filter(c => c.name || (c.lessons || []).length).map(c => ({track:"pastel", courseId:c.id, course:c})),
+    ...videos().filter(v => !v.archived && !v.done).map(v => ({track:"watch", videoId:v.id, video:v}))
+  ];
+}
+
+function renderSimpleHome() {
+  const items = simpleMaterials().filter(item => !matHidden(libKey(item)));
+  $("#view").innerHTML = `<div class="simple-top"><h1>Мои материалы</h1><button class="simple-add" id="simpleAdd" type="button">＋ Добавить</button></div>
+    <div class="simple-list">${items.length ? items.map((item, i) => {
+      const m = withMaterial(item, currentMaterial);
+      const obj = item.book || item.piece || item.course || item.video;
+      const cover = coverSrc(item.bookId || item.pieceId || item.courseId || item.videoId, obj.cover || "");
+      const pct = Math.max(0, Math.min(100, Math.round(Number(m.pct) || 0)));
+      return `<button class="simple-card" type="button" data-simple-item="${i}"><span class="simple-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span aria-hidden="true">${m.icon}</span>`}</span><span class="simple-info"><b>${esc(m.title)}</b><small>${esc(m.sub || "")} · ${pct}%</small><span class="simple-track"><i style="width:${pct}%"></i></span></span><span aria-hidden="true">›</span></button>`;
+    }).join("") : '<p class="empty-note">Пока нет материалов на главной. Добавь материал или включи его в настройках.</p>'}</div>`;
+  $("#simpleAdd").addEventListener("click", openSimpleAdd);
+  document.querySelectorAll("[data-simple-item]").forEach(el => el.addEventListener("click", () => {
+    if (!gistReady()) { toast("Сначала подключи синхронизацию"); openSettingsSheet(); return; }
+    const item = items[Number(el.dataset.simpleItem)];
+    data.active = item.track;
+    if (item.bookId) data.book.activeBook = item.bookId;
+    if (item.pieceId) data.piano.activePiece = item.pieceId;
+    if (item.courseId) data.pastel.activeCourse = item.courseId;
+    if (item.videoId) data.watch.activeVideo = item.videoId;
+    selectedDate = todayStr(); syncPickers(); saveData(); schedulePush();
+    if (isPiano() && piece().bars) openPractice();
+    else if (isPastel() && !plainDraw() && lessons().length) openLesson();
+    else openLogSheet();
+  }));
+}
+
+function openSimpleAdd() {
+  if (!gistReady()) { toast("Сначала подключи синхронизацию"); openSettingsSheet(); return; }
+  openSheet(`<h3>Добавить материал</h3><div class="add-form">
+    <label>Тип материала<select class="note-input" id="simpleType"><option value="book">Книга</option><option value="piano">Музыкальная пьеса</option></select></label>
+    <label>Название<input class="note-input" id="simpleTitle" maxlength="120" autocomplete="off" placeholder="Название"></label>
+    <label id="simpleCountLabel">Количество страниц<input class="note-input" id="simpleCount" type="number" inputmode="numeric" min="1" max="9999" placeholder="Например, 280"></label>
+    </div><div class="sheet-actions"><button class="btn gold" id="simpleSave" type="button">Добавить</button><button class="btn" id="simpleCancel" type="button">Отмена</button></div>`);
+  $("#simpleType").addEventListener("change", e => {
+    const input = $("#simpleCount");
+    $("#simpleCountLabel").firstChild.textContent = e.target.value === "book" ? "Количество страниц" : "Количество тактов";
+    input.placeholder = e.target.value === "book" ? "Например, 280" : "Например, 40";
+  });
+  $("#simpleCancel").addEventListener("click", closeSheet);
+  $("#simpleSave").addEventListener("click", () => {
+    const title = $("#simpleTitle").value.trim(), count = Number($("#simpleCount").value);
+    if (!title || !Number.isInteger(count) || count < 1 || count > 9999) { toast("Укажи название и количество от 1 до 9999"); return; }
+    const id = uid();
+    if ($("#simpleType").value === "book") {
+      data.book.books.push({id, title, author:"", volume:"", pages:count, startPage:0, art:"snow", tone:"sea", chapters:[], updatedAt:now()});
+      data.book.activeBook = id; data.active = "book";
+    } else {
+      data.piano.pieces.push({id, name:title, author:"", bars:count, art:"keys", tone:"violet", updatedAt:now()});
+      data.piano.activePiece = id; data.active = "piano";
+    }
+    saveData(); schedulePush(); closeSheet(); render();
+  });
+}
 
 
 function renderHome() {
@@ -19772,6 +19839,8 @@ function renderSettings() {
 
   $("#view").innerHTML = `
     <h2 class="set-title">Настройки</h2>
+    <label class="simple-settings-row"><span>Минималистичный режим</span><input id="simpleMode" type="checkbox" ${cfg.minimal === true ? "checked" : ""}></label>
+    ${cfg.minimal === true ? `<h3>Материалы на главной</h3>${simpleMaterials().map(item => { const obj = item.book || item.piece || item.course || item.video; return `<label class="simple-settings-row"><span>${esc(obj.title || obj.name || "Материал")}</span><input type="checkbox" data-simple-visible="${esc(libKey(item))}" ${matHidden(libKey(item)) ? "" : "checked"}></label>`; }).join("")}` : ""}
     <div class="set-list">
       ${SETTINGS_SECTIONS.map(sec => `
         <button class="set-row" data-sec="${sec.id}" type="button">
@@ -19782,6 +19851,8 @@ function renderSettings() {
     </div>
     <button class="btn set-back" id="setDone" type="button">Готово</button>`;
 
+  $("#simpleMode").addEventListener("change", e => { cfg.minimal = e.target.checked; saveCfg(); render(); });
+  document.querySelectorAll("[data-simple-visible]").forEach(el => el.addEventListener("change", () => matToggle(el.dataset.simpleVisible)));
   document.querySelectorAll("[data-sec]").forEach(b =>
     b.addEventListener("click", () => {
       settingsView = b.dataset.sec;
