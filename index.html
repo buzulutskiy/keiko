@@ -192,6 +192,16 @@
       flex-shrink: 0;
     }
     .simple-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 8px 0 16px; }
+    .simple-week { position:sticky; top:0; z-index:4; padding:14px 14px 16px; margin-bottom:18px; border:1px solid var(--glass-line); border-radius:18px; background:#191720; }
+    .simple-week-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:14px; }
+    .simple-week-head b { font-size:.95rem; }
+    .simple-week-head > span { color:var(--muted); font-size:.78rem; text-align:right; }
+    .simple-week-days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:7px; }
+    .simple-day { text-align:center; color:var(--muted); font-size:.72rem; }
+    .simple-day-box { display:grid; place-items:center; margin-top:6px; width:100%; aspect-ratio:1; max-height:42px; border-radius:9px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); color:#211800; font-size:.78rem; font-weight:800; }
+    .simple-day-box.future { opacity:.45; }
+    .simple-day-box.active { background:#d4a431; border-color:#d4a431; }
+    .simple-day-box.multiple { background:#ffcb4b; border-color:#ffdc76; }
     .simple-top h1 { margin:0; font-size:1.45rem; }
     .simple-add { color:var(--gold); font-weight:700; font-size:1rem; padding:8px; }
     .simple-list { display:grid; gap:10px; padding-bottom:20px; }

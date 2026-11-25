@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 616";
+const APP_VERSION = "Кэйко 617";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4646,9 +4646,35 @@ function simpleMaterials() {
   ];
 }
 
+/* Разные виды занятий в один день усиливают цвет, но не увеличивают число дней. */
+function simpleWeekSummary(today, index, goal) {
+  const monday = mondayOf(fromStr(today));
+  const days = Array.from({length: 7}, (_, i) => {
+    const day = new Date(monday); day.setDate(day.getDate() + i);
+    const date = dateStr(day);
+    const tracks = date <= today ? [...new Set((index[date] || []).map(item => item.track))] : [];
+    return {date, tracks, future: date > today};
+  });
+  const active = days.filter(day => day.tracks.length > 0).length;
+  return {days, active, goal: Math.max(1, Number(goal) || 4), extra: Math.max(0, active - (Number(goal) || 4))};
+}
+
+function simpleWeekHTML() {
+  const week = simpleWeekSummary(todayStr(), weeklyProgressIndex(), data.weekGoal);
+  const names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+  const tracks = {book:"чтение", piano:"пианино", pastel:"рисование", watch:"видео"};
+  return `<section class="simple-week" aria-label="Активность за неделю">
+    <div class="simple-week-head"><b>Эта неделя</b><span>${week.active} из ${week.goal} дней${week.extra ? ` · +${week.extra} сверх плана` : ""}</span></div>
+    <div class="simple-week-days">${week.days.map((day, i) => {
+      const activity = day.tracks.map(track => tracks[track] || "занятие").join(", ");
+      const label = `${names[i]}, ${fmtDay(day.date)}: ${activity || (day.future ? "ещё впереди" : "нет отметок")}`;
+      return `<div class="simple-day"><span>${names[i]}</span><div class="simple-day-box${day.tracks.length ? " active" : ""}${day.tracks.length > 1 ? " multiple" : ""}${day.future ? " future" : ""}" role="img" aria-label="${esc(label)}">${day.tracks.length > 1 ? day.tracks.length : ""}</div></div>`;
+    }).join("")}</div></section>`;
+}
+
 function renderSimpleHome() {
   const items = simpleMaterials().filter(item => !matHidden(libKey(item)));
-  $("#view").innerHTML = `<div class="simple-top"><h1>Мои материалы</h1><button class="simple-add" id="simpleAdd" type="button">＋ Добавить</button></div>
+  $("#view").innerHTML = `${simpleWeekHTML()}<div class="simple-top"><h1>Мои материалы</h1><button class="simple-add" id="simpleAdd" type="button">＋ Добавить</button></div>
     <div class="simple-list">${items.length ? items.map((item, i) => {
       const m = withMaterial(item, currentMaterial);
       const obj = item.book || item.piece || item.course || item.video;

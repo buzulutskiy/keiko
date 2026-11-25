@@ -4687,6 +4687,23 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   t.set('cfg.minimal', old);
 }
 
+/* Неделя: повторные отметки одного вида не создают новые дни или виды. */
+{
+  const summary = t.get('simpleWeekSummary');
+  const w = summary('2026-11-25', {
+    '2026-11-23': [{track:'book'}, {track:'book'}],
+    '2026-11-24': [{track:'book'}, {track:'piano'}],
+    '2026-11-26': [{track:'book'}],
+    '2026-11-22': [{track:'piano'}]
+  }, 1);
+  ок('неделя: первый день — понедельник', w.days[0].date, '2026-11-23');
+  ок('неделя: количество активных дней', w.active, 2);
+  ок('неделя: повтор чтения — один вид', w.days[0].tracks.length, 1);
+  ок('неделя: чтение и пианино — два вида', w.days[1].tracks.length, 2);
+  ок('неделя: будущее не считается', w.days[3].tracks.length, 0);
+  ок('неделя: дни сверх плана', w.extra, 1);
+}
+
 /* ── Итог ── */
 Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);
