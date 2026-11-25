@@ -4704,6 +4704,16 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   ок('неделя: дни сверх плана', w.extra, 1);
 }
 
+/* В деталях дня отображается отметка того дня, а не нынешний прогресс. */
+{
+  const detail = t.get('simpleDayEntryText');
+  ок('день: страница и процент на дату', detail({track:'book', entry:{page:70}, material:{pages:280}}), 'До 70-й стр. из 280 · 25%');
+  ок('день: книга по частям', detail({track:'book', entry:{spans:[{from:4,to:8}]}}), 'Страницы: 4–8');
+  ок('день: музыка без длительности', detail({track:'piano', entry:{}}), 'Занятие отмечено');
+  ок('день: время музыки', detail({track:'piano', entry:{mins:23}}), '23 мин.');
+  ок('день: старое чтение без страницы', detail({track:'book', entry:{}}), 'Чтение отмечено');
+}
+
 /* ── Итог ── */
 Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);

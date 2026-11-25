@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 617";
+const APP_VERSION = "Кэйко 618";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4668,8 +4668,40 @@ function simpleWeekHTML() {
     <div class="simple-week-days">${week.days.map((day, i) => {
       const activity = day.tracks.map(track => tracks[track] || "занятие").join(", ");
       const label = `${names[i]}, ${fmtDay(day.date)}: ${activity || (day.future ? "ещё впереди" : "нет отметок")}`;
-      return `<div class="simple-day"><span>${names[i]}</span><div class="simple-day-box${day.tracks.length ? " active" : ""}${day.tracks.length > 1 ? " multiple" : ""}${day.future ? " future" : ""}" role="img" aria-label="${esc(label)}">${day.tracks.length > 1 ? day.tracks.length : ""}</div></div>`;
+      const cls = `simple-day-box${day.tracks.length ? " active" : ""}${day.tracks.length > 1 ? " multiple" : ""}${day.future ? " future" : ""}`;
+      return `<div class="simple-day"><span>${names[i]}</span>${day.tracks.length ? `<button class="${cls}" type="button" data-simple-day="${day.date}" aria-label="${esc(label)}. Посмотреть отметки">${day.tracks.length > 1 ? day.tracks.length : ""}</button>` : `<div class="${cls}" role="img" aria-label="${esc(label)}"></div>`}</div>`;
     }).join("")}</div></section>`;
+}
+
+function simpleDayEntryText(item) {
+  const e = item.entry || {}, m = item.material || {};
+  if (item.track === "book") {
+    if (Number(e.page) > 0) return `До ${e.page}-й стр.${Number(m.pages) > 0 ? ` из ${m.pages} · ${Math.round(Math.min(100, e.page / m.pages * 100))}%` : ""}`;
+    if (Array.isArray(e.spans) && e.spans.length) return "Страницы: " + e.spans.map(s => s.from === s.to ? `${s.from}` : `${s.from}–${s.to}`).join(", ");
+    const marks = Object.entries(e.marks || {}).filter(([, state]) => state === "done");
+    return marks.length ? `Отмечено: ${marks.map(([name]) => name).join(", ")}` : "Чтение отмечено";
+  }
+  if (item.track === "piano") {
+    const parts = [];
+    if (Number(e.mins) > 0) parts.push(`${Math.round(e.mins)} мин.`);
+    if (Array.isArray(e.spans) && e.spans.length) parts.push(`Такты: ${e.spans.map(spanText).join(", ")}`);
+    return parts.join(" · ") || "Занятие отмечено";
+  }
+  if (item.track === "pastel") {
+    const parts = [];
+    if (Number(e.mins) > 0) parts.push(`${Math.round(e.mins)} мин.`);
+    if (Array.isArray(e.lessons) && e.lessons.length) parts.push(`Уроки: ${e.lessons.map(i => Number(i) + 1).join(", ")}`);
+    return parts.join(" · ") || "Занятие отмечено";
+  }
+  return "Просмотр отмечен";
+}
+
+function openSimpleDay(date) {
+  const items = weeklyProgressIndex()[date] || [];
+  if (!items.length) return;
+  const title = new Intl.DateTimeFormat("ru", {day:"numeric", month:"long", weekday:"long"}).format(fromStr(date));
+  openSheet(`<h3>${esc(title)}</h3><div class="simple-day-details">${items.map(item => `<article class="simple-day-entry"><span class="simple-day-icon" aria-hidden="true">${esc(item.icon)}</span><div><b>${esc(item.title)}</b><p>${esc(simpleDayEntryText(item))}</p></div></article>`).join("")}</div><button class="btn" id="simpleDayClose" type="button">Закрыть</button>`);
+  $("#simpleDayClose").addEventListener("click", closeSheet);
 }
 
 function renderSimpleHome() {
@@ -4683,6 +4715,7 @@ function renderSimpleHome() {
       return `<button class="simple-card" type="button" data-simple-item="${i}"><span class="simple-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span aria-hidden="true">${m.icon}</span>`}</span><span class="simple-info"><b>${esc(m.title)}</b><small>${esc(m.sub || "")} · ${pct}%</small><span class="simple-track"><i style="width:${pct}%"></i></span></span><span aria-hidden="true">›</span></button>`;
     }).join("") : '<p class="empty-note">Пока нет материалов на главной. Добавь материал или включи его в настройках.</p>'}</div>`;
   $("#simpleAdd").addEventListener("click", openSimpleAdd);
+  document.querySelectorAll("[data-simple-day]").forEach(el => el.addEventListener("click", () => openSimpleDay(el.dataset.simpleDay)));
   document.querySelectorAll("[data-simple-item]").forEach(el => el.addEventListener("click", () => {
     if (!gistReady()) { toast("Сначала подключи синхронизацию"); openSettingsSheet(); return; }
     const item = items[Number(el.dataset.simpleItem)];

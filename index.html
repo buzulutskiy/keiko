@@ -202,6 +202,15 @@
     .simple-day-box.future { opacity:.45; }
     .simple-day-box.active { background:#d4a431; border-color:#d4a431; }
     .simple-day-box.multiple { background:#ffcb4b; border-color:#ffdc76; }
+    button.simple-day-box { cursor:pointer; }
+    button.simple-day-box:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+    .simple-day-details { display:grid; gap:10px; margin:18px 0; }
+    .simple-day-entry { display:flex; align-items:flex-start; gap:12px; padding:14px; border:1px solid var(--glass-line); border-radius:14px; background:var(--glass-2); }
+    .simple-day-entry > div { min-width:0; }
+    .simple-day-entry b { overflow-wrap:anywhere; }
+    .simple-day-entry p { margin:5px 0 0; color:var(--muted); font-size:.9rem; line-height:1.4; overflow-wrap:anywhere; }
+    .simple-day-icon { font-size:1.2rem; }
+    #simpleDayClose { width:100%; }
     .simple-top h1 { margin:0; font-size:1.45rem; }
     .simple-add { color:var(--gold); font-weight:700; font-size:1rem; padding:8px; }
     .simple-list { display:grid; gap:10px; padding-bottom:20px; }
