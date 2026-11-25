@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 618";
+const APP_VERSION = "Кэйко 619";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4665,6 +4665,7 @@ function simpleWeekHTML() {
   const tracks = {book:"чтение", piano:"пианино", pastel:"рисование", watch:"видео"};
   return `<section class="simple-week" aria-label="Активность за неделю">
     <div class="simple-week-head"><b>Эта неделя</b><span>${week.active} из ${week.goal} дней${week.extra ? ` · +${week.extra} сверх плана` : ""}</span></div>
+    <div class="simple-week-progress" role="progressbar" aria-label="Дни относительно недельной цели" aria-valuemin="0" aria-valuemax="${week.goal}" aria-valuenow="${Math.min(week.active, week.goal)}"><i style="width:${Math.min(100, week.active / week.goal * 100)}%"></i></div>
     <div class="simple-week-days">${week.days.map((day, i) => {
       const activity = day.tracks.map(track => tracks[track] || "занятие").join(", ");
       const label = `${names[i]}, ${fmtDay(day.date)}: ${activity || (day.future ? "ещё впереди" : "нет отметок")}`;
@@ -4696,11 +4697,28 @@ function simpleDayEntryText(item) {
   return "Просмотр отмечен";
 }
 
+function simpleDayEntryTime(entry) {
+  const ms = Number(entry.createdAt);
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const at = new Date(ms);
+  if (!Number.isFinite(at.getTime()) || dateStr(at) !== entry.date) return "";
+  return fmtClock(ms);
+}
+
+function simpleDayEntryProgress(item) {
+  const page = Number((item.entry || {}).page), pages = Number((item.material || {}).pages);
+  if (item.track !== "book" || !Number.isFinite(page) || !Number.isFinite(pages) || page <= 0 || pages <= 0) return null;
+  return Math.round(Math.min(100, Math.max(0, page / pages * 100)));
+}
+
 function openSimpleDay(date) {
   const items = weeklyProgressIndex()[date] || [];
   if (!items.length) return;
   const title = new Intl.DateTimeFormat("ru", {day:"numeric", month:"long", weekday:"long"}).format(fromStr(date));
-  openSheet(`<h3>${esc(title)}</h3><div class="simple-day-details">${items.map(item => `<article class="simple-day-entry"><span class="simple-day-icon" aria-hidden="true">${esc(item.icon)}</span><div><b>${esc(item.title)}</b><p>${esc(simpleDayEntryText(item))}</p></div></article>`).join("")}</div><button class="btn" id="simpleDayClose" type="button">Закрыть</button>`);
+  openSheet(`<h3>${esc(title)}</h3><div class="simple-day-details">${items.map(item => {
+    const time = simpleDayEntryTime(item.entry || {}), pct = simpleDayEntryProgress(item);
+    return `<article class="simple-day-entry"><span class="simple-day-icon" aria-hidden="true">${esc(item.icon)}</span><div><div class="simple-day-entry-head"><b>${esc(item.title)}</b>${time ? `<time title="Время первой отметки">${esc(time)}</time>` : ""}</div><p>${esc(simpleDayEntryText(item))}</p>${pct !== null ? `<div class="simple-entry-progress" role="progressbar" aria-label="Прогресс книги на эту отметку" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div>` : ""}</div></article>`;
+  }).join("")}</div><button class="btn" id="simpleDayClose" type="button">Закрыть</button>`);
   $("#simpleDayClose").addEventListener("click", closeSheet);
 }
 

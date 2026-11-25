@@ -196,6 +196,10 @@
     .simple-week-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:14px; }
     .simple-week-head b { font-size:.95rem; }
     .simple-week-head > span { color:var(--muted); font-size:.78rem; text-align:right; }
+    .simple-week-progress, .simple-entry-progress { height:4px; overflow:hidden; background:rgba(255,255,255,.1); border-radius:9px; }
+    .simple-week-progress { margin:-4px 0 14px; }
+    .simple-entry-progress { margin-top:10px; }
+    .simple-week-progress i, .simple-entry-progress i { display:block; height:100%; border-radius:inherit; background:var(--gold); }
     .simple-week-days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:7px; }
     .simple-day { text-align:center; color:var(--muted); font-size:.72rem; }
     .simple-day-box { display:grid; place-items:center; margin-top:6px; width:100%; aspect-ratio:1; max-height:42px; border-radius:9px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); color:#211800; font-size:.78rem; font-weight:800; }
@@ -206,7 +210,9 @@
     button.simple-day-box:focus-visible { outline:2px solid #fff; outline-offset:3px; }
     .simple-day-details { display:grid; gap:10px; margin:18px 0; }
     .simple-day-entry { display:flex; align-items:flex-start; gap:12px; padding:14px; border:1px solid var(--glass-line); border-radius:14px; background:var(--glass-2); }
-    .simple-day-entry > div { min-width:0; }
+    .simple-day-entry > div { min-width:0; flex:1; }
+    .simple-day-entry-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+    .simple-day-entry-head time { color:var(--muted); font-size:.8rem; flex:none; }
     .simple-day-entry b { overflow-wrap:anywhere; }
     .simple-day-entry p { margin:5px 0 0; color:var(--muted); font-size:.9rem; line-height:1.4; overflow-wrap:anywhere; }
     .simple-day-icon { font-size:1.2rem; }

@@ -4712,6 +4712,12 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   ок('день: музыка без длительности', detail({track:'piano', entry:{}}), 'Занятие отмечено');
   ок('день: время музыки', detail({track:'piano', entry:{mins:23}}), '23 мин.');
   ок('день: старое чтение без страницы', detail({track:'book', entry:{}}), 'Чтение отмечено');
+  const progress = t.get('simpleDayEntryProgress'), time = t.get('simpleDayEntryTime');
+  ок('день: прогресс по сохранённой странице', progress({track:'book',entry:{page:70},material:{pages:280}}), 25);
+  ок('день: нет выдуманного прогресса для пьесы', progress({track:'piano',entry:{},material:{bars:40}}), null);
+  ок('день: нет времени у старой записи', time({date:'2026-11-25'}), '');
+  ок('день: не выдавать позднюю запись за время дня', time({date:'2026-11-24',createdAt:new Date(2026,10,25,14,30).getTime()}), '');
+  ок('день: время первой отметки', time({date:'2026-11-25',createdAt:new Date(2026,10,25,14,30).getTime()}), '14:30');
 }
 
 /* ── Итог ── */
