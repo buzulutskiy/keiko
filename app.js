@@ -23,7 +23,7 @@ const GIST_FILE = "prokachka.json";                // общий файл пер
    касании. Теперь пишется только своё. Общий файл остаётся нетронутым: из него
    читают, пока не переехали, и он же годится как замороженная копия. */
 const PROF_FILE = (id) => "keiko-" + id + ".json";
-const APP_VERSION = "Кэйко 619";
+const APP_VERSION = "Кэйко 620";
 
 const DEFAULT_PIECES = [];
 // Курс пастели — данные из pastel-course-viewer
@@ -4730,7 +4730,8 @@ function renderSimpleHome() {
       const obj = item.book || item.piece || item.course || item.video;
       const cover = coverSrc(item.bookId || item.pieceId || item.courseId || item.videoId, obj.cover || "");
       const pct = Math.max(0, Math.min(100, Math.round(Number(m.pct) || 0)));
-      return `<button class="simple-card" type="button" data-simple-item="${i}"><span class="simple-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span aria-hidden="true">${m.icon}</span>`}</span><span class="simple-info"><b>${esc(m.title)}</b><small>${esc(m.sub || "")} · ${pct}%</small><span class="simple-track"><i style="width:${pct}%"></i></span></span><span aria-hidden="true">›</span></button>`;
+      const info = item.track === "piano" ? "Пианино" : `${esc(m.sub || "")} · ${pct}%`;
+      return `<button class="simple-card" type="button" data-simple-item="${i}"><span class="simple-cover">${cover ? `<img src="${esc(cover)}" alt="">` : `<span aria-hidden="true">${m.icon}</span>`}</span><span class="simple-info"><b>${esc(m.title)}</b><small>${info}</small>${item.track === "piano" ? "" : `<span class="simple-track"><i style="width:${pct}%"></i></span>`}</span><span aria-hidden="true">›</span></button>`;
     }).join("") : '<p class="empty-note">Пока нет материалов на главной. Добавь материал или включи его в настройках.</p>'}</div>`;
   $("#simpleAdd").addEventListener("click", openSimpleAdd);
   document.querySelectorAll("[data-simple-day]").forEach(el => el.addEventListener("click", () => openSimpleDay(el.dataset.simpleDay)));
@@ -4743,7 +4744,7 @@ function renderSimpleHome() {
     if (item.courseId) data.pastel.activeCourse = item.courseId;
     if (item.videoId) data.watch.activeVideo = item.videoId;
     selectedDate = todayStr(); syncPickers(); saveData(); schedulePush();
-    if (isPiano() && piece().bars) openPractice();
+    if (isPiano()) openSimplePiano();
     else if (isPastel() && !plainDraw() && lessons().length) openLesson();
     else openLogSheet();
   }));
@@ -13190,6 +13191,7 @@ function lessonNote(i, step, sec) {
 
 function pracRender() {
   if (!prac) return;
+  if (prac.kind === "simplePiano") return;
   if (prac.kind === "lesson") {
     $("#pracWhere").textContent = pracWhereText();
     /* Урок — не пьеса: прячем плеер и видео и рисуем свою лестницу. Раньше
@@ -13283,6 +13285,36 @@ function openLesson() {
   }, 1000);
   keepAwake(true);
   pracRender();
+}
+
+/* Минимальный режим не записывает занятие за один только вход на экран. */
+function openSimplePiano() {
+  if (!isPiano()) return;
+  prac = { kind:"simplePiano", startedAt:Date.now(), breakMs:0, counted:0, cur:null,
+    closed:[], pending:[], listOpen:false };
+  $("#prac").hidden = false;
+  $("#prac").setAttribute("aria-hidden", "false");
+  document.body.classList.add("prac-on");
+  $("#pracWhere").textContent = piece().name;
+  $("#pracStage").innerHTML = `<div class="simple-piano"><h2>${esc(piece().name)}</h2><button class="btn gold" type="button" id="simplePianoDone">Я позанимался</button></div>`;
+  pracPlayer();
+  pracVideo(null);
+}
+
+function simplePianoEntry(id, started, ended) {
+  return { id:uid(), date:dateStr(new Date(ended)), pieceId:id, spans:[],
+    mins:Math.max(0, Math.round((ended - started) / 60000)), sessions:1,
+    note:"Занятие отмечено", createdAt:ended, updatedAt:ended };
+}
+
+function finishSimplePiano() {
+  if (!prac || prac.kind !== "simplePiano") return;
+  const record = simplePianoEntry(piece().id, prac.startedAt, now());
+  data.piano.entries.push(record);
+  if (!saveData()) { data.piano.entries.pop(); return; }
+  schedulePush();
+  closePractice();
+  toast("Занятие отмечено");
 }
 
 function openPractice() {
@@ -15926,7 +15958,7 @@ function bindPlaceMap() {
 }
 
 function bindPractice() {
-  $("#pracClose").addEventListener("click", () => { if (prac) pracFinish(); });
+  $("#pracClose").addEventListener("click", () => { if (prac) prac.kind === "simplePiano" ? closePractice() : pracFinish(); });
 
   /* Картинку закрывает и крестик, и тап мимо неё, и Escape: она открывается
      поверх занятия, и выйти из неё должно быть проще, чем войти. */
@@ -16233,6 +16265,7 @@ function bindPractice() {
   });
 
   $("#prac").addEventListener("click", async (e) => {
+    if (e.target.closest("#simplePianoDone")) { finishSimplePiano(); return; }
     // подробности по такту — нажатием на его кружок
     const bar = e.target.closest("[data-barinfo]");
     if (bar) { toast(bar.dataset.barinfo); return; }

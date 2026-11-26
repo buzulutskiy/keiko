@@ -4720,6 +4720,18 @@ const coverStorageCheck=t.get('coverSaveBlob')('cover-storage-test',new Blob(['i
   ок('день: время первой отметки', time({date:'2026-11-25',createdAt:new Date(2026,10,25,14,30).getTime()}), '14:30');
 }
 
+/* Явное подтверждение пианино сохраняет даже короткий заход без выдуманных тактов. */
+{
+  const make = t.get('simplePianoEntry');
+  const end = new Date(2026,10,26,12,0,30).getTime();
+  const entry = make('test-piece', end - 30000, end);
+  ок('пианино: сохраняется нужная пьеса', entry.pieceId, 'test-piece');
+  ок('пианино: сохраняется день подтверждения', entry.date, '2026-11-26');
+  ок('пианино: такты не проставляются автоматически', entry.spans, []);
+  ок('пианино: время подтверждения сохраняется', entry.createdAt, end);
+  ок('пианино: явная короткая отметка не помечается старой чисткой', entry.note.startsWith('занятие по плану'), false);
+}
+
 /* ── Итог ── */
 Promise.all([сеть,coverStorageCheck]).then(() => {
   testTimeouts.forEach(clearTimeout);
